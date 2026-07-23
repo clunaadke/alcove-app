@@ -106,8 +106,8 @@ struct ClawdPet: View {
     }
 
     var body: some View {
-        GifView(name: gif, displaySize: 48)
-            .frame(width: 48, height: 48)
+        GifView(name: gif, displaySize: 110)
+            .frame(width: 110, height: 110)
             .contentShape(Rectangle())
             .offset(x: savedX + dragOffset.width, y: savedY + dragOffset.height)
             .highPriorityGesture(
