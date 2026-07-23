@@ -101,7 +101,7 @@ struct RootView: View {
             HStack(spacing: 8) {
                 Button { housePage = .sidebar } label: {
                     glassCircle(size: 44) {
-                        Image(systemName: "chevron.left")
+                        Image(systemName: "chevron.down")
                             .font(.system(size: 16, weight: .medium))
                             .foregroundColor(textDim)
                     }
