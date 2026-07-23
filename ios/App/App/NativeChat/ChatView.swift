@@ -74,10 +74,11 @@ struct ChatView: View {
                     Color.clear.frame(height: 6).id("tail")
                 }
                 .padding(.horizontal, 12)
-                .padding(.top, 8)
+                .padding(.top, 52) // 顶栏 pill 悬浮让位
                 .padding(.bottom, 96) // 给悬浮输入卡片留出穿透空间
             }
             .scrollDismissesKeyboard(.interactively)
+            .overlay(alignment: .top) { topFade }
             .overlay(alignment: .bottom) { bottomFade }
             .overlay(alignment: .bottom) { floatingInput }
             .onChange(of: inputFocused) { f in
@@ -111,6 +112,15 @@ struct ChatView: View {
     }
 
     // MARK: 输入栏（悬浮透底，无实心背景）
+
+    private var topFade: some View {
+        LinearGradient(
+            colors: [Color.white.opacity(0.65), Color.white.opacity(0)],
+            startPoint: .top, endPoint: .bottom)
+        .frame(height: 70)
+        .allowsHitTesting(false)
+        .ignoresSafeArea(edges: .top)
+    }
 
     private var bottomFade: some View {
         LinearGradient(
