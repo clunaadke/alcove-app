@@ -1194,26 +1194,17 @@ private struct WebHouseView: View {
     @AppStorage("alcoveTheme") private var themeName = "haven"
     private var theme: AlcoveTheme { .named(themeName) }
 
-    private var jsCommand: String {
+    private var panelName: String {
         switch destination {
-        case .checklist: return "ckOpenDrawer()"
-        case .music: return "openMusicPanel()"
-        case .memory: return "showPanel('memory')"
-        case .dreams: return "showPanel('dreams')"
-        case .shelf: return "showPanel('shelf')"
-        case .desire: return "showPanel('desire')"
-        case .nianlun: return "showPanel('nianlun')"
-        case .clockwork: return "showPanel('fatiao')"
-        case .album: return "showPanel('album')"
-        case .portrait: return "showPanel('portrait')"
-        case .impression: return "showPanel('impression')"
-        case .search: return "showPanel('search')"
-        case .favorites: return "showPanel('favorites')"
-        case .calendar: return "showPanel('calendar')"
-        case .sex: return "showPanel('sex')"
-        case .usage: return "showPanel('usage')"
-        default: return "showPanel('memory')"
+        case .checklist: return "checklist"
+        case .music: return "music"
+        case .clockwork: return "fatiao"
+        default: return destination.rawValue
         }
+    }
+
+    private var panelURL: URL {
+        AlcoveAPI.fullURL("/?panel=\(panelName)")
     }
 
     var body: some View {
@@ -1221,53 +1212,11 @@ private struct WebHouseView: View {
             Text(destination.title)
                 .font(.system(size: 17, weight: .semibold, design: .serif))
                 .padding(.top, 12)
-            PanelWebView(url: AlcoveAPI.fullURL("/"), jsCommand: jsCommand)
+            FixedWebView(url: panelURL)
                 .clipShape(RoundedRectangle(cornerRadius: 18))
                 .overlay(RoundedRectangle(cornerRadius: 18).stroke(theme.glassBorder, lineWidth: 1))
         }
         .padding(.horizontal, 12).padding(.bottom, 12)
-    }
-}
-
-private struct PanelWebView: UIViewRepresentable {
-    let url: URL
-    let jsCommand: String
-
-    func makeCoordinator() -> Coordinator { Coordinator(jsCommand: jsCommand) }
-
-    func makeUIView(context: Context) -> WKWebView {
-        let config = WKWebViewConfiguration()
-        config.allowsInlineMediaPlayback = true
-        let view = WKWebView(frame: .zero, configuration: config)
-        view.scrollView.contentInsetAdjustmentBehavior = .never
-        view.isOpaque = false
-        view.backgroundColor = .clear
-        view.navigationDelegate = context.coordinator
-        view.load(URLRequest(url: url))
-        return view
-    }
-
-    func updateUIView(_ uiView: WKWebView, context: Context) {}
-
-    class Coordinator: NSObject, WKNavigationDelegate {
-        let jsCommand: String
-        init(jsCommand: String) { self.jsCommand = jsCommand }
-
-        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            let hideCSS = """
-            var s=document.createElement('style');
-            s.textContent=`
-                .chat-input-capsule,.top-pill-bar,#clawd-pet,.typing-indicator,
-                .chat-messages,.chat-container>.scroll-anchor,
-                #music-overlay,#ck-overlay{display:none!important}
-                .sidebar-overlay{display:none!important}
-                body{background:transparent!important}
-            `;
-            document.head.appendChild(s);
-            """
-            let open = "setTimeout(function(){ \(jsCommand); }, 300);"
-            webView.evaluateJavaScript(hideCSS + open)
-        }
     }
 }
 
