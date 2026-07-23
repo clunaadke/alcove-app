@@ -1,8 +1,22 @@
 import SwiftUI
 
-// App 根视图：原生聊天页 + PWA 同款顶栏，其余页面 WebView 兜底
+// 顶栏按钮的去向，与 PWA 一一对应
+enum HouseTarget: String, Identifiable {
+    case home, checklist, music, term
+    var id: String { rawValue }
+    var js: String {
+        switch self {
+        case .home: return "switchPage('home')"
+        case .checklist: return "switchPage('chat'); ckToggle();"
+        case .music: return "openMusicPanel()"
+        case .term: return "switchPage('term')"
+        }
+    }
+}
+
+// App 根视图：原生聊天页 + PWA 同款顶栏，按钮直达原页面功能
 struct RootView: View {
-    @State private var showHouse = false
+    @State private var housePage: HouseTarget?
     @State private var showSplash = true
     @AppStorage("assistantName") private var assistantName = "陈璟"
 
@@ -20,41 +34,23 @@ struct RootView: View {
             }
         }
         .onAppear {
+            WebHouse.shared.warmUp() // 后台先把小屋加载好，按钮秒开
             // 声波念完两个音节再进门，跟 PWA 一个节奏
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.3) {
                 withAnimation(.easeOut(duration: 0.6)) { showSplash = false }
             }
         }
         .preferredColorScheme(.light) // PWA 是固定浅色主题，材质不许跟系统变黑
-        .fullScreenCover(isPresented: $showHouse) {
-            NavigationStack {
-                WebViewPage(url: AlcoveAPI.base)
-                    .ignoresSafeArea(edges: .bottom)
-                    .navigationTitle("小屋")
-                    .navigationBarTitleDisplayMode(.inline)
-                    .toolbar {
-                        ToolbarItem(placement: .navigationBarLeading) {
-                            Button("返回聊天") { showHouse = false }
-                        }
-                    }
-            }
-            .preferredColorScheme(.light)
+        .fullScreenCover(item: $housePage) { target in
+            HousePage(js: target.js) { housePage = nil }
+                .preferredColorScheme(.light)
         }
         .tint(Color(red: 0.86, green: 0.44, blue: 0.57))
     }
 
-    // PWA .chat-topbar 同款：居中 pill + 右侧圆钮和头像
+    // PWA .chat-topbar 同款：左<钮 + 居中 pill + 清单/音乐圆钮 + 头像
     private var topBar: some View {
-        HStack(spacing: 0) {
-            glassCircle(size: 32) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(textDim)
-            }
-            .onTapGesture { showHouse = true }
-
-            Spacer()
-
+        ZStack {
             VStack(spacing: 0) {
                 Text(assistantName)
                     .font(.system(size: 13, weight: .semibold))
@@ -71,27 +67,36 @@ struct RootView: View {
             .overlay(Capsule().stroke(glassStroke, lineWidth: 1))
             .shadow(color: .black.opacity(0.06), radius: 8, y: 4)
 
-            Spacer()
-
             HStack(spacing: 8) {
-                glassCircle(size: 32) {
-                    Image(systemName: "checklist")
-                        .font(.system(size: 13, weight: .light))
-                        .foregroundColor(textDim)
+                Button { housePage = .home } label: {
+                    glassCircle(size: 44) {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(textDim)
+                    }
                 }
-                .onTapGesture { showHouse = true }
-                glassCircle(size: 32) {
-                    Image(systemName: "music.note")
-                        .font(.system(size: 13, weight: .light))
-                        .foregroundColor(textDim)
+                Spacer()
+                Button { housePage = .checklist } label: {
+                    glassCircle(size: 36) {
+                        Image(systemName: "checklist")
+                            .font(.system(size: 13, weight: .light))
+                            .foregroundColor(textDim)
+                    }
                 }
-                .onTapGesture { showHouse = true }
-                glassCircle(size: 36) {
-                    Text("R")
-                        .font(.system(size: 13, design: .serif))
-                        .foregroundColor(textDim)
+                Button { housePage = .music } label: {
+                    glassCircle(size: 36) {
+                        Image(systemName: "music.note")
+                            .font(.system(size: 14, weight: .light))
+                            .foregroundColor(textDim)
+                    }
                 }
-                .onTapGesture { showHouse = true }
+                Button { housePage = .term } label: {
+                    glassCircle(size: 40) {
+                        Text("R")
+                            .font(.system(size: 14, design: .serif))
+                            .foregroundColor(textDim)
+                    }
+                }
             }
         }
         .padding(.horizontal, 12)

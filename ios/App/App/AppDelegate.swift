@@ -8,7 +8,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        // SwiftUI 原生聊天页接管根视图；Capacitor WebView 退居 WebViewPage 兜底
+        // SwiftUI 原生聊天页接管根视图；其余页面走常驻 WebHouse WebView
         let win = UIWindow(frame: UIScreen.main.bounds)
         let host = UIHostingController(rootView: RootView())
         host.overrideUserInterfaceStyle = .light // PWA 固定浅色，材质不随系统深色变黑
