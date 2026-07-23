@@ -5,7 +5,7 @@ import WebKit
 
 enum HouseDestination: String, Identifiable, CaseIterable {
     case sidebar, chat, terminal, settings, checklist, music
-    case calendar, sex, usage
+    case home, calendar, sex, usage
     case memory, dreams, shelf, desire, nianlun, clockwork, album, portrait, impression
     case crosstalk, radio, coread, liao, daddyDay
     case search, favorites
@@ -15,6 +15,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
     var title: String {
         switch self {
         case .sidebar: return "Alcove"
+        case .home: return "大厅"
         case .chat: return "Chat"
         case .terminal: return "Terminal"
         case .settings: return "设置"
@@ -44,6 +45,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
 
     var icon: String {
         switch self {
+        case .home: return "house"
         case .chat: return "bubble.left"
         case .terminal: return "terminal"
         case .settings: return "gearshape"
@@ -186,7 +188,7 @@ private struct NativeSidebarView: View {
                 .padding(.top, 8)
 
                 HStack(spacing: 10) {
-                    summaryCard("大厅", model.homeLine, "house", .chat)
+                    summaryCard("大厅", model.homeLine, "house", .home)
                     summaryCard("在一起", "\(model.days) days", "heart", .calendar)
                 }
                 HStack(spacing: 10) {
