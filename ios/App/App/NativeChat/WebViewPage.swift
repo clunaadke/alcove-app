@@ -37,6 +37,22 @@ final class WebHouse: NSObject, WKNavigationDelegate {
         loaded = true
         for js in pendingJS { webView.evaluateJavaScript(js, completionHandler: nil) }
         pendingJS.removeAll()
+        syncProfile()
+    }
+
+    // 从 PWA 的 localStorage 同步名字和头像给原生顶栏
+    // （她在 app 的 Settings 里改完，回聊天页就生效）
+    func syncProfile() {
+        webView.evaluateJavaScript("localStorage.getItem('alcove-ai-name') || ''") { v, _ in
+            if let name = v as? String, !name.isEmpty {
+                UserDefaults.standard.set(name, forKey: "assistantName")
+            }
+        }
+        webView.evaluateJavaScript("localStorage.getItem('haven-ai-avatar') || ''") { v, _ in
+            if let avatar = v as? String, !avatar.isEmpty {
+                UserDefaults.standard.set(avatar, forKey: "assistantAvatarDataURL")
+            }
+        }
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {

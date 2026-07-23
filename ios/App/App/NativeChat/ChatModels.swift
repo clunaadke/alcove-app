@@ -30,6 +30,12 @@ struct ChatMessage: Identifiable, Equatable {
         guard let t = attachmentType, let u = attachmentUrl, !u.isEmpty else { return false }
         return t == "image"
     }
+    var isAudio: Bool {
+        guard let u = attachmentUrl, !u.isEmpty else { return false }
+        if let t = attachmentType, t.contains("audio") { return true }
+        return ["m4a", "mp3", "wav", "ogg", "webm", "aac"]
+            .contains((u as NSString).pathExtension.lowercased())
+    }
 
     static func == (lhs: ChatMessage, rhs: ChatMessage) -> Bool { lhs.uid == rhs.uid }
 

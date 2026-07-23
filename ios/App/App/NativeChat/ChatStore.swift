@@ -9,6 +9,8 @@ final class ChatStore: ObservableObject {
     @Published var stickers: [Sticker] = []
     @Published var loading = true
     @Published var connectionError = false
+    @Published var heldCount = 0
+    @Published var modelLabel = ""
 
     private var lastTs: String?
     private var pollTask: Task<Void, Never>?
@@ -26,6 +28,69 @@ final class ChatStore: ObservableObject {
             if let stk = try? await AlcoveAPI.stickers() {
                 self?.stickers = stk
             }
+            if let held = try? await AlcoveAPI.heldCount() {
+                self?.heldCount = held
+            }
+            if let label = try? await AlcoveAPI.modelLabel() {
+                self?.modelLabel = label
+            }
+        }
+    }
+
+    // 攒气泡：入屏入库不触发回复
+    func sendHold(_ text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let local = ChatMessage(localText: trimmed)
+        messages.append(local)
+        Task {
+            do {
+                let (held, rec) = try await AlcoveAPI.sendHold(text: trimmed)
+                heldCount = held
+                if let confirmed = rec,
+                   let idx = messages.lastIndex(where: { $0.uid == local.uid }) {
+                    messages[idx] = confirmed
+                    if let lt = lastTs, confirmed.ts > lt { lastTs = confirmed.ts }
+                    else if lastTs == nil { lastTs = confirmed.ts }
+                }
+            } catch { connectionError = true }
+        }
+    }
+
+    func uploadSticker(data: Data, mime: String, owner: String) {
+        Task {
+            try? await AlcoveAPI.uploadSticker(data: data, mime: mime, owner: owner)
+            if let stk = try? await AlcoveAPI.stickers() { stickers = stk }
+        }
+    }
+
+    // 多张图微信式一起发，caption 挂第一张
+    func sendImages(_ datas: [Data], caption: String) {
+        Task {
+            for (i, d) in datas.enumerated() {
+                let name = "IMG_\(Int(Date().timeIntervalSince1970))_\(i).jpg"
+                do {
+                    if let rec = try await AlcoveAPI.upload(data: d, filename: name,
+                                                           caption: i == 0 ? caption : "") {
+                        appendNew([rec])
+                        if let lt = lastTs, rec.ts > lt { lastTs = rec.ts }
+                        else if lastTs == nil { lastTs = rec.ts }
+                    }
+                } catch { connectionError = true }
+            }
+        }
+    }
+
+    func sendVoice(data: Data) {
+        Task {
+            do {
+                let name = "voice_\(Int(Date().timeIntervalSince1970 * 1000)).m4a"
+                if let rec = try await AlcoveAPI.upload(data: data, filename: name, caption: "") {
+                    appendNew([rec])
+                    if let lt = lastTs, rec.ts > lt { lastTs = rec.ts }
+                    else if lastTs == nil { lastTs = rec.ts }
+                }
+            } catch { connectionError = true }
         }
     }
 

@@ -2,11 +2,11 @@ import SwiftUI
 
 // 顶栏按钮的去向，与 PWA 一一对应
 enum HouseTarget: String, Identifiable {
-    case home, checklist, music, term
+    case sidebar, checklist, music, term
     var id: String { rawValue }
     var js: String {
         switch self {
-        case .home: return "switchPage('home')"
+        case .sidebar: return "toggleSidebar()" // 壁龛抽屉：大厅/Settings/FOYER/PLAY 全在里面
         case .checklist: return "switchPage('chat'); ckToggle();"
         case .music: return "openMusicPanel()"
         case .term: return "switchPage('term')"
@@ -19,6 +19,16 @@ struct RootView: View {
     @State private var housePage: HouseTarget?
     @State private var showSplash = true
     @AppStorage("assistantName") private var assistantName = "陈璟"
+    @AppStorage("assistantAvatarDataURL") private var avatarDataURL = ""
+
+    private var avatarImage: UIImage? {
+        guard !avatarDataURL.isEmpty else { return nil }
+        let b64 = avatarDataURL.contains(",")
+            ? String(avatarDataURL.split(separator: ",", maxSplits: 1)[1])
+            : avatarDataURL
+        guard let data = Data(base64Encoded: b64) else { return nil }
+        return UIImage(data: data)
+    }
 
     private let glassStroke = Color(red: 210/255, green: 210/255, blue: 218/255).opacity(0.22)
     private let textDim = Color(red: 0.42, green: 0.40, blue: 0.41)
@@ -42,8 +52,11 @@ struct RootView: View {
         }
         .preferredColorScheme(.light) // PWA 是固定浅色主题，材质不许跟系统变黑
         .fullScreenCover(item: $housePage) { target in
-            HousePage(js: target.js) { housePage = nil }
-                .preferredColorScheme(.light)
+            HousePage(js: target.js) {
+                housePage = nil
+                WebHouse.shared.syncProfile() // 她可能刚在设置里改了名字或头像
+            }
+            .preferredColorScheme(.light)
         }
         .tint(Color(red: 0.86, green: 0.44, blue: 0.57))
     }
@@ -68,7 +81,7 @@ struct RootView: View {
             .shadow(color: .black.opacity(0.06), radius: 8, y: 4)
 
             HStack(spacing: 8) {
-                Button { housePage = .home } label: {
+                Button { housePage = .sidebar } label: {
                     glassCircle(size: 44) {
                         Image(systemName: "chevron.left")
                             .font(.system(size: 16, weight: .medium))
@@ -92,9 +105,17 @@ struct RootView: View {
                 }
                 Button { housePage = .term } label: {
                     glassCircle(size: 40) {
-                        Text("R")
-                            .font(.system(size: 14, design: .serif))
-                            .foregroundColor(textDim)
+                        if let img = avatarImage {
+                            Image(uiImage: img)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: 40, height: 40)
+                                .clipShape(Circle())
+                        } else {
+                            Text("R")
+                                .font(.system(size: 14, design: .serif))
+                                .foregroundColor(textDim)
+                        }
                     }
                 }
             }

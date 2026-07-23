@@ -97,6 +97,41 @@ enum AlcoveAPI {
         return raw.compactMap(Sticker.init(json:))
     }
 
+    static func modelLabel() async throws -> String {
+        let obj = try await getJSON("/api/cc/model")
+        return obj["label"] as? String ?? ""
+    }
+
+    // 攒气泡：气泡上屏入库但不触发回复，返回已攒条数
+    static func sendHold(text: String) async throws -> (held: Int, record: ChatMessage?) {
+        let obj = try await postJSON("/api/send", body: ["text": text, "hold": true])
+        let rec = (obj["record"] as? [String: Any]).flatMap(ChatMessage.init(json:))
+        return (obj["held"] as? Int ?? 0, rec)
+    }
+
+    static func heldCount() async throws -> Int {
+        let obj = try await getJSON("/api/held")
+        return obj["held"] as? Int ?? 0
+    }
+
+    static func uploadSticker(data: Data, mime: String, owner: String) async throws {
+        let boundary = "----alcove\(UUID().uuidString)"
+        var req = URLRequest(url: fullURL("/api/stickers/upload"))
+        req.httpMethod = "POST"
+        req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        let ext = mime == "image/png" ? "png" : mime == "image/gif" ? "gif" : "jpg"
+        var body = Data()
+        func field(_ name: String, _ value: String) {
+            body.append("--\(boundary)\r\nContent-Disposition: form-data; name=\"\(name)\"\r\n\r\n\(value)\r\n".data(using: .utf8)!)
+        }
+        field("owner", owner)
+        body.append("--\(boundary)\r\nContent-Disposition: form-data; name=\"file\"; filename=\"sticker.\(ext)\"\r\nContent-Type: \(mime)\r\n\r\n".data(using: .utf8)!)
+        body.append(data)
+        body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
+        req.httpBody = body
+        _ = try await session.data(for: req)
+    }
+
     static func upload(data: Data, filename: String, caption: String) async throws -> ChatMessage? {
         var comps = URLComponents(url: fullURL("/api/upload"), resolvingAgainstBaseURL: false)!
         var items = [URLQueryItem(name: "filename", value: filename),

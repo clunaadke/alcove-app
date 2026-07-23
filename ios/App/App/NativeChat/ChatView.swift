@@ -1,12 +1,15 @@
 import SwiftUI
 import PhotosUI
+import AVFoundation
 
 struct ChatView: View {
     @StateObject private var store = ChatStore()
     @State private var draft = ""
     @State private var showStickers = false
-    @State private var photoItem: PhotosPickerItem?
+    @State private var photoItems: [PhotosPickerItem] = []
+    @State private var pendingImages: [(thumb: UIImage, jpeg: Data)] = []
     @State private var viewerURL: URL?
+    @StateObject private var recorder = VoiceRecorder()
     @FocusState private var inputFocused: Bool
     @Environment(\.scenePhase) private var scenePhase
 
@@ -35,17 +38,18 @@ struct ChatView: View {
         .onChange(of: scenePhase) { phase in
             if phase == .active { store.refresh() }
         }
-        .onChange(of: photoItem) { item in
-            guard let item else { return }
-            photoItem = nil
+        .onChange(of: photoItems) { items in
+            guard !items.isEmpty else { return }
+            photoItems = []
             Task {
+                // 微信式叠加：选完先进预览条，跟文字一起发
                 // HEIC 等格式统一转 JPEG，保证 PWA 端也能显示
-                if let raw = try? await item.loadTransferable(type: Data.self),
-                   let img = UIImage(data: raw),
-                   let jpeg = img.jpegData(compressionQuality: 0.85) {
-                    let name = "IMG_\(Int(Date().timeIntervalSince1970)).jpg"
-                    store.sendImage(data: jpeg, filename: name, caption: draft.trimmingCharacters(in: .whitespacesAndNewlines))
-                    draft = ""
+                for item in items {
+                    if let raw = try? await item.loadTransferable(type: Data.self),
+                       let img = UIImage(data: raw),
+                       let jpeg = img.jpegData(compressionQuality: 0.85) {
+                        pendingImages.append((thumb: img, jpeg: jpeg))
+                    }
                 }
             }
         }
@@ -140,6 +144,10 @@ struct ChatView: View {
         .ignoresSafeArea(edges: .bottom)
     }
 
+    private var canSend: Bool {
+        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !pendingImages.isEmpty
+    }
+
     // PWA .chat-input-capsule 同款：大胶囊两行，粉描边，透底毛玻璃
     private var floatingInput: some View {
         VStack(spacing: 4) {
@@ -152,33 +160,131 @@ struct ChatView: View {
                     .background(.ultraThinMaterial, in: Capsule())
             }
             VStack(spacing: 0) {
-                TextField("说点什么…", text: $draft, axis: .vertical)
-                    .focused($inputFocused)
-                    .lineLimit(1...5)
-                    .font(.system(size: 15.5))
-                    .padding(.init(top: 12, leading: 14, bottom: 4, trailing: 14))
+                // PWA .chat-preview 同款：待发图片叠加条，可单张删除
+                if !pendingImages.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 6) {
+                            ForEach(Array(pendingImages.enumerated()), id: \.offset) { idx, item in
+                                ZStack(alignment: .topTrailing) {
+                                    Image(uiImage: item.thumb)
+                                        .resizable()
+                                        .scaledToFill()
+                                        .frame(width: 64, height: 64)
+                                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                                    Button {
+                                        pendingImages.remove(at: idx)
+                                    } label: {
+                                        Image(systemName: "xmark.circle.fill")
+                                            .font(.system(size: 16))
+                                            .foregroundColor(.white)
+                                            .shadow(radius: 1.5)
+                                    }
+                                    .offset(x: 5, y: -5)
+                                }
+                            }
+                        }
+                        .padding(.init(top: 8, leading: 12, bottom: 4, trailing: 12))
+                    }
+                }
+                if recorder.isRecording {
+                    HStack(spacing: 10) {
+                        Circle().fill(Color.red).frame(width: 8, height: 8)
+                        Text(String(format: "%d:%02d", recorder.seconds / 60, recorder.seconds % 60))
+                            .font(.system(size: 15).monospacedDigit())
+                            .foregroundColor(Color(red: 0.35, green: 0.32, blue: 0.33))
+                        Text("录音中…")
+                            .font(.system(size: 14))
+                            .foregroundColor(Color(red: 0.55, green: 0.52, blue: 0.53))
+                        Spacer()
+                    }
+                    .padding(.init(top: 12, leading: 16, bottom: 4, trailing: 14))
+                } else {
+                    TextField("ring the chime …", text: $draft, axis: .vertical)
+                        .focused($inputFocused)
+                        .lineLimit(1...5)
+                        .font(.system(size: 15.5, design: .serif).italic())
+                        .padding(.init(top: 12, leading: 14, bottom: 4, trailing: 14))
+                }
                 HStack(spacing: 2) {
-                    PhotosPicker(selection: $photoItem, matching: .images) {
-                        Image(systemName: "plus")
-                            .font(.system(size: 17, weight: .light))
-                            .foregroundColor(Color(red: 0.45, green: 0.40, blue: 0.42))
-                            .frame(width: 32, height: 32)
+                    if recorder.isRecording {
+                        Button { recorder.cancel() } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 15, weight: .light))
+                                .foregroundColor(Color(red: 0.45, green: 0.40, blue: 0.42))
+                                .frame(width: 32, height: 32)
+                        }
+                        Spacer()
+                    } else {
+                        PhotosPicker(selection: $photoItems, maxSelectionCount: 9, matching: .images) {
+                            Image(systemName: "paperclip")
+                                .font(.system(size: 16, weight: .light))
+                                .foregroundColor(Color(red: 0.45, green: 0.40, blue: 0.42))
+                                .frame(width: 32, height: 32)
+                        }
+                        Button { showStickers = true } label: {
+                            Image(systemName: "face.smiling")
+                                .font(.system(size: 16, weight: .light))
+                                .foregroundColor(Color(red: 0.45, green: 0.40, blue: 0.42))
+                                .frame(width: 32, height: 32)
+                        }
+                        Button { recorder.start() } label: {
+                            Image(systemName: "mic")
+                                .font(.system(size: 16, weight: .light))
+                                .foregroundColor(Color(red: 0.45, green: 0.40, blue: 0.42))
+                                .frame(width: 32, height: 32)
+                        }
+                        if !store.modelLabel.isEmpty {
+                            Text(store.modelLabel)
+                                .font(.system(size: 12))
+                                .foregroundColor(Color(red: 0.62, green: 0.58, blue: 0.60))
+                                .padding(.leading, 4)
+                        }
+                        Spacer()
+                        // 攒气泡：空行入库不触发回复（她的 hold 功能）
+                        Button {
+                            let t = draft
+                            draft = ""
+                            store.sendHold(t)
+                        } label: {
+                            ZStack(alignment: .topTrailing) {
+                                Image(systemName: "arrow.turn.down.left")
+                                    .font(.system(size: 15, weight: .light))
+                                    .foregroundColor(Color(red: 0.45, green: 0.40, blue: 0.42))
+                                    .frame(width: 32, height: 32)
+                                if store.heldCount > 0 {
+                                    Text("\(store.heldCount)")
+                                        .font(.system(size: 10, weight: .semibold))
+                                        .foregroundColor(.white)
+                                        .padding(.horizontal, 4)
+                                        .frame(minWidth: 15, minHeight: 15)
+                                        .background(Color(red: 207/255, green: 148/255, blue: 166/255), in: Capsule())
+                                        .offset(x: 3, y: -3)
+                                }
+                            }
+                        }
+                        .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .padding(.trailing, 12)
                     }
-                    Button { showStickers = true } label: {
-                        Image(systemName: "face.smiling")
-                            .font(.system(size: 16, weight: .light))
-                            .foregroundColor(Color(red: 0.45, green: 0.40, blue: 0.42))
-                            .frame(width: 32, height: 32)
-                    }
-                    Spacer()
                     Button {
-                        let t = draft
-                        draft = ""
-                        store.sendText(t)
+                        if recorder.isRecording {
+                            if let data = recorder.stopAndTake() { store.sendVoice(data: data) }
+                        } else {
+                            let t = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+                            draft = ""
+                            if !pendingImages.isEmpty {
+                                // 图跟文字一起走，caption 挂第一张，和 PWA 一致
+                                let imgs = pendingImages.map(\.jpeg)
+                                pendingImages = []
+                                store.sendImages(imgs, caption: t)
+                            } else {
+                                store.sendText(t)
+                            }
+                        }
                     } label: {
-                        Image(systemName: "arrow.up")
-                            .font(.system(size: 14, weight: .semibold))
+                        Image(systemName: "paperplane.fill")
+                            .font(.system(size: 14, weight: .medium))
                             .foregroundColor(.white)
+                            .rotationEffect(.degrees(-8))
                             .frame(width: 32, height: 32)
                             .background(
                                 LinearGradient(
@@ -188,9 +294,9 @@ struct ChatView: View {
                             .clipShape(Circle())
                             .shadow(color: Color(red: 207/255, green: 148/255, blue: 166/255).opacity(0.35),
                                     radius: 2.5, y: 1)
-                            .opacity(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.45 : 1)
+                            .opacity(canSend || recorder.isRecording ? 1 : 0.45)
                     }
-                    .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(!canSend && !recorder.isRecording)
                 }
                 .padding(.init(top: 4, leading: 6, bottom: 6, trailing: 6))
             }
@@ -205,33 +311,15 @@ struct ChatView: View {
         .padding(.bottom, 6)
     }
 
-    // MARK: 表情面板
+    // MARK: 表情面板（她下午做的 Stickers：陈霁/陈璟 tab + 上传 + 原比例网格）
 
     private var stickerSheet: some View {
-        NavigationStack {
-            ScrollView {
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 4), spacing: 10) {
-                    ForEach(store.stickers) { stk in
-                        Button {
-                            showStickers = false
-                            store.sendSticker(stk)
-                        } label: {
-                            AsyncImage(url: AlcoveAPI.stickerURL(stk.url)) { img in
-                                img.resizable().scaledToFit()
-                            } placeholder: {
-                                Color(.tertiarySystemFill)
-                            }
-                            .frame(height: 76)
-                            .clipShape(RoundedRectangle(cornerRadius: 10))
-                        }
-                    }
-                }
-                .padding(12)
-            }
-            .navigationTitle("表情")
-            .navigationBarTitleDisplayMode(.inline)
+        StickerSheet(store: store) { stk in
+            showStickers = false
+            store.sendSticker(stk)
         }
         .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
     }
 }
 
@@ -258,6 +346,9 @@ struct MessageRow: View {
                 } else {
                     if msg.isImage, let raw = msg.attachmentUrl {
                         imageBody(raw)
+                    }
+                    if msg.isAudio, let raw = msg.attachmentUrl {
+                        AudioBubble(url: AlcoveAPI.attachmentURL(raw), isUser: isUser)
                     }
                     if !msg.text.isEmpty && !(msg.isSticker) {
                         bubble
@@ -429,6 +520,50 @@ struct TypingIndicator: View {
         }
         .onAppear { animating = true }
         .padding(.vertical, 2)
+    }
+}
+
+// 语音条：点击播放/暂停
+struct AudioBubble: View {
+    let url: URL
+    let isUser: Bool
+    @State private var player: AVPlayer?
+    @State private var playing = false
+
+    var body: some View {
+        Button {
+            if playing {
+                player?.pause()
+                playing = false
+            } else {
+                if player == nil { player = AVPlayer(url: url) }
+                player?.seek(to: .zero)
+                player?.play()
+                playing = true
+                NotificationCenter.default.addObserver(
+                    forName: .AVPlayerItemDidPlayToEndTime,
+                    object: player?.currentItem, queue: .main) { _ in
+                    playing = false
+                }
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: playing ? "pause.fill" : "play.fill")
+                    .font(.system(size: 13))
+                Image(systemName: "waveform")
+                    .font(.system(size: 15))
+                Text("语音")
+                    .font(.system(size: 14))
+            }
+            .foregroundColor(Color(red: 0.35, green: 0.30, blue: 0.32))
+            .padding(.horizontal, 14)
+            .padding(.vertical, 9)
+            .background(
+                (isUser
+                 ? Color(red: 247/255, green: 227/255, blue: 234/255).opacity(0.44)
+                 : Color.white.opacity(0.38)),
+                in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        }
     }
 }
 
