@@ -19,6 +19,7 @@ struct RootView: View {
     @State private var housePage: HouseTarget?
     @State private var showSplash = true
     @State private var showPermissions = false
+    @State private var showTerminal = false
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("assistantName") private var assistantName = "陈璟"
     @AppStorage("assistantAvatarDataURL") private var avatarDataURL = ""
@@ -64,6 +65,9 @@ struct RootView: View {
         }
         .sheet(isPresented: $showPermissions) {
             PermissionsView()
+        }
+        .fullScreenCover(isPresented: $showTerminal) {
+            TerminalView()
         }
         .fullScreenCover(item: $housePage) { target in
             HousePage(js: target.js) {
@@ -117,7 +121,7 @@ struct RootView: View {
                             .foregroundColor(textDim)
                     }
                 }
-                Button { housePage = .term } label: {
+                Button { showTerminal = true } label: {
                     glassCircle(size: 40) {
                         if let img = avatarImage {
                             Image(uiImage: img)
