@@ -131,8 +131,11 @@ struct ChatView: View {
             }
             .onChange(of: store.loading) { loading in
                 if !loading {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                        proxy.scrollTo("tail", anchor: .bottom)
+                    // 首屏几百条消息布局是分批的，跟 PWA 一样多踩几拍才能真到底
+                    for delay in [0.05, 0.3, 0.8, 1.5] {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                            proxy.scrollTo("tail", anchor: .bottom)
+                        }
                     }
                 }
             }
