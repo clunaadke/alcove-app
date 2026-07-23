@@ -49,11 +49,14 @@ struct GifView: UIViewRepresentable {
     }
 }
 
-// 小螃蟹本蟹：跟着我的状态换动作，趴在输入卡上面
+// 小螃蟹本蟹：跟着我的状态换动作，能拖，拖起来会生气挣扎
 struct ClawdPet: View {
     @ObservedObject var store: ChatStore
     @State private var mood = "idle"
     @State private var lastActivity = Date()
+    @State private var dragOffset: CGSize = .zero
+    @AppStorage("clawdOffX") private var savedX = 0.0
+    @AppStorage("clawdOffY") private var savedY = 0.0
 
     private var gif: String {
         switch mood {
@@ -61,6 +64,7 @@ struct ClawdPet: View {
         case "thinking": return "clawd-thinking.gif"
         case "happy": return "clawd-happy.gif"
         case "sleeping": return "clawd-sleeping.gif"
+        case "drag": return "clawd-react-annoyed.gif"
         default: return "clawd-idle.gif"
         }
     }
@@ -68,8 +72,29 @@ struct ClawdPet: View {
     var body: some View {
         GifView(name: gif)
             .frame(width: 96, height: 96)
-            .allowsHitTesting(false)
+            .offset(x: savedX + dragOffset.width, y: savedY + dragOffset.height)
+            .gesture(
+                DragGesture()
+                    .onChanged { v in
+                        if mood != "drag" { mood = "drag" } // 被拎起来了，不高兴
+                        dragOffset = v.translation
+                    }
+                    .onEnded { v in
+                        savedX += v.translation.width
+                        savedY += v.translation.height
+                        // 别拖出屏幕太远，拉回可见范围
+                        let bound = UIScreen.main.bounds
+                        savedX = min(max(savedX, -bound.width + 110), 8)
+                        savedY = min(max(savedY, -bound.height + 200), 8)
+                        dragOffset = .zero
+                        lastActivity = Date()
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.55)) {}
+                        mood = "idle"
+                    }
+            )
+            .animation(.spring(response: 0.3, dampingFraction: 0.6), value: dragOffset == .zero)
             .onChange(of: store.isTyping) { typing in
+                guard mood != "drag" else { return } // 被拎着的时候只管挣扎
                 if typing {
                     mood = store.currentTool != nil ? "typing" : "thinking"
                     lastActivity = Date()
@@ -82,6 +107,7 @@ struct ClawdPet: View {
                 }
             }
             .onChange(of: store.currentTool) { tool in
+                guard mood != "drag" else { return }
                 if store.isTyping { mood = tool != nil ? "typing" : "thinking" }
             }
             .onReceive(Timer.publish(every: 20, on: .main, in: .common).autoconnect()) { _ in
