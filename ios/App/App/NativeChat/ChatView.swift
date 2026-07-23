@@ -13,12 +13,32 @@ struct ChatView: View {
     @FocusState private var inputFocused: Bool
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("alcoveTheme") private var themeName = "haven"
+    @AppStorage("chatFontSize") private var chatFontSize = 15
+    @AppStorage("wallStamp") private var wallStamp = 0.0
     private var theme: AlcoveTheme { .named(themeName) }
+
+    // 她在设置里换的自定义壁纸优先；没有就用主题默认
+    private var customWall: UIImage? {
+        _ = wallStamp // 依赖时间戳，换壁纸后视图刷新
+        let file = themeName == "midnight" ? "chatwall_midnight.jpg" : "chatwall_haven.jpg"
+        let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent(file)
+        return UIImage(contentsOfFile: url.path)
+    }
 
     var body: some View {
         ZStack {
-            // PWA 同款聊天壁纸：haven 铺图，midnight 深色渐变
-            if theme.usesWallImage {
+            // PWA 同款聊天壁纸：自定义 > haven 铺图 / midnight 深色渐变
+            if let wall = customWall {
+                GeometryReader { geo in
+                    Image(uiImage: wall)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: geo.size.width, height: geo.size.height)
+                        .clipped()
+                }
+                .ignoresSafeArea()
+            } else if theme.usesWallImage {
                 GeometryReader { geo in
                     Image("ChatWall")
                         .resizable()
@@ -77,6 +97,7 @@ struct ChatView: View {
                             TimeDivider(date: msg.date, color: theme.textDim)
                         }
                         MessageRow(msg: msg, store: store, theme: theme,
+                                   fontSize: chatFontSize,
                                    showTime: isGroupTail(cur: msg, next: next)) { url in
                             viewerURL = url
                         }
@@ -337,6 +358,7 @@ struct MessageRow: View {
     let msg: ChatMessage
     @ObservedObject var store: ChatStore
     var theme: AlcoveTheme = .haven
+    var fontSize: Int = 15
     var showTime: Bool = true
     var onTapImage: (URL) -> Void
     @State private var showThinking = false
@@ -391,7 +413,7 @@ struct MessageRow: View {
     // PWA 同款雾感气泡：user rgba(247,227,234,.44) / ai rgba(255,255,255,.38)，blur 透底
     private var bubble: some View {
         Text(msg.text)
-            .font(.system(size: 15))
+            .font(.system(size: CGFloat(fontSize)))
             .lineSpacing(4)
             .foregroundColor(msg.asleepAtSend ? theme.textDim : theme.text)
             .padding(.horizontal, 12)

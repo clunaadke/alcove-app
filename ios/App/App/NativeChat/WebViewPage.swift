@@ -76,6 +76,35 @@ final class WebHouse: NSObject, WKNavigationDelegate {
                 UserDefaults.standard.set(theme, forKey: "alcoveTheme")
             }
         }
+        webView.evaluateJavaScript("localStorage.getItem('haven-font-size') || '15'") { v, _ in
+            if let s = v as? String, let n = Int(s), (10...24).contains(n) {
+                UserDefaults.standard.set(n, forKey: "chatFontSize")
+            }
+        }
+        // 她换的自定义聊天壁纸（per-theme），落成文件给原生页用
+        syncWallpaper(storageKey: "alcove-chat-wallpaper", file: "chatwall_haven.jpg")
+        syncWallpaper(storageKey: "alcove-chat-wallpaper--midnight", file: "chatwall_midnight.jpg")
+    }
+
+    private func syncWallpaper(storageKey: String, file: String) {
+        webView.evaluateJavaScript("localStorage.getItem('\(storageKey)') || ''") { v, _ in
+            let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            let dst = dir.appendingPathComponent(file)
+            guard let dataURL = v as? String, !dataURL.isEmpty else {
+                // 她清掉了自定义壁纸，本地文件跟着删
+                if FileManager.default.fileExists(atPath: dst.path) {
+                    try? FileManager.default.removeItem(at: dst)
+                    UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: "wallStamp")
+                }
+                return
+            }
+            let b64 = dataURL.contains(",")
+                ? String(dataURL.split(separator: ",", maxSplits: 1)[1]) : dataURL
+            if let data = Data(base64Encoded: b64) {
+                try? data.write(to: dst)
+                UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: "wallStamp")
+            }
+        }
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
