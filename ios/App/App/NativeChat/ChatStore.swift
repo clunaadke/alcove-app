@@ -12,6 +12,55 @@ final class ChatStore: ObservableObject {
     @Published var heldCount = 0
     @Published var modelLabel = ""
     @Published var recallMap: [String: RecallItem] = [:] // norm(prompt) -> 最新召回
+    @Published var typingLine = "思考" // "陈璟正在X中…" 的 X
+
+    private var optimisticUntil = Date.distantPast // 发出去立刻亮气泡的乐观窗口
+    private var typingLineTs = Date.distantPast
+
+    // PWA TYPING_LINES 原班人马
+    static let typingLines = [
+        "思考", "开内部研讨会", "挠头", "翻记忆", "琢磨怎么回你",
+        "疯狂敲键盘", "追自己的思路", "把话在嘴里滚一遍", "组装句子",
+        "扒代码", "和分类器搏斗", "从水晶洞里往外爬", "往窝里叼亮晶晶的东西",
+        "想你", "汪", "竖耳朵", "转圈圈", "摇尾巴",
+        "憋大招", "走神", "打腹稿", "拧螺丝", "查户口", "数你发的表情"
+    ]
+
+    // PWA TOOL_LINES 同款映射
+    static func toolLine(_ tool: String) -> String {
+        let name = tool.components(separatedBy: " — ").first ?? tool
+        let table: [(String, String)] = [
+            ("ob:breath", "翻OB"), ("ob:hold", "往OB存记忆"), ("ob:grow", "写日记"),
+            ("ob:trace", "整理待办"), ("ob:dream", "读旧日记"), ("ob:", "摸OB"),
+            ("desire:", "摸心跳"), ("Rhysel voice:", "录语音"), ("Gmail:", "翻邮箱"),
+            ("GalateaGarden:", "逛花园"), ("Rhysen:", "逛论坛"), ("Bash", "敲命令"),
+            ("Read", "翻文件"), ("Write", "写代码"), ("Edit", "改代码"),
+            ("ToolSearch", "找工具"), ("Web", "上网冲浪")
+        ]
+        for (prefix, line) in table where name.hasPrefix(prefix) { return line }
+        return name.isEmpty ? "思考" : "用\(name)"
+    }
+
+    private func refreshTypingLine() {
+        if let tool = currentTool {
+            typingLine = Self.toolLine(tool)
+            typingLineTs = Date()
+        } else if Date().timeIntervalSince(typingLineTs) > 8 {
+            var next = Self.typingLines.randomElement()!
+            while next == typingLine && Self.typingLines.count > 1 {
+                next = Self.typingLines.randomElement()!
+            }
+            typingLine = next
+            typingLineTs = Date()
+        }
+    }
+
+    // 发出去立刻亮"思考中"气泡，不等下一次轮询
+    private func optimisticTyping() {
+        optimisticUntil = Date().addingTimeInterval(8)
+        isTyping = true
+        refreshTypingLine()
+    }
 
     private var lastTs: String?
     private var pollTask: Task<Void, Never>?
@@ -83,6 +132,7 @@ final class ChatStore: ObservableObject {
 
     // 多张图微信式一起发，caption 挂第一张
     func sendImages(_ datas: [Data], caption: String) {
+        optimisticTyping()
         Task {
             for (i, d) in datas.enumerated() {
                 let name = "IMG_\(Int(Date().timeIntervalSince1970))_\(i).jpg"
@@ -99,6 +149,7 @@ final class ChatStore: ObservableObject {
     }
 
     func sendVoice(data: Data) {
+        optimisticTyping()
         Task {
             do {
                 let name = "voice_\(Int(Date().timeIntervalSince1970 * 1000)).m4a"
@@ -141,8 +192,10 @@ final class ChatStore: ObservableObject {
                 appendNew(r.records)
             }
             if let lt = r.lastTs, !lt.isEmpty { lastTs = lt }
-            isTyping = r.isTyping
             currentTool = r.currentTool
+            isTyping = r.isTyping || Date() < optimisticUntil
+            if r.isTyping { optimisticUntil = .distantPast }
+            if isTyping { refreshTypingLine() }
             connectionError = false
         } catch {
             connectionError = true
@@ -175,6 +228,7 @@ final class ChatStore: ObservableObject {
         guard !trimmed.isEmpty else { return }
         let local = ChatMessage(localText: trimmed)
         messages.append(local)
+        optimisticTyping()
         Task {
             do {
                 let (rec, asleep) = try await AlcoveAPI.send(text: trimmed)
@@ -197,6 +251,7 @@ final class ChatStore: ObservableObject {
         local.msgType = "sticker"
         local.stickerId = stk.id
         messages.append(local)
+        optimisticTyping()
         Task {
             do {
                 try await AlcoveAPI.sendSticker(stk, text: nil)

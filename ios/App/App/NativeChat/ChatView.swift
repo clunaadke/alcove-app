@@ -107,7 +107,10 @@ struct ChatView: View {
                         .id(msg.id)
                     }
                     if store.isTyping {
-                        TypingIndicator(tool: store.currentTool)
+                        TypingIndicator(tool: store.currentTool,
+                                        line: store.typingLine,
+                                        name: UserDefaults.standard.string(forKey: "assistantName") ?? "陈璟",
+                                        theme: theme)
                             .id("typing")
                     }
                     Color.clear.frame(height: 6).id("tail")
@@ -137,9 +140,14 @@ struct ChatView: View {
                             .shadow(color: .black.opacity(0.08), radius: 6, y: 2)
                     }
                     .padding(.trailing, 16)
-                    .padding(.bottom, 118) // 浮在输入卡片右上方
+                    .padding(.bottom, 200) // 浮在小螃蟹上方
                     .transition(.opacity)
                 }
+            }
+            .overlay(alignment: .bottomTrailing) {
+                ClawdPet(store: store)
+                    .padding(.trailing, 8)
+                    .padding(.bottom, 92) // 趴在输入卡上沿
             }
             .overlay(alignment: .bottom) { floatingInput }
             .onChange(of: inputFocused) { f in
@@ -591,31 +599,41 @@ struct TimeDivider: View {
 
 struct TypingIndicator: View {
     let tool: String?
+    var line: String = "思考"
+    var name: String = "陈璟"
+    var theme: AlcoveTheme = .haven
     @State private var animating = false
     var body: some View {
-        HStack(spacing: 6) {
-            HStack(spacing: 3) {
-                ForEach(0..<3) { i in
-                    Circle()
-                        .fill(Color.secondary)
-                        .frame(width: 6, height: 6)
-                        .opacity(animating ? 1 : 0.3)
-                        .animation(.easeInOut(duration: 0.5)
-                            .repeatForever(autoreverses: true)
-                            .delay(Double(i) * 0.18), value: animating)
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(spacing: 6) {
+                HStack(spacing: 3) {
+                    ForEach(0..<3) { i in
+                        Circle()
+                            .fill(Color.secondary)
+                            .frame(width: 6, height: 6)
+                            .opacity(animating ? 1 : 0.3)
+                            .animation(.easeInOut(duration: 0.5)
+                                .repeatForever(autoreverses: true)
+                                .delay(Double(i) * 0.18), value: animating)
+                    }
                 }
+                .padding(.horizontal, 13)
+                .padding(.vertical, 11)
+                .background(theme.bubbleAI,
+                            in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                Text("\(name)正在\(line)中…")
+                    .font(.system(size: 12))
+                    .foregroundColor(theme.textDim)
+                Spacer()
             }
-            .padding(.horizontal, 13)
-            .padding(.vertical, 11)
-            .background(Color.white.opacity(0.38),
-                        in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             if let tool, !tool.isEmpty {
+                // 工具原文她要留着：Bash — 追头像变量aa的赋值来源
                 Text(tool)
-                    .font(.system(size: 11))
-                    .foregroundColor(.secondary)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundColor(theme.textLight)
                     .lineLimit(1)
+                    .padding(.leading, 4)
             }
-            Spacer()
         }
         .onAppear { animating = true }
         .padding(.vertical, 2)

@@ -10,6 +10,7 @@
 		2FAD9763203C412B000D30F8 /* config.xml in Resources */ = {isa = PBXBuildFile; fileRef = 2FAD9762203C412B000D30F8 /* config.xml */; };
 		50379B232058CBB4000EE86E /* capacitor.config.json in Resources */ = {isa = PBXBuildFile; fileRef = 50379B222058CBB4000EE86E /* capacitor.config.json */; };
 		504EC3081FED79650016851F /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 504EC3071FED79650016851F /* AppDelegate.swift */; };
+		3F92AD591DAA424958B5F1C3 /* ClawdView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34F66C325070B92D4F9F9758 /* ClawdView.swift */; };
 		39671499582C96157471DA5D /* TerminalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B38F2E6CDFDA317AA6E2457 /* TerminalView.swift */; };
 		ABDCDCC599248F6315EFF53B /* PermissionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F37315B0DBF4B21556FF7B9 /* PermissionsView.swift */; };
 		C4CD19DA8E74F8992D7E1C30 /* SensorReporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = D12D98086598F349D1863F76 /* SensorReporter.swift */; };
@@ -35,6 +36,7 @@
 		50379B222058CBB4000EE86E /* capacitor.config.json */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.json; path = capacitor.config.json; sourceTree = "<group>"; };
 		504EC3041FED79650016851F /* App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = App.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		504EC3071FED79650016851F /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		34F66C325070B92D4F9F9758 /* ClawdView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClawdView.swift; sourceTree = "<group>"; };
 		3B38F2E6CDFDA317AA6E2457 /* TerminalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalView.swift; sourceTree = "<group>"; };
 		7F37315B0DBF4B21556FF7B9 /* PermissionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionsView.swift; sourceTree = "<group>"; };
 		D12D98086598F349D1863F76 /* SensorReporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SensorReporter.swift; sourceTree = "<group>"; };
@@ -130,6 +132,7 @@
 				F340C96B2615315FA0F9A88D /* ChatView.swift */,
 				141B61BBC3ADE771BDF6329B /* WebViewPage.swift */,
 				0D0101790978C3955D31EB1E /* RootView.swift */,
+				34F66C325070B92D4F9F9758 /* ClawdView.swift */,
 				3B38F2E6CDFDA317AA6E2457 /* TerminalView.swift */,
 				7F37315B0DBF4B21556FF7B9 /* PermissionsView.swift */,
 				D12D98086598F349D1863F76 /* SensorReporter.swift */,
@@ -263,6 +266,7 @@
 				85D4F2FA9F9B3E53BD5F3230 /* ChatView.swift in Sources */,
 				FC3B74A7638C75994A8D97B7 /* WebViewPage.swift in Sources */,
 				C3390367B9C7EF2C5CEC1265 /* RootView.swift in Sources */,
+				3F92AD591DAA424958B5F1C3 /* ClawdView.swift in Sources */,
 				39671499582C96157471DA5D /* TerminalView.swift in Sources */,
 				ABDCDCC599248F6315EFF53B /* PermissionsView.swift in Sources */,
 				C4CD19DA8E74F8992D7E1C30 /* SensorReporter.swift in Sources */,
