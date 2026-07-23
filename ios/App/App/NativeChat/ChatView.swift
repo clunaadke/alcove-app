@@ -170,7 +170,7 @@ struct ChatView: View {
                 }
             }
             .onChange(of: store.isTyping) { t in
-                if t { withAnimation { proxy.scrollTo("tail", anchor: .bottom) } }
+                if t && atBottom { withAnimation { proxy.scrollTo("tail", anchor: .bottom) } }
             }
         }
     }
