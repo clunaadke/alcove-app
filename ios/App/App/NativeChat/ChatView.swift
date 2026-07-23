@@ -12,7 +12,15 @@ struct ChatView: View {
 
     var body: some View {
         ZStack {
-            Color(.systemGroupedBackground).ignoresSafeArea()
+            // PWA 同款聊天壁纸
+            GeometryReader { geo in
+                Image("ChatWall")
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: geo.size.width, height: geo.size.height)
+                    .clipped()
+            }
+            .ignoresSafeArea()
             if store.loading {
                 ProgressView("回家中…")
             } else {
@@ -106,14 +114,14 @@ struct ChatView: View {
 
     private var bottomFade: some View {
         LinearGradient(
-            colors: [Color(.systemGroupedBackground).opacity(0),
-                     Color(.systemGroupedBackground).opacity(0.85)],
+            colors: [Color.white.opacity(0), Color.white.opacity(0.72)],
             startPoint: .top, endPoint: .bottom)
         .frame(height: 110)
         .allowsHitTesting(false)
         .ignoresSafeArea(edges: .bottom)
     }
 
+    // PWA .chat-input-capsule 同款：大胶囊两行，粉描边，透底毛玻璃
     private var floatingInput: some View {
         VStack(spacing: 4) {
             if store.connectionError {
@@ -124,44 +132,55 @@ struct ChatView: View {
                     .padding(.vertical, 3)
                     .background(.ultraThinMaterial, in: Capsule())
             }
-            HStack(alignment: .bottom, spacing: 8) {
-                PhotosPicker(selection: $photoItem, matching: .images) {
-                    Image(systemName: "plus.circle")
-                        .font(.system(size: 24))
-                        .foregroundColor(.secondary)
-                }
-                .padding(.bottom, 5)
-
-                Button { showStickers = true } label: {
-                    Image(systemName: "face.smiling")
-                        .font(.system(size: 23))
-                        .foregroundColor(.secondary)
-                }
-                .padding(.bottom, 6)
-
+            VStack(spacing: 0) {
                 TextField("说点什么…", text: $draft, axis: .vertical)
                     .focused($inputFocused)
                     .lineLimit(1...5)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(.ultraThinMaterial,
-                                in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .stroke(Color.secondary.opacity(0.22), lineWidth: 0.8))
-
-                Button {
-                    let t = draft
-                    draft = ""
-                    store.sendText(t)
-                } label: {
-                    Image(systemName: "arrow.up.circle.fill")
-                        .font(.system(size: 28))
-                        .foregroundColor(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                                         ? .secondary.opacity(0.4) : .accentColor)
+                    .font(.system(size: 15.5))
+                    .padding(.init(top: 12, leading: 14, bottom: 4, trailing: 14))
+                HStack(spacing: 2) {
+                    PhotosPicker(selection: $photoItem, matching: .images) {
+                        Image(systemName: "plus")
+                            .font(.system(size: 17, weight: .light))
+                            .foregroundColor(Color(red: 0.45, green: 0.40, blue: 0.42))
+                            .frame(width: 32, height: 32)
+                    }
+                    Button { showStickers = true } label: {
+                        Image(systemName: "face.smiling")
+                            .font(.system(size: 16, weight: .light))
+                            .foregroundColor(Color(red: 0.45, green: 0.40, blue: 0.42))
+                            .frame(width: 32, height: 32)
+                    }
+                    Spacer()
+                    Button {
+                        let t = draft
+                        draft = ""
+                        store.sendText(t)
+                    } label: {
+                        Image(systemName: "arrow.up")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(.white)
+                            .frame(width: 32, height: 32)
+                            .background(
+                                LinearGradient(
+                                    colors: [Color(red: 228/255, green: 170/255, blue: 187/255),
+                                             Color(red: 207/255, green: 148/255, blue: 166/255)],
+                                    startPoint: .topLeading, endPoint: .bottomTrailing))
+                            .clipShape(Circle())
+                            .shadow(color: Color(red: 207/255, green: 148/255, blue: 166/255).opacity(0.35),
+                                    radius: 2.5, y: 1)
+                            .opacity(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.45 : 1)
+                    }
+                    .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
-                .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                .padding(.bottom, 2)
+                .padding(.init(top: 4, leading: 6, bottom: 6, trailing: 6))
             }
+            .background(.ultraThinMaterial,
+                        in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .background(Color(red: 1, green: 250/255, blue: 252/255).opacity(0.42),
+                        in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(Color(red: 238/255, green: 205/255, blue: 216/255).opacity(0.55), lineWidth: 1))
             .padding(.horizontal, 10)
         }
         .padding(.bottom, 6)
@@ -236,8 +255,8 @@ struct MessageRow: View {
                             .foregroundColor(.secondary)
                     }
                     Text(Self.hm.string(from: msg.date))
-                        .font(.system(size: 10))
-                        .foregroundColor(Color.secondary.opacity(0.7))
+                        .font(.system(size: 10, design: .serif))
+                        .foregroundColor(Color(red: 0.2, green: 0.2, blue: 0.2))
                 }
             }
             if !isUser { Spacer(minLength: 48) }
@@ -245,18 +264,23 @@ struct MessageRow: View {
         .padding(.vertical, 2)
     }
 
+    // PWA 同款雾感气泡：user rgba(247,227,234,.44) / ai rgba(255,255,255,.38)，blur 透底
     private var bubble: some View {
         Text(msg.text)
-            .font(.system(size: 16))
-            .foregroundColor(msg.asleepAtSend ? .secondary : (isUser ? .white : .primary))
-            .padding(.horizontal, 13)
-            .padding(.vertical, 9)
+            .font(.system(size: 15))
+            .lineSpacing(4)
+            .foregroundColor(msg.asleepAtSend
+                             ? Color(red: 0.55, green: 0.53, blue: 0.54)
+                             : Color(red: 0.22, green: 0.20, blue: 0.21))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .background(.ultraThinMaterial,
+                        in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             .background(
-                isUser
-                ? AnyShapeStyle(Color.accentColor.opacity(msg.asleepAtSend ? 0.35 : 1.0))
-                : AnyShapeStyle(Color(.secondarySystemGroupedBackground))
-            )
-            .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
+                (isUser
+                 ? Color(red: 247/255, green: 227/255, blue: 234/255).opacity(0.44)
+                 : Color.white.opacity(0.38)),
+                in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             .contextMenu {
                 Button {
                     UIPasteboard.general.string = msg.text
@@ -287,10 +311,10 @@ struct MessageRow: View {
             if showThinking {
                 Text(think)
                     .font(.system(size: 13))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(Color(red: 0.42, green: 0.40, blue: 0.41))
                     .padding(10)
-                    .background(Color(.tertiarySystemFill))
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .background(Color.white.opacity(0.35),
+                                in: RoundedRectangle(cornerRadius: 12))
             }
         }
     }
@@ -340,8 +364,8 @@ struct TimeDivider: View {
     let date: Date
     var body: some View {
         Text(Self.fmt.string(from: date))
-            .font(.system(size: 11))
-            .foregroundColor(.secondary)
+            .font(.system(size: 11, design: .serif))
+            .foregroundColor(Color(red: 0.42, green: 0.40, blue: 0.41))
             .frame(maxWidth: .infinity)
             .padding(.vertical, 8)
     }
@@ -371,8 +395,10 @@ struct TypingIndicator: View {
             }
             .padding(.horizontal, 13)
             .padding(.vertical, 11)
-            .background(Color(.secondarySystemGroupedBackground))
-            .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
+            .background(.ultraThinMaterial,
+                        in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .background(Color.white.opacity(0.38),
+                        in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             if let tool, !tool.isEmpty {
                 Text(tool)
                     .font(.system(size: 11))
