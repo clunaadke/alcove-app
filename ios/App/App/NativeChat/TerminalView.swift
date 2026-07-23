@@ -1,13 +1,20 @@
 import SwiftUI
 
+private enum CCWorkState: Equatable {
+    case disconnected
+    case thinking
+    case resting
+}
+
 // 原生终端页：点头像进来看我干活的地方
 // tabs/红绿灯/工具键/命令行 全套照 PWA 搬
 struct TerminalView: View {
     @Environment(\.dismiss) private var dismiss
+    var onDismiss: (() -> Void)? = nil
     @State private var session = "main"
     @State private var output = ""
     @State private var cmd = ""
-    @State private var alive = true
+    @State private var workState: CCWorkState = .resting
     @State private var pollTask: Task<Void, Never>?
 
     private let sessions = ["main", "assistant", "gemini", "ghost"]
@@ -41,16 +48,20 @@ struct TerminalView: View {
 
     private var tabBar: some View {
         HStack(spacing: 8) {
-            Button { dismiss() } label: {
+            Button {
+                if let onDismiss { onDismiss() } else { dismiss() }
+            } label: {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 15, weight: .medium))
                     .foregroundColor(.gray)
                     .frame(width: 30, height: 30)
             }
             HStack(spacing: 5) {
-                Circle().fill(Color(red: 1, green: 0.37, blue: 0.34)).frame(width: 11, height: 11)
-                Circle().fill(Color(red: 1, green: 0.74, blue: 0.18)).frame(width: 11, height: 11)
-                Circle().fill(alive ? Color(red: 0.16, green: 0.79, blue: 0.25) : .gray)
+                Circle().fill(lampColor(.disconnected))
+                    .frame(width: 11, height: 11)
+                Circle().fill(lampColor(.thinking))
+                    .frame(width: 11, height: 11)
+                Circle().fill(lampColor(.resting))
                     .frame(width: 11, height: 11)
             }
             .padding(.trailing, 4)
@@ -77,6 +88,20 @@ struct TerminalView: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
+    }
+
+    // 三盏灯互斥：红=断线，黄=CC 正在思考/干活，绿=在线休息。
+    private func lampColor(_ lamp: CCWorkState) -> Color {
+        let active: Color
+        switch lamp {
+        case .disconnected:
+            active = Color(red: 1, green: 0.37, blue: 0.34)
+        case .thinking:
+            active = Color(red: 1, green: 0.74, blue: 0.18)
+        case .resting:
+            active = Color(red: 0.16, green: 0.79, blue: 0.25)
+        }
+        return workState == lamp ? active : active.opacity(0.18)
     }
 
     private var toolbar: some View {
@@ -148,14 +173,19 @@ struct TerminalView: View {
                                 URLQueryItem(name: "lines", value: "120")]
             guard let (data, _) = try? await AlcoveAPI.session.data(from: comps.url!),
                   let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-                alive = false
+                workState = .disconnected
                 return
             }
             if let content = obj["content"] as? String {
                 output = content
-                alive = true
+                // /api/poll 是聊天页已经在用的 CC 实时状态，不靠终端文字猜。
+                if let status = try? await AlcoveAPI.poll(since: nil, limit: 1) {
+                    workState = status.isTyping ? .thinking : .resting
+                } else {
+                    workState = .disconnected
+                }
             } else {
-                alive = false
+                workState = .disconnected
             }
         }
     }

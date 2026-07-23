@@ -240,10 +240,20 @@ final class ChatStore: ObservableObject {
                     if let lt = lastTs, confirmed.ts > lt { lastTs = confirmed.ts }
                     else if lastTs == nil { lastTs = confirmed.ts }
                 }
+                if let h = try? await AlcoveAPI.heldCount() { heldCount = h }
             } catch {
                 connectionError = true
             }
         }
+    }
+
+    func deleteMessage(_ msg: ChatMessage) {
+        messages.removeAll { $0.uid == msg.uid }
+        Task { try? await AlcoveAPI.deleteMessage(ts: msg.ts) }
+    }
+
+    func favoriteMessage(_ msg: ChatMessage) {
+        Task { try? await AlcoveAPI.favoriteMessage(ts: msg.ts, text: msg.text, role: msg.role) }
     }
 
     func sendSticker(_ stk: Sticker) {

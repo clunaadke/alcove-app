@@ -138,6 +138,19 @@ enum AlcoveAPI {
         _ = try await session.data(for: req)
     }
 
+    static func deleteMessage(ts: String) async throws {
+        _ = try await postJSON("/api/chat/delete", body: ["ts": ts])
+    }
+
+    static func favoriteMessage(ts: String, text: String, role: String) async throws {
+        _ = try await postJSON("/api/favorites/add", body: ["ts": ts, "text": text, "role": role])
+    }
+
+    static func favorites() async throws -> [[String: Any]] {
+        let obj = try await getJSON("/api/favorites")
+        return obj["items"] as? [[String: Any]] ?? []
+    }
+
     static func upload(data: Data, filename: String, caption: String) async throws -> ChatMessage? {
         var comps = URLComponents(url: fullURL("/api/upload"), resolvingAgainstBaseURL: false)!
         var items = [URLQueryItem(name: "filename", value: filename),

@@ -71,9 +71,10 @@ struct ClawdPet: View {
 
     var body: some View {
         GifView(name: gif)
-            .frame(width: 96, height: 96)
+            .frame(width: 64, height: 64)
+            .contentShape(Rectangle())
             .offset(x: savedX + dragOffset.width, y: savedY + dragOffset.height)
-            .gesture(
+            .highPriorityGesture(
                 DragGesture()
                     .onChanged { v in
                         if mood != "drag" { mood = "drag" } // 被拎起来了，不高兴
@@ -84,8 +85,8 @@ struct ClawdPet: View {
                         savedY += v.translation.height
                         // 别拖出屏幕太远，拉回可见范围
                         let bound = UIScreen.main.bounds
-                        savedX = min(max(savedX, -bound.width + 110), 8)
-                        savedY = min(max(savedY, -bound.height + 200), 8)
+                        savedX = min(max(savedX, -bound.width + 76), 4)
+                        savedY = min(max(savedY, -bound.height + 220), 4)
                         dragOffset = .zero
                         lastActivity = Date()
                         withAnimation(.spring(response: 0.35, dampingFraction: 0.55)) {}

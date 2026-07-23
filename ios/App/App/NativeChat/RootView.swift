@@ -1,22 +1,8 @@
 import SwiftUI
 
-// 顶栏按钮的去向，与 PWA 一一对应
-enum HouseTarget: String, Identifiable {
-    case sidebar, checklist, music, term
-    var id: String { rawValue }
-    var js: String {
-        switch self {
-        case .sidebar: return "toggleSidebar()" // 壁龛抽屉：大厅/Settings/FOYER/PLAY 全在里面
-        case .checklist: return "switchPage('chat'); ckToggle();"
-        case .music: return "openMusicPanel()"
-        case .term: return "switchPage('term')"
-        }
-    }
-}
-
-// App 根视图：原生聊天页 + PWA 同款顶栏，按钮直达原页面功能
+// App 根视图：原生聊天页 + 原生小屋页面。
 struct RootView: View {
-    @State private var housePage: HouseTarget?
+    @State private var housePage: HouseDestination?
     @State private var showSplash = true
     @State private var showPermissions = false
     @State private var showTerminal = false
@@ -28,9 +14,8 @@ struct RootView: View {
 
     private var avatarImage: UIImage? {
         guard !avatarDataURL.isEmpty else { return nil }
-        let b64 = avatarDataURL.contains(",")
-            ? String(avatarDataURL.split(separator: ",", maxSplits: 1)[1])
-            : avatarDataURL
+        let parts = avatarDataURL.split(separator: ",", maxSplits: 1)
+        let b64 = parts.count == 2 ? String(parts[1]) : avatarDataURL
         guard let data = Data(base64Encoded: b64) else { return nil }
         return UIImage(data: data)
     }
@@ -42,6 +27,11 @@ struct RootView: View {
         ZStack(alignment: .top) {
             ChatView()
             topBar
+            if showTerminal {
+                TerminalView(onDismiss: { withAnimation(.easeOut(duration: 0.15)) { showTerminal = false } })
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    .zIndex(20)
+            }
             if showSplash {
                 SplashView()
                     .transition(.opacity)
@@ -49,7 +39,6 @@ struct RootView: View {
             }
         }
         .onAppear {
-            WebHouse.shared.warmUp() // 后台先把小屋加载好，按钮秒开
             // 声波念完两个音节再进门，跟 PWA 一个节奏
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.3) {
                 withAnimation(.easeOut(duration: 0.6)) { showSplash = false }
@@ -60,21 +49,16 @@ struct RootView: View {
             if phase == .active { SensorReporter.shared.appActive() }
         }
         .onReceive(NotificationCenter.default.publisher(for: .alcoveShowPermissions)) { _ in
-            housePage = nil // 收起设置 WebView 再弹原生权限页
+            housePage = nil
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { showPermissions = true }
         }
         .sheet(isPresented: $showPermissions) {
             PermissionsView()
         }
-        .fullScreenCover(isPresented: $showTerminal) {
-            TerminalView()
-        }
-        .fullScreenCover(item: $housePage) { target in
-            HousePage(js: target.js) {
-                housePage = nil
-                WebHouse.shared.syncProfile() // 她可能刚改了名字、头像或主题
+        .sheet(item: $housePage) { target in
+            NativeHouseSheet(initial: target) {
+                showTerminal = true
             }
-            .preferredColorScheme(theme.isDark ? .dark : .light)
         }
         .tint(Color(red: 0.86, green: 0.44, blue: 0.57))
     }

@@ -97,13 +97,18 @@ struct ChatView: View {
                         if needsDivider(prev: prev, cur: msg) {
                             TimeDivider(date: msg.date, color: theme.textDim)
                         }
-                        MessageRow(msg: msg, store: store, theme: theme,
+                        MessageRow(msg: msg,
+                                   sticker: msg.stickerId.flatMap(store.sticker(for:)),
+                                   theme: theme,
                                    fontSize: chatFontSize,
                                    showTime: isGroupTail(cur: msg, next: next),
                                    recall: (msg.role == "assistant" && prev?.role == "user")
-                                       ? store.recall(forUserText: prev?.text ?? "") : nil) { url in
-                            viewerURL = url
-                        }
+                                       ? store.recall(forUserText: prev?.text ?? "") : nil,
+                                   onTapImage: { url in viewerURL = url },
+                                   onDelete: { store.deleteMessage(msg) },
+                                   onFavorite: { store.favoriteMessage(msg) },
+                                   onQuote: { text in draft = "「\(text.prefix(60))」\n" },
+                                   onResend: { text in store.sendText(text) })
                         .id(msg.id)
                     }
                     if store.isTyping {
@@ -119,7 +124,9 @@ struct ChatView: View {
                 }
                 .padding(.horizontal, 12)
                 .padding(.top, 52) // 顶栏 pill 悬浮让位
-                .padding(.bottom, 96) // 给悬浮输入卡片留出穿透空间
+                // 输入卡片本身没有改样式；这里多留一点真实可见区，
+                // 让最后一条消息和 thinking 不再被输入卡片/键盘压住。
+                .padding(.bottom, inputFocused ? 140 : 118)
             }
             .scrollDismissesKeyboard(.immediately) // 一滚就收，不用拖到底
             .onTapGesture { inputFocused = false } // 点空白处键盘自己下去
@@ -146,39 +153,53 @@ struct ChatView: View {
             }
             .overlay(alignment: .bottomTrailing) {
                 ClawdPet(store: store)
-                    .padding(.trailing, 8)
-                    .padding(.bottom, 92) // 趴在输入卡上沿
+                    .padding(.trailing, 12)
+                    .padding(.bottom, 154) // 初始位置在输入卡上方，不挡打字
             }
             .overlay(alignment: .bottom) { floatingInput }
+            .onAppear {
+                // messageList 是 loading 完成后才挂载的，所以在它自己的
+                // onAppear 里踩几拍到底，避免首屏停在几百条历史的最上方。
+                atBottom = true
+                scrollToTail(proxy, delays: [0, 0.08, 0.25, 0.6, 1.1], animated: false)
+            }
             .onChange(of: inputFocused) { f in
                 if f {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                        withAnimation { proxy.scrollTo("tail", anchor: .bottom) }
-                    }
+                    // 键盘升起和安全区重算不是同一帧，多踩两拍才不会露半条。
+                    scrollToTail(proxy, delays: [0.05, 0.25, 0.5], animated: true)
                 }
             }
             .onChange(of: store.messages.count) { _ in
-                guard atBottom else { return } // 翻历史时不打扰
-                for delay in [0.0, 0.15, 0.45] {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                        withAnimation(.easeOut(duration: 0.2)) {
-                            proxy.scrollTo("tail", anchor: .bottom)
-                        }
-                    }
-                }
+                guard atBottom || inputFocused else { return } // 翻历史时不打扰
+                scrollToTail(proxy, delays: [0, 0.15, 0.4], animated: true)
             }
             .onChange(of: store.loading) { loading in
                 if !loading {
-                    // 首屏几百条消息布局是分批的，跟 PWA 一样多踩几拍才能真到底
-                    for delay in [0.05, 0.3, 0.8, 1.5] {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                            proxy.scrollTo("tail", anchor: .bottom)
-                        }
-                    }
+                    scrollToTail(proxy, delays: [0.05, 0.3, 0.8, 1.5], animated: false)
                 }
             }
             .onChange(of: store.isTyping) { t in
-                if t && atBottom { withAnimation { proxy.scrollTo("tail", anchor: .bottom) } }
+                if t && (atBottom || inputFocused) {
+                    scrollToTail(proxy, delays: [0, 0.2], animated: true)
+                }
+            }
+        }
+    }
+
+    private func scrollToTail(
+        _ proxy: ScrollViewProxy,
+        delays: [Double],
+        animated: Bool
+    ) {
+        for delay in delays {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                if animated {
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        proxy.scrollTo("tail", anchor: .bottom)
+                    }
+                } else {
+                    proxy.scrollTo("tail", anchor: .bottom)
+                }
             }
         }
     }
@@ -198,19 +219,29 @@ struct ChatView: View {
     // MARK: 输入栏（悬浮透底，无实心背景）
 
     private var topFade: some View {
-        LinearGradient(
-            colors: [theme.fade.opacity(0.65), theme.fade.opacity(0)],
-            startPoint: .top, endPoint: .bottom)
-        .frame(height: 70)
+        ZStack {
+            GradientBlurView(edge: .top)
+            LinearGradient(
+                colors: [theme.fade.opacity(0.22), theme.fade.opacity(0.08), .clear],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        }
+        .frame(height: 92)
         .allowsHitTesting(false)
         .ignoresSafeArea(edges: .top)
     }
 
     private var bottomFade: some View {
-        LinearGradient(
-            colors: [theme.fade.opacity(0), theme.fade.opacity(0.72)],
-            startPoint: .top, endPoint: .bottom)
-        .frame(height: 110)
+        ZStack {
+            GradientBlurView(edge: .bottom)
+            LinearGradient(
+                colors: [.clear, theme.fade.opacity(0.06), theme.fade.opacity(0.2)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+        }
+        .frame(height: 154)
         .allowsHitTesting(false)
         .ignoresSafeArea(edges: .bottom)
     }
@@ -378,7 +409,8 @@ struct ChatView: View {
                 .stroke(theme.capsuleBorder, lineWidth: 1))
             .padding(.horizontal, 10)
         }
-        .padding(.bottom, 6)
+        // 不再额外垫一条白色安全区；背景和渐变毛玻璃直接延伸到底。
+        .padding(.bottom, 0)
     }
 
     // MARK: 表情面板（她下午做的 Stickers：陈霁/陈璟 tab + 上传 + 原比例网格）
@@ -397,12 +429,16 @@ struct ChatView: View {
 
 struct MessageRow: View {
     let msg: ChatMessage
-    @ObservedObject var store: ChatStore
+    let sticker: Sticker?
     var theme: AlcoveTheme = .haven
     var fontSize: Int = 15
     var showTime: Bool = true
     var recall: RecallItem? = nil
     var onTapImage: (URL) -> Void
+    var onDelete: (() -> Void)? = nil
+    var onFavorite: (() -> Void)? = nil
+    var onQuote: ((String) -> Void)? = nil
+    var onResend: ((String) -> Void)? = nil
     @State private var showThinking = false
     @State private var showRecall = false
 
@@ -469,6 +505,27 @@ struct MessageRow: View {
                 Button {
                     UIPasteboard.general.string = msg.text
                 } label: { Label("拷贝", systemImage: "doc.on.doc") }
+                if let onQuote {
+                    Button {
+                        onQuote(msg.text)
+                    } label: { Label("引用", systemImage: "quote.bubble") }
+                }
+                if let onFavorite {
+                    Button {
+                        onFavorite()
+                    } label: { Label("收藏", systemImage: "bookmark") }
+                }
+                if isUser, let onResend {
+                    Button {
+                        onResend(msg.text)
+                    } label: { Label("重发", systemImage: "arrow.clockwise") }
+                }
+                if let onDelete {
+                    Divider()
+                    Button(role: .destructive) {
+                        onDelete()
+                    } label: { Label("删除", systemImage: "trash") }
+                }
             }
             .textSelection(.enabled)
     }
@@ -502,7 +559,9 @@ struct MessageRow: View {
                     Image(systemName: "bubble.left.and.bubble.right")
                         .font(.system(size: 10))
                     Text(thinkingLabel(think))
-                        .italic()
+                        .transformEffect(
+                            CGAffineTransform(a: 1, b: 0, c: -0.12, d: 1, tx: 0, ty: 0)
+                        )
                     Image(systemName: showThinking ? "chevron.up" : "chevron.down")
                         .font(.system(size: 8))
                     if recall != nil {
@@ -514,8 +573,13 @@ struct MessageRow: View {
             }
             if showThinking {
                 Text(think)
-                    .font(.system(size: 13))
-                    .italic()
+                    .font(.system(size: max(11, CGFloat(fontSize) - 2)))
+                    .lineSpacing(3)
+                    // 系统中文字体没有真正的 italic 字形；用统一斜切让
+                    // 中文和英文一起倾斜，而不是只斜英文。
+                    .transformEffect(
+                        CGAffineTransform(a: 1, b: 0, c: -0.12, d: 1, tx: 0, ty: 0)
+                    )
                     .foregroundColor(theme.textDim)
                     .padding(10)
                     .background(theme.bubbleAI.opacity(0.7),
@@ -540,7 +604,7 @@ struct MessageRow: View {
 
     private var stickerBody: some View {
         Group {
-            if let sid = msg.stickerId, let stk = store.sticker(for: sid) {
+            if let stk = sticker {
                 AsyncImage(url: AlcoveAPI.stickerURL(stk.url)) { img in
                     img.resizable().scaledToFit()
                 } placeholder: { Color(.tertiarySystemFill) }
@@ -575,6 +639,34 @@ struct MessageRow: View {
         f.dateFormat = "HH:mm"
         return f
     }()
+}
+
+// 一个 UIKit 原生模糊视图配一个渐变 mask。它不会随着消息行滚动重建，
+// 比在滚动层上实时栅格化 Material + SwiftUI mask 稳定得多。
+private struct GradientBlurView: UIViewRepresentable {
+    enum Edge { case top, bottom }
+    let edge: Edge
+
+    func makeUIView(context: Context) -> UIVisualEffectView {
+        let view = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterial))
+        view.isUserInteractionEnabled = false
+        return view
+    }
+
+    func updateUIView(_ view: UIVisualEffectView, context: Context) {
+        let mask = CAGradientLayer()
+        mask.frame = view.bounds
+        mask.colors = edge == .top
+            ? [UIColor.black.cgColor, UIColor.black.withAlphaComponent(0.68).cgColor,
+               UIColor.clear.cgColor]
+            : [UIColor.clear.cgColor, UIColor.black.withAlphaComponent(0.60).cgColor,
+               UIColor.black.cgColor]
+        mask.locations = [0, 0.55, 1]
+        view.layer.mask = mask
+        DispatchQueue.main.async {
+            mask.frame = view.bounds
+        }
+    }
 }
 
 // MARK: - 小组件
