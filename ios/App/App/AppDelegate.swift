@@ -1,4 +1,5 @@
 import UIKit
+import SwiftUI
 import Capacitor
 
 @UIApplicationMain
@@ -7,7 +8,11 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        // Override point for customization after application launch.
+        // SwiftUI 原生聊天页接管根视图；Capacitor WebView 退居 WebViewPage 兜底
+        let win = UIWindow(frame: UIScreen.main.bounds)
+        win.rootViewController = UIHostingController(rootView: RootView())
+        win.makeKeyAndVisible()
+        window = win
         return true
     }
 
