@@ -3,46 +3,77 @@ import ImageIO
 
 // 远程 GIF 解码显示（小螃蟹的一窝动图都在服务器上）
 struct GifView: UIViewRepresentable {
-    let name: String // 如 "clawd-idle.gif"
+    let name: String
+    var displaySize: CGFloat = 64
 
-    func makeUIView(context: Context) -> UIImageView {
+    private static var cache: [String: UIImage] = [:]
+
+    func makeUIView(context: Context) -> UIView {
+        let container = UIView()
+        container.clipsToBounds = true
         let iv = UIImageView()
         iv.contentMode = .scaleAspectFit
         iv.clipsToBounds = true
-        iv.setContentHuggingPriority(.required, for: .horizontal)
-        iv.setContentHuggingPriority(.required, for: .vertical)
-        iv.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        iv.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
+        iv.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(iv)
+        NSLayoutConstraint.activate([
+            iv.topAnchor.constraint(equalTo: container.topAnchor),
+            iv.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            iv.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            iv.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+        ])
+        context.coordinator.imageView = iv
         load(into: iv)
-        return iv
+        return container
     }
 
-    func updateUIView(_ iv: UIImageView, context: Context) {
+    func updateUIView(_ view: UIView, context: Context) {
         if context.coordinator.current != name {
-            load(into: iv)
+            if let iv = context.coordinator.imageView { load(into: iv) }
             context.coordinator.current = name
         }
     }
 
     func makeCoordinator() -> Coordinator { Coordinator(current: name) }
-    final class Coordinator { var current: String; init(current: String) { self.current = current } }
+    final class Coordinator {
+        var current: String
+        weak var imageView: UIImageView?
+        init(current: String) { self.current = current }
+    }
 
     private func load(into iv: UIImageView) {
-        let url = AlcoveAPI.fullURL("/\(name)")
+        if let cached = Self.cache[name] {
+            iv.image = cached
+            return
+        }
+        let gifName = name
+        let size = displaySize
+        let url = AlcoveAPI.fullURL("/\(gifName)")
         URLSession.shared.dataTask(with: url) { data, _, _ in
-            guard let data, let img = Self.animatedImage(data) else { return }
-            DispatchQueue.main.async { iv.image = img }
+            guard let data, let img = Self.animatedImage(data, fitSize: size) else { return }
+            DispatchQueue.main.async {
+                Self.cache[gifName] = img
+                iv.image = img
+            }
         }.resume()
     }
 
-    static func animatedImage(_ data: Data) -> UIImage? {
+    static func animatedImage(_ data: Data, fitSize: CGFloat = 64) -> UIImage? {
         guard let src = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
         let count = CGImageSourceGetCount(src)
         guard count > 1 else { return UIImage(data: data) }
+        let px = Int(fitSize * UIScreen.main.scale)
+        let thumbOpts: [CFString: Any] = [
+            kCGImageSourceThumbnailMaxPixelSize: px,
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+        ]
         var frames: [UIImage] = []
         var duration: Double = 0
         for i in 0..<count {
-            guard let cg = CGImageSourceCreateImageAtIndex(src, i, nil) else { continue }
+            let cg = CGImageSourceCreateThumbnailAtIndex(src, i, thumbOpts as CFDictionary)
+                ?? CGImageSourceCreateImageAtIndex(src, i, nil)
+            guard let cg else { continue }
             frames.append(UIImage(cgImage: cg))
             let props = CGImageSourceCopyPropertiesAtIndex(src, i, nil) as? [CFString: Any]
             let gif = props?[kCGImagePropertyGIFDictionary] as? [CFString: Any]
@@ -75,8 +106,8 @@ struct ClawdPet: View {
     }
 
     var body: some View {
-        GifView(name: gif)
-            .frame(width: 64, height: 64)
+        GifView(name: gif, displaySize: 48)
+            .frame(width: 48, height: 48)
             .contentShape(Rectangle())
             .offset(x: savedX + dragOffset.width, y: savedY + dragOffset.height)
             .highPriorityGesture(

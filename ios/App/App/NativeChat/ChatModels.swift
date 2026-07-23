@@ -19,11 +19,7 @@ struct ChatMessage: Identifiable, Equatable {
 
     var id: UUID { uid }
 
-    var date: Date {
-        ISO8601DateFormatter.alcove.date(from: ts)
-            ?? ISO8601DateFormatter.alcoveFrac.date(from: ts)
-            ?? Date()
-    }
+    let date: Date
 
     var isSticker: Bool { msgType == "sticker" && stickerId != nil }
     var isImage: Bool {
@@ -40,10 +36,17 @@ struct ChatMessage: Identifiable, Equatable {
     static func == (lhs: ChatMessage, rhs: ChatMessage) -> Bool { lhs.uid == rhs.uid }
 
     // 服务端字段名不固定走 Codable，手动从 JSON 字典解析更宽松
+    private static func parseDate(_ ts: String) -> Date {
+        ISO8601DateFormatter.alcove.date(from: ts)
+            ?? ISO8601DateFormatter.alcoveFrac.date(from: ts)
+            ?? Date()
+    }
+
     init?(json: [String: Any]) {
         guard let ts = json["ts"] as? String,
               let role = json["role"] as? String else { return nil }
         self.ts = ts
+        self.date = Self.parseDate(ts)
         self.role = role
         self.text = json["text"] as? String ?? ""
         self.source = json["source"] as? String
@@ -62,7 +65,9 @@ struct ChatMessage: Identifiable, Equatable {
 
     // 本地乐观消息
     init(localText: String, role: String = "user") {
-        self.ts = ISO8601DateFormatter.alcoveFrac.string(from: Date())
+        let now = Date()
+        self.ts = ISO8601DateFormatter.alcoveFrac.string(from: now)
+        self.date = now
         self.role = role
         self.text = localText
         self.asleepAtSend = false

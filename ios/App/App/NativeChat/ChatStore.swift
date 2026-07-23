@@ -228,6 +228,7 @@ final class ChatStore: ObservableObject {
         guard !trimmed.isEmpty else { return }
         let local = ChatMessage(localText: trimmed)
         messages.append(local)
+        heldCount = 0
         optimisticTyping()
         Task {
             do {

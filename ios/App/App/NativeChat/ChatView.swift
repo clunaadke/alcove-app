@@ -1,6 +1,7 @@
 import SwiftUI
 import PhotosUI
 import AVFoundation
+import UniformTypeIdentifiers
 
 struct ChatView: View {
     @StateObject private var store = ChatStore()
@@ -11,6 +12,8 @@ struct ChatView: View {
     @State private var viewerURL: URL?
     @StateObject private var recorder = VoiceRecorder()
     @State private var atBottom = true
+    @State private var showCamera = false
+    @State private var showDocPicker = false
     @FocusState private var inputFocused: Bool
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("alcoveTheme") private var themeName = "haven"
@@ -61,6 +64,25 @@ struct ChatView: View {
             }
         }
         .sheet(isPresented: $showStickers) { stickerSheet }
+        .sheet(isPresented: $showCamera) {
+            CameraView { image in
+                if let jpeg = image.jpegData(compressionQuality: 0.85) {
+                    pendingImages.append((thumb: image, jpeg: jpeg))
+                }
+            }
+        }
+        .sheet(isPresented: $showDocPicker) {
+            DocumentPicker { urls in
+                for url in urls {
+                    guard url.startAccessingSecurityScopedResource() else { continue }
+                    defer { url.stopAccessingSecurityScopedResource() }
+                    if let data = try? Data(contentsOf: url) {
+                        let name = url.lastPathComponent
+                        store.sendImage(data: data, filename: name, caption: "")
+                    }
+                }
+            }
+        }
         .fullScreenCover(item: $viewerURL) { url in
             ImageViewer(url: url) { viewerURL = nil }
         }
@@ -126,7 +148,7 @@ struct ChatView: View {
                 .padding(.top, 52) // 顶栏 pill 悬浮让位
                 // 输入卡片本身没有改样式；这里多留一点真实可见区，
                 // 让最后一条消息和 thinking 不再被输入卡片/键盘压住。
-                .padding(.bottom, inputFocused ? 140 : 118)
+                .padding(.bottom, inputFocused ? 180 : 140)
             }
             .scrollDismissesKeyboard(.immediately) // 一滚就收，不用拖到底
             .onTapGesture { inputFocused = false } // 点空白处键盘自己下去
@@ -147,14 +169,14 @@ struct ChatView: View {
                             .shadow(color: .black.opacity(0.08), radius: 6, y: 2)
                     }
                     .padding(.trailing, 16)
-                    .padding(.bottom, 200) // 浮在小螃蟹上方
+                    .padding(.bottom, 204)
                     .transition(.opacity)
                 }
             }
             .overlay(alignment: .bottomTrailing) {
                 ClawdPet(store: store)
                     .padding(.trailing, 12)
-                    .padding(.bottom, 154) // 初始位置在输入卡上方，不挡打字
+                    .padding(.bottom, 148)
             }
             .overlay(alignment: .bottom) { floatingInput }
             .onAppear {
@@ -236,12 +258,12 @@ struct ChatView: View {
         ZStack {
             GradientBlurView(edge: .bottom)
             LinearGradient(
-                colors: [.clear, theme.fade.opacity(0.06), theme.fade.opacity(0.2)],
+                colors: [.clear, theme.fade.opacity(0.04), theme.fade.opacity(0.12), theme.fade.opacity(0.22)],
                 startPoint: .top,
                 endPoint: .bottom
             )
         }
-        .frame(height: 154)
+        .frame(height: 200)
         .allowsHitTesting(false)
         .ignoresSafeArea(edges: .bottom)
     }
@@ -317,8 +339,21 @@ struct ChatView: View {
                         }
                         Spacer()
                     } else {
-                        PhotosPicker(selection: $photoItems, maxSelectionCount: 9, matching: .images) {
+                        Menu {
+                            Button { showCamera = true } label: {
+                                Label("拍照或录像", systemImage: "camera")
+                            }
+                            Button { showDocPicker = true } label: {
+                                Label("选取文件", systemImage: "doc")
+                            }
+                        } label: {
                             Image(systemName: "paperclip")
+                                .font(.system(size: 16, weight: .light))
+                                .foregroundColor(theme.textDim)
+                                .frame(width: 32, height: 32)
+                        }
+                        PhotosPicker(selection: $photoItems, maxSelectionCount: 9, matching: .images) {
+                            Image(systemName: "photo.on.rectangle")
                                 .font(.system(size: 16, weight: .light))
                                 .foregroundColor(theme.textDim)
                                 .frame(width: 32, height: 32)
@@ -492,8 +527,16 @@ struct MessageRow: View {
     }
 
     // PWA 同款雾感气泡：user rgba(247,227,234,.44) / ai rgba(255,255,255,.38)，blur 透底
+    private func markdownText(_ raw: String) -> Text {
+        if let attr = try? AttributedString(markdown: raw,
+                options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)) {
+            return Text(attr)
+        }
+        return Text(raw)
+    }
+
     private var bubble: some View {
-        Text(msg.text)
+        markdownText(msg.text)
             .font(.system(size: CGFloat(fontSize)))
             .lineSpacing(4)
             .foregroundColor(msg.asleepAtSend ? theme.textDim : theme.text)
@@ -559,9 +602,8 @@ struct MessageRow: View {
                     Image(systemName: "bubble.left.and.bubble.right")
                         .font(.system(size: 10))
                     Text(thinkingLabel(think))
-                        .transformEffect(
-                            CGAffineTransform(a: 1, b: 0, c: -0.12, d: 1, tx: 0, ty: 0)
-                        )
+                        .font(.custom("Georgia", size: 11))
+                        .italic()
                     Image(systemName: showThinking ? "chevron.up" : "chevron.down")
                         .font(.system(size: 8))
                     if recall != nil {
@@ -573,13 +615,10 @@ struct MessageRow: View {
             }
             if showThinking {
                 Text(think)
-                    .font(.system(size: max(11, CGFloat(fontSize) - 2)))
+                    .font(.custom("Georgia", size: max(11, CGFloat(fontSize) - 2)))
+                    .italic()
                     .lineSpacing(3)
-                    // 系统中文字体没有真正的 italic 字形；用统一斜切让
-                    // 中文和英文一起倾斜，而不是只斜英文。
-                    .transformEffect(
-                        CGAffineTransform(a: 1, b: 0, c: -0.12, d: 1, tx: 0, ty: 0)
-                    )
+                    .fixedSize(horizontal: false, vertical: true)
                     .foregroundColor(theme.textDim)
                     .padding(10)
                     .background(theme.bubbleAI.opacity(0.7),
@@ -647,15 +686,15 @@ private struct GradientBlurView: UIViewRepresentable {
     enum Edge { case top, bottom }
     let edge: Edge
 
+    func makeCoordinator() -> Coordinator { Coordinator() }
+    final class Coordinator {
+        var mask: CAGradientLayer?
+    }
+
     func makeUIView(context: Context) -> UIVisualEffectView {
         let view = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterial))
         view.isUserInteractionEnabled = false
-        return view
-    }
-
-    func updateUIView(_ view: UIVisualEffectView, context: Context) {
         let mask = CAGradientLayer()
-        mask.frame = view.bounds
         mask.colors = edge == .top
             ? [UIColor.black.cgColor, UIColor.black.withAlphaComponent(0.68).cgColor,
                UIColor.clear.cgColor]
@@ -663,8 +702,17 @@ private struct GradientBlurView: UIViewRepresentable {
                UIColor.black.cgColor]
         mask.locations = [0, 0.55, 1]
         view.layer.mask = mask
-        DispatchQueue.main.async {
+        context.coordinator.mask = mask
+        return view
+    }
+
+    func updateUIView(_ view: UIVisualEffectView, context: Context) {
+        guard let mask = context.coordinator.mask else { return }
+        if mask.frame != view.bounds {
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
             mask.frame = view.bounds
+            CATransaction.commit()
         }
     }
 }
@@ -848,4 +896,67 @@ struct RecallPop: View {
 
 extension URL: Identifiable {
     public var id: String { absoluteString }
+}
+
+struct CameraView: UIViewControllerRepresentable {
+    var onCapture: (UIImage) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let picker = UIImagePickerController()
+        picker.sourceType = .camera
+        picker.delegate = context.coordinator
+        return picker
+    }
+
+    func updateUIViewController(_ vc: UIImagePickerController, context: Context) {}
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+        let parent: CameraView
+        init(_ parent: CameraView) { self.parent = parent }
+
+        func imagePickerController(_ picker: UIImagePickerController,
+                                   didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]) {
+            if let image = info[.originalImage] as? UIImage {
+                parent.onCapture(image)
+            }
+            parent.dismiss()
+        }
+
+        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+            parent.dismiss()
+        }
+    }
+}
+
+struct DocumentPicker: UIViewControllerRepresentable {
+    var onPick: ([URL]) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.item])
+        picker.allowsMultipleSelection = true
+        picker.delegate = context.coordinator
+        return picker
+    }
+
+    func updateUIViewController(_ vc: UIDocumentPickerViewController, context: Context) {}
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    class Coordinator: NSObject, UIDocumentPickerDelegate {
+        let parent: DocumentPicker
+        init(_ parent: DocumentPicker) { self.parent = parent }
+
+        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+            parent.onPick(urls)
+            parent.dismiss()
+        }
+
+        func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+            parent.dismiss()
+        }
+    }
 }

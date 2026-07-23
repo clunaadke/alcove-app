@@ -16,6 +16,7 @@ struct TerminalView: View {
     @State private var cmd = ""
     @State private var workState: CCWorkState = .resting
     @State private var pollTask: Task<Void, Never>?
+    @FocusState private var cmdFocused: Bool
 
     private let sessions = ["main", "assistant", "gemini", "ghost"]
 
@@ -33,6 +34,7 @@ struct TerminalView: View {
                         .id("out")
                 }
                 .background(Color(red: 0.07, green: 0.07, blue: 0.09))
+                .onTapGesture { cmdFocused = false }
                 .onChange(of: output) { _ in
                     proxy.scrollTo("out", anchor: .bottom)
                 }
@@ -141,6 +143,7 @@ struct TerminalView: View {
                 .foregroundColor(.white)
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.never)
+                .focused($cmdFocused)
                 .onSubmit(sendCmd)
             Button(action: sendCmd) {
                 Image(systemName: "chevron.right")

@@ -100,20 +100,10 @@ struct NativeHouseSheet: View {
                             NotificationCenter.default.post(name: .alcoveShowPermissions, object: nil)
                         }
                     })
-                case .checklist:
-                    NativeChecklistView()
-                case .music:
-                    NativeMusicView()
-                case .clockwork:
-                    ClockworkView()
-                case .search:
-                    NativeSearchView()
-                case .favorites:
-                    NativeFavoritesView()
-                case .crosstalk, .radio, .coread, .liao, .daddyDay:
+                case .crosstalk, .coread, .liao:
                     NativePlayView(destination: route)
                 default:
-                    NativeDataPanel(destination: route)
+                    WebHouseView(destination: route)
                 }
             }
         }
@@ -132,9 +122,7 @@ struct NativeHouseSheet: View {
             }
         }
         .preferredColorScheme(theme.isDark ? .dark : .light)
-        .presentationDetents(route == .checklist || route == .music
-            ? [.fraction(0.62), .fraction(0.86)]
-            : [.fraction(0.86)])
+        .presentationDetents([.fraction(0.86)])
         .presentationDragIndicator(.visible)
     }
 
@@ -181,7 +169,7 @@ private struct NativeSidebarView: View {
     private let foyer: [HouseDestination] = [
         .memory, .dreams, .shelf, .desire, .nianlun, .clockwork, .album, .portrait, .impression
     ]
-    private let play: [HouseDestination] = [.crosstalk, .radio, .coread, .liao, .daddyDay]
+    private let play: [HouseDestination] = [.crosstalk, .coread, .liao]
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -1201,6 +1189,88 @@ private struct NativeFavoritesView: View {
     }
 }
 
+private struct WebHouseView: View {
+    let destination: HouseDestination
+    @AppStorage("alcoveTheme") private var themeName = "haven"
+    private var theme: AlcoveTheme { .named(themeName) }
+
+    private var jsCommand: String {
+        switch destination {
+        case .checklist: return "ckOpenDrawer()"
+        case .music: return "openMusicPanel()"
+        case .memory: return "showPanel('memory')"
+        case .dreams: return "showPanel('dreams')"
+        case .shelf: return "showPanel('shelf')"
+        case .desire: return "showPanel('desire')"
+        case .nianlun: return "showPanel('nianlun')"
+        case .clockwork: return "showPanel('fatiao')"
+        case .album: return "showPanel('album')"
+        case .portrait: return "showPanel('portrait')"
+        case .impression: return "showPanel('impression')"
+        case .search: return "showPanel('search')"
+        case .favorites: return "showPanel('favorites')"
+        case .calendar: return "showPanel('calendar')"
+        case .sex: return "showPanel('sex')"
+        case .usage: return "showPanel('usage')"
+        default: return "showPanel('memory')"
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: 8) {
+            Text(destination.title)
+                .font(.system(size: 17, weight: .semibold, design: .serif))
+                .padding(.top, 12)
+            PanelWebView(url: AlcoveAPI.fullURL("/"), jsCommand: jsCommand)
+                .clipShape(RoundedRectangle(cornerRadius: 18))
+                .overlay(RoundedRectangle(cornerRadius: 18).stroke(theme.glassBorder, lineWidth: 1))
+        }
+        .padding(.horizontal, 12).padding(.bottom, 12)
+    }
+}
+
+private struct PanelWebView: UIViewRepresentable {
+    let url: URL
+    let jsCommand: String
+
+    func makeCoordinator() -> Coordinator { Coordinator(jsCommand: jsCommand) }
+
+    func makeUIView(context: Context) -> WKWebView {
+        let config = WKWebViewConfiguration()
+        config.allowsInlineMediaPlayback = true
+        let view = WKWebView(frame: .zero, configuration: config)
+        view.scrollView.contentInsetAdjustmentBehavior = .never
+        view.isOpaque = false
+        view.backgroundColor = .clear
+        view.navigationDelegate = context.coordinator
+        view.load(URLRequest(url: url))
+        return view
+    }
+
+    func updateUIView(_ uiView: WKWebView, context: Context) {}
+
+    class Coordinator: NSObject, WKNavigationDelegate {
+        let jsCommand: String
+        init(jsCommand: String) { self.jsCommand = jsCommand }
+
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            let hideCSS = """
+            var s=document.createElement('style');
+            s.textContent=`
+                .chat-input-capsule,.top-pill-bar,#clawd-pet,.typing-indicator,
+                .chat-messages,.chat-container>.scroll-anchor,
+                #music-overlay,#ck-overlay{display:none!important}
+                .sidebar-overlay{display:none!important}
+                body{background:transparent!important}
+            `;
+            document.head.appendChild(s);
+            """
+            let open = "setTimeout(function(){ \(jsCommand); }, 300);"
+            webView.evaluateJavaScript(hideCSS + open)
+        }
+    }
+}
+
 private struct NativePlayView: View {
     let destination: HouseDestination
     @AppStorage("alcoveTheme") private var themeName = "haven"
@@ -1208,10 +1278,9 @@ private struct NativePlayView: View {
     private var url: URL {
         switch destination {
         case .crosstalk: return URL(string: "https://clunaadke.github.io/crosstalk/#https://vrnhyhofzzmbgzaarbaz.supabase.co")!
-        case .radio: return URL(string: "https://clunaadke.github.io/chime/")!
         case .coread: return AlcoveAPI.fullURL("/read/")
         case .liao: return AlcoveAPI.fullURL("/liao")
-        default: return AlcoveAPI.fullURL("/daddy-day.html")
+        default: return AlcoveAPI.fullURL("/")
         }
     }
     var body: some View {
