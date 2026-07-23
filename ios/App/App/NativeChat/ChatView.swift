@@ -115,7 +115,8 @@ struct ChatView: View {
                 .padding(.top, 52) // 顶栏 pill 悬浮让位
                 .padding(.bottom, 96) // 给悬浮输入卡片留出穿透空间
             }
-            .scrollDismissesKeyboard(.interactively)
+            .scrollDismissesKeyboard(.immediately) // 一滚就收，不用拖到底
+            .onTapGesture { inputFocused = false } // 点空白处键盘自己下去
             .overlay(alignment: .top) { topFade }
             .overlay(alignment: .bottom) { bottomFade }
             .overlay(alignment: .bottom) { floatingInput }
