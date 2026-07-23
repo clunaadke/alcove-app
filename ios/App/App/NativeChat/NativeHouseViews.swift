@@ -671,18 +671,22 @@ private final class MusicModel: ObservableObject {
         timeObserver = player?.addPeriodicTimeObserver(
             forInterval: CMTime(seconds: 0.5, preferredTimescale: 600), queue: .main
         ) { [weak self] time in
-            guard let self, let item = self.player?.currentItem else { return }
-            let dur = item.duration.seconds
-            if dur.isFinite && dur > 0 {
-                self.duration = dur
-                self.progress = time.seconds
+            Task { @MainActor in
+                guard let self, let item = self.player?.currentItem else { return }
+                let dur = item.duration.seconds
+                if dur.isFinite && dur > 0 {
+                    self.duration = dur
+                    self.progress = time.seconds
+                }
             }
         }
         NotificationCenter.default.addObserver(
             forName: .AVPlayerItemDidPlayToEndTime,
             object: player?.currentItem, queue: .main) { [weak self] _ in
-            self?.isPlaying = false
-            self?.progress = self?.duration ?? 0
+            Task { @MainActor in
+                self?.isPlaying = false
+                self?.progress = self?.duration ?? 0
+            }
         }
     }
 
@@ -884,7 +888,7 @@ private final class DataPanelModel: ObservableObject {
             }
             records = rows.map(record)
             error = ""
-        } catch { error = "这一页暂时够不着" }
+        } catch { self.error = "这一页暂时够不着" }
     }
 
     private func flatten(_ object: [String: Any]) -> [[String: Any]] {
