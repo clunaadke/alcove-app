@@ -18,6 +18,8 @@ enum HouseTarget: String, Identifiable {
 struct RootView: View {
     @State private var housePage: HouseTarget?
     @State private var showSplash = true
+    @State private var showPermissions = false
+    @Environment(\.scenePhase) private var scenePhase
     @AppStorage("assistantName") private var assistantName = "陈璟"
     @AppStorage("assistantAvatarDataURL") private var avatarDataURL = ""
     @AppStorage("alcoveTheme") private var themeName = "haven"
@@ -53,6 +55,16 @@ struct RootView: View {
             }
         }
         .preferredColorScheme(theme.isDark ? .dark : .light) // 跟 PWA 主题走，不跟系统
+        .onChange(of: scenePhase) { phase in
+            if phase == .active { SensorReporter.shared.appActive() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .alcoveShowPermissions)) { _ in
+            housePage = nil // 收起设置 WebView 再弹原生权限页
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { showPermissions = true }
+        }
+        .sheet(isPresented: $showPermissions) {
+            PermissionsView()
+        }
         .fullScreenCover(item: $housePage) { target in
             HousePage(js: target.js) {
                 housePage = nil

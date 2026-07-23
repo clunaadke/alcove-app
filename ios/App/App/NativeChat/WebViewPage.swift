@@ -1,6 +1,10 @@
 import SwiftUI
 import WebKit
 
+extension Notification.Name {
+    static let alcoveShowPermissions = Notification.Name("alcoveShowPermissions")
+}
+
 // 常驻共享 WebView：app 启动就后台加载 PWA，按钮点开秒进对应页面，
 // 大厅/清单/音乐/终端这些功能全部走原页面本体，一个不少
 final class WebHouse: NSObject, WKNavigationDelegate {
@@ -20,7 +24,13 @@ final class WebHouse: NSObject, WKNavigationDelegate {
         webView.scrollView.contentInsetAdjustmentBehavior = .never
         super.init()
         webView.navigationDelegate = self
-        webView.load(URLRequest(url: AlcoveAPI.base))
+        // UA 标记：PWA 借此识别自己跑在 app 里（设置页显示"系统权限"板块）
+        webView.evaluateJavaScript("navigator.userAgent") { [weak self] ua, _ in
+            if let ua = ua as? String {
+                self?.webView.customUserAgent = ua + " AlcoveApp"
+            }
+            self?.webView.load(URLRequest(url: AlcoveAPI.base))
+        }
     }
 
     func warmUp() { _ = webView } // 触发懒加载
@@ -62,6 +72,20 @@ final class WebHouse: NSObject, WKNavigationDelegate {
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
         loaded = false
+    }
+
+    // 拦 alcove:// 内部跳转：设置页"系统权限"入口走这里弹原生页
+    func webView(_ webView: WKWebView,
+                 decidePolicyFor navigationAction: WKNavigationAction,
+                 decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        if let url = navigationAction.request.url, url.scheme == "alcove" {
+            decisionHandler(.cancel)
+            if url.host == "permissions" {
+                NotificationCenter.default.post(name: .alcoveShowPermissions, object: nil)
+            }
+            return
+        }
+        decisionHandler(.allow)
     }
 
     func reloadIfNeeded() {

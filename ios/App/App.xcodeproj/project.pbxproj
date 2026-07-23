@@ -10,6 +10,8 @@
 		2FAD9763203C412B000D30F8 /* config.xml in Resources */ = {isa = PBXBuildFile; fileRef = 2FAD9762203C412B000D30F8 /* config.xml */; };
 		50379B232058CBB4000EE86E /* capacitor.config.json in Resources */ = {isa = PBXBuildFile; fileRef = 50379B222058CBB4000EE86E /* capacitor.config.json */; };
 		504EC3081FED79650016851F /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 504EC3071FED79650016851F /* AppDelegate.swift */; };
+		ABDCDCC599248F6315EFF53B /* PermissionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F37315B0DBF4B21556FF7B9 /* PermissionsView.swift */; };
+		C4CD19DA8E74F8992D7E1C30 /* SensorReporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = D12D98086598F349D1863F76 /* SensorReporter.swift */; };
 		35A0019BCC3823CD268EF0A5 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 881453AC5C0212F4F3132131 /* Theme.swift */; };
 		8290508D999D2D95288C4322 /* StickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A43B1091CD75CBF8CFA6480F /* StickerSheet.swift */; };
 		6ECECFA96ACA1E7FCB6EC4C9 /* VoiceRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C74573F468DECCBED204D37 /* VoiceRecorder.swift */; };
@@ -32,6 +34,8 @@
 		50379B222058CBB4000EE86E /* capacitor.config.json */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.json; path = capacitor.config.json; sourceTree = "<group>"; };
 		504EC3041FED79650016851F /* App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = App.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		504EC3071FED79650016851F /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		7F37315B0DBF4B21556FF7B9 /* PermissionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionsView.swift; sourceTree = "<group>"; };
+		D12D98086598F349D1863F76 /* SensorReporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SensorReporter.swift; sourceTree = "<group>"; };
 		881453AC5C0212F4F3132131 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		A43B1091CD75CBF8CFA6480F /* StickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StickerSheet.swift; sourceTree = "<group>"; };
 		7C74573F468DECCBED204D37 /* VoiceRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceRecorder.swift; sourceTree = "<group>"; };
@@ -124,6 +128,8 @@
 				F340C96B2615315FA0F9A88D /* ChatView.swift */,
 				141B61BBC3ADE771BDF6329B /* WebViewPage.swift */,
 				0D0101790978C3955D31EB1E /* RootView.swift */,
+				7F37315B0DBF4B21556FF7B9 /* PermissionsView.swift */,
+				D12D98086598F349D1863F76 /* SensorReporter.swift */,
 				881453AC5C0212F4F3132131 /* Theme.swift */,
 				A43B1091CD75CBF8CFA6480F /* StickerSheet.swift */,
 				7C74573F468DECCBED204D37 /* VoiceRecorder.swift */,
@@ -254,6 +260,8 @@
 				85D4F2FA9F9B3E53BD5F3230 /* ChatView.swift in Sources */,
 				FC3B74A7638C75994A8D97B7 /* WebViewPage.swift in Sources */,
 				C3390367B9C7EF2C5CEC1265 /* RootView.swift in Sources */,
+				ABDCDCC599248F6315EFF53B /* PermissionsView.swift in Sources */,
+				C4CD19DA8E74F8992D7E1C30 /* SensorReporter.swift in Sources */,
 				35A0019BCC3823CD268EF0A5 /* Theme.swift in Sources */,
 				8290508D999D2D95288C4322 /* StickerSheet.swift in Sources */,
 				6ECECFA96ACA1E7FCB6EC4C9 /* VoiceRecorder.swift in Sources */,

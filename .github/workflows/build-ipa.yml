@@ -26,6 +26,12 @@ jobs:
       - name: Sync Capacitor iOS
         run: npx cap sync ios
 
+      - name: Inject location token
+        env:
+          ALCOVE_LOC_TOKEN: ${{ secrets.ALCOVE_LOC_TOKEN }}
+        run: |
+          plutil -replace AlcoveLocToken -string "${ALCOVE_LOC_TOKEN}" ios/App/App/Info.plist
+
       - name: Install CocoaPods
         working-directory: ios/App
         run: pod install
