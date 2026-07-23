@@ -41,11 +41,17 @@ jobs:
             -destination 'generic/platform=iOS' \
             -archivePath output/Alcove.xcarchive \
             archive \
-            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
             DEVELOPMENT_TEAM="" \
             PROVISIONING_PROFILE_SPECIFIER=""
+
+      - name: Strip signatures from frameworks
+        working-directory: ios/App
+        run: |
+          find output/Alcove.xcarchive/Products/Applications/App.app/Frameworks -name '*.framework' -exec sh -c 'codesign --remove-signature "$1/$(basename "$1" .framework)" 2>/dev/null || true' _ {} \;
+          codesign --remove-signature output/Alcove.xcarchive/Products/Applications/App.app/App 2>/dev/null || true
 
       - name: Package unsigned IPA
         working-directory: ios/App
