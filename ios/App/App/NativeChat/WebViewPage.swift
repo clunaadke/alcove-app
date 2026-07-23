@@ -45,6 +45,14 @@ final class WebHouse: NSObject, WKNavigationDelegate {
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         loaded = true
+        // 原生聊天页已经接管聊天，把 WebView 里的 PWA 聊天层永久藏掉：
+        // 面板/抽屉打开时浮在干净壁纸上，看起来就是纯功能页
+        let hideChat = """
+        (function(){var st=document.createElement('style');st.id='alcove-app-hide';
+        st.textContent='#page-chat .chat-messages,#page-chat .chat-input-bar,#page-chat .chat-topbar,#page-chat .chat-fade-top,.clawd-pet,.scroll-bottom-btn{display:none!important}';
+        if(!document.getElementById('alcove-app-hide'))document.head.appendChild(st);})();
+        """
+        webView.evaluateJavaScript(hideChat, completionHandler: nil)
         for js in pendingJS { webView.evaluateJavaScript(js, completionHandler: nil) }
         pendingJS.removeAll()
         syncProfile()
