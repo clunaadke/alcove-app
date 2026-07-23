@@ -8,6 +8,11 @@ struct GifView: UIViewRepresentable {
     func makeUIView(context: Context) -> UIImageView {
         let iv = UIImageView()
         iv.contentMode = .scaleAspectFit
+        iv.clipsToBounds = true
+        iv.setContentHuggingPriority(.required, for: .horizontal)
+        iv.setContentHuggingPriority(.required, for: .vertical)
+        iv.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        iv.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
         load(into: iv)
         return iv
     }
