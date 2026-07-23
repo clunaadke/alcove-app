@@ -98,7 +98,9 @@ struct ChatView: View {
                         }
                         MessageRow(msg: msg, store: store, theme: theme,
                                    fontSize: chatFontSize,
-                                   showTime: isGroupTail(cur: msg, next: next)) { url in
+                                   showTime: isGroupTail(cur: msg, next: next),
+                                   recall: (msg.role == "assistant" && prev?.role == "user")
+                                       ? store.recall(forUserText: prev?.text ?? "") : nil) { url in
                             viewerURL = url
                         }
                         .id(msg.id)
@@ -363,8 +365,10 @@ struct MessageRow: View {
     var theme: AlcoveTheme = .haven
     var fontSize: Int = 15
     var showTime: Bool = true
+    var recall: RecallItem? = nil
     var onTapImage: (URL) -> Void
     @State private var showThinking = false
+    @State private var showRecall = false
 
     private var isUser: Bool { msg.role == "user" }
 
@@ -374,6 +378,8 @@ struct MessageRow: View {
             VStack(alignment: isUser ? .trailing : .leading, spacing: 3) {
                 if let think = msg.thinking, !think.isEmpty {
                     thinkingBlock(think)
+                } else if recall != nil {
+                    recallBadge // 没有思绪行时角标单独站一行，和 PWA 一致
                 }
                 if msg.isSticker {
                     stickerBody
@@ -463,6 +469,9 @@ struct MessageRow: View {
                         .italic()
                     Image(systemName: showThinking ? "chevron.up" : "chevron.down")
                         .font(.system(size: 8))
+                    if recall != nil {
+                        recallBadge.padding(.leading, 6)
+                    }
                 }
                 .font(.system(size: 11))
                 .foregroundColor(.secondary)
@@ -476,6 +485,20 @@ struct MessageRow: View {
                     .background(theme.bubbleAI.opacity(0.7),
                                 in: RoundedRectangle(cornerRadius: 12))
             }
+        }
+    }
+
+    private var recallBadge: some View {
+        Button {
+            showRecall = true
+        } label: {
+            Text("✦ ··· 记起")
+                .font(.system(size: 11, design: .serif))
+                .italic()
+                .foregroundColor(theme.textDim)
+        }
+        .sheet(isPresented: $showRecall) {
+            if let recall { RecallPop(item: recall) }
         }
     }
 
@@ -619,7 +642,7 @@ struct ImageViewer: View {
     @State private var scale: CGFloat = 1
 
     var body: some View {
-        ZStack(alignment: .topTrailing) {
+        ZStack {
             Color.black.ignoresSafeArea()
             AsyncImage(url: url) { img in
                 img.resizable().scaledToFit()
@@ -628,6 +651,9 @@ struct ImageViewer: View {
                         .onChanged { scale = max(1, $0) }
                         .onEnded { _ in withAnimation { scale = 1 } })
             } placeholder: { ProgressView().tint(.white) }
+            .frame(maxWidth: .infinity, maxHeight: .infinity) // 居中铺满
+        }
+        .overlay(alignment: .topTrailing) {
             Button {
                 dismiss()
             } label: {
@@ -638,6 +664,47 @@ struct ImageViewer: View {
             }
         }
         .onTapGesture { dismiss() }
+    }
+}
+
+// 记忆召回弹层：✦记起 点开看召回的记忆卡片
+struct RecallPop: View {
+    let item: RecallItem
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    ForEach(Array(item.cards.enumerated()), id: \.offset) { _, card in
+                        VStack(alignment: .leading, spacing: 6) {
+                            if !card.date.isEmpty {
+                                Text(card.date)
+                                    .font(.system(size: 11, design: .serif))
+                                    .foregroundColor(.secondary)
+                            }
+                            Text(card.body)
+                                .font(.system(size: 13))
+                                .foregroundColor(.primary.opacity(0.85))
+                        }
+                        .padding(12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color(.secondarySystemGroupedBackground),
+                                    in: RoundedRectangle(cornerRadius: 14))
+                    }
+                }
+                .padding(14)
+            }
+            .background(Color(.systemGroupedBackground))
+            .navigationTitle("✦ 那一刻我想起的")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button { dismiss() } label: { Image(systemName: "xmark") }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
     }
 }
 

@@ -97,6 +97,51 @@ struct Sticker: Identifiable, Equatable {
     }
 }
 
+// OB 记忆召回记录：prompt 匹配她的消息，content 是召回的记忆原文
+struct RecallItem {
+    let prompt: String
+    let content: String
+    let ts: String
+
+    init?(json: [String: Any]) {
+        guard let prompt = json["prompt"] as? String,
+              let content = json["content"] as? String else { return nil }
+        self.prompt = prompt
+        self.content = content
+        self.ts = json["ts"] as? String ?? ""
+    }
+
+    // 与 PWA formatRecallCards 同款切卡：按 [bucket_id: 分段
+    var cards: [(date: String, body: String)] {
+        let parts = content.components(separatedBy: "[bucket_id:")
+            .enumerated()
+            .compactMap { i, p -> String? in
+                let s = (i == 0 ? p : "[bucket_id:" + p)
+                    .replacingOccurrences(of: #"^===[^\n]*\n?"#, with: "", options: .regularExpression)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                return s.isEmpty ? nil : s
+            }
+        var out: [(String, String)] = []
+        for p in parts {
+            var date = ""
+            if let r = p.range(of: #"\[(?:created|date):([0-9.\-]+)\]"#, options: .regularExpression) {
+                date = String(p[r]).replacingOccurrences(of: #"[\[\]]|created:|date:"#, with: "", options: .regularExpression)
+            }
+            let lines = p.components(separatedBy: "\n")
+            let body = (lines.first?.hasPrefix("[bucket_id:") == true
+                        ? lines.dropFirst().joined(separator: "\n") : p)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if !body.isEmpty { out.append((date, body)) }
+        }
+        return out.isEmpty ? [("", content)] : out
+    }
+
+    static func norm(_ s: String) -> String {
+        s.components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }.joined(separator: " ")
+    }
+}
+
 extension ISO8601DateFormatter {
     static let alcove: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter()

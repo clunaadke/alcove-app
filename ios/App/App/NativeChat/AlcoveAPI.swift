@@ -97,6 +97,12 @@ enum AlcoveAPI {
         return raw.compactMap(Sticker.init(json:))
     }
 
+    static func recalls(limit: Int = 200) async throws -> [RecallItem] {
+        let obj = try await getJSON("/api/recall/list?limit=\(limit)")
+        let raw = obj["items"] as? [[String: Any]] ?? []
+        return raw.compactMap(RecallItem.init(json:))
+    }
+
     static func modelLabel() async throws -> String {
         let obj = try await getJSON("/api/cc/model")
         return obj["label"] as? String ?? ""

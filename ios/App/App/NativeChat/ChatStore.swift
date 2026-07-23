@@ -11,6 +11,7 @@ final class ChatStore: ObservableObject {
     @Published var connectionError = false
     @Published var heldCount = 0
     @Published var modelLabel = ""
+    @Published var recallMap: [String: RecallItem] = [:] // norm(prompt) -> 最新召回
 
     private var lastTs: String?
     private var pollTask: Task<Void, Never>?
@@ -34,7 +35,23 @@ final class ChatStore: ObservableObject {
             if let label = try? await AlcoveAPI.modelLabel() {
                 self?.modelLabel = label
             }
+            await self?.loadRecalls()
         }
+    }
+
+    // 记忆召回可视化：给"✦记起"角标供数据
+    func loadRecalls() async {
+        guard let items = try? await AlcoveAPI.recalls() else { return }
+        var map: [String: RecallItem] = [:]
+        for it in items { // list 新→旧，保留最新
+            let k = RecallItem.norm(it.prompt)
+            if !k.isEmpty && map[k] == nil { map[k] = it }
+        }
+        recallMap = map
+    }
+
+    func recall(forUserText text: String) -> RecallItem? {
+        recallMap[RecallItem.norm(text)]
     }
 
     // 攒气泡：入屏入库不触发回复
@@ -134,6 +151,9 @@ final class ChatStore: ObservableObject {
 
     // 追加服务器消息，同时清理已被确认的本地乐观气泡
     private func appendNew(_ recs: [ChatMessage]) {
+        if recs.contains(where: { $0.role == "assistant" }) {
+            Task { await loadRecalls() } // 我开口了，召回记录可能刚落库
+        }
         var out = messages
         for rec in recs {
             if rec.role == "user",
