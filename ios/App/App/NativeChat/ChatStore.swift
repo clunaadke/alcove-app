@@ -14,6 +14,7 @@ final class ChatStore: ObservableObject {
     @Published var recallMap: [String: RecallItem] = [:] // norm(prompt) -> 最新召回
     @Published var typingLine = "思考" // "陈璟正在X中…" 的 X
 
+    private var heldGen = 0
     private var optimisticUntil = Date.distantPast // 发出去立刻亮气泡的乐观窗口
     private var typingLineTs = Date.distantPast
 
@@ -109,9 +110,11 @@ final class ChatStore: ObservableObject {
         guard !trimmed.isEmpty else { return }
         let local = ChatMessage(localText: trimmed)
         messages.append(local)
+        let gen = heldGen
         Task {
             do {
                 let (held, rec) = try await AlcoveAPI.sendHold(text: trimmed)
+                guard gen == heldGen else { return }
                 heldCount = held
                 if let confirmed = rec,
                    let idx = messages.lastIndex(where: { $0.uid == local.uid }) {
@@ -229,6 +232,7 @@ final class ChatStore: ObservableObject {
         let local = ChatMessage(localText: trimmed)
         messages.append(local)
         heldCount = 0
+        heldGen += 1
         optimisticTyping()
         Task {
             do {
