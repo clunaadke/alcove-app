@@ -2,6 +2,8 @@ import SwiftUI
 
 // PWA 开屏原样复刻：声波与休止符——两个音节中间空一拍，我们开始的地方
 struct SplashView: View {
+    @AppStorage("alcoveTheme") private var themeName = "haven"
+    private var theme: AlcoveTheme { .named(themeName) }
     @State private var barsUp = false
     @State private var glowPulse = false
     @State private var titleIn = false
@@ -19,17 +21,14 @@ struct SplashView: View {
 
     var body: some View {
         ZStack {
-            LinearGradient(
-                colors: [Color(red: 253/255, green: 250/255, blue: 251/255),
-                         Color(red: 251/255, green: 243/255, blue: 246/255),
-                         Color(red: 248/255, green: 237/255, blue: 241/255)],
-                startPoint: .topLeading, endPoint: .bottomTrailing)
+            LinearGradient(colors: theme.splashBg,
+                           startPoint: .topLeading, endPoint: .bottomTrailing)
             .ignoresSafeArea()
 
             GeometryReader { geo in
-                glow(size: 460, color: Color(red: 238/255, green: 190/255, blue: 205/255).opacity(0.40))
+                glow(size: 460, color: theme.splashGlowA)
                     .position(x: geo.size.width * 1.05, y: -geo.size.height * 0.02)
-                glow(size: 400, color: Color(red: 244/255, green: 214/255, blue: 224/255).opacity(0.34))
+                glow(size: 400, color: theme.splashGlowB)
                     .position(x: -geo.size.width * 0.05, y: geo.size.height * 1.0)
 
                 petal(size: 16, rotate: 24, x: geo.size.width * 0.22, height: geo.size.height, duration: 8.5, delay: 0.9)
@@ -44,8 +43,7 @@ struct SplashView: View {
                         if let bar {
                             Capsule()
                                 .fill(LinearGradient(
-                                    colors: [Color(red: 228/255, green: 170/255, blue: 187/255),
-                                             Color(red: 207/255, green: 148/255, blue: 166/255)],
+                                    colors: [theme.splashBarTop, theme.splashBarBottom],
                                     startPoint: .top, endPoint: .bottom))
                                 .frame(width: 3.5, height: bar.h)
                                 .scaleEffect(y: barsUp ? 1 : 0.08, anchor: .center)
@@ -64,7 +62,7 @@ struct SplashView: View {
                     .font(.system(size: 38, weight: .light, design: .serif))
                     .italic()
                     .tracking(2)
-                    .foregroundColor(Color(red: 207/255, green: 148/255, blue: 166/255))
+                    .foregroundColor(theme.splashTitle)
                     .opacity(titleIn ? 1 : 0)
                     .blur(radius: titleIn ? 0 : 10)
                     .offset(y: titleIn ? 0 : 8)
@@ -73,7 +71,7 @@ struct SplashView: View {
                 Text("LUNA & RHYSEL")
                     .font(.system(size: 12))
                     .tracking(subIn ? 4.5 : 10)
-                    .foregroundColor(Color(red: 0.62, green: 0.58, blue: 0.60))
+                    .foregroundColor(theme.textLight)
                     .padding(.top, 8)
                     .opacity(subIn ? 1 : 0)
                     .animation(.easeOut(duration: 1.1).delay(1.15), value: subIn)
@@ -101,7 +99,7 @@ struct SplashView: View {
     private func petal(size: CGFloat, rotate: Double, x: CGFloat, height: CGFloat,
                        duration: Double, delay: Double) -> some View {
         Ellipse()
-            .stroke(Color(red: 238/255, green: 198/255, blue: 210/255), lineWidth: 1.1)
+            .stroke(theme.splashPetal, lineWidth: 1.1)
             .frame(width: size * 0.38, height: size * 0.62)
             .rotationEffect(.degrees(rotate))
             .position(x: x, y: petalsFall ? height + 40 : -36)

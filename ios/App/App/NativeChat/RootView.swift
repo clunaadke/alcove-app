@@ -20,6 +20,8 @@ struct RootView: View {
     @State private var showSplash = true
     @AppStorage("assistantName") private var assistantName = "陈璟"
     @AppStorage("assistantAvatarDataURL") private var avatarDataURL = ""
+    @AppStorage("alcoveTheme") private var themeName = "haven"
+    private var theme: AlcoveTheme { .named(themeName) }
 
     private var avatarImage: UIImage? {
         guard !avatarDataURL.isEmpty else { return nil }
@@ -30,8 +32,8 @@ struct RootView: View {
         return UIImage(data: data)
     }
 
-    private let glassStroke = Color(red: 210/255, green: 210/255, blue: 218/255).opacity(0.22)
-    private let textDim = Color(red: 0.42, green: 0.40, blue: 0.41)
+    private var glassStroke: Color { theme.glassBorder }
+    private var textDim: Color { theme.textDim }
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -50,13 +52,13 @@ struct RootView: View {
                 withAnimation(.easeOut(duration: 0.6)) { showSplash = false }
             }
         }
-        .preferredColorScheme(.light) // PWA 是固定浅色主题，材质不许跟系统变黑
+        .preferredColorScheme(theme.isDark ? .dark : .light) // 跟 PWA 主题走，不跟系统
         .fullScreenCover(item: $housePage) { target in
             HousePage(js: target.js) {
                 housePage = nil
-                WebHouse.shared.syncProfile() // 她可能刚在设置里改了名字或头像
+                WebHouse.shared.syncProfile() // 她可能刚改了名字、头像或主题
             }
-            .preferredColorScheme(.light)
+            .preferredColorScheme(theme.isDark ? .dark : .light)
         }
         .tint(Color(red: 0.86, green: 0.44, blue: 0.57))
     }
@@ -68,7 +70,7 @@ struct RootView: View {
                 Text(assistantName)
                     .font(.system(size: 13, weight: .semibold))
                     .tracking(1.5)
-                    .foregroundColor(Color(red: 0.22, green: 0.20, blue: 0.21))
+                    .foregroundColor(theme.text)
                 Text("a word")
                     .font(.system(size: 11))
                     .foregroundColor(textDim)
@@ -76,7 +78,7 @@ struct RootView: View {
             .padding(.horizontal, 28)
             .padding(.vertical, 5)
             .background(.ultraThinMaterial, in: Capsule())
-            .background(Color.white.opacity(0.45), in: Capsule())
+            .background(theme.glassTint, in: Capsule())
             .overlay(Capsule().stroke(glassStroke, lineWidth: 1))
             .shadow(color: .black.opacity(0.06), radius: 8, y: 4)
 
@@ -128,7 +130,7 @@ struct RootView: View {
         ZStack { content() }
             .frame(width: size, height: size)
             .background(.ultraThinMaterial, in: Circle())
-            .background(Color.white.opacity(0.4), in: Circle())
+            .background(theme.glassTint, in: Circle())
             .overlay(Circle().stroke(glassStroke, lineWidth: 1))
             .shadow(color: .black.opacity(0.06), radius: 8, y: 4)
             .contentShape(Circle())

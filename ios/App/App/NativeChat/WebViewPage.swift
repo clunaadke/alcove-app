@@ -53,6 +53,11 @@ final class WebHouse: NSObject, WKNavigationDelegate {
                 UserDefaults.standard.set(avatar, forKey: "assistantAvatarDataURL")
             }
         }
+        webView.evaluateJavaScript("localStorage.getItem('alcove-theme') || 'haven'") { v, _ in
+            if let theme = v as? String, !theme.isEmpty {
+                UserDefaults.standard.set(theme, forKey: "alcoveTheme")
+            }
+        }
     }
 
     func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {

@@ -11,7 +11,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // SwiftUI 原生聊天页接管根视图；其余页面走常驻 WebHouse WebView
         let win = UIWindow(frame: UIScreen.main.bounds)
         let host = UIHostingController(rootView: RootView())
-        host.overrideUserInterfaceStyle = .light // PWA 固定浅色，材质不随系统深色变黑
+        // 深浅由 RootView 按 PWA 主题设置，不在这里锁死
         win.rootViewController = host
         win.makeKeyAndVisible()
         window = win

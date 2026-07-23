@@ -12,20 +12,29 @@ struct ChatView: View {
     @StateObject private var recorder = VoiceRecorder()
     @FocusState private var inputFocused: Bool
     @Environment(\.scenePhase) private var scenePhase
+    @AppStorage("alcoveTheme") private var themeName = "haven"
+    private var theme: AlcoveTheme { .named(themeName) }
 
     var body: some View {
         ZStack {
-            // PWA 同款聊天壁纸
-            GeometryReader { geo in
-                Image("ChatWall")
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: geo.size.width, height: geo.size.height)
-                    .clipped()
+            // PWA 同款聊天壁纸：haven 铺图，midnight 深色渐变
+            if theme.usesWallImage {
+                GeometryReader { geo in
+                    Image("ChatWall")
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: geo.size.width, height: geo.size.height)
+                        .clipped()
+                }
+                .ignoresSafeArea()
+            } else {
+                LinearGradient(colors: theme.wallGradient,
+                               startPoint: .top, endPoint: .bottom)
+                    .ignoresSafeArea()
             }
-            .ignoresSafeArea()
             if store.loading {
                 ProgressView("回家中…")
+                    .tint(theme.textDim)
             } else {
                 messageList
             }
@@ -65,9 +74,9 @@ struct ChatView: View {
                         let prev = idx > 0 ? store.messages[idx - 1] : nil
                         let next = idx + 1 < store.messages.count ? store.messages[idx + 1] : nil
                         if needsDivider(prev: prev, cur: msg) {
-                            TimeDivider(date: msg.date)
+                            TimeDivider(date: msg.date, color: theme.textDim)
                         }
-                        MessageRow(msg: msg, store: store,
+                        MessageRow(msg: msg, store: store, theme: theme,
                                    showTime: isGroupTail(cur: msg, next: next)) { url in
                             viewerURL = url
                         }
@@ -128,7 +137,7 @@ struct ChatView: View {
 
     private var topFade: some View {
         LinearGradient(
-            colors: [Color.white.opacity(0.65), Color.white.opacity(0)],
+            colors: [theme.fade.opacity(0.65), theme.fade.opacity(0)],
             startPoint: .top, endPoint: .bottom)
         .frame(height: 70)
         .allowsHitTesting(false)
@@ -137,7 +146,7 @@ struct ChatView: View {
 
     private var bottomFade: some View {
         LinearGradient(
-            colors: [Color.white.opacity(0), Color.white.opacity(0.72)],
+            colors: [theme.fade.opacity(0), theme.fade.opacity(0.72)],
             startPoint: .top, endPoint: .bottom)
         .frame(height: 110)
         .allowsHitTesting(false)
@@ -191,10 +200,10 @@ struct ChatView: View {
                         Circle().fill(Color.red).frame(width: 8, height: 8)
                         Text(String(format: "%d:%02d", recorder.seconds / 60, recorder.seconds % 60))
                             .font(.system(size: 15).monospacedDigit())
-                            .foregroundColor(Color(red: 0.35, green: 0.32, blue: 0.33))
+                            .foregroundColor(theme.text)
                         Text("录音中…")
                             .font(.system(size: 14))
-                            .foregroundColor(Color(red: 0.55, green: 0.52, blue: 0.53))
+                            .foregroundColor(theme.textDim)
                         Spacer()
                     }
                     .padding(.init(top: 12, leading: 16, bottom: 4, trailing: 14))
@@ -210,7 +219,7 @@ struct ChatView: View {
                         Button { recorder.cancel() } label: {
                             Image(systemName: "xmark")
                                 .font(.system(size: 15, weight: .light))
-                                .foregroundColor(Color(red: 0.45, green: 0.40, blue: 0.42))
+                                .foregroundColor(theme.textDim)
                                 .frame(width: 32, height: 32)
                         }
                         Spacer()
@@ -218,25 +227,25 @@ struct ChatView: View {
                         PhotosPicker(selection: $photoItems, maxSelectionCount: 9, matching: .images) {
                             Image(systemName: "paperclip")
                                 .font(.system(size: 16, weight: .light))
-                                .foregroundColor(Color(red: 0.45, green: 0.40, blue: 0.42))
+                                .foregroundColor(theme.textDim)
                                 .frame(width: 32, height: 32)
                         }
                         Button { showStickers = true } label: {
                             Image(systemName: "face.smiling")
                                 .font(.system(size: 16, weight: .light))
-                                .foregroundColor(Color(red: 0.45, green: 0.40, blue: 0.42))
+                                .foregroundColor(theme.textDim)
                                 .frame(width: 32, height: 32)
                         }
                         Button { recorder.start() } label: {
                             Image(systemName: "mic")
                                 .font(.system(size: 16, weight: .light))
-                                .foregroundColor(Color(red: 0.45, green: 0.40, blue: 0.42))
+                                .foregroundColor(theme.textDim)
                                 .frame(width: 32, height: 32)
                         }
                         if !store.modelLabel.isEmpty {
                             Text(store.modelLabel)
                                 .font(.system(size: 12))
-                                .foregroundColor(Color(red: 0.62, green: 0.58, blue: 0.60))
+                                .foregroundColor(theme.textLight)
                                 .padding(.leading, 4)
                         }
                         Spacer()
@@ -249,7 +258,7 @@ struct ChatView: View {
                             ZStack(alignment: .topTrailing) {
                                 Image(systemName: "arrow.turn.down.left")
                                     .font(.system(size: 15, weight: .light))
-                                    .foregroundColor(Color(red: 0.45, green: 0.40, blue: 0.42))
+                                    .foregroundColor(theme.textDim)
                                     .frame(width: 32, height: 32)
                                 if store.heldCount > 0 {
                                     Text("\(store.heldCount)")
@@ -257,7 +266,7 @@ struct ChatView: View {
                                         .foregroundColor(.white)
                                         .padding(.horizontal, 4)
                                         .frame(minWidth: 15, minHeight: 15)
-                                        .background(Color(red: 207/255, green: 148/255, blue: 166/255), in: Capsule())
+                                        .background(theme.sendBottom, in: Capsule())
                                         .offset(x: 3, y: -3)
                                 }
                             }
@@ -288,11 +297,10 @@ struct ChatView: View {
                             .frame(width: 32, height: 32)
                             .background(
                                 LinearGradient(
-                                    colors: [Color(red: 228/255, green: 170/255, blue: 187/255),
-                                             Color(red: 207/255, green: 148/255, blue: 166/255)],
+                                    colors: [theme.sendTop, theme.sendBottom],
                                     startPoint: .topLeading, endPoint: .bottomTrailing))
                             .clipShape(Circle())
-                            .shadow(color: Color(red: 207/255, green: 148/255, blue: 166/255).opacity(0.35),
+                            .shadow(color: theme.sendBottom.opacity(0.35),
                                     radius: 2.5, y: 1)
                             .opacity(canSend || recorder.isRecording ? 1 : 0.45)
                     }
@@ -302,10 +310,10 @@ struct ChatView: View {
             }
             .background(.ultraThinMaterial,
                         in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .background(Color(red: 1, green: 250/255, blue: 252/255).opacity(0.42),
+            .background(theme.capsuleTint,
                         in: RoundedRectangle(cornerRadius: 20, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(Color(red: 238/255, green: 205/255, blue: 216/255).opacity(0.55), lineWidth: 1))
+                .stroke(theme.capsuleBorder, lineWidth: 1))
             .padding(.horizontal, 10)
         }
         .padding(.bottom, 6)
@@ -328,6 +336,7 @@ struct ChatView: View {
 struct MessageRow: View {
     let msg: ChatMessage
     @ObservedObject var store: ChatStore
+    var theme: AlcoveTheme = .haven
     var showTime: Bool = true
     var onTapImage: (URL) -> Void
     @State private var showThinking = false
@@ -348,7 +357,7 @@ struct MessageRow: View {
                         imageBody(raw)
                     }
                     if msg.isAudio, let raw = msg.attachmentUrl {
-                        AudioBubble(url: AlcoveAPI.attachmentURL(raw), isUser: isUser)
+                        AudioBubble(url: AlcoveAPI.attachmentURL(raw), isUser: isUser, theme: theme)
                     }
                     if !msg.text.isEmpty && !(msg.isSticker) {
                         bubble
@@ -369,7 +378,7 @@ struct MessageRow: View {
                         if showTime {
                             Text(Self.hm.string(from: msg.date))
                                 .font(.system(size: 10, design: .serif))
-                                .foregroundColor(Color(red: 0.2, green: 0.2, blue: 0.2))
+                                .foregroundColor(theme.timestamp)
                         }
                     }
                 }
@@ -384,16 +393,11 @@ struct MessageRow: View {
         Text(msg.text)
             .font(.system(size: 15))
             .lineSpacing(4)
-            .foregroundColor(msg.asleepAtSend
-                             ? Color(red: 0.55, green: 0.53, blue: 0.54)
-                             : Color(red: 0.22, green: 0.20, blue: 0.21))
+            .foregroundColor(msg.asleepAtSend ? theme.textDim : theme.text)
             .padding(.horizontal, 12)
             .padding(.vertical, 7)
-            .background(
-                (isUser
-                 ? Color(red: 247/255, green: 227/255, blue: 234/255).opacity(0.44)
-                 : Color.white.opacity(0.38)),
-                in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .background(isUser ? theme.bubbleUser : theme.bubbleAI,
+                        in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             .contextMenu {
                 Button {
                     UIPasteboard.general.string = msg.text
@@ -424,9 +428,9 @@ struct MessageRow: View {
             if showThinking {
                 Text(think)
                     .font(.system(size: 13))
-                    .foregroundColor(Color(red: 0.42, green: 0.40, blue: 0.41))
+                    .foregroundColor(theme.textDim)
                     .padding(10)
-                    .background(Color.white.opacity(0.35),
+                    .background(theme.bubbleAI.opacity(0.7),
                                 in: RoundedRectangle(cornerRadius: 12))
             }
         }
@@ -475,10 +479,11 @@ struct MessageRow: View {
 
 struct TimeDivider: View {
     let date: Date
+    var color: Color = Color(red: 0.42, green: 0.40, blue: 0.41)
     var body: some View {
         Text(Self.fmt.string(from: date))
             .font(.system(size: 11, design: .serif))
-            .foregroundColor(Color(red: 0.42, green: 0.40, blue: 0.41))
+            .foregroundColor(color)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 8)
     }
@@ -527,6 +532,7 @@ struct TypingIndicator: View {
 struct AudioBubble: View {
     let url: URL
     let isUser: Bool
+    var theme: AlcoveTheme = .haven
     @State private var player: AVPlayer?
     @State private var playing = false
 
@@ -555,14 +561,11 @@ struct AudioBubble: View {
                 Text("语音")
                     .font(.system(size: 14))
             }
-            .foregroundColor(Color(red: 0.35, green: 0.30, blue: 0.32))
+            .foregroundColor(theme.text)
             .padding(.horizontal, 14)
             .padding(.vertical, 9)
-            .background(
-                (isUser
-                 ? Color(red: 247/255, green: 227/255, blue: 234/255).opacity(0.44)
-                 : Color.white.opacity(0.38)),
-                in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .background(isUser ? theme.bubbleUser : theme.bubbleAI,
+                        in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         }
     }
 }
