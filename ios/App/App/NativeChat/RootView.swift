@@ -3,6 +3,7 @@ import SwiftUI
 // App 根视图：原生聊天页 + PWA 同款顶栏，其余页面 WebView 兜底
 struct RootView: View {
     @State private var showHouse = false
+    @State private var showSplash = true
     @AppStorage("assistantName") private var assistantName = "陈璟"
 
     private let glassStroke = Color(red: 210/255, green: 210/255, blue: 218/255).opacity(0.22)
@@ -12,6 +13,17 @@ struct RootView: View {
         ZStack(alignment: .top) {
             ChatView()
             topBar
+            if showSplash {
+                SplashView()
+                    .transition(.opacity)
+                    .zIndex(10)
+            }
+        }
+        .onAppear {
+            // 声波念完两个音节再进门，跟 PWA 一个节奏
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.3) {
+                withAnimation(.easeOut(duration: 0.6)) { showSplash = false }
+            }
         }
         .preferredColorScheme(.light) // PWA 是固定浅色主题，材质不许跟系统变黑
         .fullScreenCover(isPresented: $showHouse) {
