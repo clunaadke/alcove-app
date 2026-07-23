@@ -1,0 +1,15 @@
+node_modules/
+.DS_Store
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+ios/App/Pods/
+ios/App/output/
+build/
+*.ipa
+*.app
+*.dSYM
+*.p12
+*.mobileprovision
+*.provisionprofile
+.env
+.env.*

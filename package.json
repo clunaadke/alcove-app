@@ -1,0 +1,21 @@
+{
+  "name": "alcove",
+  "version": "1.0.0",
+  "description": "Alcove - iOS app wrapper",
+  "private": true,
+  "scripts": {
+    "cap:sync": "npx cap sync ios",
+    "cap:open": "npx cap open ios"
+  },
+  "dependencies": {
+    "@capacitor/core": "^6",
+    "@capacitor/ios": "^6",
+    "@capacitor/keyboard": "^6",
+    "@capacitor/splash-screen": "^6",
+    "@capacitor/status-bar": "^6"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6",
+    "typescript": "^7.0.2"
+  }
+}
