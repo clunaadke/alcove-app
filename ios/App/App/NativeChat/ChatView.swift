@@ -15,6 +15,7 @@ struct ChatView: View {
     @State private var showCamera = false
     @State private var showDocPicker = false
     @State private var showPhotoPicker = false
+    @State private var inputBarHeight: CGFloat = 90
     @FocusState private var inputFocused: Bool
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("alcoveTheme") private var themeName = "haven"
@@ -150,15 +151,13 @@ struct ChatView: View {
                                         theme: theme)
                             .id("typing")
                     }
-                    Color.clear.frame(height: 6).id("tail")
+                    Color.clear.frame(height: 1).id("tail")
                         .onAppear { atBottom = true }
                         .onDisappear { atBottom = false }
+                    Color.clear.frame(height: inputBarHeight)
                 }
                 .padding(.horizontal, 12)
-                .padding(.top, 52) // 顶栏 pill 悬浮让位
-                // 输入卡片本身没有改样式；这里多留一点真实可见区，
-                // 让最后一条消息和 thinking 不再被输入卡片/键盘压住。
-                .padding(.bottom, 90)
+                .padding(.top, 52)
             }
             .scrollDismissesKeyboard(.immediately) // 一滚就收，不用拖到底
             .onTapGesture { inputFocused = false } // 点空白处键盘自己下去
@@ -269,12 +268,12 @@ struct ChatView: View {
         ZStack {
             GradientBlurView(edge: .bottom)
             LinearGradient(
-                colors: [.clear, theme.fade.opacity(0.04), theme.fade.opacity(0.12), theme.fade.opacity(0.22)],
+                colors: [.clear, theme.fade.opacity(0.10), theme.fade.opacity(0.25), theme.fade.opacity(0.45)],
                 startPoint: .top,
                 endPoint: .bottom
             )
         }
-        .frame(height: 200)
+        .frame(height: 160)
         .allowsHitTesting(false)
         .ignoresSafeArea(edges: .bottom)
     }
@@ -452,7 +451,11 @@ struct ChatView: View {
                 .stroke(theme.capsuleBorder, lineWidth: 1))
             .padding(.horizontal, 10)
         }
-        .padding(.bottom, 6)
+        .padding(.bottom, 12)
+        .background(GeometryReader { geo in
+            Color.clear.preference(key: InputBarHeightKey.self, value: geo.size.height)
+        })
+        .onPreferenceChange(InputBarHeightKey.self) { inputBarHeight = $0 }
     }
 
     // MARK: 表情面板（她下午做的 Stickers：陈霁/陈璟 tab + 上传 + 原比例网格）
@@ -699,7 +702,7 @@ private struct GradientBlurView: UIViewRepresentable {
     }
 
     func makeUIView(context: Context) -> UIVisualEffectView {
-        let view = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterial))
+        let view = UIVisualEffectView(effect: UIBlurEffect(style: .systemThinMaterial))
         view.isUserInteractionEnabled = false
         let mask = CAGradientLayer()
         mask.colors = edge == .top
@@ -898,6 +901,13 @@ struct RecallPop: View {
             }
         }
         .presentationDetents([.medium, .large])
+    }
+}
+
+private struct InputBarHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 90
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
     }
 }
 
