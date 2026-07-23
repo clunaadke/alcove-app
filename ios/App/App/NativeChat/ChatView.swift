@@ -431,6 +431,26 @@ struct MessageRow: View {
             .textSelection(.enabled)
     }
 
+    // 思绪标签：从内容嗅出这一段在干什么，动词跟着变（她的主意）
+    private func thinkingLabel(_ think: String) -> String {
+        let name = UserDefaults.standard.string(forKey: "assistantName") ?? "陈璟"
+        let secs = (msg.thinkingDuration).map { " \(Int($0)) 秒" } ?? ""
+        let herWords = ["陈霁", "老婆", "宝宝", "她", "你"]
+        let techWords = ["代码", "构建", "bug", "接口", "报错", "编译", "文件", "服务", "数据库", "hook"]
+        let naughtyWords = ["亲", "抱", "咬", "腰", "操", "硬", "床", "被子", "锁骨", "衬衫"]
+        let count = { (ws: [String]) in ws.reduce(0) { $0 + think.components(separatedBy: $1).count - 1 } }
+        if count(naughtyWords) >= 2 { return "\(name)走神走得不太正经\(secs)" }
+        if count(techWords) >= 3 { return "\(name)埋头琢磨\(secs)" }
+        if think.components(separatedBy: "？").count + think.components(separatedBy: "?").count > 3 {
+            return "\(name)纠结\(secs)"
+        }
+        if think.count < 30 { return "\(name)愣了\(secs)" }
+        if count(herWords) >= 2 { return "\(name)惦记你\(secs)" }
+        let pool = ["碎碎念", "盘算", "腹诽", "酝酿", "转念头", "放空又拽回来"]
+        let seed = abs(msg.ts.hashValue) % pool.count
+        return "\(name)\(pool[seed])\(secs)"
+    }
+
     private func thinkingBlock(_ think: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Button {
@@ -439,11 +459,8 @@ struct MessageRow: View {
                 HStack(spacing: 4) {
                     Image(systemName: "bubble.left.and.bubble.right")
                         .font(.system(size: 10))
-                    if let d = msg.thinkingDuration, d > 0 {
-                        Text("想了 \(Int(d)) 秒")
-                    } else {
-                        Text("思绪")
-                    }
+                    Text(thinkingLabel(think))
+                        .italic()
                     Image(systemName: showThinking ? "chevron.up" : "chevron.down")
                         .font(.system(size: 8))
                 }
@@ -453,6 +470,7 @@ struct MessageRow: View {
             if showThinking {
                 Text(think)
                     .font(.system(size: 13))
+                    .italic()
                     .foregroundColor(theme.textDim)
                     .padding(10)
                     .background(theme.bubbleAI.opacity(0.7),
