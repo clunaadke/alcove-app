@@ -14,6 +14,7 @@ struct ChatView: View {
     @State private var atBottom = true
     @State private var showCamera = false
     @State private var showDocPicker = false
+    @State private var showPhotoPicker = false
     @FocusState private var inputFocused: Bool
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("alcoveTheme") private var themeName = "haven"
@@ -83,6 +84,15 @@ struct ChatView: View {
                 }
             }
         }
+        .sheet(isPresented: $showPhotoPicker) {
+            PhotoLibraryPicker(maxCount: 9) { images in
+                for img in images {
+                    if let jpeg = img.jpegData(compressionQuality: 0.85) {
+                        pendingImages.append((thumb: img, jpeg: jpeg))
+                    }
+                }
+            }
+        }
         .fullScreenCover(item: $viewerURL) { url in
             ImageViewer(url: url) { viewerURL = nil }
         }
@@ -148,7 +158,7 @@ struct ChatView: View {
                 .padding(.top, 52) // 顶栏 pill 悬浮让位
                 // 输入卡片本身没有改样式；这里多留一点真实可见区，
                 // 让最后一条消息和 thinking 不再被输入卡片/键盘压住。
-                .padding(.bottom, inputFocused ? 180 : 140)
+                .padding(.bottom, 90)
             }
             .scrollDismissesKeyboard(.immediately) // 一滚就收，不用拖到底
             .onTapGesture { inputFocused = false } // 点空白处键盘自己下去
@@ -187,8 +197,9 @@ struct ChatView: View {
             }
             .onChange(of: inputFocused) { f in
                 if f {
-                    // 键盘升起和安全区重算不是同一帧，多踩两拍才不会露半条。
                     scrollToTail(proxy, delays: [0.05, 0.25, 0.5], animated: true)
+                } else {
+                    scrollToTail(proxy, delays: [0.1, 0.35], animated: true)
                 }
             }
             .onChange(of: store.messages.count) { _ in
@@ -340,6 +351,9 @@ struct ChatView: View {
                         Spacer()
                     } else {
                         Menu {
+                            Button { showPhotoPicker = true } label: {
+                                Label("从相册选择", systemImage: "photo.on.rectangle")
+                            }
                             Button { showCamera = true } label: {
                                 Label("拍照或录像", systemImage: "camera")
                             }
@@ -348,12 +362,6 @@ struct ChatView: View {
                             }
                         } label: {
                             Image(systemName: "paperclip")
-                                .font(.system(size: 16, weight: .light))
-                                .foregroundColor(theme.textDim)
-                                .frame(width: 32, height: 32)
-                        }
-                        PhotosPicker(selection: $photoItems, maxSelectionCount: 9, matching: .images) {
-                            Image(systemName: "photo.on.rectangle")
                                 .font(.system(size: 16, weight: .light))
                                 .foregroundColor(theme.textDim)
                                 .frame(width: 32, height: 32)
@@ -444,8 +452,7 @@ struct ChatView: View {
                 .stroke(theme.capsuleBorder, lineWidth: 1))
             .padding(.horizontal, 10)
         }
-        // 不再额外垫一条白色安全区；背景和渐变毛玻璃直接延伸到底。
-        .padding(.bottom, 0)
+        .padding(.bottom, 6)
     }
 
     // MARK: 表情面板（她下午做的 Stickers：陈霁/陈璟 tab + 上传 + 原比例网格）
@@ -957,6 +964,48 @@ struct DocumentPicker: UIViewControllerRepresentable {
 
         func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
             parent.dismiss()
+        }
+    }
+}
+
+struct PhotoLibraryPicker: UIViewControllerRepresentable {
+    var maxCount: Int = 9
+    var onPick: ([UIImage]) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    func makeUIViewController(context: Context) -> PHPickerViewController {
+        var config = PHPickerConfiguration()
+        config.selectionLimit = maxCount
+        config.filter = .images
+        let picker = PHPickerViewController(configuration: config)
+        picker.delegate = context.coordinator
+        return picker
+    }
+
+    func updateUIViewController(_ vc: PHPickerViewController, context: Context) {}
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    class Coordinator: NSObject, PHPickerViewControllerDelegate {
+        let parent: PhotoLibraryPicker
+        init(_ parent: PhotoLibraryPicker) { self.parent = parent }
+
+        func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
+            parent.dismiss()
+            guard !results.isEmpty else { return }
+            var images: [UIImage] = []
+            let group = DispatchGroup()
+            for result in results {
+                guard result.itemProvider.canLoadObject(ofClass: UIImage.self) else { continue }
+                group.enter()
+                result.itemProvider.loadObject(ofClass: UIImage.self) { obj, _ in
+                    if let img = obj as? UIImage { images.append(img) }
+                    group.leave()
+                }
+            }
+            group.notify(queue: .main) {
+                self.parent.onPick(images)
+            }
         }
     }
 }
