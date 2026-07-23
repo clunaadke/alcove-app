@@ -10,6 +10,7 @@ struct ChatView: View {
     @State private var pendingImages: [(thumb: UIImage, jpeg: Data)] = []
     @State private var viewerURL: URL?
     @StateObject private var recorder = VoiceRecorder()
+    @State private var atBottom = true
     @FocusState private var inputFocused: Bool
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("alcoveTheme") private var themeName = "haven"
@@ -110,6 +111,8 @@ struct ChatView: View {
                             .id("typing")
                     }
                     Color.clear.frame(height: 6).id("tail")
+                        .onAppear { atBottom = true }
+                        .onDisappear { atBottom = false }
                 }
                 .padding(.horizontal, 12)
                 .padding(.top, 52) // 顶栏 pill 悬浮让位
@@ -119,6 +122,25 @@ struct ChatView: View {
             .onTapGesture { inputFocused = false } // 点空白处键盘自己下去
             .overlay(alignment: .top) { topFade }
             .overlay(alignment: .bottom) { bottomFade }
+            .overlay(alignment: .bottomTrailing) {
+                if !atBottom {
+                    Button {
+                        withAnimation { proxy.scrollTo("tail", anchor: .bottom) }
+                    } label: {
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundColor(theme.textDim)
+                            .frame(width: 36, height: 36)
+                            .background(.ultraThinMaterial, in: Circle())
+                            .background(theme.glassTint, in: Circle())
+                            .overlay(Circle().stroke(theme.glassBorder, lineWidth: 1))
+                            .shadow(color: .black.opacity(0.08), radius: 6, y: 2)
+                    }
+                    .padding(.trailing, 16)
+                    .padding(.bottom, 118) // 浮在输入卡片右上方
+                    .transition(.opacity)
+                }
+            }
             .overlay(alignment: .bottom) { floatingInput }
             .onChange(of: inputFocused) { f in
                 if f {
@@ -128,8 +150,13 @@ struct ChatView: View {
                 }
             }
             .onChange(of: store.messages.count) { _ in
-                withAnimation(.easeOut(duration: 0.2)) {
-                    proxy.scrollTo("tail", anchor: .bottom)
+                guard atBottom else { return } // 翻历史时不打扰
+                for delay in [0.0, 0.15, 0.45] {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            proxy.scrollTo("tail", anchor: .bottom)
+                        }
+                    }
                 }
             }
             .onChange(of: store.loading) { loading in
