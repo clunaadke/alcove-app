@@ -59,10 +59,12 @@ struct ChatView: View {
                 LazyVStack(alignment: .leading, spacing: 4) {
                     ForEach(Array(store.messages.enumerated()), id: \.element.id) { idx, msg in
                         let prev = idx > 0 ? store.messages[idx - 1] : nil
+                        let next = idx + 1 < store.messages.count ? store.messages[idx + 1] : nil
                         if needsDivider(prev: prev, cur: msg) {
                             TimeDivider(date: msg.date)
                         }
-                        MessageRow(msg: msg, store: store) { url in
+                        MessageRow(msg: msg, store: store,
+                                   showTime: isGroupTail(cur: msg, next: next)) { url in
                             viewerURL = url
                         }
                         .id(msg.id)
@@ -109,6 +111,13 @@ struct ChatView: View {
     private func needsDivider(prev: ChatMessage?, cur: ChatMessage) -> Bool {
         guard let prev else { return true }
         return cur.date.timeIntervalSince(prev.date) > 600
+    }
+
+    // PWA 同款：一轮的最后一个气泡才落时间（下一条换人或隔了 2 分钟）
+    private func isGroupTail(cur: ChatMessage, next: ChatMessage?) -> Bool {
+        guard let next else { return true }
+        if next.role != cur.role { return true }
+        return next.date.timeIntervalSince(cur.date) > 120
     }
 
     // MARK: 输入栏（悬浮透底，无实心背景）
@@ -231,6 +240,7 @@ struct ChatView: View {
 struct MessageRow: View {
     let msg: ChatMessage
     @ObservedObject var store: ChatStore
+    var showTime: Bool = true
     var onTapImage: (URL) -> Void
     @State private var showThinking = false
 
@@ -253,20 +263,24 @@ struct MessageRow: View {
                         bubble
                     }
                 }
-                HStack(spacing: 4) {
-                    if msg.pending {
-                        Image(systemName: "clock")
-                            .font(.system(size: 9))
-                            .foregroundColor(.secondary)
+                if showTime || msg.pending || msg.asleepAtSend {
+                    HStack(spacing: 4) {
+                        if msg.pending {
+                            Image(systemName: "clock")
+                                .font(.system(size: 9))
+                                .foregroundColor(.secondary)
+                        }
+                        if msg.asleepAtSend {
+                            Text("睡着时收到")
+                                .font(.system(size: 10))
+                                .foregroundColor(.secondary)
+                        }
+                        if showTime {
+                            Text(Self.hm.string(from: msg.date))
+                                .font(.system(size: 10, design: .serif))
+                                .foregroundColor(Color(red: 0.2, green: 0.2, blue: 0.2))
+                        }
                     }
-                    if msg.asleepAtSend {
-                        Text("睡着时收到")
-                            .font(.system(size: 10))
-                            .foregroundColor(.secondary)
-                    }
-                    Text(Self.hm.string(from: msg.date))
-                        .font(.system(size: 10, design: .serif))
-                        .foregroundColor(Color(red: 0.2, green: 0.2, blue: 0.2))
                 }
             }
             if !isUser { Spacer(minLength: 48) }
@@ -284,8 +298,6 @@ struct MessageRow: View {
                              : Color(red: 0.22, green: 0.20, blue: 0.21))
             .padding(.horizontal, 12)
             .padding(.vertical, 7)
-            .background(.ultraThinMaterial,
-                        in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             .background(
                 (isUser
                  ? Color(red: 247/255, green: 227/255, blue: 234/255).opacity(0.44)
@@ -405,8 +417,6 @@ struct TypingIndicator: View {
             }
             .padding(.horizontal, 13)
             .padding(.vertical, 11)
-            .background(.ultraThinMaterial,
-                        in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             .background(Color.white.opacity(0.38),
                         in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             if let tool, !tool.isEmpty {
