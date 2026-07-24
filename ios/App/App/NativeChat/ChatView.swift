@@ -462,7 +462,7 @@ struct ChatView: View {
             .overlay(RoundedRectangle(cornerRadius: 20).stroke(theme.capsuleBorder, lineWidth: 1))
             .padding(.horizontal, 10)
         }
-        .padding(.bottom, max(safeBottom, 8))
+        .padding(.bottom, 4)
         .background(GeometryReader { geo in
             Color.clear.preference(key: InputBarHeightKey.self, value: geo.size.height)
         })
