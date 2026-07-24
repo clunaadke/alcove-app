@@ -448,7 +448,7 @@ struct ChatView: View {
             .background(theme.capsuleTint,
                         in: RoundedRectangle(cornerRadius: 20, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(theme.capsuleBorder, lineWidth: 1))
+                .stroke(Color.red, lineWidth: 4)) // 【验证桩·临时】看到这圈红框=新代码已进包
             .padding(.horizontal, 10)
         }
         .padding(.bottom, 12)
