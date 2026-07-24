@@ -24,6 +24,11 @@ struct ChatView: View {
     @AppStorage("chatFontSize") private var chatFontSize = 15
     @AppStorage("wallStamp") private var wallStamp = 0.0
     private var theme: AlcoveTheme { .named(themeName) }
+    private var safeBottom: CGFloat {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first?.windows.first?.safeAreaInsets.bottom ?? 0
+    }
 
     // 她在设置里换的自定义壁纸优先；没有就用主题默认
     private var customWall: UIImage? {
@@ -184,14 +189,14 @@ struct ChatView: View {
                             .shadow(color: .black.opacity(0.08), radius: 6, y: 2)
                     }
                     .padding(.trailing, 16)
-                    .padding(.bottom, 204)
+                    .padding(.bottom, inputBarHeight + 12)
                     .transition(.opacity)
                 }
             }
             .overlay(alignment: .bottomTrailing) {
                 ClawdPet(store: store)
                     .padding(.trailing, 12)
-                    .padding(.bottom, 148)
+                    .padding(.bottom, inputBarHeight + 8)
             }
             .overlay(alignment: .bottom) { floatingInput }
             .onAppear {
@@ -284,20 +289,7 @@ struct ChatView: View {
     }
 
     private var bottomFade: some View {
-        LinearGradient(
-            stops: [
-                .init(color: .clear, location: 0),
-                .init(color: theme.fade.opacity(0.3), location: 0.2),
-                .init(color: theme.fade.opacity(0.7), location: 0.45),
-                .init(color: theme.fade.opacity(0.95), location: 0.7),
-                .init(color: theme.fade, location: 1.0),
-            ],
-            startPoint: .top,
-            endPoint: .bottom
-        )
-        .frame(height: 160)
-        .allowsHitTesting(false)
-        .ignoresSafeArea(edges: .bottom)
+        EmptyView()
     }
 
     private var canSend: Bool {
@@ -456,23 +448,14 @@ struct ChatView: View {
                 .padding(.init(top: 4, leading: 6, bottom: 6, trailing: 6))
             }
             .background(.ultraThinMaterial,
-                        in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                        in: InputBarShape())
             .background(theme.capsuleTint,
-                        in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(theme.capsuleBorder, lineWidth: 1))
+                        in: InputBarShape())
+            .overlay(InputBarShape().stroke(theme.capsuleBorder, lineWidth: 1))
             .padding(.horizontal, 10)
         }
-        .padding(.bottom, 12)
-        .background(
-            VStack(spacing: 0) {
-                LinearGradient(
-                    colors: [.clear, theme.fade.opacity(0.6), theme.fade.opacity(0.95)],
-                    startPoint: .top, endPoint: .bottom)
-                theme.fade.opacity(0.95)
-            }
-            .ignoresSafeArea(edges: .bottom)
-        )
+        .padding(.bottom, max(safeBottom, 8))
+        .ignoresSafeArea(edges: .bottom)
         .background(GeometryReader { geo in
             Color.clear.preference(key: InputBarHeightKey.self, value: geo.size.height)
         })
@@ -888,6 +871,24 @@ struct RecallPop: View {
             }
         }
         .presentationDetents([.medium, .large])
+    }
+}
+
+private struct InputBarShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var p = Path()
+        let r: CGFloat = 20
+        p.move(to: CGPoint(x: rect.minX + r, y: rect.minY))
+        p.addLine(to: CGPoint(x: rect.maxX - r, y: rect.minY))
+        p.addArc(tangent1End: CGPoint(x: rect.maxX, y: rect.minY),
+                 tangent2End: CGPoint(x: rect.maxX, y: rect.minY + r), radius: r)
+        p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        p.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+        p.addLine(to: CGPoint(x: rect.minX, y: rect.minY + r))
+        p.addArc(tangent1End: CGPoint(x: rect.minX, y: rect.minY),
+                 tangent2End: CGPoint(x: rect.minX + r, y: rect.minY), radius: r)
+        p.closeSubpath()
+        return p
     }
 }
 
