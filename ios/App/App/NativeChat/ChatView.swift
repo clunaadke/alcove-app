@@ -236,6 +236,14 @@ struct ChatView: View {
                     scrollToTail(proxy, delays: [0.05, 0.3, 0.6], animated: true)
                 }
             }
+            .onReceive(NotificationCenter.default.publisher(for: .alcoveJumpToMessage)) { note in
+                if let ts = note.object as? String,
+                   let target = store.messages.first(where: { $0.ts == ts }) {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                        withAnimation { proxy.scrollTo(target.id, anchor: .center) }
+                    }
+                }
+            }
         }
     }
 

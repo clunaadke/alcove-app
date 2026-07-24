@@ -1253,6 +1253,9 @@ private struct NativeSearchView: View {
                             .padding(.leading, 10)
                         }
                         .foyerCard(theme)
+                        .onTapGesture {
+                            NotificationCenter.default.post(name: .alcoveJumpToMessage, object: message.ts)
+                        }
                     }
                     if results.isEmpty && !query.isEmpty {
                         Text("没有找到").font(.system(size: 12))

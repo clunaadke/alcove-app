@@ -52,6 +52,9 @@ struct RootView: View {
             housePage = nil
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { showPermissions = true }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .alcoveJumpToMessage)) { _ in
+            housePage = nil
+        }
         .sheet(isPresented: $showPermissions) {
             PermissionsView()
         }
