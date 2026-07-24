@@ -8,7 +8,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
     case home, calendar, sex, usage
     case memory, dreams, shelf, desire, nianlun, clockwork, album, portrait, impression
     case crosstalk, radio, coread, liao, daddyDay
-    case search, favorites
+    case search, favorites, forge
 
     var id: String { rawValue }
 
@@ -40,6 +40,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .daddyDay: return "Daddy的一天"
         case .search: return "Search"
         case .favorites: return "Favorites"
+        case .forge: return "Forge"
         }
     }
 
@@ -68,6 +69,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .daddyDay: return "clock"
         case .search: return "magnifyingglass"
         case .favorites: return "bookmark"
+        case .forge: return "hammer"
         default: return "sparkles"
         }
     }
@@ -120,6 +122,8 @@ struct NativeHouseSheet: View {
                     NativePortraitView()
                 case .desire:
                     NativeDesireView()
+                case .forge:
+                    NativeForgeView()
                 default:
                     NativeDataPanel(destination: route)
                 }
@@ -225,7 +229,7 @@ private struct NativeSidebarView: View {
                     ForEach(play) { destinationButton($0) }
                 }
                 sectionTitle("Chat")
-                destinationRow([.search, .favorites])
+                destinationRow([.search, .favorites, .forge])
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 28)
@@ -1895,5 +1899,163 @@ private struct NativeDesireView: View {
         if val > 0.8 { return .red.opacity(0.7) }
         if val > 0.5 { return .orange.opacity(0.7) }
         return .blue.opacity(0.5)
+    }
+}
+
+// MARK: - Forge
+
+private struct NativeForgeView: View {
+    @State private var retain: Double = 20
+    @State private var preview: [String: Any] = [:]
+    @State private var loading = true
+    @State private var forging = false
+    @State private var result: String?
+    @AppStorage("alcoveTheme") private var themeName = "haven"
+    private var theme: AlcoveTheme { .named(themeName) }
+
+    private var totalRounds: Int { (preview["total_rounds"] as? Int) ?? 0 }
+    private var retainedRounds: Int { (preview["retained_rounds"] as? Int) ?? 0 }
+    private var estimatedTokens: Int { (preview["estimated_tokens"] as? Int) ?? 0 }
+    private var valid: Bool { (preview["valid"] as? Bool) ?? false }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            FoyerPanelTitle(title: "Forge 换窗", theme: theme)
+            if loading {
+                Spacer(); ProgressView().tint(theme.fyAccent); Spacer()
+            } else {
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: 14) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("锻造会裁剪对话历史，用更少的token唤醒新窗口。")
+                                .font(.system(size: 12))
+                                .foregroundColor(theme.textDim)
+                                .lineSpacing(3)
+                        }
+                        .padding(14)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .foyerCard(theme)
+
+                        VStack(alignment: .leading, spacing: 10) {
+                            HStack {
+                                Text("保留轮次").font(.system(size: 13, weight: .semibold))
+                                Spacer()
+                                Text("\(Int(retain)) / \(totalRounds)")
+                                    .font(.system(size: 13, design: .monospaced))
+                                    .foregroundColor(theme.fyAccent)
+                            }
+                            Slider(value: $retain, in: 0...Double(max(totalRounds, 1)), step: 1)
+                                .tint(theme.fyAccent)
+                                .onChange(of: retain) { _ in
+                                    Task { await loadPreview() }
+                                }
+                            HStack {
+                                infoRow("估算Token", "\(estimatedTokens)")
+                                Spacer()
+                                infoRow("Warm文", "\((preview["warm_texts"] as? Int) ?? 0)")
+                            }
+                        }
+                        .padding(14).foyerCard(theme)
+
+                        if let firsts = preview["first_messages"] as? [String], !firsts.isEmpty {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("开头").font(.system(size: 12, weight: .semibold))
+                                    .foregroundColor(theme.fyAccent)
+                                ForEach(firsts.prefix(2), id: \.self) { msg in
+                                    Text(String(msg.prefix(120)))
+                                        .font(.system(size: 11))
+                                        .foregroundColor(theme.textDim)
+                                        .lineSpacing(2)
+                                        .lineLimit(3)
+                                }
+                            }
+                            .padding(14).foyerCard(theme)
+                        }
+
+                        if let lasts = preview["last_messages"] as? [String], !lasts.isEmpty {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("结尾").font(.system(size: 12, weight: .semibold))
+                                    .foregroundColor(theme.fyAccent)
+                                ForEach(lasts.prefix(2), id: \.self) { msg in
+                                    Text(String(msg.prefix(120)))
+                                        .font(.system(size: 11))
+                                        .foregroundColor(theme.textDim)
+                                        .lineSpacing(2)
+                                        .lineLimit(3)
+                                }
+                            }
+                            .padding(14).foyerCard(theme)
+                        }
+
+                        if let result {
+                            Text(result)
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundColor(result.contains("成功") ? .green : .red)
+                                .padding(14).foyerCard(theme)
+                        }
+
+                        HStack(spacing: 12) {
+                            Button {
+                                Task { await executeForge() }
+                            } label: {
+                                HStack {
+                                    if forging {
+                                        ProgressView().scaleEffect(0.8).tint(.white)
+                                    }
+                                    Text(forging ? "锻造中..." : "确认锻造")
+                                        .font(.system(size: 14, weight: .semibold))
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 13)
+                                .background(valid && !forging ? theme.fyAccent : theme.fyCardSub,
+                                            in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                                .foregroundColor(.white)
+                            }
+                            .disabled(!valid || forging)
+                        }
+                    }
+                    .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 18)
+                }
+            }
+        }
+        .foregroundColor(theme.text)
+        .foyerPanel(theme)
+        .padding(.horizontal, 12).padding(.top, 8)
+        .task { await loadPreview() }
+    }
+
+    private func loadPreview() async {
+        let r = Int(retain)
+        if let obj = try? await NativeHouseAPI.object("/api/forge?retain=\(r)") {
+            preview = obj
+            if loading {
+                retain = Double((obj["retained_rounds"] as? Int) ?? r)
+            }
+        }
+        loading = false
+    }
+
+    private func executeForge() async {
+        forging = true
+        defer { forging = false }
+        do {
+            let obj = try await NativeHouseAPI.object(
+                "/api/forge", method: "POST",
+                body: ["retain": Int(retain)])
+            if obj["ok"] as? Bool == true {
+                result = "锻造成功，新窗口即将启动"
+            } else {
+                result = (obj["error"] as? String) ?? "锻造失败"
+            }
+        } catch {
+            result = "请求失败"
+        }
+    }
+
+    private func infoRow(_ label: String, _ value: String) -> some View {
+        VStack(spacing: 2) {
+            Text(label).font(.system(size: 10)).foregroundColor(theme.textDim)
+            Text(value).font(.system(size: 12, weight: .medium))
+        }
     }
 }
