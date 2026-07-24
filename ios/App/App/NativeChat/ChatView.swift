@@ -268,18 +268,30 @@ struct ChatView: View {
 
     private var topFade: some View {
         LinearGradient(
-            colors: [theme.fade.opacity(0.85), theme.fade.opacity(0.5), theme.fade.opacity(0.2), .clear],
+            stops: [
+                .init(color: theme.fade, location: 0),
+                .init(color: theme.fade.opacity(0.95), location: 0.3),
+                .init(color: theme.fade.opacity(0.7), location: 0.55),
+                .init(color: theme.fade.opacity(0.3), location: 0.8),
+                .init(color: .clear, location: 1.0),
+            ],
             startPoint: .top,
             endPoint: .bottom
         )
-        .frame(height: 92)
+        .frame(height: 120)
         .allowsHitTesting(false)
         .ignoresSafeArea(edges: .top)
     }
 
     private var bottomFade: some View {
         LinearGradient(
-            colors: [.clear, theme.fade.opacity(0.2), theme.fade.opacity(0.5), theme.fade.opacity(0.85)],
+            stops: [
+                .init(color: .clear, location: 0),
+                .init(color: theme.fade.opacity(0.3), location: 0.2),
+                .init(color: theme.fade.opacity(0.7), location: 0.45),
+                .init(color: theme.fade.opacity(0.95), location: 0.7),
+                .init(color: theme.fade, location: 1.0),
+            ],
             startPoint: .top,
             endPoint: .bottom
         )
