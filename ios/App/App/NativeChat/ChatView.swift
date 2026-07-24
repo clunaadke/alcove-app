@@ -132,49 +132,51 @@ struct ChatView: View {
 
     private var messageList: some View {
         ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 4) {
-                    ForEach(Array(store.messages.enumerated()), id: \.element.id) { idx, msg in
-                        let prev = idx > 0 ? store.messages[idx - 1] : nil
-                        let next = idx + 1 < store.messages.count ? store.messages[idx + 1] : nil
-                        if needsDivider(prev: prev, cur: msg) {
-                            TimeDivider(date: msg.date, color: theme.textDim)
+            ZStack(alignment: .bottom) {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 4) {
+                        ForEach(Array(store.messages.enumerated()), id: \.element.id) { idx, msg in
+                            let prev = idx > 0 ? store.messages[idx - 1] : nil
+                            let next = idx + 1 < store.messages.count ? store.messages[idx + 1] : nil
+                            if needsDivider(prev: prev, cur: msg) {
+                                TimeDivider(date: msg.date, color: theme.textDim)
+                            }
+                            MessageRow(msg: msg,
+                                       sticker: msg.stickerId.flatMap(store.sticker(for:)),
+                                       theme: theme,
+                                       fontSize: chatFontSize,
+                                       showTime: isGroupTail(cur: msg, next: next),
+                                       recall: (msg.role == "assistant" && prev?.role == "user")
+                                           ? store.recall(forUserText: prev?.text ?? "") : nil,
+                                       onTapImage: { url in viewerURL = url },
+                                       onDelete: { store.deleteMessage(msg) },
+                                       onFavorite: { store.favoriteMessage(msg) },
+                                       onQuote: { text in draft = "「\(text.prefix(60))」\n" },
+                                       onResend: { text in store.sendText(text) },
+                                       onContentChange: { scrollKick += 1 })
+                            .id(msg.id)
                         }
-                        MessageRow(msg: msg,
-                                   sticker: msg.stickerId.flatMap(store.sticker(for:)),
-                                   theme: theme,
-                                   fontSize: chatFontSize,
-                                   showTime: isGroupTail(cur: msg, next: next),
-                                   recall: (msg.role == "assistant" && prev?.role == "user")
-                                       ? store.recall(forUserText: prev?.text ?? "") : nil,
-                                   onTapImage: { url in viewerURL = url },
-                                   onDelete: { store.deleteMessage(msg) },
-                                   onFavorite: { store.favoriteMessage(msg) },
-                                   onQuote: { text in draft = "「\(text.prefix(60))」\n" },
-                                   onResend: { text in store.sendText(text) },
-                                   onContentChange: { scrollKick += 1 })
-                        .id(msg.id)
+                        if store.isTyping {
+                            TypingIndicator(tool: store.currentTool,
+                                            line: store.typingLine,
+                                            name: UserDefaults.standard.string(forKey: "assistantName") ?? "陈璟",
+                                            theme: theme)
+                                .id("typing")
+                        }
+                        Color.clear.frame(height: inputBarHeight + 8)
+                        Color.clear.frame(height: 1).id("tail")
+                            .onAppear { atBottom = true }
+                            .onDisappear { atBottom = false }
                     }
-                    if store.isTyping {
-                        TypingIndicator(tool: store.currentTool,
-                                        line: store.typingLine,
-                                        name: UserDefaults.standard.string(forKey: "assistantName") ?? "陈璟",
-                                        theme: theme)
-                            .id("typing")
-                    }
-                    Color.clear.frame(height: inputBarHeight + 8)
-                    Color.clear.frame(height: 1).id("tail")
-                        .onAppear { atBottom = true }
-                        .onDisappear { atBottom = false }
+                    .padding(.horizontal, 12)
+                    .padding(.top, 52)
                 }
-                .padding(.horizontal, 12)
-                .padding(.top, 52)
-            }
-            .scrollDismissesKeyboard(.immediately) // 一滚就收，不用拖到底
-            .onTapGesture { inputFocused = false } // 点空白处键盘自己下去
-            .overlay(alignment: .top) { topFade }
-            .overlay(alignment: .bottom) { bottomFade }
-            .overlay(alignment: .bottomTrailing) {
+                .scrollDismissesKeyboard(.immediately)
+                .onTapGesture { inputFocused = false }
+                .mask(edgeFadeMask)
+
+                floatingInput
+
                 if !atBottom {
                     Button {
                         withAnimation { proxy.scrollTo("tail", anchor: .bottom) }
@@ -188,20 +190,18 @@ struct ChatView: View {
                             .overlay(Circle().stroke(theme.glassBorder, lineWidth: 1))
                             .shadow(color: .black.opacity(0.08), radius: 6, y: 2)
                     }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                     .padding(.trailing, 16)
                     .padding(.bottom, inputBarHeight + 12)
                     .transition(.opacity)
                 }
-            }
-            .overlay(alignment: .bottomTrailing) {
+
                 ClawdPet(store: store)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                     .padding(.trailing, 12)
                     .padding(.bottom, inputBarHeight + 8)
             }
-            .overlay(alignment: .bottom) { floatingInput }
             .onAppear {
-                // messageList 是 loading 完成后才挂载的，所以在它自己的
-                // onAppear 里踩几拍到底，避免首屏停在几百条历史的最上方。
                 atBottom = true
                 scrollToTail(proxy, delays: [0, 0.08, 0.25, 0.6, 1.1], animated: false)
             }
@@ -213,7 +213,7 @@ struct ChatView: View {
                 }
             }
             .onChange(of: store.messages.count) { _ in
-                guard atBottom || inputFocused else { return } // 翻历史时不打扰
+                guard atBottom || inputFocused else { return }
                 scrollToTail(proxy, delays: [0, 0.15, 0.4], animated: true)
             }
             .onChange(of: store.loading) { loading in
@@ -269,27 +269,35 @@ struct ChatView: View {
         return next.date.timeIntervalSince(cur.date) > 120
     }
 
-    // MARK: 输入栏（悬浮透底，无实心背景）
+    // MARK: alpha淡出mask（不用背景色渐变，内容本身按alpha淡出）
 
-    private var topFade: some View {
-        LinearGradient(
-            stops: [
-                .init(color: theme.fade, location: 0),
-                .init(color: theme.fade.opacity(0.95), location: 0.3),
-                .init(color: theme.fade.opacity(0.7), location: 0.55),
-                .init(color: theme.fade.opacity(0.3), location: 0.8),
-                .init(color: .clear, location: 1.0),
-            ],
-            startPoint: .top,
-            endPoint: .bottom
-        )
-        .frame(height: 120)
-        .allowsHitTesting(false)
-        .ignoresSafeArea(edges: .top)
-    }
-
-    private var bottomFade: some View {
-        EmptyView()
+    private var edgeFadeMask: some View {
+        VStack(spacing: 0) {
+            LinearGradient(
+                stops: [
+                    .init(color: .clear, location: 0),
+                    .init(color: .clear, location: 0.15),
+                    .init(color: .black.opacity(0.3), location: 0.4),
+                    .init(color: .black.opacity(0.7), location: 0.65),
+                    .init(color: .black, location: 1.0),
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(height: 120)
+            Color.black
+            LinearGradient(
+                stops: [
+                    .init(color: .black, location: 0),
+                    .init(color: .black.opacity(0.7), location: 0.3),
+                    .init(color: .black.opacity(0.3), location: 0.6),
+                    .init(color: .clear, location: 1.0),
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(height: inputBarHeight + 8)
+        }
     }
 
     private var canSend: Bool {
@@ -448,14 +456,13 @@ struct ChatView: View {
                 .padding(.init(top: 4, leading: 6, bottom: 6, trailing: 6))
             }
             .background(.ultraThinMaterial,
-                        in: InputBarShape())
+                        in: RoundedRectangle(cornerRadius: 20))
             .background(theme.capsuleTint,
-                        in: InputBarShape())
-            .overlay(InputBarShape().stroke(theme.capsuleBorder, lineWidth: 1))
+                        in: RoundedRectangle(cornerRadius: 20))
+            .overlay(RoundedRectangle(cornerRadius: 20).stroke(theme.capsuleBorder, lineWidth: 1))
             .padding(.horizontal, 10)
         }
         .padding(.bottom, max(safeBottom, 8))
-        .ignoresSafeArea(edges: .bottom)
         .background(GeometryReader { geo in
             Color.clear.preference(key: InputBarHeightKey.self, value: geo.size.height)
         })
