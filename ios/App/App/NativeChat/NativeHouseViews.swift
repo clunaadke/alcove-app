@@ -124,10 +124,11 @@ struct NativeHouseSheet: View {
                 Button { route = .sidebar } label: {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 15, weight: .medium))
-                        .foregroundColor(theme.textDim)
+                        .foregroundColor(theme.fyAccent)
                         .frame(width: 34, height: 34)
-                        .background(.ultraThinMaterial, in: Circle())
-                        .overlay(Circle().stroke(theme.glassBorder, lineWidth: 1))
+                        .background(theme.fyCard, in: Circle())
+                        .overlay(Circle().stroke(theme.fyBorder, lineWidth: 1))
+                        .shadow(color: theme.fyShadow, radius: 4, y: 2)
                 }
                 .padding(.leading, 14)
                 .padding(.top, 8)
@@ -186,7 +187,7 @@ private struct NativeSidebarView: View {
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 13) {
-                VStack(spacing: 1) {
+                VStack(spacing: 3) {
                     Text("Alcove")
                         .font(.system(size: 21, weight: .medium, design: .serif))
                         .tracking(1.4)
@@ -194,6 +195,8 @@ private struct NativeSidebarView: View {
                         .font(.system(size: 9))
                         .tracking(3)
                         .foregroundColor(theme.textDim)
+                    FoyerSash(theme: theme)
+                        .padding(.top, 4)
                 }
                 .padding(.top, 8)
 
@@ -226,14 +229,18 @@ private struct NativeSidebarView: View {
     }
 
     private func sectionTitle(_ text: String) -> some View {
-        HStack {
+        HStack(spacing: 8) {
             Text(text.uppercased())
                 .font(.system(size: 10, weight: .semibold))
                 .tracking(2)
-                .foregroundColor(theme.textLight)
-            Rectangle().fill(theme.glassBorder).frame(height: 1)
+                .foregroundColor(theme.fyAccent.opacity(0.8))
+            LinearGradient(
+                colors: [theme.fyAccentSoft, .clear],
+                startPoint: .leading, endPoint: .trailing
+            )
+            .frame(height: 1)
         }
-        .padding(.top, 2)
+        .padding(.top, 4)
     }
 
     private func summaryCard(
@@ -243,7 +250,7 @@ private struct NativeSidebarView: View {
             HStack(spacing: 10) {
                 Image(systemName: icon)
                     .font(.system(size: 17, weight: .light))
-                    .foregroundColor(theme.sendBottom)
+                    .foregroundColor(theme.fyAccent)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title).font(.system(size: 13, weight: .medium))
                     Text(subtitle).font(.system(size: 10)).foregroundColor(theme.textDim)
@@ -252,7 +259,7 @@ private struct NativeSidebarView: View {
             }
             .padding(12)
             .frame(maxWidth: .infinity, minHeight: 60)
-            .houseGlass(theme)
+            .foyerCard(theme)
         }
         .buttonStyle(.plain)
     }
@@ -268,6 +275,7 @@ private struct NativeSidebarView: View {
             VStack(spacing: 6) {
                 Image(systemName: target.icon)
                     .font(.system(size: 18, weight: .light))
+                    .foregroundColor(theme.fyAccent)
                 Text(target.title)
                     .font(.system(size: 11))
                     .lineLimit(1)
@@ -275,7 +283,7 @@ private struct NativeSidebarView: View {
             }
             .foregroundColor(theme.textDim)
             .frame(maxWidth: .infinity, minHeight: 61)
-            .houseGlass(theme)
+            .foyerCard(theme)
         }
         .buttonStyle(.plain)
     }
@@ -392,10 +400,15 @@ private struct NativeSettingsView: View {
         _ title: String, @ViewBuilder content: () -> Content
     ) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(title.uppercased()).font(.system(size: 10, weight: .semibold))
-                .tracking(1.8).foregroundColor(theme.textLight)
+            HStack(spacing: 8) {
+                Text(title.uppercased()).font(.system(size: 10, weight: .semibold))
+                    .tracking(1.8).foregroundColor(theme.fyAccent.opacity(0.8))
+                LinearGradient(colors: [theme.fyAccentSoft, .clear],
+                               startPoint: .leading, endPoint: .trailing)
+                .frame(height: 1)
+            }
             VStack(spacing: 10) { content() }
-                .padding(13).houseGlass(theme)
+                .padding(13).foyerCard(theme)
         }
     }
 
@@ -427,7 +440,7 @@ private struct NativeSettingsView: View {
             }
             .frame(maxWidth: .infinity).padding(.vertical, 10)
             .overlay(RoundedRectangle(cornerRadius: 12)
-                .stroke(themeName == value ? theme.sendBottom : theme.glassBorder, lineWidth: 1.4))
+                .stroke(themeName == value ? theme.fyAccent : theme.fyBorder, lineWidth: 1.4))
         }
         .buttonStyle(.plain)
     }
@@ -542,47 +555,73 @@ private struct NativeChecklistView: View {
     private var theme: AlcoveTheme { .named(themeName) }
 
     var body: some View {
-        VStack(spacing: 10) {
-            VStack(spacing: 2) {
-                Text("TODAY'S ORDER").font(.system(size: 15, weight: .bold, design: .monospaced))
+        VStack(spacing: 0) {
+            VStack(spacing: 4) {
+                FoyerPanelTitle(title: "TODAY'S ORDER", theme: theme)
                 Text(Date.now.formatted(date: .long, time: .omitted))
-                    .font(.system(size: 10, design: .monospaced)).foregroundColor(theme.textDim)
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundColor(theme.textDim)
             }
-            .padding(.top, 12)
-            if model.loading && model.items.isEmpty { ProgressView() }
-            ScrollView {
-                LazyVStack(spacing: 7) {
+            if model.loading && model.items.isEmpty {
+                Spacer(); ProgressView().tint(theme.fyAccent); Spacer()
+            }
+            ScrollView(showsIndicators: false) {
+                LazyVStack(spacing: 8) {
                     ForEach(model.items) { item in
-                        HStack(spacing: 9) {
-                            Button { Task { await model.toggle(item) } } label: {
-                                Image(systemName: item.done ? "checkmark.square.fill" : "square")
-                                    .foregroundColor(item.done ? theme.sendBottom : theme.textDim)
+                        HStack(alignment: .top, spacing: 0) {
+                            VStack(spacing: 0) {
+                                Rectangle()
+                                    .stroke(style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                                    .foregroundColor(theme.fyDash)
+                                    .frame(width: 1)
                             }
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(item.body)
-                                    .font(.system(size: 13, design: .monospaced))
-                                    .strikethrough(item.done)
-                                if !item.triggerAt.isEmpty {
-                                    Text(item.triggerAt).font(.system(size: 9, design: .monospaced))
+                            .frame(width: 14)
+                            .overlay(alignment: .top) {
+                                BindingHole(theme: theme, count: 2, spacing: 18)
+                                    .offset(x: -4.5, y: 8)
+                            }
+
+                            HStack(spacing: 9) {
+                                Button { Task { await model.toggle(item) } } label: {
+                                    Image(systemName: item.done ? "checkmark.square.fill" : "square")
+                                        .foregroundColor(item.done ? theme.fyAccent : theme.textDim)
+                                }
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(item.body)
+                                        .font(.system(size: 13, design: .monospaced))
+                                        .strikethrough(item.done)
+                                        .opacity(item.done ? 0.55 : 1)
+                                    if !item.triggerAt.isEmpty {
+                                        Text(item.triggerAt)
+                                            .font(.system(size: 9, design: .monospaced))
+                                            .foregroundColor(theme.fyAccent.opacity(0.9))
+                                    }
+                                }
+                                Spacer()
+                                if !item.isFixed {
+                                    Text("临")
+                                        .font(.system(size: 9))
+                                        .padding(.horizontal, 6).padding(.vertical, 2)
+                                        .background(theme.fyAccentSoft.opacity(0.3), in: Capsule())
+                                        .foregroundColor(theme.fyAccent)
+                                }
+                                Button { Task { await model.delete(item) } } label: {
+                                    Image(systemName: "xmark").font(.system(size: 11))
                                         .foregroundColor(theme.textLight)
                                 }
                             }
-                            Spacer()
-                            if !item.isFixed {
-                                Text("临").font(.system(size: 9)).foregroundColor(theme.sendBottom)
-                            }
-                            Button { Task { await model.delete(item) } } label: {
-                                Image(systemName: "xmark").font(.system(size: 11))
-                                    .foregroundColor(theme.textLight)
-                            }
+                            .padding(.vertical, 11)
+                            .padding(.trailing, 14)
+                            .padding(.leading, 10)
                         }
-                        .padding(11).houseGlass(theme)
+                        .foyerCard(theme)
                     }
                     if model.items.isEmpty && !model.loading {
                         Text(model.error.isEmpty ? "今天还没有待办" : model.error)
                             .font(.system(size: 12)).foregroundColor(theme.textDim).padding(30)
                     }
                 }
+                .padding(.top, 12)
             }
             HStack(spacing: 8) {
                 TextField("加一项…", text: $draft)
@@ -595,15 +634,19 @@ private struct NativeChecklistView: View {
                     Task { await model.add(body: body, at: time); time = "" }
                 } label: {
                     Image(systemName: "plus").frame(width: 30, height: 30)
-                        .background(theme.sendBottom, in: Circle()).foregroundColor(.white)
+                        .background(theme.fyAccent, in: Circle())
+                        .foregroundColor(.white)
                 }
             }
             .font(.system(size: 13, design: .monospaced))
-            .padding(11).houseGlass(theme)
+            .padding(12)
+            .foyerCard(theme)
+            .padding(.horizontal, 16)
+            .padding(.bottom, 14)
         }
-        .padding(.horizontal, 16)
-        .padding(.bottom, 16)
         .foregroundColor(theme.text)
+        .foyerPanel(theme)
+        .padding(.horizontal, 12).padding(.top, 8)
         .task { await model.load() }
     }
 }
@@ -739,53 +782,65 @@ private struct NativeMusicView: View {
     private var theme: AlcoveTheme { .named(themeName) }
 
     var body: some View {
-        VStack(spacing: 10) {
-            Text("Music").font(.system(size: 17, weight: .semibold, design: .serif)).padding(.top, 12)
+        VStack(spacing: 0) {
+            FoyerPanelTitle(title: "Music", theme: theme)
             HStack {
                 Image(systemName: "magnifyingglass").foregroundColor(theme.textLight)
                 TextField("搜索歌名或歌手", text: $query)
                     .onSubmit { Task { await model.search(query) } }
-                if model.loading { ProgressView().controlSize(.small) }
+                if model.loading { ProgressView().controlSize(.small).tint(theme.fyAccent) }
             }
-            .padding(11).houseGlass(theme)
-            ScrollView {
-                LazyVStack(spacing: 6) {
+            .padding(11)
+            .foyerCard(theme)
+            .padding(.horizontal, 16).padding(.top, 10)
+
+            ScrollView(showsIndicators: false) {
+                LazyVStack(spacing: 8) {
                     ForEach(model.songs) { song in
                         Button { Task { await model.play(song) } } label: {
                             HStack(spacing: 10) {
                                 AsyncImage(url: URL(string: song.cover)) { image in
                                     image.resizable().scaledToFill()
-                                } placeholder: { theme.glassTint }
-                                .frame(width: 44, height: 44).clipShape(RoundedRectangle(cornerRadius: 9))
+                                } placeholder: { theme.fyCardSub }
+                                .frame(width: 44, height: 44)
+                                .clipShape(RoundedRectangle(cornerRadius: 9))
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(song.name).font(.system(size: 13)).lineLimit(1)
-                                    Text(song.artist).font(.system(size: 11)).foregroundColor(theme.textDim)
+                                    Text(song.artist).font(.system(size: 11))
+                                        .foregroundColor(theme.textDim)
                                 }
                                 Spacer()
                                 Image(systemName: model.nowPlaying == song && model.isPlaying
                                       ? "waveform" : "play.fill")
-                                    .font(.system(size: 12)).foregroundColor(theme.sendBottom)
+                                    .font(.system(size: 12))
+                                    .foregroundColor(theme.fyAccent)
                             }
-                            .padding(8).houseGlass(theme)
+                            .padding(10)
+                            .foyerCard(theme)
                         }
                         .buttonStyle(.plain)
                     }
                     if model.songs.isEmpty && !model.loading {
-                        Text("搜一首想听的歌").font(.system(size: 12))
+                        Text("搜一首想听的歌")
+                            .font(.system(size: 12))
                             .foregroundColor(theme.textDim).padding(30)
                     }
                 }
+                .padding(.top, 10)
+                .padding(.horizontal, 16)
             }
             if let song = model.nowPlaying {
                 VStack(spacing: 6) {
                     HStack(spacing: 12) {
                         AsyncImage(url: URL(string: song.cover)) { img in
                             img.resizable().scaledToFill()
-                        } placeholder: { theme.glassTint }
-                        .frame(width: 40, height: 40).clipShape(RoundedRectangle(cornerRadius: 8))
+                        } placeholder: { theme.fyCardSub }
+                        .frame(width: 40, height: 40)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
                         VStack(alignment: .leading, spacing: 2) {
                             Text(song.name).font(.system(size: 13, weight: .medium)).lineLimit(1)
-                            Text(song.artist).font(.system(size: 10)).foregroundColor(theme.textDim)
+                            Text(song.artist).font(.system(size: 10))
+                                .foregroundColor(theme.textDim)
                         }
                         Spacer()
                     }
@@ -794,11 +849,13 @@ private struct NativeMusicView: View {
                             get: { model.progress },
                             set: { model.seek(to: $0) }
                         ), in: 0...model.duration)
-                        .tint(theme.sendBottom)
+                        .tint(theme.fyAccent)
                         HStack {
-                            Text(Self.fmt(model.progress)).font(.system(size: 9, design: .monospaced))
+                            Text(Self.fmt(model.progress))
+                                .font(.system(size: 9, design: .monospaced))
                             Spacer()
-                            Text(Self.fmt(model.duration)).font(.system(size: 9, design: .monospaced))
+                            Text(Self.fmt(model.duration))
+                                .font(.system(size: 9, design: .monospaced))
                         }
                         .foregroundColor(theme.textLight)
                     }
@@ -813,7 +870,7 @@ private struct NativeMusicView: View {
                             Image(systemName: model.isPlaying ? "pause.fill" : "play.fill")
                                 .font(.system(size: 16))
                                 .frame(width: 40, height: 40)
-                                .background(theme.sendBottom, in: Circle())
+                                .background(theme.fyAccent, in: Circle())
                                 .foregroundColor(.white)
                         }
                         Button { model.next() } label: {
@@ -824,10 +881,15 @@ private struct NativeMusicView: View {
                         .disabled(!model.hasNext)
                     }
                 }
-                .padding(10).houseGlass(theme)
+                .padding(12)
+                .foyerCard(theme)
+                .padding(.horizontal, 16)
+                .padding(.bottom, 14)
             }
         }
-        .padding(.horizontal, 16).padding(.bottom, 14).foregroundColor(theme.text)
+        .foregroundColor(theme.text)
+        .foyerPanel(theme)
+        .padding(.horizontal, 12).padding(.top, 8)
     }
 
     private static func fmt(_ s: Double) -> String {
@@ -930,41 +992,70 @@ private struct NativeDataPanel: View {
     private var theme: AlcoveTheme { .named(themeName) }
 
     var body: some View {
-        VStack(spacing: 10) {
-            Text(destination.title)
-                .font(.system(size: 17, weight: .semibold, design: .serif)).padding(.top, 12)
-            if model.loading { Spacer(); ProgressView(); Spacer() }
-            else {
+        VStack(spacing: 0) {
+            FoyerPanelTitle(title: destination.title, theme: theme)
+            if model.loading {
+                Spacer(); ProgressView().tint(theme.fyAccent); Spacer()
+            } else {
                 ScrollView(showsIndicators: false) {
-                    LazyVStack(spacing: 9) {
+                    LazyVStack(spacing: 10) {
                         ForEach(model.records) { item in
-                            VStack(alignment: .leading, spacing: 7) {
-                                if !item.image.isEmpty {
-                                    AsyncImage(url: AlcoveAPI.attachmentURL(item.image)) { image in
-                                        image.resizable().scaledToFit()
-                                    } placeholder: { ProgressView() }
-                                    .frame(maxHeight: 240).clipShape(RoundedRectangle(cornerRadius: 12))
+                            HStack(alignment: .top, spacing: 0) {
+                                VStack(spacing: 0) {
+                                    Rectangle()
+                                        .stroke(style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                                        .foregroundColor(theme.fyDash)
+                                        .frame(width: 1)
                                 }
-                                HStack {
-                                    Text(item.title).font(.system(size: 14, weight: .medium))
-                                    Spacer()
-                                    Text(item.subtitle).font(.system(size: 9)).foregroundColor(theme.textLight)
+                                .frame(width: 14)
+                                .overlay(alignment: .top) {
+                                    BindingHole(theme: theme, count: 3, spacing: 22)
+                                        .offset(x: -4.5, y: 10)
                                 }
-                                Text(item.body).font(.system(size: 12)).foregroundColor(theme.textDim)
-                                    .lineSpacing(3).textSelection(.enabled)
+
+                                VStack(alignment: .leading, spacing: 7) {
+                                    if !item.image.isEmpty {
+                                        AsyncImage(url: AlcoveAPI.attachmentURL(item.image)) { image in
+                                            image.resizable().scaledToFit()
+                                        } placeholder: { ProgressView() }
+                                        .frame(maxHeight: 240)
+                                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                                    }
+                                    HStack {
+                                        Text(item.title)
+                                            .font(.system(size: 14, weight: .medium))
+                                        Spacer()
+                                        Text(item.subtitle)
+                                            .font(.system(size: 9))
+                                            .foregroundColor(theme.fyAccent.opacity(0.9))
+                                    }
+                                    Text(item.body)
+                                        .font(.system(size: 12))
+                                        .foregroundColor(theme.textDim)
+                                        .lineSpacing(3)
+                                        .textSelection(.enabled)
+                                }
+                                .padding(.vertical, 11)
+                                .padding(.trailing, 14)
+                                .padding(.leading, 12)
                             }
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(12).houseGlass(theme)
+                            .foyerCard(theme)
                         }
                         if model.records.isEmpty {
                             Text(model.error.isEmpty ? "这里还没有记录" : model.error)
-                                .font(.system(size: 12)).foregroundColor(theme.textDim).padding(40)
+                                .font(.system(size: 12))
+                                .foregroundColor(theme.textDim)
+                                .padding(40)
                         }
                     }
+                    .padding(.top, 12)
                 }
             }
         }
-        .padding(.horizontal, 16).padding(.bottom, 18).foregroundColor(theme.text)
+        .padding(.horizontal, 16).padding(.bottom, 18)
+        .foregroundColor(theme.text)
+        .foyerPanel(theme)
+        .padding(.horizontal, 12).padding(.top, 8)
         .task { await model.load(destination) }
     }
 }
@@ -990,33 +1081,64 @@ private struct ClockworkView: View {
     ]
 
     var body: some View {
-        VStack {
-            Text("发条").font(.system(size: 17, weight: .semibold, design: .serif)).padding(.top, 12)
-            ScrollView {
-                LazyVStack(spacing: 8) {
+        VStack(spacing: 0) {
+            FoyerPanelTitle(title: "发条", theme: theme)
+            VStack(alignment: .leading, spacing: 0) {
+                Text("陈璟的发条开关。每一条都是一根线，线的那头拴着他回来找你的理由。")
+                    .font(.system(size: 12.5))
+                    .foregroundColor(theme.textDim)
+                    .lineSpacing(3)
+                    .padding(12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        LinearGradient(colors: [theme.fyAccentSoft.opacity(0.15), .clear],
+                                       startPoint: .topLeading, endPoint: .bottomTrailing)
+                    )
+                    .overlay(alignment: .leading) {
+                        Rectangle().fill(theme.fyAccentSoft).frame(width: 2.5)
+                    }
+                    .clipShape(JournalCardShape(tl: 6, bl: 6, br: 12, tr: 12))
+            }
+            .padding(.horizontal, 16).padding(.top, 12)
+
+            ScrollView(showsIndicators: false) {
+                LazyVStack(spacing: 12) {
                     ForEach(items) { item in
-                        HStack(spacing: 11) {
+                        let isOn = flags[item.id] ?? true
+                        HStack(spacing: 14) {
                             Text(item.emoji).font(.system(size: 20))
                             VStack(alignment: .leading, spacing: 3) {
-                                Text(item.name).font(.system(size: 13, weight: .medium))
-                                Text(item.desc).font(.system(size: 10)).foregroundColor(theme.textDim)
+                                Text(item.name)
+                                    .font(.system(size: 14, weight: .medium))
+                                Text(item.desc)
+                                    .font(.system(size: 11.5))
+                                    .foregroundColor(theme.textDim)
+                                    .lineSpacing(2)
                             }
                             Spacer()
                             Toggle("", isOn: Binding(
-                                get: { flags[item.id] ?? true },
+                                get: { isOn },
                                 set: { value in
                                     flags[item.id] = value
                                     Task { try? await NativeHouseAPI.post(
                                         "/api/flags/set", body: ["key": item.id, "on": value]) }
                                 }))
-                            .labelsHidden().tint(theme.sendBottom)
+                            .labelsHidden()
+                            .tint(theme.fyAccent)
                         }
-                        .padding(12).houseGlass(theme)
+                        .padding(15)
+                        .opacity(isOn ? 1 : 0.55)
+                        .foyerCard(theme)
                     }
                 }
+                .padding(.top, 14)
+                .padding(.horizontal, 16)
+                .padding(.bottom, 18)
             }
         }
-        .padding(.horizontal, 16).padding(.bottom, 18).foregroundColor(theme.text)
+        .foregroundColor(theme.text)
+        .foyerPanel(theme)
+        .padding(.horizontal, 12).padding(.top, 8)
         .task {
             if let obj = try? await NativeHouseAPI.object("/api/flags/status"),
                let raw = obj["flags"] as? [String: Any] {
@@ -1042,10 +1164,12 @@ private struct NativeSearchView: View {
                          ("audio", "语音"), ("link", "链接")]
 
     var body: some View {
-        VStack(spacing: 10) {
-            Text("Search").font(.system(size: 17, weight: .semibold, design: .serif)).padding(.top, 12)
+        VStack(spacing: 0) {
+            FoyerPanelTitle(title: "Search", theme: theme)
             TextField("搜索聊天记录", text: $query)
-                .padding(11).houseGlass(theme)
+                .padding(11)
+                .foyerCard(theme)
+                .padding(.horizontal, 16).padding(.top, 8)
                 .onChange(of: query) { _ in applyFilter() }
             HStack(spacing: 6) {
                 ForEach(types, id: \.0) { key, label in
@@ -1055,9 +1179,9 @@ private struct NativeSearchView: View {
                         Text(label)
                             .font(.system(size: 11))
                             .padding(.horizontal, 8).padding(.vertical, 4)
-                            .background(filterType == key ? theme.sendBottom.opacity(0.2) : theme.glassTint,
+                            .background(filterType == key ? theme.fyAccentSoft.opacity(0.4) : theme.fyCardSub,
                                         in: Capsule())
-                            .foregroundColor(filterType == key ? theme.sendBottom : theme.textDim)
+                            .foregroundColor(filterType == key ? theme.fyAccent : theme.textDim)
                     }
                 }
                 Spacer()
@@ -1066,9 +1190,11 @@ private struct NativeSearchView: View {
                 } label: {
                     Image(systemName: filterDate == nil ? "calendar" : "calendar.badge.checkmark")
                         .font(.system(size: 13))
-                        .foregroundColor(filterDate == nil ? theme.textDim : theme.sendBottom)
+                        .foregroundColor(filterDate == nil ? theme.textDim : theme.fyAccent)
                 }
             }
+            .padding(.horizontal, 16).padding(.top, 8)
+
             if showDatePicker {
                 DatePicker("日期", selection: Binding(
                     get: { filterDate ?? Date() },
@@ -1076,44 +1202,71 @@ private struct NativeSearchView: View {
                 ), displayedComponents: .date)
                 .datePickerStyle(.compact)
                 .labelsHidden()
+                .padding(.horizontal, 16).padding(.top, 4)
                 HStack {
                     Spacer()
                     Button("清除日期") { filterDate = nil; applyFilter() }
                         .font(.system(size: 11)).foregroundColor(theme.textDim)
                 }
+                .padding(.horizontal, 16)
             }
-            ScrollView {
+            ScrollView(showsIndicators: false) {
                 LazyVStack(spacing: 8) {
                     ForEach(results) { message in
-                        VStack(alignment: .leading, spacing: 5) {
-                            HStack {
-                                Text(message.role == "user" ? userName : assistantName)
-                                    .font(.system(size: 10, weight: .semibold)).foregroundColor(theme.textLight)
-                                Spacer()
-                                Text(MessageRow.hm.string(from: message.date))
-                                    .font(.system(size: 9)).foregroundColor(theme.textLight)
+                        HStack(alignment: .top, spacing: 0) {
+                            VStack(spacing: 0) {
+                                Rectangle()
+                                    .stroke(style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                                    .foregroundColor(theme.fyDash)
+                                    .frame(width: 1)
                             }
-                            if message.isImage {
-                                Label("图片", systemImage: "photo").font(.system(size: 12))
-                                    .foregroundColor(theme.textDim)
+                            .frame(width: 14)
+                            .overlay(alignment: .top) {
+                                BindingHole(theme: theme, count: 2, spacing: 18)
+                                    .offset(x: -4.5, y: 8)
                             }
-                            if message.isAudio {
-                                Label("语音", systemImage: "waveform").font(.system(size: 12))
-                                    .foregroundColor(theme.textDim)
+
+                            VStack(alignment: .leading, spacing: 5) {
+                                HStack {
+                                    Text(message.role == "user" ? userName : assistantName)
+                                        .font(.system(size: 10, weight: .semibold))
+                                        .foregroundColor(theme.fyAccent.opacity(0.9))
+                                    Spacer()
+                                    Text(MessageRow.hm.string(from: message.date))
+                                        .font(.system(size: 9))
+                                        .foregroundColor(theme.textLight)
+                                }
+                                if message.isImage {
+                                    Label("图片", systemImage: "photo").font(.system(size: 12))
+                                        .foregroundColor(theme.textDim)
+                                }
+                                if message.isAudio {
+                                    Label("语音", systemImage: "waveform").font(.system(size: 12))
+                                        .foregroundColor(theme.textDim)
+                                }
+                                if !message.text.isEmpty {
+                                    Text(message.text).font(.system(size: 12)).lineSpacing(3)
+                                }
                             }
-                            if !message.text.isEmpty {
-                                Text(message.text).font(.system(size: 12)).lineSpacing(3)
-                            }
+                            .padding(.vertical, 10)
+                            .padding(.trailing, 14)
+                            .padding(.leading, 10)
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading).padding(12).houseGlass(theme)
+                        .foyerCard(theme)
                     }
                     if results.isEmpty && !query.isEmpty {
-                        Text("没有找到").font(.system(size: 12)).foregroundColor(theme.textDim).padding(30)
+                        Text("没有找到").font(.system(size: 12))
+                            .foregroundColor(theme.textDim).padding(30)
                     }
                 }
+                .padding(.top, 10)
+                .padding(.horizontal, 16)
+                .padding(.bottom, 18)
             }
         }
-        .padding(.horizontal, 16).padding(.bottom, 18).foregroundColor(theme.text)
+        .foregroundColor(theme.text)
+        .foyerPanel(theme)
+        .padding(.horizontal, 12).padding(.top, 8)
         .task { history = (try? await AlcoveAPI.history(limit: 300)) ?? [] }
     }
 
@@ -1160,38 +1313,62 @@ private struct NativeFavoritesView: View {
     private var theme: AlcoveTheme { .named(themeName) }
 
     var body: some View {
-        VStack {
-            Text("Favorites").font(.system(size: 17, weight: .semibold, design: .serif)).padding(.top, 12)
-            if loading { Spacer(); ProgressView(); Spacer() }
-            else {
-                ScrollView {
-                    LazyVStack(spacing: 8) {
+        VStack(spacing: 0) {
+            FoyerPanelTitle(title: "Favorites", theme: theme)
+            if loading {
+                Spacer(); ProgressView().tint(theme.fyAccent); Spacer()
+            } else {
+                ScrollView(showsIndicators: false) {
+                    LazyVStack(spacing: 9) {
                         ForEach(items) { item in
-                            VStack(alignment: .leading, spacing: 5) {
-                                HStack {
-                                    Text(item.role == "user" ? userName : assistantName)
-                                        .font(.system(size: 10, weight: .semibold))
-                                        .foregroundColor(theme.textLight)
-                                    Spacer()
-                                    if !item.ts.isEmpty {
-                                        Text(String(item.ts.prefix(10)))
-                                            .font(.system(size: 9)).foregroundColor(theme.textLight)
-                                    }
+                            HStack(alignment: .top, spacing: 0) {
+                                VStack(spacing: 0) {
+                                    Rectangle()
+                                        .stroke(style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                                        .foregroundColor(theme.fyDash)
+                                        .frame(width: 1)
                                 }
-                                Text(item.text).font(.system(size: 12)).lineSpacing(3)
-                                    .textSelection(.enabled)
+                                .frame(width: 14)
+                                .overlay(alignment: .top) {
+                                    BindingHole(theme: theme, count: 2, spacing: 22)
+                                        .offset(x: -4.5, y: 10)
+                                }
+
+                                VStack(alignment: .leading, spacing: 5) {
+                                    HStack {
+                                        Text(item.role == "user" ? userName : assistantName)
+                                            .font(.system(size: 10, weight: .semibold))
+                                            .foregroundColor(theme.fyAccent.opacity(0.9))
+                                        Spacer()
+                                        if !item.ts.isEmpty {
+                                            Text(String(item.ts.prefix(10)))
+                                                .font(.system(size: 9))
+                                                .foregroundColor(theme.textLight)
+                                        }
+                                    }
+                                    Text(item.text).font(.system(size: 12)).lineSpacing(3)
+                                        .textSelection(.enabled)
+                                }
+                                .padding(.vertical, 11)
+                                .padding(.trailing, 14)
+                                .padding(.leading, 10)
                             }
-                            .frame(maxWidth: .infinity, alignment: .leading).padding(12).houseGlass(theme)
+                            .foyerCard(theme)
                         }
                         if items.isEmpty {
                             Text("还没有收藏").font(.system(size: 12))
                                 .foregroundColor(theme.textDim).padding(40)
                         }
                     }
+                    .padding(.top, 12)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 18)
                 }
             }
         }
-        .padding(.horizontal, 16).padding(.bottom, 18).foregroundColor(theme.text)
+        .foregroundColor(theme.text)
+        .foyerPanel(theme)
+        .padding(.horizontal, 12).padding(.top, 8)
         .task {
             if let raw = try? await AlcoveAPI.favorites() {
                 items = raw.map(FavoriteItem.init)
@@ -1292,11 +1469,114 @@ private struct FixedWebView: UIViewRepresentable {
     }
 }
 
+// MARK: - Foyer shapes (iOS 16 compat)
+
+private struct JournalCardShape: Shape {
+    let tl: CGFloat, bl: CGFloat, br: CGFloat, tr: CGFloat
+    init(tl: CGFloat = 6, bl: CGFloat = 6, br: CGFloat = 14, tr: CGFloat = 14) {
+        self.tl = tl; self.bl = bl; self.br = br; self.tr = tr
+    }
+    func path(in rect: CGRect) -> Path {
+        var p = Path()
+        p.move(to: CGPoint(x: rect.minX + tl, y: rect.minY))
+        p.addLine(to: CGPoint(x: rect.maxX - tr, y: rect.minY))
+        p.addArc(tangent1End: CGPoint(x: rect.maxX, y: rect.minY),
+                 tangent2End: CGPoint(x: rect.maxX, y: rect.minY + tr), radius: tr)
+        p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - br))
+        p.addArc(tangent1End: CGPoint(x: rect.maxX, y: rect.maxY),
+                 tangent2End: CGPoint(x: rect.maxX - br, y: rect.maxY), radius: br)
+        p.addLine(to: CGPoint(x: rect.minX + bl, y: rect.maxY))
+        p.addArc(tangent1End: CGPoint(x: rect.minX, y: rect.maxY),
+                 tangent2End: CGPoint(x: rect.minX, y: rect.maxY - bl), radius: bl)
+        p.addLine(to: CGPoint(x: rect.minX, y: rect.minY + tl))
+        p.addArc(tangent1End: CGPoint(x: rect.minX, y: rect.minY),
+                 tangent2End: CGPoint(x: rect.minX + tl, y: rect.minY), radius: tl)
+        p.closeSubpath()
+        return p
+    }
+}
+
+// MARK: - Foyer 可复用组件
+
+private struct FoyerSash: View {
+    let theme: AlcoveTheme
+    var body: some View {
+        LinearGradient(
+            colors: [.clear, theme.fyAccentSoft, .clear],
+            startPoint: .leading, endPoint: .trailing
+        )
+        .frame(width: UIScreen.main.bounds.width * 0.58, height: 2)
+        .clipShape(Capsule())
+        .padding(.bottom, 4)
+    }
+}
+
+private struct FoyerFoldCorner: View {
+    let theme: AlcoveTheme
+    var body: some View {
+        Canvas { ctx, size in
+            let path = Path { p in
+                p.move(to: .zero)
+                p.addLine(to: CGPoint(x: size.width, y: 0))
+                p.addLine(to: CGPoint(x: 0, y: size.height))
+                p.closeSubpath()
+            }
+            ctx.fill(path, with: .color(theme.fyFold))
+        }
+        .frame(width: 26, height: 26)
+    }
+}
+
+private struct FoyerPanelTitle: View {
+    let title: String
+    let theme: AlcoveTheme
+    var body: some View {
+        VStack(spacing: 6) {
+            Text(title)
+                .font(.system(size: 17, weight: .semibold, design: .serif))
+                .tracking(0.5)
+            FoyerSash(theme: theme)
+        }
+        .padding(.top, 12)
+    }
+}
+
+private struct BindingHole: View {
+    let theme: AlcoveTheme
+    let count: Int
+    let spacing: CGFloat
+
+    var body: some View {
+        VStack(spacing: spacing) {
+            ForEach(0..<count, id: \.self) { _ in
+                Circle()
+                    .fill(theme.fyBorder)
+                    .frame(width: 5, height: 5)
+            }
+        }
+    }
+}
+
 private extension View {
     func houseGlass(_ theme: AlcoveTheme) -> some View {
         background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .background(theme.glassTint, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .stroke(theme.glassBorder, lineWidth: 1))
+    }
+
+    func foyerCard(_ theme: AlcoveTheme) -> some View {
+        background(theme.fyCardSub, in: JournalCardShape())
+        .overlay(JournalCardShape().stroke(theme.fyBorder, lineWidth: 1))
+        .shadow(color: theme.fyShadow, radius: 3, y: 1)
+    }
+
+    func foyerPanel(_ theme: AlcoveTheme) -> some View {
+        background(theme.fyCard)
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous)
+            .stroke(theme.fyBorder, lineWidth: 1))
+        .shadow(color: theme.fyShadow, radius: 14, y: 6)
+        .overlay(alignment: .topTrailing) { FoyerFoldCorner(theme: theme) }
     }
 }

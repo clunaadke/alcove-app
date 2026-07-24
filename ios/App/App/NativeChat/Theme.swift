@@ -27,6 +27,15 @@ struct AlcoveTheme {
     let splashGlowB: Color
     let splashPetal: Color
     let splashTitle: Color
+    // Foyer 暖纸系 — 同步 PWA --fy-* 变量
+    let fyAccent: Color
+    let fyAccentSoft: Color
+    let fyCard: Color
+    let fyCardSub: Color
+    let fyBorder: Color
+    let fyShadow: Color
+    let fyFold: Color
+    let fyDash: Color
 
     static let haven = AlcoveTheme(
         isDark: false,
@@ -53,7 +62,15 @@ struct AlcoveTheme {
         splashGlowA: Color(red: 238/255, green: 190/255, blue: 205/255).opacity(0.40),
         splashGlowB: Color(red: 244/255, green: 214/255, blue: 224/255).opacity(0.34),
         splashPetal: Color(red: 238/255, green: 198/255, blue: 210/255),
-        splashTitle: Color(red: 207/255, green: 148/255, blue: 166/255))
+        splashTitle: Color(red: 207/255, green: 148/255, blue: 166/255),
+        fyAccent: Color(red: 207/255, green: 148/255, blue: 166/255),
+        fyAccentSoft: Color(red: 223/255, green: 178/255, blue: 192/255).opacity(0.5),
+        fyCard: Color.white.opacity(0.94),
+        fyCardSub: Color.white.opacity(0.9),
+        fyBorder: Color(red: 198/255, green: 198/255, blue: 210/255).opacity(0.40),
+        fyShadow: Color(red: 140/255, green: 140/255, blue: 160/255).opacity(0.10),
+        fyFold: Color(red: 233/255, green: 201/255, blue: 212/255).opacity(0.65),
+        fyDash: Color(red: 210/255, green: 190/255, blue: 197/255).opacity(0.45))
 
     static let midnight = AlcoveTheme(
         isDark: true,
@@ -83,7 +100,15 @@ struct AlcoveTheme {
         splashGlowA: Color(red: 160/255, green: 125/255, blue: 138/255).opacity(0.16),
         splashGlowB: Color(red: 140/255, green: 110/255, blue: 122/255).opacity(0.13),
         splashPetal: Color(red: 74/255, green: 62/255, blue: 68/255),
-        splashTitle: Color(red: 151/255, green: 113/255, blue: 127/255))
+        splashTitle: Color(red: 151/255, green: 113/255, blue: 127/255),
+        fyAccent: Color(red: 160/255, green: 125/255, blue: 138/255),
+        fyAccentSoft: Color(red: 140/255, green: 105/255, blue: 118/255).opacity(0.45),
+        fyCard: Color(red: 36/255, green: 36/255, blue: 44/255).opacity(0.88),
+        fyCardSub: Color(red: 42/255, green: 42/255, blue: 52/255).opacity(0.85),
+        fyBorder: Color(red: 105/255, green: 105/255, blue: 122/255).opacity(0.30),
+        fyShadow: Color.black.opacity(0.35),
+        fyFold: Color(red: 120/255, green: 90/255, blue: 102/255).opacity(0.45),
+        fyDash: Color(red: 120/255, green: 105/255, blue: 112/255).opacity(0.4))
 
     static func named(_ name: String) -> AlcoveTheme {
         name == "midnight" ? .midnight : .haven
