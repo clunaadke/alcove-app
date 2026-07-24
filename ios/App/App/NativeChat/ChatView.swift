@@ -435,6 +435,15 @@ struct ChatView: View {
             .padding(.horizontal, 10)
         }
         .padding(.bottom, 12)
+        .background(
+            VStack(spacing: 0) {
+                LinearGradient(
+                    colors: [.clear, theme.fade.opacity(0.6), theme.fade.opacity(0.95)],
+                    startPoint: .top, endPoint: .bottom)
+                theme.fade.opacity(0.95)
+            }
+            .ignoresSafeArea(edges: .bottom)
+        )
         .background(GeometryReader { geo in
             Color.clear.preference(key: InputBarHeightKey.self, value: geo.size.height)
         })
