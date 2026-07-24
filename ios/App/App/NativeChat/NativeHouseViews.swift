@@ -1970,6 +1970,7 @@ private struct NativeForgeView: View {
     @State private var loading = true
     @State private var forging = false
     @State private var result: String?
+    @State private var newSessionId: String?
     @AppStorage("alcoveTheme") private var themeName = "haven"
     private var theme: AlcoveTheme { .named(themeName) }
 
@@ -2050,8 +2051,32 @@ private struct NativeForgeView: View {
                         if let result {
                             Text(result)
                                 .font(.system(size: 12, weight: .medium))
-                                .foregroundColor(result.contains("成功") ? .green : .red)
+                                .foregroundColor(.red)
                                 .padding(14).foyerCard(theme)
+                        }
+
+                        if let sid = newSessionId {
+                            VStack(spacing: 8) {
+                                Text("锻造完成")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundColor(theme.fyAccent)
+                                Text("新 session: \(String(sid.prefix(20)))...")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(theme.textDim)
+                                VStack(spacing: 4) {
+                                    Text("在终端输入：")
+                                        .font(.system(size: 10))
+                                        .foregroundColor(theme.textDim)
+                                    Text("claude --resume \(sid)")
+                                        .font(.system(size: 11, design: .monospaced))
+                                        .textSelection(.enabled)
+                                        .padding(10)
+                                        .frame(maxWidth: .infinity)
+                                        .background(Color.black.opacity(0.75), in: RoundedRectangle(cornerRadius: 8))
+                                        .foregroundColor(.white)
+                                }
+                            }
+                            .padding(14).foyerCard(theme)
                         }
 
                         HStack(spacing: 12) {
@@ -2117,7 +2142,8 @@ private struct NativeForgeView: View {
                 "/api/forge", method: "POST",
                 body: ["retain": Int(retain)])
             if let sid = obj["new_session_id"] as? String, !sid.isEmpty {
-                result = "锻造成功，新窗口即将启动"
+                newSessionId = sid
+                result = nil
             } else {
                 result = (obj["error"] as? String) ?? "锻造失败"
             }
@@ -2492,19 +2518,17 @@ private struct NativeCalendarView: View {
     }
 
     private func loadDiaryContent(key: String, date: String, time: String) async {
-        guard let entries = try? await NativeHouseAPI.request("/api/diary/entries?limit=100") else { return }
-        let list: [[String: Any]]
-        if let arr = entries as? [[String: Any]] { list = arr }
-        else if let obj = entries as? [String: Any], let arr = obj["entries"] as? [[String: Any]] { list = arr }
-        else { list = [] }
-        for entry in list {
-            let d = entry.string("date")
-            if d.hasPrefix(date) {
-                let entryTime = String(d.dropFirst(11).prefix(5))
-                if entryTime == time || d.contains(time) {
-                    diaryContents[key] = entry.string("content")
-                    return
-                }
+        guard let obj = try? await NativeHouseAPI.object("/api/calendar/day?date=\(date)") else {
+            diaryContents[key] = "加载失败"
+            return
+        }
+        let diaries = obj.array("diaries")
+        for entry in diaries {
+            let ts = entry.string("ts")
+            let tsTime = ts.count > 16 ? String(ts.dropFirst(11).prefix(5)) : ""
+            if tsTime == time {
+                diaryContents[key] = entry.string("content")
+                return
             }
         }
         diaryContents[key] = "没有找到内容"
