@@ -448,7 +448,7 @@ struct ChatView: View {
                                     colors: [theme.sendTop, theme.sendBottom],
                                     startPoint: .topLeading, endPoint: .bottomTrailing))
                             .clipShape(Circle())
-                            .shadow(color: theme.sendBottom.opacity(0.4),
+                            .shadow(color: .black.opacity(0.2),
                                     radius: 4, y: 2)
                             .opacity(canSend || recorder.isRecording ? 1 : 0.35)
                     }
@@ -645,6 +645,10 @@ struct MessageRow: View {
                     .padding(10)
                     .background(theme.bubbleAI.opacity(0.7),
                                 in: RoundedRectangle(cornerRadius: 12))
+                    .onTapGesture {
+                        withAnimation(.easeInOut(duration: 0.15)) { showThinking = false }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { onContentChange?() }
+                    }
             }
         }
     }
