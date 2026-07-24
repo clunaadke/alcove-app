@@ -254,7 +254,7 @@ struct ChatView: View {
         ZStack {
             GradientBlurView(edge: .top)
             LinearGradient(
-                colors: [theme.fade.opacity(0.22), theme.fade.opacity(0.08), .clear],
+                colors: [theme.fade.opacity(0.14), theme.fade.opacity(0.05), .clear],
                 startPoint: .top,
                 endPoint: .bottom
             )
@@ -268,7 +268,7 @@ struct ChatView: View {
         ZStack {
             GradientBlurView(edge: .bottom)
             LinearGradient(
-                colors: [.clear, theme.fade.opacity(0.10), theme.fade.opacity(0.25), theme.fade.opacity(0.45)],
+                colors: [.clear, theme.fade.opacity(0.04), theme.fade.opacity(0.10), theme.fade.opacity(0.16)],
                 startPoint: .top,
                 endPoint: .bottom
             )
@@ -701,9 +701,24 @@ private struct GradientBlurView: UIViewRepresentable {
         var mask: CAGradientLayer?
     }
 
-    func makeUIView(context: Context) -> UIVisualEffectView {
-        let view = UIVisualEffectView(effect: UIBlurEffect(style: .systemThinMaterial))
-        view.isUserInteractionEnabled = false
+    // 关键：mask 不能直接加在 UIVisualEffectView.layer 上——真机上会让整块
+    // 模糊罢工（什么都不渲染）。改成外面套一个普通容器 UIView，把毛玻璃填满
+    // 容器，渐变 mask 加在容器 layer 上，模糊才稳定显示。
+    func makeUIView(context: Context) -> UIView {
+        let container = UIView()
+        container.isUserInteractionEnabled = false
+        container.backgroundColor = .clear
+
+        let blur = UIVisualEffectView(effect: UIBlurEffect(style: .systemThinMaterial))
+        blur.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(blur)
+        NSLayoutConstraint.activate([
+            blur.topAnchor.constraint(equalTo: container.topAnchor),
+            blur.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            blur.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            blur.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+        ])
+
         let mask = CAGradientLayer()
         mask.colors = edge == .top
             ? [UIColor.black.cgColor, UIColor.black.withAlphaComponent(0.68).cgColor,
@@ -711,12 +726,12 @@ private struct GradientBlurView: UIViewRepresentable {
             : [UIColor.clear.cgColor, UIColor.black.withAlphaComponent(0.60).cgColor,
                UIColor.black.cgColor]
         mask.locations = [0, 0.55, 1]
-        view.layer.mask = mask
+        container.layer.mask = mask
         context.coordinator.mask = mask
-        return view
+        return container
     }
 
-    func updateUIView(_ view: UIVisualEffectView, context: Context) {
+    func updateUIView(_ view: UIView, context: Context) {
         guard let mask = context.coordinator.mask else { return }
         if mask.frame != view.bounds {
             CATransaction.begin()
