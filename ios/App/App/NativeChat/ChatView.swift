@@ -356,13 +356,13 @@ struct ChatView: View {
                             .foregroundColor(theme.textDim)
                         Spacer()
                     }
-                    .padding(.init(top: 12, leading: 16, bottom: 4, trailing: 14))
+                    .padding(.init(top: 16, leading: 14, bottom: 4, trailing: 14))
                 } else {
                     TextField("ring the chime …", text: $draft, axis: .vertical)
                         .focused($inputFocused)
                         .lineLimit(1...5)
                         .font(.system(size: 15.5, design: .serif).italic())
-                        .padding(.init(top: 12, leading: 14, bottom: 4, trailing: 14))
+                        .padding(.init(top: 16, leading: 14, bottom: 4, trailing: 14))
                 }
                 HStack(spacing: 2) {
                     if recorder.isRecording {
@@ -386,19 +386,19 @@ struct ChatView: View {
                             }
                         } label: {
                             Image(systemName: "paperclip")
-                                .font(.system(size: 16, weight: .light))
+                                .font(.system(size: 16, weight: .medium))
                                 .foregroundColor(theme.textDim)
                                 .frame(width: 32, height: 32)
                         }
                         Button { showStickers = true } label: {
                             Image(systemName: "face.smiling")
-                                .font(.system(size: 16, weight: .light))
+                                .font(.system(size: 16, weight: .medium))
                                 .foregroundColor(theme.textDim)
                                 .frame(width: 32, height: 32)
                         }
                         Button { recorder.start() } label: {
                             Image(systemName: "mic")
-                                .font(.system(size: 16, weight: .light))
+                                .font(.system(size: 16, weight: .medium))
                                 .foregroundColor(theme.textDim)
                                 .frame(width: 32, height: 32)
                         }
@@ -416,7 +416,7 @@ struct ChatView: View {
                             store.sendHold(t)
                         } label: {
                             Image(systemName: "arrow.turn.down.left")
-                                    .font(.system(size: 15, weight: .light))
+                                    .font(.system(size: 15, weight: .medium))
                                     .foregroundColor(theme.textDim)
                                     .frame(width: 32, height: 32)
                         }
@@ -430,7 +430,6 @@ struct ChatView: View {
                             let t = draft.trimmingCharacters(in: .whitespacesAndNewlines)
                             draft = ""
                             if !pendingImages.isEmpty {
-                                // 图跟文字一起走，caption 挂第一张，和 PWA 一致
                                 let imgs = pendingImages.map(\.jpeg)
                                 pendingImages = []
                                 store.sendImages(imgs, caption: t)
@@ -440,31 +439,29 @@ struct ChatView: View {
                         }
                     } label: {
                         Image(systemName: "paperplane.fill")
-                            .font(.system(size: 14, weight: .medium))
+                            .font(.system(size: 15, weight: .semibold))
                             .foregroundColor(.white)
                             .rotationEffect(.degrees(-8))
-                            .frame(width: 32, height: 32)
+                            .frame(width: 36, height: 36)
                             .background(
                                 LinearGradient(
                                     colors: [theme.sendTop, theme.sendBottom],
                                     startPoint: .topLeading, endPoint: .bottomTrailing))
                             .clipShape(Circle())
-                            .shadow(color: theme.sendBottom.opacity(0.35),
-                                    radius: 2.5, y: 1)
-                            .opacity(canSend || recorder.isRecording ? 1 : 0.45)
+                            .shadow(color: theme.sendBottom.opacity(0.4),
+                                    radius: 4, y: 2)
+                            .opacity(canSend || recorder.isRecording ? 1 : 0.35)
                     }
                     .disabled(!canSend && !recorder.isRecording)
                 }
-                .padding(.init(top: 4, leading: 6, bottom: 6, trailing: 6))
+                .padding(.init(top: 4, leading: 8, bottom: 16, trailing: 8))
             }
-            .background(.ultraThinMaterial,
-                        in: RoundedRectangle(cornerRadius: 20))
             .background(theme.capsuleTint,
-                        in: RoundedRectangle(cornerRadius: 20))
-            .overlay(RoundedRectangle(cornerRadius: 20).stroke(theme.capsuleBorder, lineWidth: 1))
-            .padding(.horizontal, 10)
+                        in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+            .shadow(color: .black.opacity(0.05), radius: 14, x: 0, y: 2)
+            .padding(.horizontal, 14)
         }
-        .padding(.bottom, 4)
+        .padding(.bottom, 8)
         .background(GeometryReader { geo in
             Color.clear.preference(key: InputBarHeightKey.self, value: geo.size.height)
         })
