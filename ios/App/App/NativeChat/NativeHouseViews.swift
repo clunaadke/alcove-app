@@ -104,8 +104,18 @@ struct NativeHouseSheet: View {
                     })
                 case .crosstalk, .coread, .liao:
                     NativePlayView(destination: route)
+                case .checklist:
+                    NativeChecklistView()
+                case .music:
+                    NativeMusicView()
+                case .clockwork:
+                    ClockworkView()
+                case .search:
+                    NativeSearchView()
+                case .favorites:
+                    NativeFavoritesView()
                 default:
-                    WebHouseView(destination: route)
+                    NativeDataPanel(destination: route)
                 }
             }
         }
