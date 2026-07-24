@@ -114,6 +114,12 @@ struct NativeHouseSheet: View {
                     NativeSearchView()
                 case .favorites:
                     NativeFavoritesView()
+                case .usage:
+                    NativeUsageView()
+                case .portrait:
+                    NativePortraitView()
+                case .desire:
+                    NativeDesireView()
                 default:
                     NativeDataPanel(destination: route)
                 }
@@ -957,19 +963,30 @@ private final class DataPanelModel: ObservableObject {
         var out: [[String: Any]] = []
         for (key, value) in object.sorted(by: { $0.key < $1.key }) {
             if let dict = value as? [String: Any] {
-                out.append(["name": key, "content": pretty(dict)])
+                out.append(["name": key, "content": prettyJSON(dict)])
             } else if let list = value as? [Any] {
-                out.append(["name": key, "content": list.map { String(describing: $0) }.joined(separator: "\n")])
+                out.append(["name": key, "content": list.map { prettyValue($0) }.joined(separator: "\n")])
             } else {
-                out.append(["name": key, "content": String(describing: value)])
+                out.append(["name": key, "content": prettyValue(value)])
             }
         }
         return out
     }
 
-    private func pretty(_ object: [String: Any]) -> String {
-        object.sorted(by: { $0.key < $1.key })
-            .map { "\($0.key)：\(String(describing: $0.value))" }.joined(separator: "\n")
+    private func prettyJSON(_ object: Any) -> String {
+        guard let data = try? JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys]),
+              let str = String(data: data, encoding: .utf8) else {
+            return "\(object)"
+        }
+        return str
+    }
+
+    private func prettyValue(_ value: Any) -> String {
+        if let s = value as? String { return s }
+        if let n = value as? NSNumber { return n.stringValue }
+        if let dict = value as? [String: Any] { return prettyJSON(dict) }
+        if let arr = value as? [Any] { return prettyJSON(arr) }
+        return "\(value)"
     }
 
     private func record(_ row: [String: Any]) -> NativeRecord {
@@ -977,10 +994,20 @@ private final class DataPanelModel: ObservableObject {
         let subtitle = row.string("status", "track", "ai_name", "source_date", "ts", "created")
         let body = row.string("content_preview", "content", "comment", "caption", "why_mine", "state")
         let image = row.string("img", "image_url", "cover")
+        let fallback: String
+        if body.isEmpty {
+            let skipKeys: Set<String> = ["name", "title", "text", "local_date", "date", "mode",
+                                         "status", "track", "ai_name", "source_date", "ts", "created",
+                                         "img", "image_url", "cover"]
+            fallback = row.filter { !skipKeys.contains($0.key) }
+                .sorted(by: { $0.key < $1.key })
+                .map { "\($0.key): \(prettyValue($0.value))" }
+                .joined(separator: "\n")
+        } else { fallback = body }
         return NativeRecord(
             title: title.isEmpty ? "记录" : title,
             subtitle: subtitle,
-            body: body.isEmpty ? row.description : body,
+            body: fallback,
             image: image)
     }
 }
@@ -1581,5 +1608,292 @@ private extension View {
             .stroke(theme.fyBorder, lineWidth: 1))
         .shadow(color: theme.fyShadow, radius: 14, y: 6)
         .overlay(alignment: .topTrailing) { FoyerFoldCorner(theme: theme) }
+    }
+}
+
+// MARK: - Usage
+
+private struct NativeUsageView: View {
+    @State private var data: [String: Any] = [:]
+    @State private var loading = true
+    @AppStorage("alcoveTheme") private var themeName = "haven"
+    private var theme: AlcoveTheme { .named(themeName) }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            FoyerPanelTitle(title: "Usage", theme: theme)
+            if loading {
+                Spacer(); ProgressView().tint(theme.fyAccent); Spacer()
+            } else {
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: 12) {
+                        if let rl = data["rate_limits"] as? [String: Any] {
+                            usageCard("额度", items: [
+                                ("模型", rl.string("model")),
+                                ("5h", "\(pct(rl, "five_hour"))%"),
+                                ("7d", "\(pct(rl, "seven_day"))%")
+                            ])
+                            if let fh = rl["five_hour"] as? [String: Any] {
+                                usageBar("5小时", percent: intVal(fh, "used_percent"), color: .blue)
+                            }
+                            if let sd = rl["seven_day"] as? [String: Any] {
+                                usageBar("7天", percent: intVal(sd, "used_percent"), color: .purple)
+                            }
+                        }
+                        if let st = data["session_tokens"] as? [String: Any] {
+                            let cost = (st["cost_usd"] as? Double) ?? 0
+                            let turns = (st["turns"] as? Int) ?? 0
+                            let total = (st["total_tokens"] as? Int) ?? 0
+                            usageCard("会话", items: [
+                                ("轮次", "\(turns)"),
+                                ("Token", formatNum(total)),
+                                ("费用", String(format: "$%.2f", cost))
+                            ])
+                        }
+                        if let cx = data["codex"] as? [String: Any],
+                           let pri = cx["primary"] as? [String: Any] {
+                            usageBar("Codex", percent: intVal(pri, "used_percent"), color: .orange)
+                        }
+                    }
+                    .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 18)
+                }
+            }
+        }
+        .foregroundColor(theme.text)
+        .foyerPanel(theme)
+        .padding(.horizontal, 12).padding(.top, 8)
+        .task {
+            if let obj = try? await NativeHouseAPI.object("/api/usage") { data = obj }
+            loading = false
+        }
+    }
+
+    private func usageCard(_ title: String, items: [(String, String)]) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title).font(.system(size: 13, weight: .semibold))
+            ForEach(items, id: \.0) { label, value in
+                HStack {
+                    Text(label).font(.system(size: 12)).foregroundColor(theme.textDim)
+                    Spacer()
+                    Text(value).font(.system(size: 12, weight: .medium))
+                }
+            }
+        }
+        .padding(14).foyerCard(theme)
+    }
+
+    private func usageBar(_ label: String, percent: Int, color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(label).font(.system(size: 12, weight: .medium))
+                Spacer()
+                Text("\(percent)%").font(.system(size: 12)).foregroundColor(theme.textDim)
+            }
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(theme.fyCardSub)
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(color.opacity(0.7))
+                        .frame(width: geo.size.width * min(CGFloat(percent), 100) / 100)
+                }
+            }
+            .frame(height: 8)
+        }
+        .padding(14).foyerCard(theme)
+    }
+
+    private func pct(_ rl: [String: Any], _ key: String) -> Int {
+        guard let sub = rl[key] as? [String: Any] else { return 0 }
+        return intVal(sub, "used_percent")
+    }
+    private func intVal(_ d: [String: Any], _ k: String) -> Int {
+        (d[k] as? Int) ?? Int((d[k] as? Double) ?? 0)
+    }
+    private func formatNum(_ n: Int) -> String {
+        if n >= 1_000_000 { return String(format: "%.1fM", Double(n) / 1_000_000) }
+        if n >= 1_000 { return String(format: "%.1fK", Double(n) / 1_000) }
+        return "\(n)"
+    }
+}
+
+// MARK: - Portrait
+
+private struct NativePortraitView: View {
+    @State private var sections: [(String, [String])] = []
+    @State private var loading = true
+    @AppStorage("alcoveTheme") private var themeName = "haven"
+    private var theme: AlcoveTheme { .named(themeName) }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            FoyerPanelTitle(title: "Portrait", theme: theme)
+            if loading {
+                Spacer(); ProgressView().tint(theme.fyAccent); Spacer()
+            } else {
+                ScrollView(showsIndicators: false) {
+                    LazyVStack(spacing: 12) {
+                        ForEach(sections, id: \.0) { title, items in
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text(title).font(.system(size: 13, weight: .semibold))
+                                    .foregroundColor(theme.fyAccent)
+                                ForEach(items, id: \.self) { item in
+                                    Text(item)
+                                        .font(.system(size: 12))
+                                        .lineSpacing(3)
+                                        .foregroundColor(theme.textDim)
+                                }
+                            }
+                            .padding(14)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .foyerCard(theme)
+                        }
+                        if sections.isEmpty {
+                            Text("还没有画像数据").font(.system(size: 12))
+                                .foregroundColor(theme.textDim).padding(30)
+                        }
+                    }
+                    .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 18)
+                }
+            }
+        }
+        .foregroundColor(theme.text)
+        .foyerPanel(theme)
+        .padding(.horizontal, 12).padding(.top, 8)
+        .task { await loadPortrait() }
+    }
+
+    private func loadPortrait() async {
+        defer { loading = false }
+        guard let obj = try? await NativeHouseAPI.object("/api/ob/portrait"),
+              let portrait = obj["portrait"] as? [String: Any] else { return }
+        var result: [(String, [String])] = []
+        for key in ["user", "assistant"] {
+            guard let section = portrait[key] as? [String: Any] else { continue }
+            let label = key == "user" ? "关于她" : "关于我"
+            var texts: [String] = []
+            for bufKey in ["stable", "recent_buffer"] {
+                if let items = section[bufKey] as? [[String: Any]] {
+                    for item in items {
+                        if let t = item["text"] as? String, !t.isEmpty { texts.append(t) }
+                    }
+                }
+            }
+            if !texts.isEmpty { result.append((label, texts)) }
+        }
+        sections = result
+    }
+}
+
+// MARK: - Desire
+
+private struct NativeDesireView: View {
+    @State private var data: [String: Any] = [:]
+    @State private var loading = true
+    @AppStorage("alcoveTheme") private var themeName = "haven"
+    private var theme: AlcoveTheme { .named(themeName) }
+
+    private let driveNames: [(String, String)] = [
+        ("attachment", "依恋"), ("curiosity", "好奇"), ("reflection", "反思"),
+        ("duty", "责任"), ("social", "社交"), ("fatigue", "疲惫"),
+        ("libido", "欲望"), ("stress", "压力")
+    ]
+
+    var body: some View {
+        VStack(spacing: 0) {
+            FoyerPanelTitle(title: "Desire", theme: theme)
+            if loading {
+                Spacer(); ProgressView().tint(theme.fyAccent); Spacer()
+            } else {
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: 12) {
+                        if let intent = data["intent"] as? [String: Any] {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("此刻最想").font(.system(size: 13, weight: .semibold))
+                                Text(intent["want_action"] as? String ?? "")
+                                    .font(.system(size: 16, weight: .bold))
+                                    .foregroundColor(theme.fyAccent)
+                                if let reason = intent["reason"] as? String {
+                                    Text(reason).font(.system(size: 11))
+                                        .foregroundColor(theme.textDim)
+                                }
+                            }
+                            .padding(14)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .foyerCard(theme)
+                        }
+                        if let drives = data["drives"] as? [String: Any],
+                           let baseline = data["baseline"] as? [String: Any] {
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text("驱动条").font(.system(size: 13, weight: .semibold))
+                                ForEach(driveNames, id: \.0) { key, label in
+                                    let val = (drives[key] as? Double) ?? 0
+                                    let base = (baseline[key] as? Double) ?? 0
+                                    driveRow(label, value: val, baseline: base)
+                                }
+                            }
+                            .padding(14).foyerCard(theme)
+                        }
+                        if let ranking = data["activity_ranking"] as? [[String: Any]], !ranking.isEmpty {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("想做的事").font(.system(size: 13, weight: .semibold))
+                                ForEach(ranking.prefix(5), id: \.description) { item in
+                                    HStack {
+                                        Text(item["activity"] as? String ?? "")
+                                            .font(.system(size: 12))
+                                        Spacer()
+                                        let score = (item["score"] as? Double) ?? 0
+                                        Text(String(format: "%.0f%%", score * 100))
+                                            .font(.system(size: 11))
+                                            .foregroundColor(theme.textDim)
+                                    }
+                                }
+                            }
+                            .padding(14).foyerCard(theme)
+                        }
+                    }
+                    .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 18)
+                }
+            }
+        }
+        .foregroundColor(theme.text)
+        .foyerPanel(theme)
+        .padding(.horizontal, 12).padding(.top, 8)
+        .task {
+            if let obj = try? await NativeHouseAPI.object("/api/desire/state") { data = obj }
+            loading = false
+        }
+    }
+
+    private func driveRow(_ label: String, value: Double, baseline: Double) -> some View {
+        VStack(spacing: 4) {
+            HStack {
+                Text(label).font(.system(size: 11)).frame(width: 32, alignment: .leading)
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(theme.fyCardSub)
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(driveColor(value))
+                            .frame(width: geo.size.width * min(CGFloat(value), 1))
+                    }
+                }
+                .frame(height: 6)
+                Text(String(format: "%.2f", value))
+                    .font(.system(size: 10, design: .monospaced))
+                    .frame(width: 36, alignment: .trailing)
+                    .foregroundColor(theme.textDim)
+                Text(value > baseline ? "▲" : value < baseline ? "▼" : " ")
+                    .font(.system(size: 8))
+                    .foregroundColor(value > baseline ? .green : .red)
+                    .frame(width: 12)
+            }
+        }
+    }
+
+    private func driveColor(_ val: Double) -> Color {
+        if val > 0.8 { return .red.opacity(0.7) }
+        if val > 0.5 { return .orange.opacity(0.7) }
+        return .blue.opacity(0.5)
     }
 }

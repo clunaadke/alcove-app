@@ -469,7 +469,7 @@ struct ChatView: View {
             .shadow(color: .black.opacity(0.05), radius: 14, x: 0, y: 2)
             .padding(.horizontal, 14)
         }
-        .padding(.bottom, 8)
+        .padding(.bottom, 0)
         .background(GeometryReader { geo in
             Color.clear.preference(key: InputBarHeightKey.self, value: geo.size.height)
         })
