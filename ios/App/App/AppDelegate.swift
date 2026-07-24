@@ -12,6 +12,8 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         let win = UIWindow(frame: UIScreen.main.bounds)
         let host = UIHostingController(rootView: RootView())
         // 深浅由 RootView 按 PWA 主题设置，不在这里锁死
+        host.view.backgroundColor = .clear
+        win.backgroundColor = UIColor(red: 0.06, green: 0.06, blue: 0.07, alpha: 1)
         win.rootViewController = host
         win.makeKeyAndVisible()
         window = win

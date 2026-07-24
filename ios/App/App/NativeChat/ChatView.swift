@@ -151,10 +151,10 @@ struct ChatView: View {
                                         theme: theme)
                             .id("typing")
                     }
+                    Color.clear.frame(height: inputBarHeight + 8)
                     Color.clear.frame(height: 1).id("tail")
                         .onAppear { atBottom = true }
                         .onDisappear { atBottom = false }
-                    Color.clear.frame(height: inputBarHeight)
                 }
                 .padding(.horizontal, 12)
                 .padding(.top, 52)
@@ -251,28 +251,22 @@ struct ChatView: View {
     // MARK: 输入栏（悬浮透底，无实心背景）
 
     private var topFade: some View {
-        ZStack {
-            GradientBlurView(edge: .top)
-            LinearGradient(
-                colors: [theme.fade.opacity(0.14), theme.fade.opacity(0.05), .clear],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-        }
+        LinearGradient(
+            colors: [theme.fade.opacity(0.85), theme.fade.opacity(0.5), theme.fade.opacity(0.2), .clear],
+            startPoint: .top,
+            endPoint: .bottom
+        )
         .frame(height: 92)
         .allowsHitTesting(false)
         .ignoresSafeArea(edges: .top)
     }
 
     private var bottomFade: some View {
-        ZStack {
-            GradientBlurView(edge: .bottom)
-            LinearGradient(
-                colors: [.clear, theme.fade.opacity(0.04), theme.fade.opacity(0.10), theme.fade.opacity(0.16)],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-        }
+        LinearGradient(
+            colors: [.clear, theme.fade.opacity(0.2), theme.fade.opacity(0.5), theme.fade.opacity(0.85)],
+            startPoint: .top,
+            endPoint: .bottom
+        )
         .frame(height: 160)
         .allowsHitTesting(false)
         .ignoresSafeArea(edges: .bottom)
@@ -390,21 +384,10 @@ struct ChatView: View {
                             draft = ""
                             store.sendHold(t)
                         } label: {
-                            ZStack(alignment: .topTrailing) {
-                                Image(systemName: "arrow.turn.down.left")
+                            Image(systemName: "arrow.turn.down.left")
                                     .font(.system(size: 15, weight: .light))
                                     .foregroundColor(theme.textDim)
                                     .frame(width: 32, height: 32)
-                                if store.heldCount > 0 {
-                                    Text("\(store.heldCount)")
-                                        .font(.system(size: 10, weight: .semibold))
-                                        .foregroundColor(.white)
-                                        .padding(.horizontal, 4)
-                                        .frame(minWidth: 15, minHeight: 15)
-                                        .background(theme.sendBottom, in: Capsule())
-                                        .offset(x: 3, y: -3)
-                                }
-                            }
                         }
                         .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                         .padding(.trailing, 12)
@@ -448,7 +431,7 @@ struct ChatView: View {
             .background(theme.capsuleTint,
                         in: RoundedRectangle(cornerRadius: 20, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(Color.red, lineWidth: 4)) // 【验证桩·临时】看到这圈红框=新代码已进包
+                .stroke(theme.capsuleBorder, lineWidth: 1))
             .padding(.horizontal, 10)
         }
         .padding(.bottom, 12)
@@ -690,57 +673,6 @@ struct MessageRow: View {
     }()
 }
 
-// 一个 UIKit 原生模糊视图配一个渐变 mask。它不会随着消息行滚动重建，
-// 比在滚动层上实时栅格化 Material + SwiftUI mask 稳定得多。
-private struct GradientBlurView: UIViewRepresentable {
-    enum Edge { case top, bottom }
-    let edge: Edge
-
-    func makeCoordinator() -> Coordinator { Coordinator() }
-    final class Coordinator {
-        var mask: CAGradientLayer?
-    }
-
-    // 关键：mask 不能直接加在 UIVisualEffectView.layer 上——真机上会让整块
-    // 模糊罢工（什么都不渲染）。改成外面套一个普通容器 UIView，把毛玻璃填满
-    // 容器，渐变 mask 加在容器 layer 上，模糊才稳定显示。
-    func makeUIView(context: Context) -> UIView {
-        let container = UIView()
-        container.isUserInteractionEnabled = false
-        container.backgroundColor = .clear
-
-        let blur = UIVisualEffectView(effect: UIBlurEffect(style: .systemThinMaterial))
-        blur.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(blur)
-        NSLayoutConstraint.activate([
-            blur.topAnchor.constraint(equalTo: container.topAnchor),
-            blur.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-            blur.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            blur.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-        ])
-
-        let mask = CAGradientLayer()
-        mask.colors = edge == .top
-            ? [UIColor.black.cgColor, UIColor.black.withAlphaComponent(0.68).cgColor,
-               UIColor.clear.cgColor]
-            : [UIColor.clear.cgColor, UIColor.black.withAlphaComponent(0.60).cgColor,
-               UIColor.black.cgColor]
-        mask.locations = [0, 0.55, 1]
-        container.layer.mask = mask
-        context.coordinator.mask = mask
-        return container
-    }
-
-    func updateUIView(_ view: UIView, context: Context) {
-        guard let mask = context.coordinator.mask else { return }
-        if mask.frame != view.bounds {
-            CATransaction.begin()
-            CATransaction.setDisableActions(true)
-            mask.frame = view.bounds
-            CATransaction.commit()
-        }
-    }
-}
 
 // MARK: - 小组件
 
