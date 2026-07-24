@@ -332,11 +332,13 @@ struct ChatView: View {
                                         pendingImages.remove(at: idx)
                                     } label: {
                                         Image(systemName: "xmark.circle.fill")
-                                            .font(.system(size: 16))
+                                            .font(.system(size: 20))
                                             .foregroundColor(.white)
-                                            .shadow(radius: 1.5)
+                                            .shadow(radius: 2)
+                                            .frame(width: 32, height: 32)
+                                            .contentShape(Rectangle())
                                     }
-                                    .offset(x: 5, y: -5)
+                                    .offset(x: 6, y: -6)
                                 }
                             }
                         }
