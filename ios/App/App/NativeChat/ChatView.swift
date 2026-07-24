@@ -15,7 +15,9 @@ struct ChatView: View {
     @State private var showCamera = false
     @State private var showDocPicker = false
     @State private var showPhotoPicker = false
+    @State private var previewImage: UIImage?
     @State private var inputBarHeight: CGFloat = 90
+    @State private var scrollKick = 0
     @FocusState private var inputFocused: Bool
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("alcoveTheme") private var themeName = "haven"
@@ -97,6 +99,9 @@ struct ChatView: View {
         .fullScreenCover(item: $viewerURL) { url in
             ImageViewer(url: url) { viewerURL = nil }
         }
+        .fullScreenCover(item: $previewImage) { img in
+            LocalImageViewer(image: img) { previewImage = nil }
+        }
         .onAppear { store.start() }
         .onChange(of: scenePhase) { phase in
             if phase == .active { store.refresh() }
@@ -141,7 +146,8 @@ struct ChatView: View {
                                    onDelete: { store.deleteMessage(msg) },
                                    onFavorite: { store.favoriteMessage(msg) },
                                    onQuote: { text in draft = "「\(text.prefix(60))」\n" },
-                                   onResend: { text in store.sendText(text) })
+                                   onResend: { text in store.sendText(text) },
+                                   onContentChange: { scrollKick += 1 })
                         .id(msg.id)
                     }
                     if store.isTyping {
@@ -211,8 +217,18 @@ struct ChatView: View {
                 }
             }
             .onChange(of: store.isTyping) { t in
-                if t && (atBottom || inputFocused) {
-                    scrollToTail(proxy, delays: [0, 0.2], animated: true)
+                if atBottom || inputFocused {
+                    scrollToTail(proxy, delays: [0, 0.2, 0.5], animated: true)
+                }
+            }
+            .onChange(of: inputBarHeight) { _ in
+                if atBottom || inputFocused {
+                    scrollToTail(proxy, delays: [0.05, 0.3], animated: true)
+                }
+            }
+            .onChange(of: scrollKick) { _ in
+                if atBottom || inputFocused {
+                    scrollToTail(proxy, delays: [0.05, 0.3, 0.6], animated: true)
                 }
             }
         }
@@ -299,6 +315,7 @@ struct ChatView: View {
                                         .scaledToFill()
                                         .frame(width: 64, height: 64)
                                         .clipShape(RoundedRectangle(cornerRadius: 10))
+                                        .onTapGesture { previewImage = item.thumb }
                                     Button {
                                         pendingImages.remove(at: idx)
                                     } label: {
@@ -476,6 +493,7 @@ struct MessageRow: View {
     var onFavorite: (() -> Void)? = nil
     var onQuote: ((String) -> Void)? = nil
     var onResend: ((String) -> Void)? = nil
+    var onContentChange: (() -> Void)? = nil
     @State private var showThinking = false
     @State private var showRecall = false
 
@@ -599,6 +617,7 @@ struct MessageRow: View {
         VStack(alignment: .leading, spacing: 2) {
             Button {
                 withAnimation(.easeInOut(duration: 0.15)) { showThinking.toggle() }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { onContentChange?() }
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "bubble.left.and.bubble.right")
@@ -869,6 +888,39 @@ private struct InputBarHeightKey: PreferenceKey {
 
 extension URL: Identifiable {
     public var id: String { absoluteString }
+}
+
+extension UIImage: @retroactive Identifiable {
+    public var id: ObjectIdentifier { ObjectIdentifier(self) }
+}
+
+struct LocalImageViewer: View {
+    let image: UIImage
+    var dismiss: () -> Void
+    @State private var scale: CGFloat = 1
+
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            Image(uiImage: image)
+                .resizable()
+                .scaledToFit()
+                .scaleEffect(scale)
+                .gesture(MagnificationGesture()
+                    .onChanged { scale = max(1, $0) }
+                    .onEnded { _ in withAnimation { scale = 1 } })
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .overlay(alignment: .topTrailing) {
+            Button { dismiss() } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 30))
+                    .foregroundColor(.white.opacity(0.8))
+                    .padding()
+            }
+        }
+        .onTapGesture { dismiss() }
+    }
 }
 
 struct CameraView: UIViewControllerRepresentable {
