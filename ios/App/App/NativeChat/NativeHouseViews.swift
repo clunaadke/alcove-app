@@ -2084,7 +2084,7 @@ private struct NativeForgeView: View {
             let obj = try await NativeHouseAPI.object(
                 "/api/forge", method: "POST",
                 body: ["retain": Int(retain)])
-            if obj["ok"] as? Bool == true {
+            if let sid = obj["new_session_id"] as? String, !sid.isEmpty {
                 result = "锻造成功，新窗口即将启动"
             } else {
                 result = (obj["error"] as? String) ?? "锻造失败"
