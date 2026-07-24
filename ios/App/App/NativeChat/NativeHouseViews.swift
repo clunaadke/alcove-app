@@ -217,8 +217,26 @@ private struct NativeSidebarView: View {
                 .padding(.top, 8)
 
                 HStack(spacing: 10) {
-                    summaryCard("大厅", model.homeLine, "house", .home)
-                    summaryCard("在一起", "\(model.days) days", "heart", .calendar)
+                    summaryCard("大厅", model.homeLine, "house", .home, large: true)
+                    Button { select(.calendar) } label: {
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack(spacing: 8) {
+                                Image(systemName: "heart")
+                                    .font(.system(size: 17, weight: .light))
+                                    .foregroundColor(theme.fyAccent)
+                                Text("在一起").font(.system(size: 13, weight: .medium))
+                            }
+                            Text("\(model.days) days")
+                                .font(.system(size: 22, weight: .semibold, design: .rounded))
+                            Text("since 2026.06.01")
+                                .font(.system(size: 10))
+                                .foregroundColor(theme.textDim)
+                        }
+                        .padding(12)
+                        .frame(maxWidth: .infinity, minHeight: 80, alignment: .leading)
+                        .foyerCard(theme)
+                    }
+                    .buttonStyle(.plain)
                 }
                 HStack(spacing: 10) {
                     summaryCard("Sex", model.sexLine, "heart.fill", .sex)
@@ -260,7 +278,7 @@ private struct NativeSidebarView: View {
     }
 
     private func summaryCard(
-        _ title: String, _ subtitle: String, _ icon: String, _ target: HouseDestination
+        _ title: String, _ subtitle: String, _ icon: String, _ target: HouseDestination, large: Bool = false
     ) -> some View {
         Button { select(target) } label: {
             HStack(spacing: 10) {
@@ -274,7 +292,7 @@ private struct NativeSidebarView: View {
                 Spacer(minLength: 0)
             }
             .padding(12)
-            .frame(maxWidth: .infinity, minHeight: 60)
+            .frame(maxWidth: .infinity, minHeight: large ? 80 : 60)
             .foyerCard(theme)
         }
         .buttonStyle(.plain)
@@ -2055,6 +2073,20 @@ private struct NativeForgeView: View {
                             }
                             .disabled(!valid || forging)
                         }
+
+                        if let sid = preview["source_session"] as? String, !sid.isEmpty {
+                            VStack(spacing: 2) {
+                                Text("当前窗口")
+                                    .font(.system(size: 10))
+                                    .foregroundColor(theme.textDim)
+                                Text(sid)
+                                    .font(.system(size: 9, design: .monospaced))
+                                    .foregroundColor(theme.textLight)
+                                    .textSelection(.enabled)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(10).foyerCard(theme)
+                        }
                     }
                     .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 18)
                 }
@@ -2313,6 +2345,8 @@ private struct NativeCalendarView: View {
     @State private var events: [String: [[String: Any]]] = [:]
     @State private var periodDates: [String: String] = [:]
     @State private var loading = true
+    @State private var expandedIdx: Int?
+    @State private var diaryContents: [String: String] = [:]
     @AppStorage("alcoveTheme") private var themeName = "haven"
     private var theme: AlcoveTheme { .named(themeName) }
 
@@ -2371,20 +2405,50 @@ private struct NativeCalendarView: View {
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(.horizontal, 4)
 
-                            ForEach(Array(selectedEvents.enumerated()), id: \.offset) { _, evt in
-                                HStack {
-                                    Text("📝").font(.system(size: 20))
-                                    Text(evt.string("title"))
-                                        .font(.system(size: 13, weight: .medium))
-                                    Spacer()
-                                    Text(evt.string("time"))
-                                        .font(.system(size: 12))
-                                        .foregroundColor(theme.textDim)
-                                    Image(systemName: "chevron.right")
-                                        .font(.system(size: 10))
-                                        .foregroundColor(theme.textLight)
+                            ForEach(Array(selectedEvents.enumerated()), id: \.offset) { idx, evt in
+                                let key = "\(selectedDate ?? "")_\(evt.string("time"))"
+                                let isExpanded = expandedIdx == idx
+                                Button {
+                                    if isExpanded {
+                                        expandedIdx = nil
+                                    } else {
+                                        expandedIdx = idx
+                                        if diaryContents[key] == nil {
+                                            Task { await loadDiaryContent(key: key, date: selectedDate ?? "", time: evt.string("time")) }
+                                        }
+                                    }
+                                } label: {
+                                    VStack(alignment: .leading, spacing: 0) {
+                                        HStack {
+                                            Text("📝").font(.system(size: 20))
+                                            Text(evt.string("title"))
+                                                .font(.system(size: 13, weight: .medium))
+                                            Spacer()
+                                            Text(evt.string("time"))
+                                                .font(.system(size: 12))
+                                                .foregroundColor(theme.textDim)
+                                            Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                                                .font(.system(size: 10))
+                                                .foregroundColor(theme.textLight)
+                                        }
+                                        if isExpanded {
+                                            Divider().padding(.vertical, 8)
+                                            if let content = diaryContents[key] {
+                                                Text(content)
+                                                    .font(.system(size: 12))
+                                                    .foregroundColor(theme.textDim)
+                                                    .lineSpacing(4)
+                                                    .textSelection(.enabled)
+                                                    .fixedSize(horizontal: false, vertical: true)
+                                            } else {
+                                                ProgressView().scaleEffect(0.7).tint(theme.fyAccent)
+                                                    .frame(maxWidth: .infinity).padding(8)
+                                            }
+                                        }
+                                    }
+                                    .padding(12).foyerCard(theme)
                                 }
-                                .padding(12).foyerCard(theme)
+                                .buttonStyle(.plain)
                             }
                         } else if selectedDate != nil {
                             Text("这天没有记录")
@@ -2424,6 +2488,26 @@ private struct NativeCalendarView: View {
         if selectedDate == nil, let first = events.keys.sorted().last {
             selectedDate = first
         }
+        expandedIdx = nil
+    }
+
+    private func loadDiaryContent(key: String, date: String, time: String) async {
+        guard let entries = try? await NativeHouseAPI.request("/api/diary/entries?limit=100") else { return }
+        let list: [[String: Any]]
+        if let arr = entries as? [[String: Any]] { list = arr }
+        else if let obj = entries as? [String: Any], let arr = obj["entries"] as? [[String: Any]] { list = arr }
+        else { list = [] }
+        for entry in list {
+            let d = entry.string("date")
+            if d.hasPrefix(date) {
+                let entryTime = String(d.dropFirst(11).prefix(5))
+                if entryTime == time || d.contains(time) {
+                    diaryContents[key] = entry.string("content")
+                    return
+                }
+            }
+        }
+        diaryContents[key] = "没有找到内容"
     }
 }
 
@@ -2432,6 +2516,8 @@ private struct NativeCalendarView: View {
 private struct NativeDreamsView: View {
     @State private var dreams: [[String: Any]] = []
     @State private var loading = true
+    @State private var expandedId: String?
+    @State private var dreamBodies: [String: String] = [:]
     @AppStorage("alcoveTheme") private var themeName = "haven"
     private var theme: AlcoveTheme { .named(themeName) }
 
@@ -2444,22 +2530,64 @@ private struct NativeDreamsView: View {
                 ScrollView(showsIndicators: false) {
                     LazyVStack(spacing: 10) {
                         ForEach(Array(dreams.enumerated()), id: \.offset) { _, dream in
+                            let dreamId = dream.string("dream_id")
                             let date = dream.string("local_date")
                             let status = dream.string("status")
-                            HStack(alignment: .top) {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(date)
-                                        .font(.system(size: 14, weight: .medium))
-                                    Text(statusLabel(status))
-                                        .font(.system(size: 11))
-                                        .foregroundColor(statusColor(status))
+                            let hasBody = dream.bool("has_body")
+                            let isExpanded = expandedId == dreamId
+                            Button {
+                                if isExpanded {
+                                    expandedId = nil
+                                } else {
+                                    expandedId = dreamId
+                                    if dreamBodies[dreamId] == nil {
+                                        Task { await loadDreamBody(dreamId: dreamId, hasBody: hasBody) }
+                                    }
                                 }
-                                Spacer()
-                                Image(systemName: statusIcon(status))
-                                    .font(.system(size: 16))
-                                    .foregroundColor(statusColor(status))
+                            } label: {
+                                VStack(alignment: .leading, spacing: 0) {
+                                    HStack(alignment: .center) {
+                                        Text("🌙").font(.system(size: 20))
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text("\(date) 的梦")
+                                                .font(.system(size: 14, weight: .medium))
+                                            Text("\(date)  知响")
+                                                .font(.system(size: 10))
+                                                .foregroundColor(theme.textDim)
+                                        }
+                                        Spacer()
+                                        Text(statusLabel(status))
+                                            .font(.system(size: 11, weight: .medium))
+                                            .foregroundColor(statusColor(status))
+                                            .padding(.horizontal, 8).padding(.vertical, 3)
+                                            .overlay(
+                                                RoundedRectangle(cornerRadius: 8)
+                                                    .stroke(statusColor(status).opacity(0.4), lineWidth: 1)
+                                            )
+                                    }
+                                    if isExpanded {
+                                        Rectangle()
+                                            .stroke(style: StrokeStyle(lineWidth: 1, dash: [4]))
+                                            .foregroundColor(theme.textLight.opacity(0.3))
+                                            .frame(height: 1)
+                                            .padding(.vertical, 10)
+                                        if let body = dreamBodies[dreamId] {
+                                            Text(body)
+                                                .font(.system(size: 12))
+                                                .foregroundColor(theme.textDim)
+                                                .lineSpacing(4)
+                                                .textSelection(.enabled)
+                                                .fixedSize(horizontal: false, vertical: true)
+                                                .frame(maxWidth: .infinity, alignment: .center)
+                                        } else {
+                                            ProgressView().scaleEffect(0.7).tint(theme.fyAccent)
+                                                .frame(maxWidth: .infinity).padding(8)
+                                        }
+                                    }
+                                }
+                                .padding(14).foyerCard(theme)
                             }
-                            .padding(14).foyerCard(theme)
+                            .buttonStyle(.plain)
                         }
                         if dreams.isEmpty {
                             Text("还没有梦")
@@ -2480,6 +2608,19 @@ private struct NativeDreamsView: View {
                 dreams = records
             }
             loading = false
+        }
+    }
+
+    private func loadDreamBody(dreamId: String, hasBody: Bool) async {
+        guard hasBody else {
+            dreamBodies[dreamId] = "这个梦读不回来了"
+            return
+        }
+        if let obj = try? await NativeHouseAPI.object("/api/dreams/read?id=\(dreamId)"),
+           obj.bool("ok") {
+            dreamBodies[dreamId] = obj.string("body")
+        } else {
+            dreamBodies[dreamId] = "这个梦读不回来了"
         }
     }
 
