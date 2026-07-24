@@ -124,6 +124,12 @@ struct NativeHouseSheet: View {
                     NativeDesireView()
                 case .forge:
                     NativeForgeView()
+                case .calendar:
+                    NativeCalendarView()
+                case .impression:
+                    NativeImpressionView()
+                case .dreams:
+                    NativeDreamsView()
                 default:
                     NativeDataPanel(destination: route)
                 }
@@ -1630,33 +1636,44 @@ private struct NativeUsageView: View {
                 Spacer(); ProgressView().tint(theme.fyAccent); Spacer()
             } else {
                 ScrollView(showsIndicators: false) {
-                    VStack(spacing: 12) {
+                    VStack(spacing: 14) {
                         if let rl = data["rate_limits"] as? [String: Any] {
-                            usageCard("额度", items: [
-                                ("模型", rl.string("model")),
-                                ("5h", "\(pct(rl, "five_hour"))%"),
-                                ("7d", "\(pct(rl, "seven_day"))%")
-                            ])
-                            if let fh = rl["five_hour"] as? [String: Any] {
-                                usageBar("5小时", percent: intVal(fh, "used_percent"), color: .blue)
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text("RATE LIMITS")
+                                    .font(.system(size: 12, weight: .bold))
+                                    .foregroundColor(theme.fyAccent)
+                                rateLimitRow("Current session",
+                                             sub: rl["five_hour"] as? [String: Any], color: .blue)
+                                rateLimitRow("Weekly limit",
+                                             sub: rl["seven_day"] as? [String: Any], color: .purple)
                             }
-                            if let sd = rl["seven_day"] as? [String: Any] {
-                                usageBar("7天", percent: intVal(sd, "used_percent"), color: .purple)
-                            }
+                            .padding(14).foyerCard(theme)
                         }
                         if let st = data["session_tokens"] as? [String: Any] {
-                            let cost = (st["cost_usd"] as? Double) ?? 0
-                            let turns = (st["turns"] as? Int) ?? 0
-                            let total = (st["total_tokens"] as? Int) ?? 0
-                            usageCard("会话", items: [
-                                ("轮次", "\(turns)"),
-                                ("Token", formatNum(total)),
-                                ("费用", String(format: "$%.2f", cost))
-                            ])
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text("CURRENT WINDOW")
+                                    .font(.system(size: 12, weight: .bold))
+                                    .foregroundColor(theme.fyAccent)
+                                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                                    statBox(String(format: "$%.2f", (st["cost_usd"] as? Double) ?? 0), "estimated cost")
+                                    statBox("\((st["turns"] as? Int) ?? 0)", "turns")
+                                    statBox(formatNum((st["total_tokens"] as? Int) ?? 0), "total tokens")
+                                    statBox(formatNum((st["output"] as? Int) ?? 0), "output tokens")
+                                }
+                                detailRow("Input", formatNum((st["input"] as? Int) ?? 0))
+                                detailRow("Cache read", formatNum((st["cache_read"] as? Int) ?? 0))
+                                detailRow("Cache create", formatNum((st["cache_create"] as? Int) ?? 0))
+                            }
+                            .padding(14).foyerCard(theme)
                         }
                         if let cx = data["codex"] as? [String: Any],
                            let pri = cx["primary"] as? [String: Any] {
-                            usageBar("Codex", percent: intVal(pri, "used_percent"), color: .orange)
+                            rateLimitCard("Codex", sub: pri, color: .orange)
+                        }
+                        if let rl = data["rate_limits"] as? [String: Any] {
+                            Text("Model: \(rl.string("model"))")
+                                .font(.system(size: 11))
+                                .foregroundColor(theme.textDim)
                         }
                     }
                     .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 18)
@@ -1672,44 +1689,69 @@ private struct NativeUsageView: View {
         }
     }
 
-    private func usageCard(_ title: String, items: [(String, String)]) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title).font(.system(size: 13, weight: .semibold))
-            ForEach(items, id: \.0) { label, value in
-                HStack {
-                    Text(label).font(.system(size: 12)).foregroundColor(theme.textDim)
-                    Spacer()
-                    Text(value).font(.system(size: 12, weight: .medium))
-                }
-            }
-        }
-        .padding(14).foyerCard(theme)
-    }
-
-    private func usageBar(_ label: String, percent: Int, color: Color) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+    private func rateLimitRow(_ label: String, sub: [String: Any]?, color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            let pct = intVal(sub ?? [:], "used_percent")
             HStack {
-                Text(label).font(.system(size: 12, weight: .medium))
+                Text(label).font(.system(size: 13, weight: .semibold))
                 Spacer()
-                Text("\(percent)%").font(.system(size: 12)).foregroundColor(theme.textDim)
+                Text("\(pct)% used").font(.system(size: 13, weight: .semibold))
             }
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(theme.fyCardSub)
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(color.opacity(0.7))
-                        .frame(width: geo.size.width * min(CGFloat(percent), 100) / 100)
+                    RoundedRectangle(cornerRadius: 4).fill(theme.fyCardSub)
+                    RoundedRectangle(cornerRadius: 4).fill(color.opacity(0.7))
+                        .frame(width: geo.size.width * min(CGFloat(pct), 100) / 100)
                 }
+            }.frame(height: 8)
+            Text("Resets in \(resetText(sub))").font(.system(size: 11)).foregroundColor(theme.textDim)
+        }
+    }
+
+    private func rateLimitCard(_ label: String, sub: [String: Any], color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            let pct = intVal(sub, "used_percent")
+            HStack {
+                Text(label).font(.system(size: 13, weight: .semibold))
+                Spacer()
+                Text("\(pct)% used").font(.system(size: 13, weight: .semibold))
             }
-            .frame(height: 8)
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 4).fill(theme.fyCardSub)
+                    RoundedRectangle(cornerRadius: 4).fill(color.opacity(0.7))
+                        .frame(width: geo.size.width * min(CGFloat(pct), 100) / 100)
+                }
+            }.frame(height: 8)
+            Text("Resets in \(resetText(sub))").font(.system(size: 11)).foregroundColor(theme.textDim)
         }
         .padding(14).foyerCard(theme)
     }
 
-    private func pct(_ rl: [String: Any], _ key: String) -> Int {
-        guard let sub = rl[key] as? [String: Any] else { return 0 }
-        return intVal(sub, "used_percent")
+    private func statBox(_ value: String, _ label: String) -> some View {
+        VStack(spacing: 4) {
+            Text(value).font(.system(size: 20, weight: .bold)).foregroundColor(theme.fyAccent)
+            Text(label).font(.system(size: 10)).foregroundColor(theme.textDim)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 12)
+        .background(theme.fyCardSub, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private func detailRow(_ label: String, _ value: String) -> some View {
+        HStack {
+            Text(label).font(.system(size: 12, weight: .medium))
+            Spacer()
+            Text(value).font(.system(size: 12)).foregroundColor(theme.textDim)
+        }
+    }
+
+    private func resetText(_ sub: [String: Any]?) -> String {
+        guard let s = sub, let secs = (s["reset_after_seconds"] as? Int) ?? (s["reset_after_seconds"] as? Double).map(Int.init) else { return "—" }
+        let d = secs / 86400, h = (secs % 86400) / 3600, m = (secs % 3600) / 60
+        if d > 0 { return "\(d)d \(h)h" }
+        if h > 0 { return "\(h)h \(m)min" }
+        return "\(m)min"
     }
     private func intVal(_ d: [String: Any], _ k: String) -> Int {
         (d[k] as? Int) ?? Int((d[k] as? Double) ?? 0)
@@ -2056,6 +2098,411 @@ private struct NativeForgeView: View {
         VStack(spacing: 2) {
             Text(label).font(.system(size: 10)).foregroundColor(theme.textDim)
             Text(value).font(.system(size: 12, weight: .medium))
+        }
+    }
+}
+
+// MARK: - Calendar Grid (shared)
+
+private struct MonthCalendarGrid: View {
+    let year: Int
+    let month: Int
+    let theme: AlcoveTheme
+    let dotDates: Set<String>
+    let periodDates: [String: String]
+    let selectedDate: String?
+    let onSelect: (String) -> Void
+    let onPrev: () -> Void
+    let onNext: () -> Void
+
+    private let weekdays = ["日", "一", "二", "三", "四", "五", "六"]
+    private let cal = Calendar(identifier: .gregorian)
+
+    private var todayStr: String {
+        let now = Date()
+        return String(format: "%04d-%02d-%02d",
+                      cal.component(.year, from: now),
+                      cal.component(.month, from: now),
+                      cal.component(.day, from: now))
+    }
+
+    private var days: [String?] {
+        var comps = DateComponents(year: year, month: month, day: 1)
+        guard let first = cal.date(from: comps) else { return [] }
+        let weekday = cal.component(.weekday, from: first) - 1
+        let range = cal.range(of: .day, in: .month, for: first) ?? 1..<31
+        var result: [String?] = Array(repeating: nil, count: weekday)
+        for d in range {
+            result.append(String(format: "%04d-%02d-%02d", year, month, d))
+        }
+        return result
+    }
+
+    var body: some View {
+        VStack(spacing: 10) {
+            HStack {
+                Button(action: onPrev) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(theme.fyAccent)
+                        .frame(width: 32, height: 32)
+                        .background(theme.fyCardSub, in: Circle())
+                }
+                Spacer()
+                Text("\(String(year))年\(month)月")
+                    .font(.system(size: 16, weight: .bold))
+                Spacer()
+                Button(action: onNext) {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(theme.fyAccent)
+                        .frame(width: 32, height: 32)
+                        .background(theme.fyCardSub, in: Circle())
+                }
+            }
+
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 7), spacing: 6) {
+                ForEach(weekdays, id: \.self) { wd in
+                    Text(wd).font(.system(size: 11)).foregroundColor(theme.textDim)
+                }
+                ForEach(Array(days.enumerated()), id: \.offset) { _, dateStr in
+                    if let dateStr {
+                        let day = Int(dateStr.suffix(2)) ?? 0
+                        let isToday = dateStr == todayStr
+                        let isSelected = dateStr == selectedDate
+                        let hasDot = dotDates.contains(dateStr)
+                        let isPeriod = periodDates[dateStr] != nil
+
+                        Button { onSelect(dateStr) } label: {
+                            VStack(spacing: 2) {
+                                Text("\(day)")
+                                    .font(.system(size: 14, weight: isToday ? .bold : .regular))
+                                    .foregroundColor(isToday ? .white : theme.text)
+                                    .frame(width: 32, height: 32)
+                                    .background(
+                                        Group {
+                                            if isToday {
+                                                Circle().fill(theme.fyAccent)
+                                            } else if isSelected {
+                                                Circle().stroke(theme.fyAccent, lineWidth: 1.5)
+                                            } else if isPeriod {
+                                                Circle().fill(theme.fyAccent.opacity(0.12))
+                                            }
+                                        }
+                                    )
+                                Circle()
+                                    .fill(hasDot ? theme.fyAccent : .clear)
+                                    .frame(width: 5, height: 5)
+                            }
+                        }
+                    } else {
+                        Color.clear.frame(height: 39)
+                    }
+                }
+            }
+        }
+        .padding(14).foyerCard(theme)
+    }
+}
+
+// MARK: - Impression (calendar)
+
+private struct NativeImpressionView: View {
+    @State private var year = Calendar.current.component(.year, from: Date())
+    @State private var month = Calendar.current.component(.month, from: Date())
+    @State private var selectedDate: String?
+    @State private var allItems: [(String, String, String)] = []
+    @State private var loading = true
+    @AppStorage("alcoveTheme") private var themeName = "haven"
+    private var theme: AlcoveTheme { .named(themeName) }
+
+    private var dotDates: Set<String> {
+        Set(allItems.map { $0.0 })
+    }
+
+    private var selectedItems: [(String, String, String)] {
+        guard let sel = selectedDate else { return [] }
+        return allItems.filter { $0.0 == sel }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            FoyerPanelTitle(title: "Impression", theme: theme)
+            if loading {
+                Spacer(); ProgressView().tint(theme.fyAccent); Spacer()
+            } else {
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: 12) {
+                        MonthCalendarGrid(
+                            year: year, month: month, theme: theme,
+                            dotDates: dotDates, periodDates: [:],
+                            selectedDate: selectedDate,
+                            onSelect: { selectedDate = $0 },
+                            onPrev: { shiftMonth(-1) },
+                            onNext: { shiftMonth(1) })
+
+                        if !selectedItems.isEmpty {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("日印象").font(.system(size: 12, weight: .semibold))
+                                    .foregroundColor(theme.fyAccent)
+                                Text("\(selectedItems.count) 条")
+                                    .font(.system(size: 10))
+                                    .foregroundColor(theme.textDim)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 4)
+
+                            ForEach(selectedItems, id: \.1) { date, name, content in
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text(name).font(.system(size: 13, weight: .semibold))
+                                    Text(content)
+                                        .font(.system(size: 12))
+                                        .foregroundColor(theme.textDim)
+                                        .lineSpacing(3)
+                                        .textSelection(.enabled)
+                                }
+                                .padding(14)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .foyerCard(theme)
+                            }
+                        } else if selectedDate != nil {
+                            Text("这天没有日印象")
+                                .font(.system(size: 12)).foregroundColor(theme.textDim)
+                                .padding(20)
+                        }
+                    }
+                    .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 18)
+                }
+            }
+        }
+        .foregroundColor(theme.text)
+        .foyerPanel(theme)
+        .padding(.horizontal, 12).padding(.top, 8)
+        .task { await loadImpressions() }
+    }
+
+    private func shiftMonth(_ delta: Int) {
+        month += delta
+        if month > 12 { month = 1; year += 1 }
+        if month < 1 { month = 12; year -= 1 }
+        selectedDate = nil
+    }
+
+    private func loadImpressions() async {
+        defer { loading = false }
+        guard let buckets = try? await NativeHouseAPI.request("/api/ob/buckets") as? [[String: Any]] else { return }
+        allItems = buckets.compactMap { bucket in
+            guard bucket.string("type") == "feel",
+                  let tags = bucket["tags"] as? [Any],
+                  tags.map(String.init(describing:)).contains("daily_impression") else { return nil }
+            let name = bucket.string("name")
+            let date = String(bucket.string("date").prefix(10))
+            let content = bucket.string("content_preview", "content")
+            return (date, name, content)
+        }
+        if let latest = allItems.first { selectedDate = latest.0 }
+    }
+}
+
+// MARK: - Calendar (纪念日+日记)
+
+private struct NativeCalendarView: View {
+    @State private var year = Calendar.current.component(.year, from: Date())
+    @State private var month = Calendar.current.component(.month, from: Date())
+    @State private var selectedDate: String?
+    @State private var events: [String: [[String: Any]]] = [:]
+    @State private var periodDates: [String: String] = [:]
+    @State private var loading = true
+    @AppStorage("alcoveTheme") private var themeName = "haven"
+    private var theme: AlcoveTheme { .named(themeName) }
+
+    private var dotDates: Set<String> {
+        Set(events.keys)
+    }
+
+    private var selectedEvents: [[String: Any]] {
+        guard let sel = selectedDate else { return [] }
+        return events[sel] ?? []
+    }
+
+    private var selectedDateLabel: String {
+        guard let sel = selectedDate, sel.count >= 10 else { return "" }
+        let m = Int(sel.dropFirst(5).prefix(2)) ?? 0
+        let d = Int(sel.suffix(2)) ?? 0
+        let weekday: String = {
+            let fmt = DateFormatter()
+            fmt.dateFormat = "yyyy-MM-dd"
+            guard let date = fmt.date(from: sel) else { return "" }
+            let wd = Calendar.current.component(.weekday, from: date)
+            return ["日", "一", "二", "三", "四", "五", "六"][(wd - 1) % 7]
+        }()
+        return String(format: "%02d月%02d日·周%@", m, d, weekday)
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            FoyerPanelTitle(title: "Calendar", theme: theme)
+            if loading {
+                Spacer(); ProgressView().tint(theme.fyAccent); Spacer()
+            } else {
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: 12) {
+                        MonthCalendarGrid(
+                            year: year, month: month, theme: theme,
+                            dotDates: dotDates, periodDates: periodDates,
+                            selectedDate: selectedDate,
+                            onSelect: { selectedDate = $0 },
+                            onPrev: { shiftMonth(-1) },
+                            onNext: { shiftMonth(1) })
+
+                        if periodDates.values.contains(where: { _ in true }) {
+                            HStack(spacing: 16) {
+                                HStack(spacing: 4) {
+                                    Circle().fill(theme.fyAccent.opacity(0.12)).frame(width: 10, height: 10)
+                                    Text("姨妈期").font(.system(size: 10)).foregroundColor(theme.textDim)
+                                }
+                                Spacer()
+                            }.padding(.horizontal, 4)
+                        }
+
+                        if !selectedEvents.isEmpty {
+                            Text(selectedDateLabel)
+                                .font(.system(size: 14, weight: .bold))
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 4)
+
+                            ForEach(Array(selectedEvents.enumerated()), id: \.offset) { _, evt in
+                                HStack {
+                                    Text("📝").font(.system(size: 20))
+                                    Text(evt.string("title"))
+                                        .font(.system(size: 13, weight: .medium))
+                                    Spacer()
+                                    Text(evt.string("time"))
+                                        .font(.system(size: 12))
+                                        .foregroundColor(theme.textDim)
+                                    Image(systemName: "chevron.right")
+                                        .font(.system(size: 10))
+                                        .foregroundColor(theme.textLight)
+                                }
+                                .padding(12).foyerCard(theme)
+                            }
+                        } else if selectedDate != nil {
+                            Text("这天没有记录")
+                                .font(.system(size: 12)).foregroundColor(theme.textDim)
+                                .padding(20)
+                        }
+                    }
+                    .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 18)
+                }
+            }
+        }
+        .foregroundColor(theme.text)
+        .foyerPanel(theme)
+        .padding(.horizontal, 12).padding(.top, 8)
+        .task { await loadMonth() }
+    }
+
+    private func shiftMonth(_ delta: Int) {
+        month += delta
+        if month > 12 { month = 1; year += 1 }
+        if month < 1 { month = 12; year -= 1 }
+        selectedDate = nil
+        Task { await loadMonth() }
+    }
+
+    private func loadMonth() async {
+        loading = events.isEmpty
+        defer { loading = false }
+        guard let obj = try? await NativeHouseAPI.object(
+            "/api/calendar/month?year=\(year)&month=\(month)") else { return }
+        if let evts = obj["events"] as? [String: Any] {
+            events = evts.compactMapValues { $0 as? [[String: Any]] }
+        }
+        if let prd = obj["period"] as? [String: String] {
+            periodDates = prd
+        }
+        if selectedDate == nil, let first = events.keys.sorted().last {
+            selectedDate = first
+        }
+    }
+}
+
+// MARK: - Dreams
+
+private struct NativeDreamsView: View {
+    @State private var dreams: [[String: Any]] = []
+    @State private var loading = true
+    @AppStorage("alcoveTheme") private var themeName = "haven"
+    private var theme: AlcoveTheme { .named(themeName) }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            FoyerPanelTitle(title: "Dreams", theme: theme)
+            if loading {
+                Spacer(); ProgressView().tint(theme.fyAccent); Spacer()
+            } else {
+                ScrollView(showsIndicators: false) {
+                    LazyVStack(spacing: 10) {
+                        ForEach(Array(dreams.enumerated()), id: \.offset) { _, dream in
+                            let date = dream.string("local_date")
+                            let status = dream.string("status")
+                            HStack(alignment: .top) {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(date)
+                                        .font(.system(size: 14, weight: .medium))
+                                    Text(statusLabel(status))
+                                        .font(.system(size: 11))
+                                        .foregroundColor(statusColor(status))
+                                }
+                                Spacer()
+                                Image(systemName: statusIcon(status))
+                                    .font(.system(size: 16))
+                                    .foregroundColor(statusColor(status))
+                            }
+                            .padding(14).foyerCard(theme)
+                        }
+                        if dreams.isEmpty {
+                            Text("还没有梦")
+                                .font(.system(size: 12)).foregroundColor(theme.textDim)
+                                .padding(30)
+                        }
+                    }
+                    .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 18)
+                }
+            }
+        }
+        .foregroundColor(theme.text)
+        .foyerPanel(theme)
+        .padding(.horizontal, 12).padding(.top, 8)
+        .task {
+            if let obj = try? await NativeHouseAPI.object("/api/ob/dreams?limit=30"),
+               let records = obj["records"] as? [[String: Any]] {
+                dreams = records
+            }
+            loading = false
+        }
+    }
+
+    private func statusLabel(_ s: String) -> String {
+        switch s {
+        case "surfaced": return "浮现过"
+        case "forgotten": return "遗忘了"
+        case "generated": return "待浮现"
+        default: return s
+        }
+    }
+    private func statusIcon(_ s: String) -> String {
+        switch s {
+        case "surfaced": return "moon.stars.fill"
+        case "forgotten": return "cloud.fog"
+        default: return "moon.zzz"
+        }
+    }
+    private func statusColor(_ s: String) -> Color {
+        switch s {
+        case "surfaced": return .purple.opacity(0.7)
+        case "forgotten": return .gray
+        default: return .blue.opacity(0.6)
         }
     }
 }
