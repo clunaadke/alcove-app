@@ -88,7 +88,7 @@ struct NativeHouseSheet: View {
         _route = State(initialValue: initial)
     }
 
-    private var theme: AlcoveTheme { .named(themeName) }
+    private var theme: AlcoveTheme { .panelNamed(themeName) }
 
     var body: some View {
         ZStack {
@@ -153,6 +153,7 @@ struct NativeHouseSheet: View {
         .preferredColorScheme(theme.isDark ? .dark : .light)
         .presentationDetents([.fraction(0.86)])
         .presentationDragIndicator(.visible)
+        .presentationBackground(.clear)
     }
 
     private func select(_ target: HouseDestination) {
@@ -170,20 +171,37 @@ struct NativeHouseSheet: View {
     }
 }
 
+private struct WetGlassTexture: View {
+    let theme: AlcoveTheme
+    var cardLayer = false
+
+    var body: some View {
+        GeometryReader { geo in
+            Image(theme.panelTextureAsset)
+                .resizable()
+                .scaledToFill()
+                .frame(width: geo.size.width, height: geo.size.height)
+                .clipped()
+        }
+        .opacity(cardLayer ? (theme.isDark ? 0.18 : 0.13) : (theme.isDark ? 0.72 : 0.68))
+        .blendMode(cardLayer ? .softLight : .normal)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+}
+
 private struct HouseBackground: View {
     let theme: AlcoveTheme
     var body: some View {
-        Group {
-            if theme.isDark {
-                LinearGradient(colors: theme.splashBg, startPoint: .top, endPoint: .bottom)
-            } else {
-                LinearGradient(
-                    colors: [
-                        Color(red: 253/255, green: 250/255, blue: 251/255),
-                        Color(red: 248/255, green: 239/255, blue: 243/255)
-                    ],
-                    startPoint: .topLeading, endPoint: .bottomTrailing)
-            }
+        ZStack {
+            Rectangle()
+                .fill(.ultraThinMaterial)
+            LinearGradient(
+                colors: theme.splashBg,
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            WetGlassTexture(theme: theme)
         }
         .ignoresSafeArea()
     }
@@ -193,7 +211,7 @@ private struct NativeSidebarView: View {
     var select: (HouseDestination) -> Void
     @AppStorage("alcoveTheme") private var themeName = "haven"
     @StateObject private var model = SidebarModel()
-    private var theme: AlcoveTheme { .named(themeName) }
+    private var theme: AlcoveTheme { .panelNamed(themeName) }
 
     private let foyer: [HouseDestination] = [
         .memory, .dreams, .shelf, .desire, .nianlun, .clockwork, .album, .portrait, .impression
@@ -358,7 +376,7 @@ private struct NativeSettingsView: View {
     @State private var aiPhoto: PhotosPickerItem?
     @State private var userPhoto: PhotosPickerItem?
     @State private var wallPhoto: PhotosPickerItem?
-    private var theme: AlcoveTheme { .named(themeName) }
+    private var theme: AlcoveTheme { .panelNamed(themeName) }
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -393,8 +411,13 @@ private struct NativeSettingsView: View {
                     }
                 }
                 section("主题") {
-                    HStack(spacing: 10) {
+                    HStack(spacing: 8) {
                         themeChoice("Haven", "暖白 · 家", "haven", [.white, .pink.opacity(0.45), .gray])
+                        themeChoice("Rain", "雨蓝 · 雾", "rain", [
+                            Color(red: 117/255, green: 164/255, blue: 224/255),
+                            Color(red: 164/255, green: 202/255, blue: 245/255),
+                            Color(red: 13/255, green: 39/255, blue: 94/255)
+                        ])
                         themeChoice("Midnight", "深夜 · 黑", "midnight", [.black, .gray.opacity(0.7), .gray])
                     }
                 }
@@ -586,7 +609,7 @@ private struct NativeChecklistView: View {
     @State private var draft = ""
     @State private var time = ""
     @AppStorage("alcoveTheme") private var themeName = "haven"
-    private var theme: AlcoveTheme { .named(themeName) }
+    private var theme: AlcoveTheme { .panelNamed(themeName) }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -813,7 +836,7 @@ private struct NativeMusicView: View {
     @StateObject private var model = MusicModel()
     @State private var query = ""
     @AppStorage("alcoveTheme") private var themeName = "haven"
-    private var theme: AlcoveTheme { .named(themeName) }
+    private var theme: AlcoveTheme { .panelNamed(themeName) }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -1044,7 +1067,7 @@ private struct NativeDataPanel: View {
     let destination: HouseDestination
     @StateObject private var model = DataPanelModel()
     @AppStorage("alcoveTheme") private var themeName = "haven"
-    private var theme: AlcoveTheme { .named(themeName) }
+    private var theme: AlcoveTheme { .panelNamed(themeName) }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -1125,7 +1148,7 @@ private struct ClockworkItem: Identifiable {
 private struct ClockworkView: View {
     @State private var flags: [String: Bool] = [:]
     @AppStorage("alcoveTheme") private var themeName = "haven"
-    private var theme: AlcoveTheme { .named(themeName) }
+    private var theme: AlcoveTheme { .panelNamed(themeName) }
     private let items = [
         ClockworkItem(id: "ghost", emoji: "👻", name: "Ghost 游荡", desc: "四班随机游荡"),
         ClockworkItem(id: "libido", emoji: "🌅", name: "晨勃", desc: "libido 攒满自动醒来"),
@@ -1213,7 +1236,7 @@ private struct NativeSearchView: View {
     @AppStorage("alcoveTheme") private var themeName = "haven"
     @AppStorage("userName") private var userName = "Luna"
     @AppStorage("assistantName") private var assistantName = "陈璟"
-    private var theme: AlcoveTheme { .named(themeName) }
+    private var theme: AlcoveTheme { .panelNamed(themeName) }
 
     private let types = [("all", "全部"), ("text", "文字"), ("image", "图片"),
                          ("audio", "语音"), ("link", "链接")]
@@ -1368,7 +1391,7 @@ private struct NativeFavoritesView: View {
     @AppStorage("alcoveTheme") private var themeName = "haven"
     @AppStorage("userName") private var userName = "Luna"
     @AppStorage("assistantName") private var assistantName = "陈璟"
-    private var theme: AlcoveTheme { .named(themeName) }
+    private var theme: AlcoveTheme { .panelNamed(themeName) }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -1439,7 +1462,7 @@ private struct NativeFavoritesView: View {
 private struct WebHouseView: View {
     let destination: HouseDestination
     @AppStorage("alcoveTheme") private var themeName = "haven"
-    private var theme: AlcoveTheme { .named(themeName) }
+    private var theme: AlcoveTheme { .panelNamed(themeName) }
 
     private var panelName: String {
         switch destination {
@@ -1470,7 +1493,7 @@ private struct WebHouseView: View {
 private struct NativePlayView: View {
     let destination: HouseDestination
     @AppStorage("alcoveTheme") private var themeName = "haven"
-    private var theme: AlcoveTheme { .named(themeName) }
+    private var theme: AlcoveTheme { .panelNamed(themeName) }
     private var url: URL {
         switch destination {
         case .crosstalk: return URL(string: "https://clunaadke.github.io/crosstalk/#https://vrnhyhofzzmbgzaarbaz.supabase.co")!
@@ -1623,15 +1646,133 @@ private extension View {
                 .stroke(theme.glassBorder, lineWidth: 1))
     }
 
+    // 凸起湿玻璃：卡片自己不铺任何壁纸或水珠，底下那层背景的水痕直接透上来。
+    // 厚度全靠光影堆：弧面高光 + 外轮廓左上亮右下暗 + 内侧高光 + 三道阴影。
     func foyerCard(_ theme: AlcoveTheme) -> some View {
-        background(theme.fyCardSub, in: JournalCardShape())
-        .overlay(JournalCardShape().stroke(theme.fyBorder, lineWidth: 1))
-        .shadow(color: theme.fyShadow, radius: 3, y: 1)
+        let shape = JournalCardShape(tl: 14, bl: 14, br: 18, tr: 18)
+
+        return self
+            // 清透玻璃：底下的壁纸和水珠连续透过
+            .background(.ultraThinMaterial, in: shape)
+
+            // 白蒙层。调这个数控制按钮比底板亮多少，太高会糊住水珠
+            .background(
+                Color.white.opacity(theme.isDark ? 0.09 : 0.18),
+                in: shape
+            )
+
+            // 玻璃表面的湿润弧面高光
+            .overlay {
+                shape
+                    .fill(
+                        LinearGradient(
+                            stops: [
+                                .init(color: .white.opacity(theme.isDark ? 0.18 : 0.34), location: 0),
+                                .init(color: .white.opacity(theme.isDark ? 0.07 : 0.13), location: 0.28),
+                                .init(color: .clear, location: 0.60)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .blendMode(.screen)
+                    .allowsHitTesting(false)
+            }
+
+            // 外轮廓：左上亮、右下暗，这道决定"切口"看着有多厚
+            .overlay {
+                shape
+                    .stroke(
+                        LinearGradient(
+                            stops: [
+                                .init(color: .white.opacity(theme.isDark ? 0.60 : 0.88), location: 0),
+                                .init(color: .white.opacity(theme.isDark ? 0.24 : 0.48), location: 0.38),
+                                .init(color: theme.fyBorder.opacity(0.45), location: 0.68),
+                                .init(color: .black.opacity(theme.isDark ? 0.38 : 0.16), location: 1)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1.35
+                    )
+                    .allowsHitTesting(false)
+            }
+
+            // 切口斜面·亮的那半。粗描边骑在轮廓上，模糊之后裁回形状里，
+            // 外溢的一半被切掉，剩下一条从边缘往内渐隐的亮带 —— 那就是玻璃的厚度。
+            .overlay {
+                shape
+                    .stroke(
+                        LinearGradient(
+                            stops: [
+                                .init(color: .white.opacity(theme.isDark ? 0.55 : 0.95), location: 0),
+                                .init(color: .white.opacity(theme.isDark ? 0.18 : 0.34), location: 0.42),
+                                .init(color: .clear, location: 0.72)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 5
+                    )
+                    .blur(radius: 2.6)
+                    .clipShape(shape)
+                    .allowsHitTesting(false)
+            }
+
+            // 切口斜面·暗的那半，压在右下，跟上面那条夹出立体
+            .overlay {
+                shape
+                    .stroke(
+                        LinearGradient(
+                            stops: [
+                                .init(color: .clear, location: 0.32),
+                                .init(color: .black.opacity(theme.isDark ? 0.16 : 0.07), location: 0.68),
+                                .init(color: .black.opacity(theme.isDark ? 0.34 : 0.16), location: 1)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 4.5
+                    )
+                    .blur(radius: 2.4)
+                    .clipShape(shape)
+                    .allowsHitTesting(false)
+            }
+
+            // 最外沿一条极细的棱，斜面的顶端，玻璃切口磨出来的那道光
+            .overlay {
+                shape
+                    .stroke(
+                        LinearGradient(
+                            colors: [
+                                .white.opacity(theme.isDark ? 0.70 : 0.98),
+                                .white.opacity(theme.isDark ? 0.20 : 0.40),
+                                .clear
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 0.7
+                    )
+                    .allowsHitTesting(false)
+            }
+
+            // 紧贴边缘的暗影，玻璃厚边
+            .shadow(color: .black.opacity(theme.isDark ? 0.34 : 0.14), radius: 1.2, x: 0.8, y: 1.4)
+            // 柔和悬浮阴影，把整块抬离背景
+            .shadow(color: .black.opacity(theme.isDark ? 0.30 : 0.12), radius: 7, x: 1, y: 4)
+            // 左上方淡亮光
+            .shadow(color: .white.opacity(theme.isDark ? 0.08 : 0.30), radius: 2, x: -1, y: -1)
     }
 
     func foyerPanel(_ theme: AlcoveTheme) -> some View {
-        background(theme.fyCard)
+        background(.ultraThinMaterial)
+        .background(theme.fyCard)
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay {
+            WetGlassTexture(theme: theme, cardLayer: true)
+                .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        }
         .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous)
             .stroke(theme.fyBorder, lineWidth: 1))
         .shadow(color: theme.fyShadow, radius: 14, y: 6)
@@ -1645,7 +1786,7 @@ private struct NativeUsageView: View {
     @State private var data: [String: Any] = [:]
     @State private var loading = true
     @AppStorage("alcoveTheme") private var themeName = "haven"
-    private var theme: AlcoveTheme { .named(themeName) }
+    private var theme: AlcoveTheme { .panelNamed(themeName) }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -1787,7 +1928,7 @@ private struct NativePortraitView: View {
     @State private var sections: [(String, [String])] = []
     @State private var loading = true
     @AppStorage("alcoveTheme") private var themeName = "haven"
-    private var theme: AlcoveTheme { .named(themeName) }
+    private var theme: AlcoveTheme { .panelNamed(themeName) }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -1855,7 +1996,7 @@ private struct NativeDesireView: View {
     @State private var data: [String: Any] = [:]
     @State private var loading = true
     @AppStorage("alcoveTheme") private var themeName = "haven"
-    private var theme: AlcoveTheme { .named(themeName) }
+    private var theme: AlcoveTheme { .panelNamed(themeName) }
 
     private let driveNames: [(String, String)] = [
         ("attachment", "依恋"), ("curiosity", "好奇"), ("reflection", "反思"),
@@ -1972,7 +2113,7 @@ private struct NativeForgeView: View {
     @State private var result: String?
     @State private var newSessionId: String?
     @AppStorage("alcoveTheme") private var themeName = "haven"
-    private var theme: AlcoveTheme { .named(themeName) }
+    private var theme: AlcoveTheme { .panelNamed(themeName) }
 
     private var totalRounds: Int { (preview["total_rounds"] as? Int) ?? 0 }
     private var retainedRounds: Int { (preview["retained_rounds"] as? Int) ?? 0 }
@@ -2272,7 +2413,7 @@ private struct NativeImpressionView: View {
     @State private var allItems: [(String, String, String)] = []
     @State private var loading = true
     @AppStorage("alcoveTheme") private var themeName = "haven"
-    private var theme: AlcoveTheme { .named(themeName) }
+    private var theme: AlcoveTheme { .panelNamed(themeName) }
 
     private var dotDates: Set<String> {
         Set(allItems.map { $0.0 })
@@ -2374,7 +2515,7 @@ private struct NativeCalendarView: View {
     @State private var expandedIdx: Int?
     @State private var diaryContents: [String: String] = [:]
     @AppStorage("alcoveTheme") private var themeName = "haven"
-    private var theme: AlcoveTheme { .named(themeName) }
+    private var theme: AlcoveTheme { .panelNamed(themeName) }
 
     private var dotDates: Set<String> {
         Set(events.keys)
@@ -2543,7 +2684,7 @@ private struct NativeDreamsView: View {
     @State private var expandedId: String?
     @State private var dreamBodies: [String: String] = [:]
     @AppStorage("alcoveTheme") private var themeName = "haven"
-    private var theme: AlcoveTheme { .named(themeName) }
+    private var theme: AlcoveTheme { .panelNamed(themeName) }
 
     var body: some View {
         VStack(spacing: 0) {

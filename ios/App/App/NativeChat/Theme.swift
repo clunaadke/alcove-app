@@ -1,6 +1,6 @@
 import SwiftUI
 
-// PWA 主题引擎的原生对照表：haven（粉白）/ midnight（黑夜）
+// PWA 主题引擎的原生对照表：haven（粉白）/ rain（暂沿用 haven 聊天）/ midnight（黑夜）
 // 主题名同步自 PWA localStorage 'alcove-theme'，她在设置里切，这边跟着变
 struct AlcoveTheme {
     let isDark: Bool
@@ -36,6 +36,7 @@ struct AlcoveTheme {
     let fyShadow: Color
     let fyFold: Color
     let fyDash: Color
+    let panelTextureAsset: String
 
     static let haven = AlcoveTheme(
         isDark: false,
@@ -70,7 +71,8 @@ struct AlcoveTheme {
         fyBorder: Color(red: 198/255, green: 198/255, blue: 210/255).opacity(0.40),
         fyShadow: Color(red: 140/255, green: 140/255, blue: 160/255).opacity(0.10),
         fyFold: Color(red: 233/255, green: 201/255, blue: 212/255).opacity(0.65),
-        fyDash: Color(red: 210/255, green: 190/255, blue: 197/255).opacity(0.45))
+        fyDash: Color(red: 210/255, green: 190/255, blue: 197/255).opacity(0.45),
+        panelTextureAsset: "WetGlassHaven")
 
     static let midnight = AlcoveTheme(
         isDark: true,
@@ -108,9 +110,120 @@ struct AlcoveTheme {
         fyBorder: Color(red: 105/255, green: 105/255, blue: 122/255).opacity(0.30),
         fyShadow: Color.black.opacity(0.35),
         fyFold: Color(red: 120/255, green: 90/255, blue: 102/255).opacity(0.45),
-        fyDash: Color(red: 120/255, green: 105/255, blue: 112/255).opacity(0.4))
+        fyDash: Color(red: 120/255, green: 105/255, blue: 112/255).opacity(0.4),
+        panelTextureAsset: "WetGlassMidnight")
 
     static func named(_ name: String) -> AlcoveTheme {
         name == "midnight" ? .midnight : .haven
+    }
+
+    // 下拉面板拥有独立的湿玻璃配色。rain 的聊天页仍由 named(_:) 返回 haven，
+    // 因而新增蓝色选项不会改动聊天气泡、输入框、顶栏或聊天壁纸。
+    static func panelNamed(_ name: String) -> AlcoveTheme {
+        switch name {
+        case "midnight":
+            return midnight.panelCopy(
+                splashBg: [
+                    Color(red: 13/255, green: 22/255, blue: 35/255).opacity(0.90),
+                    Color(red: 20/255, green: 31/255, blue: 47/255).opacity(0.88),
+                    Color(red: 9/255, green: 15/255, blue: 25/255).opacity(0.92)
+                ],
+                text: Color(red: 232/255, green: 237/255, blue: 244/255),
+                textDim: Color(red: 205/255, green: 215/255, blue: 228/255),
+                textLight: Color(red: 160/255, green: 174/255, blue: 191/255),
+                accent: Color(red: 218/255, green: 227/255, blue: 239/255),
+                accentSoft: Color.white.opacity(0.24),
+                card: Color(red: 25/255, green: 37/255, blue: 54/255).opacity(0.48),
+                cardSub: Color.white.opacity(0.075),
+                border: Color.white.opacity(0.30),
+                shadow: Color.black.opacity(0.42),
+                textureAsset: "WetGlassMidnight"
+            )
+        case "rain":
+            return haven.panelCopy(
+                splashBg: [
+                    Color(red: 117/255, green: 164/255, blue: 224/255).opacity(0.78),
+                    Color(red: 145/255, green: 187/255, blue: 239/255).opacity(0.72),
+                    Color(red: 104/255, green: 151/255, blue: 213/255).opacity(0.78)
+                ],
+                text: Color(red: 10/255, green: 25/255, blue: 67/255),
+                textDim: Color(red: 19/255, green: 43/255, blue: 92/255),
+                textLight: Color(red: 48/255, green: 76/255, blue: 124/255),
+                accent: Color(red: 13/255, green: 39/255, blue: 94/255),
+                accentSoft: Color(red: 28/255, green: 73/255, blue: 143/255).opacity(0.42),
+                card: Color.white.opacity(0.20),
+                cardSub: Color.white.opacity(0.18),
+                border: Color.white.opacity(0.53),
+                shadow: Color(red: 18/255, green: 54/255, blue: 112/255).opacity(0.20),
+                textureAsset: "WetGlassRain"
+            )
+        default:
+            return haven.panelCopy(
+                splashBg: [
+                    Color.white.opacity(0.78),
+                    Color(red: 235/255, green: 237/255, blue: 244/255).opacity(0.72),
+                    Color(red: 247/255, green: 244/255, blue: 248/255).opacity(0.76)
+                ],
+                text: Color(red: 26/255, green: 25/255, blue: 29/255),
+                textDim: Color(red: 47/255, green: 48/255, blue: 55/255),
+                textLight: Color(red: 91/255, green: 92/255, blue: 101/255),
+                accent: Color(red: 159/255, green: 31/255, blue: 82/255),
+                accentSoft: Color(red: 159/255, green: 31/255, blue: 82/255).opacity(0.28),
+                card: Color.white.opacity(0.34),
+                cardSub: Color.white.opacity(0.30),
+                border: Color.white.opacity(0.70),
+                shadow: Color(red: 70/255, green: 78/255, blue: 96/255).opacity(0.16),
+                textureAsset: "WetGlassHaven"
+            )
+        }
+    }
+
+    private func panelCopy(
+        splashBg: [Color],
+        text: Color,
+        textDim: Color,
+        textLight: Color,
+        accent: Color,
+        accentSoft: Color,
+        card: Color,
+        cardSub: Color,
+        border: Color,
+        shadow: Color,
+        textureAsset: String
+    ) -> AlcoveTheme {
+        AlcoveTheme(
+            isDark: isDark,
+            usesWallImage: usesWallImage,
+            wallGradient: wallGradient,
+            bubbleUser: bubbleUser,
+            bubbleAI: bubbleAI,
+            text: text,
+            textDim: textDim,
+            textLight: textLight,
+            timestamp: timestamp,
+            glassTint: card,
+            glassBorder: border,
+            capsuleTint: capsuleTint,
+            capsuleBorder: capsuleBorder,
+            sendTop: sendTop,
+            sendBottom: sendBottom,
+            fade: fade,
+            splashBg: splashBg,
+            splashBarTop: splashBarTop,
+            splashBarBottom: splashBarBottom,
+            splashGlowA: splashGlowA,
+            splashGlowB: splashGlowB,
+            splashPetal: splashPetal,
+            splashTitle: splashTitle,
+            fyAccent: accent,
+            fyAccentSoft: accentSoft,
+            fyCard: card,
+            fyCardSub: cardSub,
+            fyBorder: border,
+            fyShadow: shadow,
+            fyFold: Color.white.opacity(isDark ? 0.08 : 0.22),
+            fyDash: border.opacity(0.72),
+            panelTextureAsset: textureAsset
+        )
     }
 }
