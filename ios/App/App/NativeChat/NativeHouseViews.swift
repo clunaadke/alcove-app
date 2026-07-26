@@ -176,17 +176,18 @@ private struct WetGlassTexture: View {
     var cardLayer = false
 
     var body: some View {
-        GeometryReader { geo in
-            Image(theme.panelTextureAsset)
-                .resizable()
-                .scaledToFill()
-                .frame(width: geo.size.width, height: geo.size.height)
-                .clipped()
-        }
-        .opacity(cardLayer ? (theme.isDark ? 0.18 : 0.13) : (theme.isDark ? 0.72 : 0.68))
-        .blendMode(cardLayer ? .softLight : .normal)
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
+        // 去掉 GeometryReader：它会逼布局多跑一轮，而 scaledToFill + clipped
+        // 本来就会填满父容器，拿容器尺寸这一步是多余的。
+        // interpolation 降到 medium，1290 宽的源图往 393pt 容器里采样，肉眼没差别但便宜。
+        Image(theme.panelTextureAsset)
+            .resizable()
+            .interpolation(.medium)
+            .scaledToFill()
+            .clipped()
+            .opacity(cardLayer ? (theme.isDark ? 0.18 : 0.13) : (theme.isDark ? 0.72 : 0.68))
+            .blendMode(cardLayer ? .softLight : .normal)
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 }
 
@@ -194,8 +195,8 @@ private struct HouseBackground: View {
     let theme: AlcoveTheme
     var body: some View {
         ZStack {
-            Rectangle()
-                .fill(.ultraThinMaterial)
+            // 不用 .ultraThinMaterial：上面压着不透明渐变和 0.7 的壁纸，
+            // 它基本看不见，却要在 sheet 弹出的动画里做一次全屏实时模糊。
             LinearGradient(
                 colors: theme.splashBg,
                 startPoint: .topLeading,
@@ -1765,14 +1766,11 @@ private extension View {
             .shadow(color: .black.opacity(theme.isDark ? 0.30 : 0.13), radius: 6, x: 1, y: 3)
     }
 
+    // 面板不再自己糊一层，也不再叠第二张壁纸：
+    // 它底下就是 HouseBackground，同一张图解码两遍是打开面板卡顿的主因。
     func foyerPanel(_ theme: AlcoveTheme) -> some View {
-        background(.ultraThinMaterial)
-        .background(theme.fyCard)
+        background(theme.fyCard)
         .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .overlay {
-            WetGlassTexture(theme: theme, cardLayer: true)
-                .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-        }
         .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous)
             .stroke(theme.fyBorder, lineWidth: 1))
         .shadow(color: theme.fyShadow, radius: 14, y: 6)
