@@ -40,6 +40,8 @@ struct RootView: View {
                     .zIndex(10)
             }
         }
+        .blur(radius: housePage == nil ? 0 : 2.2)
+        .animation(.easeOut(duration: 0.20), value: housePage != nil)
         .onAppear {
             prewarmPanelTexture()
             // 声波念完两个音节再进门，跟 PWA 一个节奏
