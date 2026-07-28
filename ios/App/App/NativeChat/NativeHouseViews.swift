@@ -187,7 +187,6 @@ struct NativeHouseSheet: View {
                     }
                 }
             }
-        }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background {
             HouseBackground(
