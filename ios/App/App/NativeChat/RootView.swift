@@ -6,6 +6,8 @@ struct RootView: View {
     @State private var showSplash = true
     @State private var showPermissions = false
     @State private var showTerminal = false
+    @State private var preparedPanelTexture: UIImage?
+    @State private var preparedPanelTextureName = ""
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("assistantName") private var assistantName = "陈璟"
     @AppStorage("assistantAvatarDataURL") private var avatarDataURL = ""
@@ -39,11 +41,13 @@ struct RootView: View {
             }
         }
         .onAppear {
+            prewarmPanelTexture()
             // 声波念完两个音节再进门，跟 PWA 一个节奏
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.3) {
                 withAnimation(.easeOut(duration: 0.6)) { showSplash = false }
             }
         }
+        .onChange(of: themeName) { _ in prewarmPanelTexture() }
         .preferredColorScheme(theme.isDark ? .dark : .light) // 跟 PWA 主题走，不跟系统
         .onChange(of: scenePhase) { phase in
             if phase == .active { SensorReporter.shared.appActive() }
@@ -59,14 +63,18 @@ struct RootView: View {
             PermissionsView()
         }
         .sheet(item: $housePage) { target in
-            NativeHouseSheet(initial: target) {
+            NativeHouseSheet(
+                initial: target,
+                preparedTexture: preparedPanelTexture,
+                preparedTextureName: preparedPanelTextureName
+            ) {
                 showTerminal = true
             }
         }
         .tint(Color(red: 0.86, green: 0.44, blue: 0.57))
     }
 
-    // PWA .chat-topbar 同款：左<钮 + 居中 pill + 清单/音乐圆钮 + 头像
+    // 左头像｜中间纯文字｜右侧三枚按钮共用一块清透玻璃胶囊
     private var topBar: some View {
         ZStack {
             VStack(spacing: 0) {
@@ -78,36 +86,10 @@ struct RootView: View {
                     .font(.system(size: 11))
                     .foregroundColor(textDim)
             }
-            .padding(.horizontal, 28)
-            .padding(.vertical, 5)
-            .background(.ultraThinMaterial, in: Capsule())
-            .background(theme.glassTint, in: Capsule())
-            .overlay(Capsule().stroke(glassStroke, lineWidth: 1))
-            .shadow(color: .black.opacity(0.06), radius: 8, y: 4)
+            .frame(height: 44, alignment: .center)
+            .allowsHitTesting(false)
 
-            HStack(spacing: 8) {
-                Button { housePage = .sidebar } label: {
-                    glassCircle(size: 44) {
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 16, weight: .medium))
-                            .foregroundColor(textDim)
-                    }
-                }
-                Spacer()
-                Button { housePage = .checklist } label: {
-                    glassCircle(size: 36) {
-                        Image(systemName: "checklist")
-                            .font(.system(size: 13, weight: .light))
-                            .foregroundColor(textDim)
-                    }
-                }
-                Button { housePage = .music } label: {
-                    glassCircle(size: 36) {
-                        Image(systemName: "music.note")
-                            .font(.system(size: 14, weight: .light))
-                            .foregroundColor(textDim)
-                    }
-                }
+            HStack(alignment: .center, spacing: 0) {
                 Button { showTerminal = true } label: {
                     glassCircle(size: 40) {
                         if let img = avatarImage {
@@ -123,10 +105,87 @@ struct RootView: View {
                         }
                     }
                 }
+                .buttonStyle(.plain)
+                .frame(width: 44, height: 44)
+
+                Spacer(minLength: 0)
+
+                HStack(alignment: .center, spacing: 0) {
+                    topBarControl("music.note", size: 14) {
+                        presentHouse(.music)
+                    }
+                    topBarControl("checklist", size: 13) {
+                        presentHouse(.checklist)
+                    }
+                    topBarControl("line.3.horizontal", size: 15) {
+                        presentHouse(.sidebar)
+                    }
+                }
+                .padding(.horizontal, 2)
+                .frame(height: 40)
+                .background(.ultraThinMaterial, in: Capsule())
+                .background(theme.glassTint, in: Capsule())
+                .overlay(Capsule().stroke(glassStroke, lineWidth: 1))
+                .shadow(color: .black.opacity(0.06), radius: 8, y: 4)
+                .frame(height: 44)
             }
         }
+        .frame(height: 44)
         .padding(.horizontal, 12)
-        .padding(.top, 4)
+    }
+
+    private func topBarControl(
+        _ systemName: String,
+        size: CGFloat,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: size, weight: .light))
+                .foregroundColor(textDim)
+                .frame(width: 36, height: 40)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func presentHouse(_ target: HouseDestination) {
+        let asset = AlcoveTheme.panelNamed(themeName).panelTextureAsset
+
+        if preparedPanelTextureName == asset, preparedPanelTexture != nil {
+            housePage = target
+            return
+        }
+
+        preparePanelTexture(named: asset) { image in
+            guard AlcoveTheme.panelNamed(themeName).panelTextureAsset == asset else { return }
+            preparedPanelTexture = image
+            preparedPanelTextureName = asset
+            housePage = target
+        }
+    }
+
+    private func prewarmPanelTexture() {
+        let asset = AlcoveTheme.panelNamed(themeName).panelTextureAsset
+        guard preparedPanelTextureName != asset || preparedPanelTexture == nil else { return }
+
+        preparePanelTexture(named: asset) { image in
+            guard AlcoveTheme.panelNamed(themeName).panelTextureAsset == asset else { return }
+            preparedPanelTexture = image
+            preparedPanelTextureName = asset
+        }
+    }
+
+    private func preparePanelTexture(
+        named asset: String,
+        completion: @escaping (UIImage?) -> Void
+    ) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            let prepared = UIImage(named: asset)?.preparingForDisplay()
+            DispatchQueue.main.async {
+                completion(prepared)
+            }
+        }
     }
 
     private func glassCircle<Content: View>(size: CGFloat, @ViewBuilder content: () -> Content) -> some View {
