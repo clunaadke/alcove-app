@@ -124,7 +124,7 @@ struct RootView: View {
                 .padding(.horizontal, 2)
                 .frame(height: 40)
                 .modifier(InteractiveTopBarGlassModifier(
-                    fallbackTint: theme.glassTint,
+                    fallbackTint: theme.capsuleTint,
                     fallbackBorder: glassStroke
                 ))
                 .shadow(color: .black.opacity(0.05), radius: 14, x: 0, y: 2)
@@ -209,7 +209,7 @@ private struct InteractiveTopBarGlassModifier: ViewModifier {
         let shape = Capsule()
         if #available(iOS 26.0, *) {
             content
-                .glassEffect(.regular.interactive(), in: shape)
+                .glassEffect(.regular.tint(fallbackTint).interactive(), in: shape)
         } else {
             content
                 .background(.ultraThinMaterial, in: shape)

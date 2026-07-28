@@ -378,7 +378,7 @@ struct ChatView: View {
                     .lineLimit(1...5)
                     .font(.system(size: 15.5, weight: .regular, design: .default))
                     .tint(Color(uiColor: .systemGray3))
-                    .padding(.init(top: 10, leading: 14, bottom: 18, trailing: 14))
+                    .padding(.init(top: 16, leading: 14, bottom: 12, trailing: 14))
                     .contentShape(Rectangle())
                 }
                 HStack(spacing: 2) {
@@ -524,6 +524,9 @@ struct MessageRow: View {
     @State private var showRecall = false
 
     private var isUser: Bool { msg.role == "user" }
+    private var timestampTextInset: CGFloat {
+        !msg.text.isEmpty && !msg.isSticker ? 12 : 0
+    }
 
     var body: some View {
         HStack(alignment: .bottom, spacing: 0) {
@@ -565,6 +568,8 @@ struct MessageRow: View {
                                 .foregroundColor(theme.timestamp)
                         }
                     }
+                    .padding(.leading, isUser ? 0 : timestampTextInset)
+                    .padding(.trailing, isUser ? timestampTextInset : 0)
                 }
             }
             if !isUser { Spacer(minLength: 48) }
