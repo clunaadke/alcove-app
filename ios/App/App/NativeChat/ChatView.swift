@@ -378,7 +378,7 @@ struct ChatView: View {
                     .lineLimit(1...5)
                     .font(.system(size: 15.5, weight: .regular, design: .default))
                     .tint(Color(uiColor: .systemGray3))
-                    .padding(.init(top: 10, leading: 14, bottom: 10, trailing: 14))
+                    .padding(.init(top: 10, leading: 14, bottom: 18, trailing: 14))
                     .contentShape(Rectangle())
                 }
                 HStack(spacing: 2) {
@@ -471,7 +471,16 @@ struct ChatView: View {
                     }
                     .disabled(!canSend && !recorder.isRecording)
                 }
-                .padding(.init(top: 4, leading: 8, bottom: 16, trailing: 8))
+                .padding(.init(top: 4, leading: 8, bottom: 8, trailing: 8))
+            }
+            .background {
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .fill(Color.clear)
+                    .contentShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+                    .onTapGesture {
+                        guard !recorder.isRecording else { return }
+                        inputFocused = true
+                    }
             }
             .modifier(InteractiveInputGlassModifier(fallbackTint: theme.capsuleTint))
             .shadow(color: .black.opacity(0.05), radius: 14, x: 0, y: 2)

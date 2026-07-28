@@ -123,10 +123,11 @@ struct RootView: View {
                 }
                 .padding(.horizontal, 2)
                 .frame(height: 40)
-                .background(.ultraThinMaterial, in: Capsule())
-                .background(theme.glassTint, in: Capsule())
-                .overlay(Capsule().stroke(glassStroke, lineWidth: 1))
-                .shadow(color: .black.opacity(0.06), radius: 8, y: 4)
+                .modifier(InteractiveTopBarGlassModifier(
+                    fallbackTint: theme.glassTint,
+                    fallbackBorder: glassStroke
+                ))
+                .shadow(color: .black.opacity(0.05), radius: 14, x: 0, y: 2)
                 .frame(height: 44)
             }
         }
@@ -196,5 +197,24 @@ struct RootView: View {
             .overlay(Circle().stroke(glassStroke, lineWidth: 1))
             .shadow(color: .black.opacity(0.06), radius: 8, y: 4)
             .contentShape(Circle())
+    }
+}
+
+private struct InteractiveTopBarGlassModifier: ViewModifier {
+    let fallbackTint: Color
+    let fallbackBorder: Color
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        let shape = Capsule()
+        if #available(iOS 26.0, *) {
+            content
+                .glassEffect(.regular.interactive(), in: shape)
+        } else {
+            content
+                .background(.ultraThinMaterial, in: shape)
+                .background(fallbackTint, in: shape)
+                .overlay(shape.stroke(fallbackBorder, lineWidth: 1))
+        }
     }
 }
