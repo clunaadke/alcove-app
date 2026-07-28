@@ -482,7 +482,7 @@ private struct NativeSettingsView: View {
                         glassSliderRow("过渡", "rimWidth", $bubbleGlassRimWidth, 0.2...0.95)
                         glassSliderRow("放大", "magnify", $bubbleGlassMagnify, 0...1.5)
                         glassSliderRow("背景模糊", "blur", $bubbleGlassBlur, 0...8)
-                        glassSliderRow("尺寸", "size", $bubbleGlassSize, 80...340)
+                        glassSliderRow("直径", "size", $bubbleGlassSize, 80...340)
                     }
                     Divider().opacity(0.25)
                     HStack {
