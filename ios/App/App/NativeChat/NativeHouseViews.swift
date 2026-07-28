@@ -1967,70 +1967,12 @@ private struct FoyerCardGlassBackground: View {
     @Environment(\.bubbleGlassStyle) private var bubbleGlassStyle
 
     var body: some View {
-        GeometryReader { proxy in
-            let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
-            let strength = min(max(
-                Double(bubbleGlassStyle.strength(for: proxy.size)) / 100,
-                0
-            ), 1)
-            let dispersion = min(max(Double(bubbleGlassStyle.dispersion), 0), 1)
-            let rim = min(max(Double(bubbleGlassStyle.rimWidth), 0), 1)
-            let magnify = min(max(abs(Double(bubbleGlassStyle.magnify)) / 20, 0), 1)
-            let blur = min(max(Double(bubbleGlassStyle.backdropBlur) / 20, 0), 1)
-            let referenceScale = min(max(
-                Double(bubbleGlassStyle.size) / 174.33,
-                0.65
-            ), 1.35)
-            let highlight = min(
-                0.24 + strength * 0.18 * referenceScale,
-                0.50
-            )
-            let fillOpacity = (theme.isDark ? 0.12 : 0.10)
-                + blur * 0.08
-                + magnify * 0.025
-
-            ZStack {
-                // The panel already owns one decoded wallpaper. Cards stay
-                // transparent over that shared image instead of repainting
-                // and refracting the full 1440 x 2700 texture per button.
-                shape.fill(theme.fyCard.opacity(fillOpacity))
-
-                shape.stroke(
-                    Color.white.opacity(0.08 + strength * 0.04),
-                    lineWidth: 0.45
-                )
-
-                shape.stroke(
-                    LinearGradient(
-                        stops: [
-                            .init(color: .white.opacity(highlight), location: 0.00),
-                            .init(color: .white.opacity(0.08), location: 0.32),
-                            .init(color: .white.opacity(0.07), location: 0.68),
-                            .init(color: .white.opacity(highlight * 0.78), location: 1.00)
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    ),
-                    lineWidth: CGFloat(0.65 + rim * 1.05)
-                )
-
-                shape.stroke(
-                    LinearGradient(
-                        colors: [
-                            Color(red: 0.72, green: 0.88, blue: 1.00)
-                                .opacity(dispersion * 0.07),
-                            .clear,
-                            Color(red: 1.00, green: 0.78, blue: 0.88)
-                                .opacity(dispersion * 0.055)
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    ),
-                    lineWidth: CGFloat(0.45 + rim * 0.45)
-                )
-            }
-        }
-        .allowsHitTesting(false)
+        BubbleGlassBackground(
+            tintColor: theme.fyCard,
+            tintOpacity: theme.isDark ? 0.12 : 0.10,
+            style: bubbleGlassStyle,
+            cornerRadius: 16
+        )
     }
 }
 
