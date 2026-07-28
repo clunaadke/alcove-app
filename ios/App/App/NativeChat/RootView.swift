@@ -79,7 +79,7 @@ struct RootView: View {
         ZStack {
             VStack(spacing: 0) {
                 Text(assistantName)
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 14, weight: .semibold))
                     .tracking(1.5)
                     .foregroundColor(theme.text)
                 Text("a word")
