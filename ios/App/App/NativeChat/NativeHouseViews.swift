@@ -1989,26 +1989,13 @@ private struct FoyerCardGlassBackground: View {
     let theme: AlcoveTheme
     @Environment(\.bubbleGlassStyle) private var bubbleGlassStyle
 
-    @ViewBuilder
     var body: some View {
-        if #available(iOS 26.0, *) {
-            let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
-
-            shape
-                .fill(Color.clear)
-                .glassEffect(
-                    .regular.tint(theme.fyCard.opacity(theme.isDark ? 0.16 : 0.11)),
-                    in: shape
-                )
-                .allowsHitTesting(false)
-        } else {
-            BubbleGlassBackground(
-                tintColor: theme.fyCard,
-                tintOpacity: theme.isDark ? 0.12 : 0.10,
-                style: bubbleGlassStyle,
-                cornerRadius: 16
-            )
-        }
+        BubbleGlassBackground(
+            tintColor: theme.fyCard,
+            tintOpacity: theme.isDark ? 0.12 : 0.10,
+            style: bubbleGlassStyle,
+            cornerRadius: 16
+        )
     }
 }
 
@@ -2067,21 +2054,37 @@ private extension View {
     }
 
     // 面板卡片与聊天气泡共用同一套折射、高光和六个调节参数。
-    // 这里只替换背景玻璃层；按钮原有的尺寸、padding 和网格布局保持不变。
+    // iOS 26 必须把系统玻璃直接应用到内容视图，确保图标和文字绘制在玻璃上方。
+    @ViewBuilder
     func foyerCard(_ theme: AlcoveTheme) -> some View {
         let shape = JournalCardShape(tl: 14, bl: 14, br: 18, tr: 18)
 
-        return self
-            .background {
-                FoyerCardGlassBackground(theme: theme)
-            }
-            .contentShape(shape)
-            .shadow(
-                color: .black.opacity(theme.isDark ? 0.28 : 0.12),
-                radius: 5,
-                x: 1,
-                y: 3
-            )
+        if #available(iOS 26.0, *) {
+            self
+                .glassEffect(
+                    .regular.tint(theme.fyCard.opacity(theme.isDark ? 0.16 : 0.11)),
+                    in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+                )
+                .contentShape(shape)
+                .shadow(
+                    color: .black.opacity(theme.isDark ? 0.28 : 0.12),
+                    radius: 5,
+                    x: 1,
+                    y: 3
+                )
+        } else {
+            self
+                .background {
+                    FoyerCardGlassBackground(theme: theme)
+                }
+                .contentShape(shape)
+                .shadow(
+                    color: .black.opacity(theme.isDark ? 0.28 : 0.12),
+                    radius: 5,
+                    x: 1,
+                    y: 3
+                )
+        }
     }
 
     // Detail pages sit directly on the shared wet-glass wallpaper.
