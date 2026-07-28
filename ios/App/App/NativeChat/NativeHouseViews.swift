@@ -430,8 +430,14 @@ private struct NativeSettingsView: View {
     @AppStorage("assistantAvatarDataURL") private var assistantAvatar = ""
     @AppStorage("userAvatarDataURL") private var userAvatar = ""
     @AppStorage("alcoveTheme") private var themeName = "haven"
-    @AppStorage("chatFontSize") private var fontSize = 15
+    @AppStorage("chatFontSize") private var fontSize = 14
     @AppStorage("wallStamp") private var wallStamp = 0.0
+    @AppStorage("bubbleGlassStrength") private var bubbleGlassStrength = 56.81
+    @AppStorage("bubbleGlassDispersion") private var bubbleGlassDispersion = 0.39
+    @AppStorage("bubbleGlassRimWidth") private var bubbleGlassRimWidth = 0.28
+    @AppStorage("bubbleGlassMagnify") private var bubbleGlassMagnify = 0.0
+    @AppStorage("bubbleGlassBlur") private var bubbleGlassBlur = 0.10
+    @AppStorage("bubbleGlassSize") private var bubbleGlassSize = 174.33
     @State private var aiPhoto: PhotosPickerItem?
     @State private var userPhoto: PhotosPickerItem?
     @State private var wallPhoto: PhotosPickerItem?
@@ -444,7 +450,7 @@ private struct NativeSettingsView: View {
                 section("聊天") {
                     settingRow("字体大小", "调整气泡文字大小") {
                         Picker("", selection: $fontSize) {
-                            Text("小").tag(13); Text("中").tag(15); Text("大").tag(17)
+                            Text("小").tag(13); Text("中").tag(14); Text("大").tag(16)
                         }
                         .pickerStyle(.segmented).frame(width: 145)
                     }
@@ -467,6 +473,25 @@ private struct NativeSettingsView: View {
                         PhotosPicker(selection: $aiPhoto, matching: .images) {
                             avatar(dataURL: assistantAvatar, fallback: "R")
                         }
+                    }
+                }
+                section("液态玻璃气泡") {
+                    VStack(spacing: 10) {
+                        glassSliderRow("扭曲", "strength", $bubbleGlassStrength, 0...60)
+                        glassSliderRow("色散", "dispersion", $bubbleGlassDispersion, 0...3)
+                        glassSliderRow("过渡", "rimWidth", $bubbleGlassRimWidth, 0.2...0.95)
+                        glassSliderRow("放大", "magnify", $bubbleGlassMagnify, 0...1.5)
+                        glassSliderRow("背景模糊", "blur", $bubbleGlassBlur, 0...8)
+                        glassSliderRow("尺寸", "size", $bubbleGlassSize, 80...340)
+                    }
+                    Divider().opacity(0.25)
+                    HStack {
+                        Text("调节后立即应用到聊天气泡")
+                            .font(.system(size: 10))
+                            .foregroundColor(theme.textLight)
+                        Spacer()
+                        Button("恢复默认") { resetBubbleGlass() }
+                            .font(.system(size: 11, weight: .medium))
                     }
                 }
                 section("主题") {
@@ -541,6 +566,31 @@ private struct NativeSettingsView: View {
         }
     }
 
+    private func glassSliderRow(
+        _ title: String,
+        _ parameter: String,
+        _ value: Binding<Double>,
+        _ range: ClosedRange<Double>
+    ) -> some View {
+        HStack(spacing: 9) {
+            HStack(spacing: 4) {
+                Text(title)
+                Text(parameter)
+                    .foregroundColor(theme.textLight)
+            }
+            .font(.system(size: 11))
+            .frame(width: 100, alignment: .leading)
+
+            Slider(value: value, in: range)
+                .tint(theme.fyAccent)
+
+            Text(String(format: "%.2f", value.wrappedValue))
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundColor(theme.textDim)
+                .frame(width: 45, alignment: .trailing)
+        }
+    }
+
     private func themeChoice(
         _ title: String, _ sub: String, _ value: String, _ colors: [Color]
     ) -> some View {
@@ -601,6 +651,15 @@ private struct NativeSettingsView: View {
             try? jpeg.write(to: url, options: .atomic)
             wallStamp = Date().timeIntervalSince1970
         }
+    }
+
+    private func resetBubbleGlass() {
+        bubbleGlassStrength = 56.81
+        bubbleGlassDispersion = 0.39
+        bubbleGlassRimWidth = 0.28
+        bubbleGlassMagnify = 0
+        bubbleGlassBlur = 0.10
+        bubbleGlassSize = 174.33
     }
 
     private func resetWallpaper() {
