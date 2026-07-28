@@ -671,16 +671,14 @@ struct MessageRow: View {
     }
 
     private func thinkingBlock(_ think: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: showThinking ? 7 : 0) {
             Button {
                 withAnimation(.easeInOut(duration: 0.15)) { showThinking.toggle() }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { onContentChange?() }
             } label: {
                 HStack(spacing: 4) {
-                    Image(systemName: "bubble.left.and.bubble.right")
-                        .font(.system(size: 10))
                     Text(thinkingLabel(think))
-                        .font(.custom("Georgia", size: 11))
+                        .font(.custom("Georgia", size: 12))
                         .italic()
                     Image(systemName: showThinking ? "chevron.up" : "chevron.down")
                         .font(.system(size: 8))
@@ -688,24 +686,34 @@ struct MessageRow: View {
                         recallBadge.padding(.leading, 6)
                     }
                 }
-                .font(.system(size: 11))
+                .font(.system(size: 12))
                 .foregroundColor(.secondary)
             }
             if showThinking {
                 Text(think)
-                    .font(.custom("Georgia", size: max(11, CGFloat(fontSize) - 2)))
+                    .font(.system(size: max(12, CGFloat(fontSize) - 1)))
                     .italic()
-                    .lineSpacing(3)
+                    .lineSpacing(4)
                     .fixedSize(horizontal: false, vertical: true)
                     .foregroundColor(theme.textDim)
-                    .padding(10)
-                    .background(theme.bubbleAI.opacity(0.7),
-                                in: RoundedRectangle(cornerRadius: 12))
                     .onTapGesture {
                         withAnimation(.easeInOut(duration: 0.15)) { showThinking = false }
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { onContentChange?() }
                     }
             }
+        }
+        .padding(.leading, 10)
+        .overlay(alignment: .leading) {
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(theme.textDim.opacity(0.30))
+                    .frame(width: 2)
+                Capsule()
+                    .fill(Color.white.opacity(0.72))
+                    .frame(width: 0.75)
+                    .padding(.vertical, 1)
+            }
+            .shadow(color: Color.white.opacity(0.28), radius: 1.5)
         }
     }
 
