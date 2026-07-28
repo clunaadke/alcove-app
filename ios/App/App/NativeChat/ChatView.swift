@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 
 struct ChatView: View {
     @StateObject private var store = ChatStore()
+    @StateObject private var wallpaperStore = ChatWallpaperStore()
     @State private var draft = ""
     @State private var showStickers = false
     @State private var photoItems: [PhotosPickerItem] = []
@@ -21,7 +22,7 @@ struct ChatView: View {
     @FocusState private var inputFocused: Bool
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("alcoveTheme") private var themeName = "haven"
-    @AppStorage("chatFontSize") private var chatFontSize = 15
+    @AppStorage("chatFontSize") private var chatFontSize = 14
     @AppStorage("wallStamp") private var wallStamp = 0.0
     private var theme: AlcoveTheme { .named(themeName) }
     private var safeBottom: CGFloat {
@@ -30,47 +31,24 @@ struct ChatView: View {
             .first?.windows.first?.safeAreaInsets.bottom ?? 0
     }
 
-    // 她在设置里换的自定义壁纸优先；没有就用主题默认
-    private var customWall: UIImage? {
-        _ = wallStamp // 依赖时间戳，换壁纸后视图刷新
-        let file = themeName == "midnight" ? "chatwall_midnight.jpg" : "chatwall_haven.jpg"
-        let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent(file)
-        return UIImage(contentsOfFile: url.path)
-    }
-
     var body: some View {
-        ZStack {
-            // PWA 同款聊天壁纸：自定义 > haven 铺图 / midnight 深色渐变
-            if let wall = customWall {
-                GeometryReader { geo in
-                    Image(uiImage: wall)
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: geo.size.width, height: geo.size.height)
-                        .clipped()
-                }
-                .ignoresSafeArea()
-            } else if theme.usesWallImage {
-                GeometryReader { geo in
-                    Image("ChatWall")
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: geo.size.width, height: geo.size.height)
-                        .clipped()
-                }
-                .ignoresSafeArea()
-            } else {
-                LinearGradient(colors: theme.wallGradient,
-                               startPoint: .top, endPoint: .bottom)
+        GeometryReader { root in
+            ZStack {
+                // The visible wall and every bubble lens share this same
+                // prepared image and coordinate system.
+                ChatWallpaperRenderer(descriptor: wallpaperStore.descriptor)
                     .ignoresSafeArea()
+
+                if store.loading {
+                    ProgressView("回家中…")
+                        .tint(theme.textDim)
+                } else {
+                    messageList
+                }
             }
-            if store.loading {
-                ProgressView("回家中…")
-                    .tint(theme.textDim)
-            } else {
-                messageList
-            }
+            .coordinateSpace(name: "alcoveChatRoot")
+            .environment(\.chatWallpaperDescriptor, wallpaperStore.descriptor)
+            .environment(\.chatWallpaperViewportSize, root.size)
         }
         .sheet(isPresented: $showStickers) { stickerSheet }
         .sheet(isPresented: $showCamera) {
@@ -107,7 +85,28 @@ struct ChatView: View {
         .fullScreenCover(item: $previewImage) { img in
             LocalImageViewer(image: img) { previewImage = nil }
         }
-        .onAppear { store.start() }
+        .onAppear {
+            wallpaperStore.refresh(
+                themeName: themeName,
+                theme: theme,
+                wallStamp: wallStamp
+            )
+            store.start()
+        }
+        .onChange(of: themeName) { newThemeName in
+            wallpaperStore.refresh(
+                themeName: newThemeName,
+                theme: .named(newThemeName),
+                wallStamp: wallStamp
+            )
+        }
+        .onChange(of: wallStamp) { newStamp in
+            wallpaperStore.refresh(
+                themeName: themeName,
+                theme: theme,
+                wallStamp: newStamp
+            )
+        }
         .onChange(of: scenePhase) { phase in
             if phase == .active { store.refresh() }
         }
@@ -511,7 +510,7 @@ struct MessageRow: View {
     let msg: ChatMessage
     let sticker: Sticker?
     var theme: AlcoveTheme = .haven
-    var fontSize: Int = 15
+    var fontSize: Int = 14
     var showTime: Bool = true
     var recall: RecallItem? = nil
     var onTapImage: (URL) -> Void
@@ -531,7 +530,7 @@ struct MessageRow: View {
     var body: some View {
         HStack(alignment: .bottom, spacing: 0) {
             if isUser { Spacer(minLength: 48) }
-            VStack(alignment: isUser ? .trailing : .leading, spacing: 3) {
+            VStack(alignment: isUser ? .trailing : .leading, spacing: 5) {
                 if let think = msg.thinking, !think.isEmpty {
                     thinkingBlock(think)
                 } else if recall != nil {
@@ -574,10 +573,11 @@ struct MessageRow: View {
             }
             if !isUser { Spacer(minLength: 48) }
         }
-        .padding(.vertical, 2)
+        .padding(.top, 2)
+        .padding(.bottom, showTime ? 9 : 2)
     }
 
-    // PWA 同款雾感气泡：user rgba(247,227,234,.44) / ai rgba(255,255,255,.38)，blur 透底
+    // The text stays crisp above a real wallpaper-refraction layer.
     private func markdownText(_ raw: String) -> Text {
         if let attr = try? AttributedString(markdown: raw,
                 options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)) {
@@ -592,9 +592,16 @@ struct MessageRow: View {
             .lineSpacing(4)
             .foregroundColor(msg.asleepAtSend ? theme.textDim : theme.text)
             .padding(.horizontal, 12)
-            .padding(.vertical, 7)
-            .background(isUser ? theme.bubbleUser : theme.bubbleAI,
-                        in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .padding(.vertical, 8)
+            .background {
+                BubbleGlassBackground(
+                    tintColor: isUser ? theme.bubbleUser : theme.bubbleAI,
+                    tintOpacity: isUser ? 0.14 : 0.09
+                )
+            }
+            .contentShape(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+            )
             .contextMenu {
                 Button {
                     UIPasteboard.general.string = msg.text
