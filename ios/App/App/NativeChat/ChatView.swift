@@ -24,7 +24,23 @@ struct ChatView: View {
     @AppStorage("alcoveTheme") private var themeName = "haven"
     @AppStorage("chatFontSize") private var chatFontSize = 14
     @AppStorage("wallStamp") private var wallStamp = 0.0
+    @AppStorage("bubbleGlassStrength") private var bubbleGlassStrength = 56.81
+    @AppStorage("bubbleGlassDispersion") private var bubbleGlassDispersion = 0.39
+    @AppStorage("bubbleGlassRimWidth") private var bubbleGlassRimWidth = 0.28
+    @AppStorage("bubbleGlassMagnify") private var bubbleGlassMagnify = 0.0
+    @AppStorage("bubbleGlassBlur") private var bubbleGlassBlur = 0.10
+    @AppStorage("bubbleGlassSize") private var bubbleGlassSize = 174.33
     private var theme: AlcoveTheme { .named(themeName) }
+    private var bubbleGlassStyle: BubbleGlassStyle {
+        BubbleGlassStyle(
+            strength: CGFloat(bubbleGlassStrength),
+            dispersion: CGFloat(bubbleGlassDispersion),
+            rimWidth: CGFloat(bubbleGlassRimWidth),
+            magnify: CGFloat(bubbleGlassMagnify),
+            backdropBlur: CGFloat(bubbleGlassBlur),
+            size: CGFloat(bubbleGlassSize)
+        )
+    }
     private var safeBottom: CGFloat {
         UIApplication.shared.connectedScenes
             .compactMap { $0 as? UIWindowScene }
@@ -49,6 +65,7 @@ struct ChatView: View {
             .coordinateSpace(name: "alcoveChatRoot")
             .environment(\.chatWallpaperDescriptor, wallpaperStore.descriptor)
             .environment(\.chatWallpaperViewportSize, root.size)
+            .environment(\.bubbleGlassStyle, bubbleGlassStyle)
         }
         .sheet(isPresented: $showStickers) { stickerSheet }
         .sheet(isPresented: $showCamera) {
@@ -133,7 +150,7 @@ struct ChatView: View {
         ScrollViewReader { proxy in
             ZStack(alignment: .bottom) {
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 4) {
+                    LazyVStack(alignment: .leading, spacing: 6) {
                         ForEach(Array(store.messages.enumerated()), id: \.element.id) { idx, msg in
                             let prev = idx > 0 ? store.messages[idx - 1] : nil
                             let next = idx + 1 < store.messages.count ? store.messages[idx + 1] : nil
@@ -521,6 +538,7 @@ struct MessageRow: View {
     var onContentChange: (() -> Void)? = nil
     @State private var showThinking = false
     @State private var showRecall = false
+    @Environment(\.bubbleGlassStyle) private var bubbleGlassStyle
 
     private var isUser: Bool { msg.role == "user" }
     private var timestampTextInset: CGFloat {
@@ -530,7 +548,7 @@ struct MessageRow: View {
     var body: some View {
         HStack(alignment: .bottom, spacing: 0) {
             if isUser { Spacer(minLength: 48) }
-            VStack(alignment: isUser ? .trailing : .leading, spacing: 5) {
+            VStack(alignment: isUser ? .trailing : .leading, spacing: 7) {
                 if let think = msg.thinking, !think.isEmpty {
                     thinkingBlock(think)
                 } else if recall != nil {
@@ -574,7 +592,7 @@ struct MessageRow: View {
             if !isUser { Spacer(minLength: 48) }
         }
         .padding(.top, 2)
-        .padding(.bottom, showTime ? 9 : 2)
+        .padding(.bottom, showTime ? 12 : 5)
     }
 
     // The text stays crisp above a real wallpaper-refraction layer.
@@ -589,14 +607,15 @@ struct MessageRow: View {
     private var bubble: some View {
         markdownText(msg.text)
             .font(.system(size: CGFloat(fontSize)))
-            .lineSpacing(4)
+            .lineSpacing(5)
             .foregroundColor(msg.asleepAtSend ? theme.textDim : theme.text)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
             .background {
                 BubbleGlassBackground(
                     tintColor: isUser ? theme.bubbleUser : theme.bubbleAI,
-                    tintOpacity: isUser ? 0.14 : 0.09
+                    tintOpacity: isUser ? 0.14 : 0.09,
+                    style: bubbleGlassStyle
                 )
             }
             .contentShape(
