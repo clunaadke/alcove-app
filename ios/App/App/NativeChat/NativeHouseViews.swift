@@ -85,6 +85,12 @@ struct NativeHouseSheet: View {
     @State private var preparedTexture: UIImage?
     @State private var preparedTextureName: String
     @AppStorage("alcoveTheme") private var themeName = "haven"
+    @AppStorage("bubbleGlassStrength") private var bubbleGlassStrength = 56.81
+    @AppStorage("bubbleGlassDispersion") private var bubbleGlassDispersion = 0.39
+    @AppStorage("bubbleGlassRimWidth") private var bubbleGlassRimWidth = 0.28
+    @AppStorage("bubbleGlassMagnify") private var bubbleGlassMagnify = 0.0
+    @AppStorage("bubbleGlassBlur") private var bubbleGlassBlur = 0.10
+    @AppStorage("bubbleGlassSize") private var bubbleGlassSize = 174.33
 
     init(
         initial: HouseDestination,
@@ -101,8 +107,33 @@ struct NativeHouseSheet: View {
 
     private var theme: AlcoveTheme { .panelNamed(themeName) }
 
+    private var bubbleGlassStyle: BubbleGlassStyle {
+        BubbleGlassStyle(
+            strength: CGFloat(bubbleGlassStrength),
+            dispersion: CGFloat(bubbleGlassDispersion),
+            rimWidth: CGFloat(bubbleGlassRimWidth),
+            magnify: CGFloat(bubbleGlassMagnify),
+            backdropBlur: CGFloat(bubbleGlassBlur),
+            size: CGFloat(bubbleGlassSize)
+        )
+    }
+
+    private var panelWallpaperDescriptor: ChatWallpaperDescriptor {
+        ChatWallpaperDescriptor(
+            source: .layeredPanel(
+                preparedImage: preparedTextureName == theme.panelTextureAsset
+                    ? preparedTexture
+                    : nil,
+                asset: theme.panelTextureAsset,
+                gradient: theme.splashBg,
+                textureOpacity: theme.isDark ? 0.72 : 0.68
+            )
+        )
+    }
+
     var body: some View {
-        ZStack {
+        GeometryReader { root in
+            ZStack {
             Group {
                 switch route {
                 case .sidebar:
@@ -164,6 +195,10 @@ struct NativeHouseSheet: View {
             )
         }
         .foyerShell(theme)
+        .coordinateSpace(name: "alcoveChatRoot")
+        .environment(\.chatWallpaperDescriptor, panelWallpaperDescriptor)
+        .environment(\.chatWallpaperViewportSize, root.size)
+        .environment(\.bubbleGlassStyle, bubbleGlassStyle)
         .ignoresSafeArea(edges: [.horizontal, .bottom])
         .overlay(alignment: .topLeading) {
             if route != .sidebar {
@@ -190,6 +225,7 @@ struct NativeHouseSheet: View {
         .presentationBackground(.clear)
         .onAppear { prepareTextureIfNeeded() }
         .onChange(of: themeName) { _ in prepareTextureIfNeeded() }
+        }
     }
 
     private func prepareTextureIfNeeded() {
@@ -1926,6 +1962,20 @@ private struct BindingHole: View {
     }
 }
 
+private struct FoyerCardGlassBackground: View {
+    let theme: AlcoveTheme
+    @Environment(\.bubbleGlassStyle) private var bubbleGlassStyle
+
+    var body: some View {
+        BubbleGlassBackground(
+            tintColor: theme.fyCard,
+            tintOpacity: theme.isDark ? 0.12 : 0.10,
+            style: bubbleGlassStyle,
+            cornerRadius: 16
+        )
+    }
+}
+
 private extension View {
     func foyerShell(_ theme: AlcoveTheme) -> some View {
         let shape = RoundedRectangle(cornerRadius: 28, style: .continuous)
@@ -1980,47 +2030,16 @@ private extension View {
                 .stroke(theme.glassBorder, lineWidth: 1))
     }
 
-    // 凸起湿玻璃：卡片自己不铺任何壁纸或水珠，底下那层背景的水痕直接透上来。
-    // 厚度全靠光影堆：弧面高光 + 外轮廓左上亮右下暗 + 内侧高光 + 三道阴影。
+    // 面板卡片与聊天气泡共用同一套折射、高光和六个调节参数。
+    // 这里只替换背景玻璃层；按钮原有的尺寸、padding 和网格布局保持不变。
     func foyerCard(_ theme: AlcoveTheme) -> some View {
         let shape = JournalCardShape(tl: 14, bl: 14, br: 18, tr: 18)
 
         return self
-            // 每张按钮只保留一层透光底、一条厚度边和一道短阴影。
-            // 水珠来自整块面板的同一张静态纹理，不在滚动时为每个按钮重复合成。
             .background {
-                shape
-                    .fill(
-                        LinearGradient(
-                            stops: [
-                                .init(color: .white.opacity(theme.isDark ? 0.10 : 0.16), location: 0),
-                                .init(color: .white.opacity(theme.isDark ? 0.03 : 0.055), location: 0.34),
-                                .init(color: .clear, location: 0.66),
-                                .init(color: .black.opacity(theme.isDark ? 0.08 : 0.035), location: 1)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .allowsHitTesting(false)
+                FoyerCardGlassBackground(theme: theme)
             }
-            .overlay {
-                shape
-                    .stroke(
-                        LinearGradient(
-                            stops: [
-                                .init(color: .white.opacity(theme.isDark ? 0.68 : 0.96), location: 0),
-                                .init(color: .white.opacity(theme.isDark ? 0.24 : 0.46), location: 0.40),
-                                .init(color: theme.fyBorder.opacity(0.48), location: 0.68),
-                                .init(color: .black.opacity(theme.isDark ? 0.32 : 0.14), location: 1)
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 1.25
-                    )
-                    .allowsHitTesting(false)
-            }
+            .contentShape(shape)
             .shadow(
                 color: .black.opacity(theme.isDark ? 0.28 : 0.12),
                 radius: 5,

@@ -6,6 +6,12 @@ struct ChatWallpaperDescriptor {
         case image(UIImage)
         case asset(String)
         case gradient([Color])
+        case layeredPanel(
+            preparedImage: UIImage?,
+            asset: String,
+            gradient: [Color],
+            textureOpacity: Double
+        )
     }
 
     let source: Source
@@ -75,6 +81,35 @@ struct ChatWallpaperRenderer: View {
                     startPoint: .top,
                     endPoint: .bottom
                 )
+            case .layeredPanel(
+                let preparedImage,
+                let asset,
+                let gradient,
+                let textureOpacity
+            ):
+                ZStack {
+                    LinearGradient(
+                        colors: gradient,
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+
+                    if let preparedImage {
+                        Image(uiImage: preparedImage)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: proxy.size.width, height: proxy.size.height)
+                            .clipped()
+                            .opacity(textureOpacity)
+                    } else {
+                        Image(asset)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: proxy.size.width, height: proxy.size.height)
+                            .clipped()
+                            .opacity(textureOpacity)
+                    }
+                }
             }
         }
     }
