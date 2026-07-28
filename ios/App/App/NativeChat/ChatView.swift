@@ -171,7 +171,7 @@ struct ChatView: View {
                     .padding(.horizontal, 12)
                     .padding(.top, 52)
                 }
-                .scrollDismissesKeyboard(.immediately)
+                .scrollDismissesKeyboard(.interactively)
                 .onTapGesture { inputFocused = false }
                 .mask(edgeFadeMask)
 
@@ -366,11 +366,20 @@ struct ChatView: View {
                     }
                     .padding(.init(top: 16, leading: 14, bottom: 4, trailing: 14))
                 } else {
-                    TextField("ring the chime …", text: $draft, axis: .vertical)
-                        .focused($inputFocused)
-                        .lineLimit(1...5)
-                        .font(.system(size: 15.5, design: .serif).italic())
-                        .padding(.init(top: 16, leading: 14, bottom: 4, trailing: 14))
+                    TextField(
+                        "",
+                        text: $draft,
+                        prompt: Text("ring the chime …")
+                            .font(.system(size: 15.5, design: .serif))
+                            .italic(),
+                        axis: .vertical
+                    )
+                    .focused($inputFocused)
+                    .lineLimit(1...5)
+                    .font(.system(size: 15.5, weight: .regular, design: .default))
+                    .tint(Color(uiColor: .systemGray3))
+                    .padding(.init(top: 10, leading: 14, bottom: 10, trailing: 14))
+                    .contentShape(Rectangle())
                 }
                 HStack(spacing: 2) {
                     if recorder.isRecording {
@@ -464,8 +473,7 @@ struct ChatView: View {
                 }
                 .padding(.init(top: 4, leading: 8, bottom: 16, trailing: 8))
             }
-            .background(theme.capsuleTint,
-                        in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+            .modifier(InteractiveInputGlassModifier(fallbackTint: theme.capsuleTint))
             .shadow(color: .black.opacity(0.05), radius: 14, x: 0, y: 2)
             .padding(.horizontal, 14)
         }
@@ -889,6 +897,22 @@ struct RecallPop: View {
             }
         }
         .presentationDetents([.medium, .large])
+    }
+}
+
+private struct InteractiveInputGlassModifier: ViewModifier {
+    let fallbackTint: Color
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 28, style: .continuous)
+        if #available(iOS 26.0, *) {
+            content
+                .glassEffect(.regular.interactive(), in: shape)
+        } else {
+            content
+                .background(fallbackTint, in: shape)
+        }
     }
 }
 
