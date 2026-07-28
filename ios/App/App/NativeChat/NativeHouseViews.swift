@@ -133,8 +133,9 @@ struct NativeHouseSheet: View {
 
     var body: some View {
         GeometryReader { root in
-            ZStack {
-            Group {
+            FoyerGlassContainer(spacing: 8) {
+                ZStack {
+                    Group {
                 switch route {
                 case .sidebar:
                     NativeSidebarView(select: select)
@@ -182,6 +183,8 @@ struct NativeHouseSheet: View {
                     NativeDreamsView()
                 default:
                     NativeDataPanel(destination: route)
+                }
+                    }
                 }
             }
         }
@@ -1962,17 +1965,51 @@ private struct BindingHole: View {
     }
 }
 
+private struct FoyerGlassContainer<Content: View>: View {
+    let spacing: CGFloat
+    private let content: Content
+
+    init(spacing: CGFloat, @ViewBuilder content: () -> Content) {
+        self.spacing = spacing
+        self.content = content()
+    }
+
+    @ViewBuilder
+    var body: some View {
+        if #available(iOS 26.0, *) {
+            GlassEffectContainer(spacing: spacing) {
+                content
+            }
+        } else {
+            content
+        }
+    }
+}
+
 private struct FoyerCardGlassBackground: View {
     let theme: AlcoveTheme
     @Environment(\.bubbleGlassStyle) private var bubbleGlassStyle
 
+    @ViewBuilder
     var body: some View {
-        BubbleGlassBackground(
-            tintColor: theme.fyCard,
-            tintOpacity: theme.isDark ? 0.12 : 0.10,
-            style: bubbleGlassStyle,
-            cornerRadius: 16
-        )
+        if #available(iOS 26.0, *) {
+            let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
+
+            shape
+                .fill(Color.clear)
+                .glassEffect(
+                    .regular.tint(theme.fyCard.opacity(theme.isDark ? 0.16 : 0.11)),
+                    in: shape
+                )
+                .allowsHitTesting(false)
+        } else {
+            BubbleGlassBackground(
+                tintColor: theme.fyCard,
+                tintOpacity: theme.isDark ? 0.12 : 0.10,
+                style: bubbleGlassStyle,
+                cornerRadius: 16
+            )
+        }
     }
 }
 
@@ -2048,15 +2085,10 @@ private extension View {
             )
     }
 
-    // 面板不再自己糊一层，也不再叠第二张壁纸：
-    // 它底下就是 HouseBackground，同一张图解码两遍是打开面板卡顿的主因。
+    // Detail pages sit directly on the shared wet-glass wallpaper.
+    // Keep their content and spacing intact; remove only the extra dark shell.
     func foyerPanel(_ theme: AlcoveTheme) -> some View {
-        background(theme.fyCard)
-        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous)
-            .stroke(theme.fyBorder, lineWidth: 1))
-        .shadow(color: theme.fyShadow, radius: 14, y: 6)
-        .overlay(alignment: .topTrailing) { FoyerFoldCorner(theme: theme) }
+        self
     }
 }
 
