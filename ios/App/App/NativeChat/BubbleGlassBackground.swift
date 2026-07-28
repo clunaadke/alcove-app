@@ -134,17 +134,25 @@ struct BubbleGlassBackground: View {
                     shape.fill(tintColor.opacity(tintOpacity))
                 }
 
+                // A continuous wet-glass rim: the horizontal arcs catch
+                // more light, while the side edges stay present but quieter.
+                shape.stroke(
+                    Color.white.opacity(0.10),
+                    lineWidth: 0.45
+                )
+
                 shape.stroke(
                     LinearGradient(
-                        colors: [
-                            .white.opacity(0.72),
-                            .white.opacity(0.24),
-                            .black.opacity(0.10)
+                        stops: [
+                            .init(color: .white.opacity(0.40), location: 0.00),
+                            .init(color: .white.opacity(0.12), location: 0.32),
+                            .init(color: .white.opacity(0.10), location: 0.68),
+                            .init(color: .white.opacity(0.32), location: 1.00)
                         ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
+                        startPoint: .top,
+                        endPoint: .bottom
                     ),
-                    lineWidth: 0.75
+                    lineWidth: 0.95
                 )
             }
         }

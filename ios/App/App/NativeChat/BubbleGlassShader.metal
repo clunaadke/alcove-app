@@ -105,11 +105,8 @@ static float2 roundedBoxNormal(
 
     float thinRim = smoothstep(0.15, 0.55, insideDepth)
         * (1.0 - smoothstep(0.55, 1.35, insideDepth));
-    float lightFacing = clamp(
-        dot(normal, normalize(float2(-0.72, -1.0))),
-        0.0,
-        1.0
-    );
-    color.rgb += half(thinRim * lightFacing) * half3(0.12, 0.12, 0.11);
+    float verticalFacing = smoothstep(0.18, 0.88, abs(normal.y));
+    float rimLight = mix(0.22, 1.0, verticalFacing);
+    color.rgb += half(thinRim * rimLight) * half3(0.075, 0.075, 0.072);
     return color;
 }
