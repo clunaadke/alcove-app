@@ -80,19 +80,27 @@ struct NativeHouseSheet: View {
     var showTerminal: () -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var route: HouseDestination
+    @State private var preparedTexture: UIImage?
+    @State private var preparedTextureName: String
     @AppStorage("alcoveTheme") private var themeName = "haven"
 
-    init(initial: HouseDestination, showTerminal: @escaping () -> Void) {
+    init(
+        initial: HouseDestination,
+        preparedTexture: UIImage? = nil,
+        preparedTextureName: String = "",
+        showTerminal: @escaping () -> Void
+    ) {
         self.initial = initial
         self.showTerminal = showTerminal
         _route = State(initialValue: initial)
+        _preparedTexture = State(initialValue: preparedTexture)
+        _preparedTextureName = State(initialValue: preparedTextureName)
     }
 
     private var theme: AlcoveTheme { .panelNamed(themeName) }
 
     var body: some View {
         ZStack {
-            HouseBackground(theme: theme)
             Group {
                 switch route {
                 case .sidebar:
@@ -135,6 +143,18 @@ struct NativeHouseSheet: View {
                 }
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background {
+            HouseBackground(
+                theme: theme,
+                preparedTexture: preparedTextureName == theme.panelTextureAsset
+                    ? preparedTexture
+                    : nil
+            )
+        }
+        .foyerShell(theme)
+        .padding(.horizontal, 4)
+        .padding(.vertical, 2)
         .overlay(alignment: .topLeading) {
             if route != .sidebar {
                 Button { route = .sidebar } label: {
@@ -154,6 +174,22 @@ struct NativeHouseSheet: View {
         .presentationDetents([.fraction(0.86)])
         .presentationDragIndicator(.visible)
         .presentationBackground(.clear)
+        .onAppear { prepareTextureIfNeeded() }
+        .onChange(of: themeName) { _ in prepareTextureIfNeeded() }
+    }
+
+    private func prepareTextureIfNeeded() {
+        let asset = theme.panelTextureAsset
+        guard preparedTextureName != asset || preparedTexture == nil else { return }
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            let prepared = UIImage(named: asset)?.preparingForDisplay()
+            DispatchQueue.main.async {
+                guard theme.panelTextureAsset == asset else { return }
+                preparedTexture = prepared
+                preparedTextureName = asset
+            }
+        }
     }
 
     private func select(_ target: HouseDestination) {
@@ -173,13 +209,18 @@ struct NativeHouseSheet: View {
 
 private struct WetGlassTexture: View {
     let theme: AlcoveTheme
+    let preparedTexture: UIImage?
     var cardLayer = false
 
+    private var image: Image {
+        if let preparedTexture {
+            return Image(uiImage: preparedTexture)
+        }
+        return Image(theme.panelTextureAsset)
+    }
+
     var body: some View {
-        // 去掉 GeometryReader：它会逼布局多跑一轮，而 scaledToFill + clipped
-        // 本来就会填满父容器，拿容器尺寸这一步是多余的。
-        // interpolation 降到 medium，1290 宽的源图往 393pt 容器里采样，肉眼没差别但便宜。
-        Image(theme.panelTextureAsset)
+        image
             .resizable()
             .interpolation(.medium)
             .scaledToFill()
@@ -193,16 +234,16 @@ private struct WetGlassTexture: View {
 
 private struct HouseBackground: View {
     let theme: AlcoveTheme
+    let preparedTexture: UIImage?
+
     var body: some View {
         ZStack {
-            // 不用 .ultraThinMaterial：上面压着不透明渐变和 0.7 的壁纸，
-            // 它基本看不见，却要在 sheet 弹出的动画里做一次全屏实时模糊。
             LinearGradient(
                 colors: theme.splashBg,
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
-            WetGlassTexture(theme: theme)
+            WetGlassTexture(theme: theme, preparedTexture: preparedTexture)
         }
         .ignoresSafeArea()
     }
@@ -344,9 +385,17 @@ private struct NativeSidebarView: View {
 
 @MainActor
 private final class SidebarModel: ObservableObject {
-    @Published var homeLine = "亲密度 --"
-    @Published var sexLine = "--"
-    @Published var usageLine = "--"
+    private struct Snapshot {
+        var homeLine = "亲密度 --"
+        var sexLine = "--"
+        var usageLine = "--"
+    }
+
+    @Published private var snapshot = Snapshot()
+    var homeLine: String { snapshot.homeLine }
+    var sexLine: String { snapshot.sexLine }
+    var usageLine: String { snapshot.usageLine }
+
     let days = max(1, Calendar.current.dateComponents(
         [.day], from: Calendar.current.startOfDay(for: Date(timeIntervalSince1970: 1_780_272_000)),
         to: Calendar.current.startOfDay(for: Date())).day ?? 1)
@@ -355,13 +404,23 @@ private final class SidebarModel: ObservableObject {
         async let doll = try? NativeHouseAPI.object("/api/dollhouse/state")
         async let sex = try? NativeHouseAPI.object("/api/sex/entries")
         async let usage = try? NativeHouseAPI.object("/api/usage")
-        if let d = await doll { homeLine = "亲密度 \(d.int("intimacy")) · 金币 \(d.int("coins"))" }
-        if let s = await sex { sexLine = "\((s["entries"] as? [Any])?.count ?? 0) 次" }
-        if let u = await usage {
+
+        let (dollResult, sexResult, usageResult) = await (doll, sex, usage)
+        var next = Snapshot()
+
+        if let d = dollResult {
+            next.homeLine = "亲密度 \(d.int("intimacy")) · 金币 \(d.int("coins"))"
+        }
+        if let s = sexResult {
+            next.sexLine = "\((s["entries"] as? [Any])?.count ?? 0) 次"
+        }
+        if let u = usageResult {
             let five = u.object("rate_limits").object("five_hour").int("used_percent")
             let seven = u.object("rate_limits").object("seven_day").int("used_percent")
-            usageLine = "5h \(five)% · 7d \(seven)%"
+            next.usageLine = "5h \(five)% · 7d \(seven)%"
         }
+
+        snapshot = next
     }
 }
 
@@ -1640,6 +1699,52 @@ private struct BindingHole: View {
 }
 
 private extension View {
+    func foyerShell(_ theme: AlcoveTheme) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 28, style: .continuous)
+
+        return self
+            .clipShape(shape)
+            .overlay {
+                shape
+                    .stroke(
+                        LinearGradient(
+                            stops: [
+                                .init(color: .white.opacity(theme.isDark ? 0.58 : 0.90), location: 0),
+                                .init(color: .white.opacity(theme.isDark ? 0.18 : 0.38), location: 0.45),
+                                .init(color: .black.opacity(theme.isDark ? 0.34 : 0.12), location: 1)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 1.25
+                    )
+                    .allowsHitTesting(false)
+            }
+            .overlay {
+                shape
+                    .inset(by: 1.4)
+                    .stroke(
+                        LinearGradient(
+                            colors: [
+                                .white.opacity(theme.isDark ? 0.22 : 0.48),
+                                .clear,
+                                .black.opacity(theme.isDark ? 0.18 : 0.06)
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ),
+                        lineWidth: 0.75
+                    )
+                    .allowsHitTesting(false)
+            }
+            .shadow(
+                color: .black.opacity(theme.isDark ? 0.34 : 0.16),
+                radius: 9,
+                x: 0,
+                y: 4
+            )
+    }
+
     func houseGlass(_ theme: AlcoveTheme) -> some View {
         background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .background(theme.glassTint, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
