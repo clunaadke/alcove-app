@@ -153,8 +153,7 @@ struct NativeHouseSheet: View {
             )
         }
         .foyerShell(theme)
-        .padding(.horizontal, 4)
-        .padding(.vertical, 2)
+        .ignoresSafeArea(edges: [.horizontal, .bottom])
         .overlay(alignment: .topLeading) {
             if route != .sidebar {
                 Button { route = .sidebar } label: {
@@ -1758,23 +1757,17 @@ private extension View {
         let shape = JournalCardShape(tl: 14, bl: 14, br: 18, tr: 18)
 
         return self
-            // 不用 .ultraThinMaterial：它在浅色底上本身就发白，而且二十个卡片
-            // 每个都要做一次实时模糊，是这一屏卡顿的主因。
-            // 只留极淡的一层白，把按钮从底板上提起来一点点，水珠照样透上来。
-            .background(
-                Color.white.opacity(theme.isDark ? 0.05 : 0.07),
-                in: shape
-            )
-
-            // 玻璃表面的湿润弧面高光，左上一点点，很快化开
-            .overlay {
+            // 每张按钮只保留一层透光底、一条厚度边和一道短阴影。
+            // 水珠来自整块面板的同一张静态纹理，不在滚动时为每个按钮重复合成。
+            .background {
                 shape
                     .fill(
                         LinearGradient(
                             stops: [
-                                .init(color: .white.opacity(theme.isDark ? 0.10 : 0.15), location: 0),
-                                .init(color: .white.opacity(theme.isDark ? 0.04 : 0.06), location: 0.30),
-                                .init(color: .clear, location: 0.62)
+                                .init(color: .white.opacity(theme.isDark ? 0.10 : 0.16), location: 0),
+                                .init(color: .white.opacity(theme.isDark ? 0.03 : 0.055), location: 0.34),
+                                .init(color: .clear, location: 0.66),
+                                .init(color: .black.opacity(theme.isDark ? 0.08 : 0.035), location: 1)
                             ],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
@@ -1782,93 +1775,29 @@ private extension View {
                     )
                     .allowsHitTesting(false)
             }
-
-            // 外轮廓：左上亮、右下暗，这道决定"切口"看着有多厚
             .overlay {
                 shape
                     .stroke(
                         LinearGradient(
                             stops: [
-                                .init(color: .white.opacity(theme.isDark ? 0.60 : 0.88), location: 0),
-                                .init(color: .white.opacity(theme.isDark ? 0.24 : 0.48), location: 0.38),
-                                .init(color: theme.fyBorder.opacity(0.45), location: 0.68),
-                                .init(color: .black.opacity(theme.isDark ? 0.38 : 0.16), location: 1)
+                                .init(color: .white.opacity(theme.isDark ? 0.68 : 0.96), location: 0),
+                                .init(color: .white.opacity(theme.isDark ? 0.24 : 0.46), location: 0.40),
+                                .init(color: theme.fyBorder.opacity(0.48), location: 0.68),
+                                .init(color: .black.opacity(theme.isDark ? 0.32 : 0.14), location: 1)
                             ],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         ),
-                        lineWidth: 1.35
+                        lineWidth: 1.25
                     )
                     .allowsHitTesting(false)
             }
-
-            // 切口斜面·亮的那半。四层同心细描边由外往内递减，堆出一条渐隐的亮带，
-            // 视觉上等于一条模糊过的粗边，但不调 .blur()，不触发离屏渲染，不卡。
-            .overlay {
-                ZStack {
-                    ForEach(0..<4, id: \.self) { i in
-                        shape
-                            .stroke(
-                                LinearGradient(
-                                    stops: [
-                                        .init(color: .white.opacity((theme.isDark ? 0.42 : 0.80) * (1 - Double(i) * 0.24)), location: 0),
-                                        .init(color: .white.opacity((theme.isDark ? 0.14 : 0.26) * (1 - Double(i) * 0.24)), location: 0.42),
-                                        .init(color: .clear, location: 0.74)
-                                    ],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                ),
-                                lineWidth: 1
-                            )
-                            .padding(CGFloat(i) * 1.15)
-                    }
-                }
-                .allowsHitTesting(false)
-            }
-
-            // 切口斜面·暗的那半，压在右下，跟亮带夹出立体
-            .overlay {
-                ZStack {
-                    ForEach(0..<3, id: \.self) { i in
-                        shape
-                            .stroke(
-                                LinearGradient(
-                                    stops: [
-                                        .init(color: .clear, location: 0.34),
-                                        .init(color: .black.opacity((theme.isDark ? 0.26 : 0.11) * (1 - Double(i) * 0.30)), location: 1)
-                                    ],
-                                    startPoint: .topLeading,
-                                    endPoint: .bottomTrailing
-                                ),
-                                lineWidth: 1
-                            )
-                            .padding(CGFloat(i) * 1.20)
-                    }
-                }
-                .allowsHitTesting(false)
-            }
-
-            // 最外沿一条极细的棱，斜面的顶端，玻璃切口磨出来的那道光
-            .overlay {
-                shape
-                    .stroke(
-                        LinearGradient(
-                            colors: [
-                                .white.opacity(theme.isDark ? 0.70 : 0.98),
-                                .white.opacity(theme.isDark ? 0.20 : 0.40),
-                                .clear
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        ),
-                        lineWidth: 0.7
-                    )
-                    .allowsHitTesting(false)
-            }
-
-            // 只留一道悬浮阴影。shadow 每道都是一次离屏渲染，二十个卡片乘三道太贵，
-            // 而且白色那道在深色主题下会在按钮外面绕一圈白雾。
-            .shadow(color: .black.opacity(theme.isDark ? 0.30 : 0.13), radius: 6, x: 1, y: 3)
+            .shadow(
+                color: .black.opacity(theme.isDark ? 0.28 : 0.12),
+                radius: 5,
+                x: 1,
+                y: 3
+            )
     }
 
     // 面板不再自己糊一层，也不再叠第二张壁纸：
