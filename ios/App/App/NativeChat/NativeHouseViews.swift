@@ -4,7 +4,7 @@ import AVFoundation
 import WebKit
 
 enum HouseDestination: String, Identifiable, CaseIterable {
-    case sidebar, chat, terminal, settings, checklist, music
+    case sidebar, chat, terminal, settings, bubbleAppearance, checklist, music
     case home, calendar, sex, usage
     case memory, dreams, shelf, desire, nianlun, clockwork, album, portrait, impression
     case crosstalk, radio, coread, liao, daddyDay
@@ -19,6 +19,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .chat: return "Chat"
         case .terminal: return "Terminal"
         case .settings: return "设置"
+        case .bubbleAppearance: return "气泡与文字"
         case .checklist: return "Checklist"
         case .music: return "Music"
         case .calendar: return "Calendar"
@@ -50,6 +51,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .chat: return "bubble.left"
         case .terminal: return "terminal"
         case .settings: return "gearshape"
+        case .bubbleAppearance: return "slider.horizontal.3"
         case .checklist: return "checklist"
         case .music: return "music.note"
         case .calendar, .impression: return "calendar"
@@ -106,12 +108,21 @@ struct NativeHouseSheet: View {
                 case .sidebar:
                     NativeSidebarView(select: select)
                 case .settings:
-                    NativeSettingsView(showPermissions: {
-                        dismiss()
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                            NotificationCenter.default.post(name: .alcoveShowPermissions, object: nil)
+                    NativeSettingsView(
+                        showPermissions: {
+                            dismiss()
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                                NotificationCenter.default.post(name: .alcoveShowPermissions, object: nil)
+                            }
+                        },
+                        showBubbleAppearance: {
+                            withAnimation(.easeInOut(duration: 0.18)) {
+                                route = .bubbleAppearance
+                            }
                         }
-                    })
+                    )
+                case .bubbleAppearance:
+                    BubbleAppearanceSettingsView()
                 case .crosstalk, .coread, .liao:
                     NativePlayView(destination: route)
                 case .checklist:
@@ -156,7 +167,11 @@ struct NativeHouseSheet: View {
         .ignoresSafeArea(edges: [.horizontal, .bottom])
         .overlay(alignment: .topLeading) {
             if route != .sidebar {
-                Button { route = .sidebar } label: {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.18)) {
+                        route = route == .bubbleAppearance ? .settings : .sidebar
+                    }
+                } label: {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 15, weight: .medium))
                         .foregroundColor(theme.fyAccent)
@@ -425,19 +440,13 @@ private final class SidebarModel: ObservableObject {
 
 private struct NativeSettingsView: View {
     var showPermissions: () -> Void
+    var showBubbleAppearance: () -> Void
     @AppStorage("assistantName") private var assistantName = "陈璟"
     @AppStorage("userName") private var userName = "Luna"
     @AppStorage("assistantAvatarDataURL") private var assistantAvatar = ""
     @AppStorage("userAvatarDataURL") private var userAvatar = ""
     @AppStorage("alcoveTheme") private var themeName = "haven"
-    @AppStorage("chatFontSize") private var fontSize = 14
     @AppStorage("wallStamp") private var wallStamp = 0.0
-    @AppStorage("bubbleGlassStrength") private var bubbleGlassStrength = 56.81
-    @AppStorage("bubbleGlassDispersion") private var bubbleGlassDispersion = 0.39
-    @AppStorage("bubbleGlassRimWidth") private var bubbleGlassRimWidth = 0.28
-    @AppStorage("bubbleGlassMagnify") private var bubbleGlassMagnify = 0.0
-    @AppStorage("bubbleGlassBlur") private var bubbleGlassBlur = 0.10
-    @AppStorage("bubbleGlassSize") private var bubbleGlassSize = 174.33
     @State private var aiPhoto: PhotosPickerItem?
     @State private var userPhoto: PhotosPickerItem?
     @State private var wallPhoto: PhotosPickerItem?
@@ -448,13 +457,6 @@ private struct NativeSettingsView: View {
             VStack(spacing: 14) {
                 panelTitle("设置")
                 section("聊天") {
-                    settingRow("字体大小", "调整气泡文字大小") {
-                        Picker("", selection: $fontSize) {
-                            Text("小").tag(13); Text("中").tag(14); Text("大").tag(16)
-                        }
-                        .pickerStyle(.segmented).frame(width: 145)
-                    }
-                    Divider().opacity(0.25)
                     settingRow("我的名字", "聊天气泡和推送显示") {
                         TextField("Luna", text: $userName).multilineTextAlignment(.trailing).frame(width: 105)
                     }
@@ -475,24 +477,14 @@ private struct NativeSettingsView: View {
                         }
                     }
                 }
-                section("液态玻璃气泡") {
-                    VStack(spacing: 10) {
-                        glassSliderRow("扭曲", "strength", $bubbleGlassStrength, 0...60)
-                        glassSliderRow("色散", "dispersion", $bubbleGlassDispersion, 0...3)
-                        glassSliderRow("过渡", "rimWidth", $bubbleGlassRimWidth, 0.2...0.95)
-                        glassSliderRow("放大", "magnify", $bubbleGlassMagnify, 0...1.5)
-                        glassSliderRow("背景模糊", "blur", $bubbleGlassBlur, 0...8)
-                        glassSliderRow("直径", "size", $bubbleGlassSize, 80...340)
+                section("聊天外观") {
+                    Button(action: showBubbleAppearance) {
+                        settingRow("气泡与文字", "在聊天壁纸上实时预览并调节") {
+                            Image(systemName: "chevron.right")
+                                .foregroundColor(theme.textLight)
+                        }
                     }
-                    Divider().opacity(0.25)
-                    HStack {
-                        Text("调节后立即应用到聊天气泡")
-                            .font(.system(size: 10))
-                            .foregroundColor(theme.textLight)
-                        Spacer()
-                        Button("恢复默认") { resetBubbleGlass() }
-                            .font(.system(size: 11, weight: .medium))
-                    }
+                    .buttonStyle(.plain)
                 }
                 section("主题") {
                     HStack(spacing: 8) {
@@ -566,31 +558,6 @@ private struct NativeSettingsView: View {
         }
     }
 
-    private func glassSliderRow(
-        _ title: String,
-        _ parameter: String,
-        _ value: Binding<Double>,
-        _ range: ClosedRange<Double>
-    ) -> some View {
-        HStack(spacing: 9) {
-            HStack(spacing: 4) {
-                Text(title)
-                Text(parameter)
-                    .foregroundColor(theme.textLight)
-            }
-            .font(.system(size: 11))
-            .frame(width: 100, alignment: .leading)
-
-            Slider(value: value, in: range)
-                .tint(theme.fyAccent)
-
-            Text(String(format: "%.2f", value.wrappedValue))
-                .font(.system(size: 10, design: .monospaced))
-                .foregroundColor(theme.textDim)
-                .frame(width: 45, alignment: .trailing)
-        }
-    }
-
     private func themeChoice(
         _ title: String, _ sub: String, _ value: String, _ colors: [Color]
     ) -> some View {
@@ -653,21 +620,224 @@ private struct NativeSettingsView: View {
         }
     }
 
-    private func resetBubbleGlass() {
-        bubbleGlassStrength = 56.81
-        bubbleGlassDispersion = 0.39
-        bubbleGlassRimWidth = 0.28
-        bubbleGlassMagnify = 0
-        bubbleGlassBlur = 0.10
-        bubbleGlassSize = 174.33
-    }
-
     private func resetWallpaper() {
         let file = themeName == "midnight" ? "chatwall_midnight.jpg" : "chatwall_haven.jpg"
         let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
             .appendingPathComponent(file)
         try? FileManager.default.removeItem(at: url)
         wallStamp = Date().timeIntervalSince1970
+    }
+}
+
+
+private struct BubbleAppearanceSettingsView: View {
+    @StateObject private var wallpaperStore = ChatWallpaperStore()
+    @AppStorage("assistantName") private var assistantName = "陈璟"
+    @AppStorage("alcoveTheme") private var themeName = "haven"
+    @AppStorage("chatFontSize") private var fontSize = 14
+    @AppStorage("wallStamp") private var wallStamp = 0.0
+    @AppStorage("bubbleGlassStrength") private var bubbleGlassStrength = 56.81
+    @AppStorage("bubbleGlassDispersion") private var bubbleGlassDispersion = 0.39
+    @AppStorage("bubbleGlassRimWidth") private var bubbleGlassRimWidth = 0.28
+    @AppStorage("bubbleGlassMagnify") private var bubbleGlassMagnify = 0.0
+    @AppStorage("bubbleGlassBlur") private var bubbleGlassBlur = 0.10
+    @AppStorage("bubbleGlassSize") private var bubbleGlassSize = 174.33
+
+    private var panelTheme: AlcoveTheme { .panelNamed(themeName) }
+    private var chatTheme: AlcoveTheme { .named(themeName) }
+    private var bubbleStyle: BubbleGlassStyle {
+        BubbleGlassStyle(
+            strength: CGFloat(bubbleGlassStrength),
+            dispersion: CGFloat(bubbleGlassDispersion),
+            rimWidth: CGFloat(bubbleGlassRimWidth),
+            magnify: CGFloat(bubbleGlassMagnify),
+            backdropBlur: CGFloat(bubbleGlassBlur),
+            size: CGFloat(bubbleGlassSize)
+        )
+    }
+
+    var body: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(spacing: 14) {
+                Text("气泡与文字")
+                    .font(.system(size: 17, weight: .semibold))
+                    .padding(.top, 11)
+
+                livePreview
+
+                section("文字") {
+                    fontSizeSlider
+                }
+
+                section("液态玻璃气泡") {
+                    VStack(spacing: 10) {
+                        glassSliderRow("扭曲", "strength", $bubbleGlassStrength, 0...60)
+                        glassSliderRow("色散", "dispersion", $bubbleGlassDispersion, 0...3)
+                        glassSliderRow("过渡", "rimWidth", $bubbleGlassRimWidth, 0.2...0.95)
+                        glassSliderRow("放大", "magnify", $bubbleGlassMagnify, 0...1.5)
+                        glassSliderRow("背景模糊", "blur", $bubbleGlassBlur, 0...8)
+                        glassSliderRow("直径", "size", $bubbleGlassSize, 80...340)
+                    }
+                    Divider().opacity(0.25)
+                    HStack {
+                        Text("上方预览与聊天页同步生效")
+                            .font(.system(size: 10))
+                            .foregroundColor(panelTheme.textLight)
+                        Spacer()
+                        Button("恢复默认") { resetAppearance() }
+                            .font(.system(size: 11, weight: .medium))
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 30)
+            .foregroundColor(panelTheme.text)
+        }
+        .onAppear { refreshWallpaper() }
+        .onChange(of: themeName) { _ in refreshWallpaper() }
+        .onChange(of: wallStamp) { _ in refreshWallpaper() }
+    }
+
+    private var livePreview: some View {
+        GeometryReader { proxy in
+            ZStack {
+                ChatWallpaperRenderer(descriptor: wallpaperStore.descriptor)
+
+                VStack(spacing: 14) {
+                    previewBubble(
+                        "\(assistantName)，气泡再透一点\n字也松一点",
+                        isUser: true
+                    )
+                    previewBubble(
+                        "好，就在这里慢慢调\n我陪你看每一下变化",
+                        isUser: false
+                    )
+                }
+                .padding(16)
+            }
+            .coordinateSpace(name: "alcoveChatRoot")
+            .environment(\.chatWallpaperDescriptor, wallpaperStore.descriptor)
+            .environment(\.chatWallpaperViewportSize, proxy.size)
+            .environment(\.bubbleGlassStyle, bubbleStyle)
+        }
+        .frame(height: 250)
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(panelTheme.fyBorder, lineWidth: 1)
+        )
+        .shadow(color: panelTheme.fyShadow, radius: 8, y: 3)
+    }
+
+    private func previewBubble(_ text: String, isUser: Bool) -> some View {
+        HStack {
+            if isUser { Spacer(minLength: 40) }
+
+            Text(text)
+                .font(.system(size: CGFloat(fontSize)))
+                .lineSpacing(5)
+                .foregroundColor(chatTheme.text)
+                .multilineTextAlignment(.leading)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background {
+                    BubbleGlassBackground(
+                        tintColor: isUser ? chatTheme.bubbleUser : chatTheme.bubbleAI,
+                        tintOpacity: isUser ? 0.14 : 0.09,
+                        style: bubbleStyle
+                    )
+                }
+
+            if !isUser { Spacer(minLength: 40) }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var fontSizeSlider: some View {
+        let value = Binding<Double>(
+            get: { Double(fontSize) },
+            set: { fontSize = Int($0.rounded()) }
+        )
+
+        return HStack(spacing: 9) {
+            Text("字体大小")
+                .font(.system(size: 12))
+                .frame(width: 100, alignment: .leading)
+
+            Slider(value: value, in: 11...20, step: 1)
+                .tint(panelTheme.fyAccent)
+
+            Text("\(fontSize) pt")
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundColor(panelTheme.textDim)
+                .frame(width: 45, alignment: .trailing)
+        }
+    }
+
+    @ViewBuilder private func section<Content: View>(
+        _ title: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Text(title.uppercased())
+                    .font(.system(size: 10, weight: .semibold))
+                    .tracking(1.8)
+                    .foregroundColor(panelTheme.fyAccent.opacity(0.8))
+                LinearGradient(
+                    colors: [panelTheme.fyAccentSoft, .clear],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+                .frame(height: 1)
+            }
+            VStack(spacing: 10) { content() }
+                .padding(13)
+                .foyerCard(panelTheme)
+        }
+    }
+
+    private func glassSliderRow(
+        _ title: String,
+        _ parameter: String,
+        _ value: Binding<Double>,
+        _ range: ClosedRange<Double>
+    ) -> some View {
+        HStack(spacing: 9) {
+            HStack(spacing: 4) {
+                Text(title)
+                Text(parameter)
+                    .foregroundColor(panelTheme.textLight)
+            }
+            .font(.system(size: 11))
+            .frame(width: 100, alignment: .leading)
+
+            Slider(value: value, in: range)
+                .tint(panelTheme.fyAccent)
+
+            Text(String(format: "%.2f", value.wrappedValue))
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundColor(panelTheme.textDim)
+                .frame(width: 45, alignment: .trailing)
+        }
+    }
+
+    private func refreshWallpaper() {
+        wallpaperStore.refresh(
+            themeName: themeName,
+            theme: chatTheme,
+            wallStamp: wallStamp
+        )
+    }
+
+    private func resetAppearance() {
+        fontSize = 14
+        bubbleGlassStrength = 56.81
+        bubbleGlassDispersion = 0.39
+        bubbleGlassRimWidth = 0.28
+        bubbleGlassMagnify = 0
+        bubbleGlassBlur = 0.10
+        bubbleGlassSize = 174.33
     }
 }
 
