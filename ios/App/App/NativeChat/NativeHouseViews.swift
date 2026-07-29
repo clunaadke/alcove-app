@@ -3225,12 +3225,14 @@ private struct NativeWallView: View {
     private static let stamp: DateFormatter = {
         let f = DateFormatter()
         f.locale = Locale(identifier: "zh_CN")
+        f.timeZone = TimeZone(secondsFromGMT: 8 * 3600)
         f.dateFormat = "M月d日 HH:mm"
         return f
     }()
     private static let day: DateFormatter = {
         let f = DateFormatter()
         f.locale = Locale(identifier: "zh_CN")
+        f.timeZone = TimeZone(secondsFromGMT: 8 * 3600)
         f.dateFormat = "M.d"
         return f
     }()
