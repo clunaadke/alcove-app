@@ -5,7 +5,7 @@ import WebKit
 
 enum HouseDestination: String, Identifiable, CaseIterable {
     case sidebar, chat, terminal, settings, bubbleAppearance, checklist, music
-    case home, calendar, sex, usage
+    case home, calendar, wall, usage
     case memory, dreams, shelf, desire, nianlun, clockwork, album, portrait, impression
     case crosstalk, radio, coread, liao, daddyDay
     case search, favorites, forge
@@ -23,7 +23,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .checklist: return "Checklist"
         case .music: return "Music"
         case .calendar: return "Calendar"
-        case .sex: return "Sex"
+        case .wall: return "小黑屋"
         case .usage: return "Usage"
         case .memory: return "Memory"
         case .dreams: return "Dreams"
@@ -55,7 +55,8 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .checklist: return "checklist"
         case .music: return "music.note"
         case .calendar, .impression: return "calendar"
-        case .sex, .desire: return "heart"
+        case .wall: return "lock.rectangle.stack"
+        case .desire: return "heart"
         case .usage: return "chart.bar"
         case .memory: return "brain.head.profile"
         case .dreams: return "moon.stars"
@@ -181,6 +182,8 @@ struct NativeHouseSheet: View {
                     NativeImpressionView()
                 case .dreams:
                     NativeDreamsView()
+                case .wall:
+                    NativeWallView()
                 default:
                     NativeDataPanel(destination: route)
                 }
@@ -351,7 +354,7 @@ private struct NativeSidebarView: View {
                     .buttonStyle(.plain)
                 }
                 HStack(spacing: 10) {
-                    summaryCard("Sex", model.sexLine, "heart.fill", .sex)
+                    summaryCard("小黑屋", model.wallLine, "lock.rectangle.stack.fill", .wall)
                     summaryCard("Usage", model.usageLine, "chart.bar", .usage)
                 }
 
@@ -439,13 +442,13 @@ private struct NativeSidebarView: View {
 private final class SidebarModel: ObservableObject {
     private struct Snapshot {
         var homeLine = "亲密度 --"
-        var sexLine = "--"
+        var wallLine = "--"
         var usageLine = "--"
     }
 
     @Published private var snapshot = Snapshot()
     var homeLine: String { snapshot.homeLine }
-    var sexLine: String { snapshot.sexLine }
+    var wallLine: String { snapshot.wallLine }
     var usageLine: String { snapshot.usageLine }
 
     let days = max(1, Calendar.current.dateComponents(
@@ -454,17 +457,19 @@ private final class SidebarModel: ObservableObject {
 
     func load() async {
         async let doll = try? NativeHouseAPI.object("/api/dollhouse/state")
-        async let sex = try? NativeHouseAPI.object("/api/sex/entries")
+        async let wall = try? NativeHouseAPI.object("/api/wall/entries")
         async let usage = try? NativeHouseAPI.object("/api/usage")
 
-        let (dollResult, sexResult, usageResult) = await (doll, sex, usage)
+        let (dollResult, wallResult, usageResult) = await (doll, wall, usage)
         var next = Snapshot()
 
         if let d = dollResult {
             next.homeLine = "亲密度 \(d.int("intimacy")) · 金币 \(d.int("coins"))"
         }
-        if let s = sexResult {
-            next.sexLine = "\((s["entries"] as? [Any])?.count ?? 0) 次"
+        if let w = wallResult {
+            let locked = w.int("locked")
+            let opened = w.int("opened")
+            next.wallLine = (locked + opened) == 0 ? "墙还是空的" : "\(locked) 道锁着 · \(opened) 道开了"
         }
         if let u = usageResult {
             let five = u.object("rate_limits").object("five_hour").int("used_percent")
@@ -1308,7 +1313,6 @@ private final class DataPanelModel: ObservableObject {
             case .nianlun: path = "/api/nianlun/list"; key = "desires"
             case .album: path = "/api/album/entries"; key = "entries"
             case .impression: path = "/api/ob/buckets"; key = nil
-            case .sex: path = "/api/sex/entries"; key = "entries"
             case .calendar: path = "/api/calendar/month?year=\(Calendar.current.component(.year, from: Date()))&month=\(Calendar.current.component(.month, from: Date()))"; key = nil
             case .desire, .portrait, .usage:
                 path = destination == .desire ? "/api/desire/state"
@@ -3124,5 +3128,233 @@ private struct NativeDreamsView: View {
         case "forgotten": return .gray
         default: return .blue.opacity(0.6)
         }
+    }
+}
+
+// MARK: - 小黑屋（墙上刻道子）
+// 陈璟一个人的地方。写进去就钉死，改不了删不了。
+// 锁着的她只看得见有几道，看不见刻的什么。到日子自己裂开。
+
+private struct WallEntry: Identifiable {
+    let id: Int
+    let createdAt: Date?
+    let unlockAt: Date?
+    let isOpen: Bool
+    let daysLeft: Int
+    let marks: Int
+    let mood: String
+    let body: String
+
+    init(_ row: [String: Any]) {
+        id = (row["id"] as? Int) ?? 0
+        createdAt = WallEntry.parse(row.string("created_at"))
+        unlockAt = WallEntry.parse(row.string("unlock_at"))
+        isOpen = (row["open"] as? Bool) ?? false
+        daysLeft = (row["days_left"] as? Int) ?? 0
+        marks = min(48, max(1, (row["marks"] as? Int) ?? 3))
+        mood = row.string("mood")
+        body = row.string("body")
+    }
+
+    private static let parser: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        return f
+    }()
+
+    static func parse(_ s: String) -> Date? {
+        guard !s.isEmpty else { return nil }
+        return parser.date(from: s)
+    }
+}
+
+@MainActor
+private final class WallModel: ObservableObject {
+    @Published var entries: [WallEntry] = []
+    @Published var locked = 0
+    @Published var opened = 0
+    @Published var chainOK = true
+    @Published var loading = true
+    @Published var error = ""
+
+    func load() async {
+        loading = true
+        defer { loading = false }
+        do {
+            let data = try await NativeHouseAPI.object("/api/wall/entries")
+            let rows = (data["entries"] as? [[String: Any]]) ?? []
+            entries = rows.map(WallEntry.init)
+            locked = data.int("locked")
+            opened = data.int("opened")
+            error = ""
+        } catch {
+            self.error = "门打不开，后端没应声"
+        }
+        if let v = try? await NativeHouseAPI.object("/api/wall/verify") {
+            chainOK = (v["ok"] as? Bool) ?? true
+        }
+    }
+}
+
+private struct WallMarks: View {
+    let count: Int
+    let seed: Int
+    let color: Color
+
+    var body: some View {
+        HStack(alignment: .bottom, spacing: 4) {
+            ForEach(0..<count, id: \.self) { i in
+                let r = abs(sin(Double((seed + 1) * (i + 1)) * 12.9898)).truncatingRemainder(dividingBy: 1)
+                Capsule()
+                    .fill(color)
+                    .frame(width: 2, height: 11 + r * 21)
+                    .rotationEffect(.degrees((r - 0.5) * 7))
+            }
+        }
+        .frame(height: 34, alignment: .bottom)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .clipped()
+    }
+}
+
+private struct NativeWallView: View {
+    @AppStorage("alcoveTheme") private var themeName = "haven"
+    @StateObject private var model = WallModel()
+    private var theme: AlcoveTheme { .panelNamed(themeName) }
+
+    private static let stamp: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "zh_CN")
+        f.dateFormat = "M月d日 HH:mm"
+        return f
+    }()
+    private static let day: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "zh_CN")
+        f.dateFormat = "M.d"
+        return f
+    }()
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                Text("小黑屋")
+                    .font(.system(size: 17, weight: .semibold, design: .serif))
+                    .foregroundColor(theme.text)
+                    .padding(.top, 12)
+
+                Text("写进去就钉死，改不了删不了。锁着的你只看得见有几道，看不见刻的什么。到日子自己裂开。")
+                    .font(.system(size: 12))
+                    .foregroundColor(theme.textDim)
+                    .lineSpacing(3)
+                    .padding(11)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .foyerCard(theme)
+
+                HStack(spacing: 8) {
+                    statChip("\(model.locked)", "道锁着")
+                    statChip("\(model.opened)", "道开了")
+                    Text(model.chainOK ? "链完好" : "链断了")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(model.chainOK ? theme.fyAccent : Color(red: 0.82, green: 0.38, blue: 0.32))
+                        .padding(.horizontal, 11).padding(.vertical, 7)
+                        .foyerCard(theme)
+                }
+
+                if model.loading {
+                    centerNote("开门中…")
+                } else if !model.error.isEmpty {
+                    centerNote(model.error)
+                } else if model.entries.isEmpty {
+                    centerNote("墙还是空的\n他还没开始刻")
+                } else {
+                    ForEach(model.entries) { entry in
+                        entryCard(entry)
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 28)
+        }
+        .task { await model.load() }
+    }
+
+    private func statChip(_ num: String, _ label: String) -> some View {
+        HStack(spacing: 4) {
+            Text(num).font(.system(size: 13, weight: .semibold, design: .rounded)).foregroundColor(theme.text)
+            Text(label).font(.system(size: 11)).foregroundColor(theme.textDim)
+        }
+        .padding(.horizontal, 11).padding(.vertical, 7)
+        .foyerCard(theme)
+    }
+
+    private func centerNote(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 13))
+            .foregroundColor(theme.textDim)
+            .multilineTextAlignment(.center)
+            .lineSpacing(6)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 44)
+    }
+
+    @ViewBuilder
+    private func entryCard(_ e: WallEntry) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            WallMarks(
+                count: e.marks,
+                seed: e.id,
+                color: e.isOpen ? theme.fyAccent.opacity(0.55) : theme.text.opacity(0.28)
+            )
+
+            HStack(spacing: 8) {
+                Text(e.createdAt.map { Self.stamp.string(from: $0) } ?? "--")
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundColor(theme.textDim)
+                if e.isOpen {
+                    if !e.mood.isEmpty {
+                        Text(e.mood)
+                            .font(.system(size: 10.5))
+                            .padding(.horizontal, 7).padding(.vertical, 1.5)
+                            .background(theme.fyAccent.opacity(0.16), in: Capsule())
+                            .foregroundColor(theme.fyAccent)
+                    }
+                } else {
+                    Text(lockLine(e))
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(theme.fyAccent.opacity(0.9))
+                }
+                Spacer(minLength: 0)
+            }
+
+            if e.isOpen {
+                Text(e.body)
+                    .font(.system(size: 14.5))
+                    .foregroundColor(theme.text)
+                    .lineSpacing(4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                HStack(spacing: 7) {
+                    Text("▪▪▪▪▪▪▪▪▪▪")
+                        .font(.system(size: 11))
+                        .tracking(3)
+                        .foregroundColor(theme.textLight.opacity(0.55))
+                    Text("锁着")
+                        .font(.system(size: 11.5))
+                        .tracking(1.5)
+                        .foregroundColor(theme.textDim)
+                }
+            }
+        }
+        .padding(13)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .foyerCard(theme)
+        .opacity(e.isOpen ? 1 : 0.82)
+    }
+
+    private func lockLine(_ e: WallEntry) -> String {
+        let when = e.daysLeft <= 0 ? "今天开" : "\(e.daysLeft) 天后开"
+        if let ua = e.unlockAt { return "\(when) · \(Self.day.string(from: ua))" }
+        return when
     }
 }
