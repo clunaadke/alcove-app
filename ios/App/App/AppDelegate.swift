@@ -17,6 +17,12 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         win.rootViewController = host
         win.makeKeyAndVisible()
         window = win
+        // 显著位置变化会把已经被划掉的 app 重新拉起来，
+        // 那一下必须让 SensorReporter 先活过来把 delegate 挂上，否则回调没人接
+        _ = SensorReporter.shared
+        if launchOptions?[.location] != nil {
+            SensorReporter.shared.appActive()
+        }
         return true
     }
 
