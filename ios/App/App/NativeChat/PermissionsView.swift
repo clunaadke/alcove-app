@@ -117,7 +117,7 @@ struct PermissionsView: View {
         .frame(maxWidth: .infinity, minHeight: 190, alignment: .topLeading)
         .background(Color(.secondarySystemGroupedBackground),
                     in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .id(refreshTick)
+        .id("\(title)-\(refreshTick)")
     }
 
     private func openSystemSettings() {
