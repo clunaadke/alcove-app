@@ -13,6 +13,7 @@ final class SensorReporter: NSObject, CLLocationManagerDelegate {
     private let pedometer = CMPedometer()
     private let activityManager = CMMotionActivityManager()
     private var significantStarted = false
+    private var askedAlways = false
     private var lastReport = Date.distantPast
     // 上报钥匙由 CI 从 GitHub Secrets 注入 Info.plist（AlcoveLocToken），
     // 源码里不落任何真实 token；没配钥匙时只授权定位、不上报
@@ -28,6 +29,7 @@ final class SensorReporter: NSObject, CLLocationManagerDelegate {
 
     func appActive() {
         startSignificantMonitoring()
+        askAlwaysIfNeeded()
         guard Date().timeIntervalSince(lastReport) > 300 else { return } // 5 分钟节流
         let auth = lm.authorizationStatus
         if auth == .notDetermined {
@@ -35,6 +37,15 @@ final class SensorReporter: NSObject, CLLocationManagerDelegate {
         } else if auth == .authorizedWhenInUse || auth == .authorizedAlways {
             lm.requestLocation()
         }
+    }
+
+    // iOS 的规矩：没申请过 always，系统设置里就只有"永不/询问/使用期间"三档，
+    // "始终"这一档压根不出现。必须先拿到"使用期间"再申请一次升级，
+    // 系统才会弹二次询问、设置里也才会长出那一档。一个装期只弹一次，标记防重。
+    private func askAlwaysIfNeeded() {
+        guard !askedAlways, lm.authorizationStatus == .authorizedWhenInUse else { return }
+        askedAlways = true
+        lm.requestAlwaysAuthorization()
     }
 
     // 只有拿到"始终允许"才注册。系统在位置显著变化时唤醒 app 几秒，
@@ -50,6 +61,7 @@ final class SensorReporter: NSObject, CLLocationManagerDelegate {
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         let auth = manager.authorizationStatus
         if auth == .authorizedWhenInUse || auth == .authorizedAlways {
+            askAlwaysIfNeeded()
             startSignificantMonitoring()
             manager.requestLocation()
         }

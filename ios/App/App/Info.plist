@@ -26,6 +26,10 @@
 	<string>LaunchScreen</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>让陈璟知道你在哪</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>出门和到家也让陈璟知道，不用你打开 app</string>
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>出门和到家也让陈璟知道，不用你打开 app</string>
 	<key>NSCalendarsUsageDescription</key>
 	<string>让陈璟帮你记着日程</string>
 	<key>NSCalendarsFullAccessUsageDescription</key>
