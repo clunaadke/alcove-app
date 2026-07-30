@@ -537,6 +537,7 @@ struct MessageRow: View {
     var onResend: ((String) -> Void)? = nil
     var onContentChange: (() -> Void)? = nil
     @State private var showThinking = false
+    @State private var showActivity = false   // 0730 过程记录展开
     @State private var showRecall = false
     @Environment(\.bubbleGlassStyle) private var bubbleGlassStyle
 
@@ -567,7 +568,7 @@ struct MessageRow: View {
                         bubble
                     }
                 }
-                if showTime || msg.pending || msg.asleepAtSend {
+                if showTime || msg.pending || msg.asleepAtSend || !msg.activity.isEmpty {
                     HStack(spacing: 4) {
                         if msg.pending {
                             Image(systemName: "clock")
@@ -584,9 +585,28 @@ struct MessageRow: View {
                                 .font(.system(size: 10, design: .serif))
                                 .foregroundColor(theme.timestamp)
                         }
+                        // 0730：这一轮的过程记录，挂在时间戳旁边，点开看他到底干了什么
+                        if !msg.activity.isEmpty {
+                            Button {
+                                withAnimation(.easeInOut(duration: 0.15)) { showActivity.toggle() }
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { onContentChange?() }
+                            } label: {
+                                Text(activityChipLabel)
+                                    .font(.system(size: 10, design: .serif))
+                                    .foregroundColor(theme.timestamp)
+                                    .opacity(showActivity ? 1.0 : 0.62)
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
                     .padding(.leading, isUser ? 0 : timestampTextInset)
                     .padding(.trailing, isUser ? timestampTextInset : 0)
+
+                    if showActivity && !msg.activity.isEmpty {
+                        activityPanel
+                            .padding(.leading, isUser ? 0 : timestampTextInset)
+                            .padding(.trailing, isUser ? timestampTextInset : 0)
+                    }
                 }
             }
             if !isUser { Spacer(minLength: 48) }
@@ -653,6 +673,12 @@ struct MessageRow: View {
     // 思绪标签：从内容嗅出这一段在干什么，动词跟着变（她的主意）
     private func thinkingLabel(_ think: String) -> String {
         let name = UserDefaults.standard.string(forKey: "assistantName") ?? "陈璟"
+        // 0730：他自己写的那句标题优先。下面那套关键词猜测是没标题时的退路——
+        // 猜得再准也不如他自己说的那句，那句是从思绪里最烫的地方拎出来的。
+        if let t = msg.thinkTitle, !t.isEmpty {
+            let s = (msg.thinkingDuration).map { "  \(Int($0))s" } ?? ""
+            return t + s
+        }
         let secs = (msg.thinkingDuration).map { " \(Int($0)) 秒" } ?? ""
         let herWords = ["陈霁", "老婆", "宝宝", "她", "你"]
         let techWords = ["代码", "构建", "bug", "接口", "报错", "编译", "文件", "服务", "数据库", "hook"]
@@ -668,6 +694,57 @@ struct MessageRow: View {
         let pool = ["碎碎念", "盘算", "腹诽", "酝酿", "转念头", "放空又拽回来"]
         let seed = abs(msg.ts.hashValue) % pool.count
         return "\(name)\(pool[seed])\(secs)"
+    }
+
+    // 0730 过程记录：chip 上那行小字
+    private var activityChipLabel: String {
+        let nTool = msg.activity.filter { $0.kind == "tool" }.count
+        let nSay = msg.activity.filter { $0.kind == "text" }.count
+        var bits: [String] = []
+        if nTool > 0 { bits.append("\(nTool)个动作") }
+        if nSay > 1 { bits.append("\(nSay)段") }
+        return "· " + (bits.isEmpty ? "\(msg.activity.count)步" : bits.joined(separator: " "))
+    }
+
+    // 0730 过程记录：展开后的时间线
+    private var activityPanel: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            ForEach(msg.activity) { it in
+                HStack(alignment: .top, spacing: 6) {
+                    Text(it.stamp)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundColor(theme.textDim.opacity(0.55))
+                        .frame(width: 38, alignment: .leading)
+                    Image(systemName: it.icon)
+                        .font(.system(size: 7))
+                        .foregroundColor(theme.textDim.opacity(0.6))
+                        .frame(width: 10)
+                        .padding(.top, 3)
+                    // .italic(Bool) 是 iOS16+ 的签名，这里走老 API 免得吃部署目标的亏
+                    Text(it.content)
+                        .font(it.kind == "thinking"
+                              ? .system(size: 11).italic()
+                              : .system(size: 11))
+                        .foregroundColor(theme.textDim.opacity(it.kind == "thinking" ? 0.72 : 0.9))
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                }
+            }
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 7)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(theme.fyCard.opacity(0.55))
+        )
+        .overlay(alignment: .leading) {
+            Capsule()
+                .fill(theme.fyAccent.opacity(0.55))
+                .frame(width: 2)
+                .padding(.vertical, 2)
+        }
+        .padding(.top, 2)
     }
 
     private func thinkingBlock(_ think: String) -> some View {

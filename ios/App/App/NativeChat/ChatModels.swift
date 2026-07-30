@@ -9,6 +9,10 @@ struct ChatMessage: Identifiable, Equatable {
     var source: String?
     var thinking: String?
     var thinkingDuration: Double?
+    // 0730：思绪标题（他自己写的一句话总结，替掉"思考了X秒"）
+    var thinkTitle: String?
+    // 0730：这一轮的过程记录（思绪/中间说的话/调过的工具），挂在时间戳旁边点开看
+    var activity: [ActivityItem] = []
     var attachmentUrl: String?
     var attachmentType: String?
     var attachmentFilename: String?
@@ -61,6 +65,10 @@ struct ChatMessage: Identifiable, Equatable {
         else { self.asleepAtSend = false }
         self.msgType = json["msg_type"] as? String
         self.stickerId = json["sticker_id"] as? String
+        self.thinkTitle = (json["think_title"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let arr = json["activity"] as? [[String: Any]] {
+            self.activity = arr.compactMap(ActivityItem.init(json:))
+        }
     }
 
     // 本地乐观消息
@@ -72,6 +80,41 @@ struct ChatMessage: Identifiable, Equatable {
         self.text = localText
         self.asleepAtSend = false
         self.pending = true
+    }
+}
+
+// 0730 过程记录的一条。kind: thinking | text | tool
+struct ActivityItem: Identifiable, Equatable {
+    let id = UUID()
+    let kind: String
+    let content: String
+    let t: Double
+
+    init?(json: [String: Any]) {
+        guard let k = json["kind"] as? String,
+              let c = json["content"] as? String, !c.isEmpty else { return nil }
+        self.kind = k
+        // 这是过程记录不是聊天正文，markdown 标记留着只会变成一串星号
+        self.content = c
+            .replacingOccurrences(of: "**", with: "")
+            .replacingOccurrences(of: "`", with: "")
+            .replacingOccurrences(of: "\n", with: " ")
+            .trimmingCharacters(in: .whitespaces)
+        if let d = json["t"] as? Double { self.t = d }
+        else if let i = json["t"] as? Int { self.t = Double(i) }
+        else { self.t = 0 }
+    }
+
+    var icon: String {
+        switch kind {
+        case "thinking": return "circle.dotted"
+        case "tool": return "play.fill"
+        default: return "quote.closing"
+        }
+    }
+    var stamp: String {
+        t >= 60 ? String(format: "%.0fm%02.0fs", (t / 60).rounded(.down), t.truncatingRemainder(dividingBy: 60))
+                : String(format: "%.1fs", t)
     }
 }
 
