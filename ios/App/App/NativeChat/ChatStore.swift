@@ -13,6 +13,8 @@ final class ChatStore: ObservableObject {
     @Published var modelLabel = ""
     @Published var recallMap: [String: RecallItem] = [:] // norm(prompt) -> 最新召回
     @Published var typingLine = "思考" // "陈璟正在X中…" 的 X
+    // 0730 实时预览：他说完一段就先给她看，不等整轮工具跑完
+    @Published var live: AlcoveAPI.LiveState?
 
     private var heldGen = 0
     private var optimisticUntil = Date.distantPast // 发出去立刻亮气泡的乐观窗口
@@ -65,6 +67,7 @@ final class ChatStore: ObservableObject {
 
     private var lastTs: String?
     private var pollTask: Task<Void, Never>?
+    private var liveTask: Task<Void, Never>?
 
     func start() {
         guard pollTask == nil else { return }
@@ -73,6 +76,14 @@ final class ChatStore: ObservableObject {
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 2_500_000_000)
                 await self?.pollOnce()
+            }
+        }
+        // 0730 实时预览单开一条快线：主轮询 2.5 秒对"边想边说"太慢。
+        // 但只在他真的在说话的时候才发请求——不然就是白烧她的流量和电。
+        liveTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                await self?.pollLiveOnce()
             }
         }
         Task { [weak self] in
@@ -168,6 +179,9 @@ final class ChatStore: ObservableObject {
     func stop() {
         pollTask?.cancel()
         pollTask = nil
+        liveTask?.cancel()
+        liveTask = nil
+        live = nil
     }
 
     // 前后台切换后强制刷新
@@ -186,6 +200,15 @@ final class ChatStore: ObservableObject {
             loading = false
             connectionError = true
         }
+    }
+
+    private func pollLiveOnce() async {
+        guard isTyping else {
+            if live != nil { live = nil }
+            return
+        }
+        guard let s = try? await AlcoveAPI.liveStream() else { return }
+        live = (s.active && !s.isEmpty) ? s : nil
     }
 
     private func pollOnce() async {

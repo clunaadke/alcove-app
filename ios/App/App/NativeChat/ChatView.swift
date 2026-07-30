@@ -172,6 +172,12 @@ struct ChatView: View {
                                        onContentChange: { scrollKick += 1 })
                             .id(msg.id)
                         }
+                        // 0730 实时预览：他说完一段就先冒出来，不等整轮工具跑完
+                        if let lv = store.live {
+                            LiveSayBand(state: lv, theme: theme)
+                                .id("liveband")
+                                .transition(.opacity)
+                        }
                         if store.isTyping {
                             TypingIndicator(tool: store.currentTool,
                                             line: store.typingLine,
@@ -866,6 +872,59 @@ struct TimeDivider: View {
         f.dateFormat = "M月d日 HH:mm"
         return f
     }()
+}
+
+// 0730 实时预览带：他一说完一段就先给她看，不等整轮跑完。
+// 这条是易失的——正式消息一落库它就消失，里面的东西永远不进聊天记录。
+struct LiveSayBand: View {
+    let state: AlcoveAPI.LiveState
+    let theme: AlcoveTheme
+
+    private var tagLine: String {
+        var bits: [String] = []
+        if !state.tool.isEmpty { bits.append("正在" + state.tool) }
+        if state.said > 1 { bits.append("说了\(state.said)段") }
+        if state.elapsed > 3 { bits.append("\(state.elapsed)s") }
+        return bits.joined(separator: " · ")
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            if !state.thinking.isEmpty {
+                Text(state.thinking)
+                    .font(.system(size: 11).italic())
+                    .foregroundColor(theme.textDim.opacity(0.62))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if !state.say.isEmpty {
+                Text(state.say)
+                    .font(.system(size: 13))
+                    .foregroundColor(theme.textDim.opacity(0.95))
+                    .lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if !tagLine.isEmpty {
+                Text(tagLine)
+                    .font(.system(size: 10, design: .serif))
+                    .foregroundColor(theme.textDim.opacity(0.45))
+                    .padding(.top, 1)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(theme.fyCard.opacity(0.42))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(theme.textDim.opacity(0.22),
+                              style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+        )
+        .padding(.horizontal, 14)
+        .padding(.top, 2)
+    }
 }
 
 struct TypingIndicator: View {

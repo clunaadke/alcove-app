@@ -19,6 +19,19 @@ enum AlcoveAPI {
         var currentTool: String?
     }
 
+    // 0730 实时预览：他一说完一段就先给她看，不等整轮工具跑完。
+    // 数据来自服务器上 stream_watcher 盯 transcript，永不落库（手册K）。
+    struct LiveState: Equatable {
+        var active: Bool = false
+        var thinking: String = ""
+        var say: String = ""
+        var tool: String = ""
+        var said: Int = 0
+        var elapsed: Int = 0
+
+        var isEmpty: Bool { say.isEmpty && thinking.isEmpty && tool.isEmpty }
+    }
+
     static func fullURL(_ path: String) -> URL {
         URL(string: path, relativeTo: base)!.absoluteURL
     }
@@ -106,6 +119,19 @@ enum AlcoveAPI {
     static func modelLabel() async throws -> String {
         let obj = try await getJSON("/api/cc/model")
         return obj["label"] as? String ?? ""
+    }
+
+    // 0730 实时预览：他这一秒在想什么/说了什么/在跑什么工具
+    static func liveStream() async throws -> LiveState {
+        let obj = try await getJSON("/api/stream/current")
+        var s = LiveState()
+        s.active = obj["active"] as? Bool ?? false
+        s.thinking = obj["thinking"] as? String ?? ""
+        s.say = obj["say"] as? String ?? ""
+        s.tool = obj["tool"] as? String ?? ""
+        s.said = obj["said"] as? Int ?? 0
+        s.elapsed = obj["elapsed"] as? Int ?? 0
+        return s
     }
 
     // 攒气泡：气泡上屏入库但不触发回复，返回已攒条数
