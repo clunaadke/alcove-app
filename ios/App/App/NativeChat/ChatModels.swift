@@ -25,6 +25,10 @@ struct ChatMessage: Identifiable, Equatable {
 
     let date: Date
 
+    // 0730：没调过工具的轮次没有过程可看。服务端 16:22 起已经拦了一道，
+    // 但那之前落库的旧消息还带着空 activity，翻历史会冒出一个点开只有一行的空 chip。
+    var hasActivity: Bool { activity.contains { $0.kind == "tool" } }
+
     var isSticker: Bool { msgType == "sticker" && stickerId != nil }
     var isImage: Bool {
         guard let t = attachmentType, let u = attachmentUrl, !u.isEmpty else { return false }

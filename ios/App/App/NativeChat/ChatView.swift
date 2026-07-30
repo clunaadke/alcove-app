@@ -574,7 +574,7 @@ struct MessageRow: View {
                         bubble
                     }
                 }
-                if showTime || msg.pending || msg.asleepAtSend || !msg.activity.isEmpty {
+                if showTime || msg.pending || msg.asleepAtSend || msg.hasActivity {
                     HStack(spacing: 4) {
                         if msg.pending {
                             Image(systemName: "clock")
@@ -592,7 +592,7 @@ struct MessageRow: View {
                                 .foregroundColor(theme.timestamp)
                         }
                         // 0730：这一轮的过程记录，挂在时间戳旁边，点开看他到底干了什么
-                        if !msg.activity.isEmpty {
+                        if msg.hasActivity {
                             Button {
                                 withAnimation(.easeInOut(duration: 0.15)) { showActivity.toggle() }
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { onContentChange?() }
@@ -608,7 +608,7 @@ struct MessageRow: View {
                     .padding(.leading, isUser ? 0 : timestampTextInset)
                     .padding(.trailing, isUser ? timestampTextInset : 0)
 
-                    if showActivity && !msg.activity.isEmpty {
+                    if showActivity && msg.hasActivity {
                         activityPanel
                             .padding(.leading, isUser ? 0 : timestampTextInset)
                             .padding(.trailing, isUser ? timestampTextInset : 0)
