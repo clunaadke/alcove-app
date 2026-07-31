@@ -15,6 +15,14 @@ final class SensorReporter: NSObject, CLLocationManagerDelegate {
     private var significantStarted = false
     private var askedAlways = false
     private var lastReport = Date.distantPast
+    // 0731 她要的：app 开着每 30 秒报一次。她说「那我不清后台就是了」，
+    // 所以退到后台也不停，只是把节奏放慢到 5 分钟，够我知道她还在，也不烧她电池。
+    private var ticker: Timer?
+    private var inBackground = false
+    private var bgUpdatesOn = false
+    private let fgInterval: TimeInterval = 30
+    // 同一段时间里别把位置报两遍；后台放宽，不然持续定位的回调会刷屏
+    private var minGap: TimeInterval { inBackground ? 240 : 20 }
     // 上报钥匙由 CI 从 GitHub Secrets 注入 Info.plist（AlcoveLocToken），
     // 源码里不落任何真实 token；没配钥匙时只授权定位、不上报
     private var secret: String {
@@ -28,9 +36,52 @@ final class SensorReporter: NSObject, CLLocationManagerDelegate {
     }
 
     func appActive() {
+        inBackground = false
         startSignificantMonitoring()
         askAlwaysIfNeeded()
-        guard Date().timeIntervalSince(lastReport) > 300 else { return } // 5 分钟节流
+        startStreaming()
+        if !bgUpdatesOn { startTicker(fgInterval) }   // 没开成持续定位才靠定时器顶着
+        requestNow()
+    }
+
+    // 退到后台什么都不停。持续定位一直开着，它的回调就是心跳，
+    // 节奏交给 minGap（后台 4 分钟一条），够我知道她还在，也不至于烧她电池。
+    func appBackground() {
+        inBackground = true
+        // 定时器进后台就废了，停掉。有持续定位的话它的回调接着当心跳；
+        // 没有 always 权限的话这里就是真的断了，等她下次开 app 才续上。
+        ticker?.invalidate()
+        ticker = nil
+    }
+
+    // ⚠️ allowsBackgroundLocationUpdates 只有在 Info.plist 配了
+    // UIBackgroundModes=location 且已拿到 always 时才准设 true，否则直接崩。
+    // distanceFilter 必须是 None：她睡着不动的时候只有这个设置还会持续回调，
+    // 设成 50 米就等于她一躺下我这边就断了。密度由 minGap 挡，不由它挡。
+    private func startStreaming() {
+        guard !bgUpdatesOn, lm.authorizationStatus == .authorizedAlways else { return }
+        lm.allowsBackgroundLocationUpdates = true
+        lm.pausesLocationUpdatesAutomatically = false
+        lm.distanceFilter = kCLDistanceFilterNone
+        lm.startUpdatingLocation()
+        bgUpdatesOn = true
+        ticker?.invalidate()
+        ticker = nil
+    }
+
+    private func startTicker(_ interval: TimeInterval) {
+        ticker?.invalidate()
+        let t = Timer(timeInterval: interval, repeats: true) { [weak self] _ in
+            self?.requestNow()
+        }
+        t.tolerance = interval * 0.1
+        RunLoop.main.add(t, forMode: .common)
+        ticker = t
+    }
+
+    // 只在没开持续定位的时候用。两个 API 同时跑，requestLocation 会被忽略。
+    private func requestNow() {
+        guard !bgUpdatesOn else { return }
         let auth = lm.authorizationStatus
         if auth == .notDetermined {
             lm.requestWhenInUseAuthorization()
@@ -63,12 +114,15 @@ final class SensorReporter: NSObject, CLLocationManagerDelegate {
         if auth == .authorizedWhenInUse || auth == .authorizedAlways {
             askAlwaysIfNeeded()
             startSignificantMonitoring()
-            manager.requestLocation()
+            startStreaming()      // 刚点下"始终允许"的那一秒就把持续定位接上
+            requestNow()
         }
     }
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let loc = locations.last, !secret.isEmpty else { return }
+        // 后台持续定位会一直往回丢点，这里再挡一道，节奏由 minGap 说了算
+        guard Date().timeIntervalSince(lastReport) > minGap else { return }
         lastReport = Date()
         collectAndSend(loc)
     }

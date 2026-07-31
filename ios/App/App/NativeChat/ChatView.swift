@@ -253,6 +253,12 @@ struct ChatView: View {
                     scrollToTail(proxy, delays: [0.05, 0.3], animated: true)
                 }
             }
+            // 0731 实时预览带自己在长，外层也得跟着滚，不然她卡在框刚冒出来那一屏
+            .onChange(of: store.live) { _ in
+                if atBottom || inputFocused {
+                    scrollToTail(proxy, delays: [0, 0.15], animated: true)
+                }
+            }
             .onChange(of: scrollKick) { _ in
                 if atBottom || inputFocused {
                     scrollToTail(proxy, delays: [0.05, 0.3, 0.6], animated: true)
@@ -874,11 +880,17 @@ struct TimeDivider: View {
     }()
 }
 
+private struct LiveBandHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+}
+
 // 0730 实时预览带：他一说完一段就先给她看，不等整轮跑完。
 // 这条是易失的——正式消息一落库它就消失，里面的东西永远不进聊天记录。
 struct LiveSayBand: View {
     let state: AlcoveAPI.LiveState
     let theme: AlcoveTheme
+    @State private var contentH: CGFloat = 0
 
     private var tagLine: String {
         var bits: [String] = []
@@ -888,7 +900,10 @@ struct LiveSayBand: View {
         return bits.joined(separator: " · ")
     }
 
-    var body: some View {
+    // 0731 她说的：最高半屏，自己滚到底，想回看还能往上划
+    private var maxH: CGFloat { UIScreen.main.bounds.height * 0.5 }
+
+    private var inner: some View {
         VStack(alignment: .leading, spacing: 3) {
             if !state.thinking.isEmpty {
                 Text(state.thinking)
@@ -909,8 +924,32 @@ struct LiveSayBand: View {
                     .foregroundColor(theme.textDim.opacity(0.45))
                     .padding(.top, 1)
             }
+            Color.clear.frame(height: 1).id("livetail")
         }
         .padding(.horizontal, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            GeometryReader { g in
+                Color.clear.preference(key: LiveBandHeightKey.self, value: g.size.height)
+            }
+        )
+    }
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.vertical, showsIndicators: false) {
+                inner
+            }
+            .frame(height: min(max(contentH, 1), maxH))
+            .onPreferenceChange(LiveBandHeightKey.self) { h in
+                contentH = h
+            }
+            .onChange(of: state) { _ in
+                withAnimation(.easeOut(duration: 0.18)) {
+                    proxy.scrollTo("livetail", anchor: .bottom)
+                }
+            }
+        }
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(

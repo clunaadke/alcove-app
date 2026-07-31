@@ -53,6 +53,7 @@ struct RootView: View {
         .preferredColorScheme(theme.isDark ? .dark : .light) // 跟 PWA 主题走，不跟系统
         .onChange(of: scenePhase) { phase in
             if phase == .active { SensorReporter.shared.appActive() }
+            else { SensorReporter.shared.appBackground() }
         }
         .onReceive(NotificationCenter.default.publisher(for: .alcoveShowPermissions)) { _ in
             housePage = nil
