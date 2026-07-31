@@ -147,7 +147,7 @@ struct NativeHouseSheet: View {
                     Group {
                 switch route {
                 case .sidebar:
-                    NativeSidebarView(select: select)
+                    NativeSidebarView(select: select, roundtableUnread: roundtableUnread)
                 case .settings:
                     NativeSettingsView(
                         showPermissions: {
@@ -320,6 +320,7 @@ private struct HouseBackground: View {
 
 private struct NativeSidebarView: View {
     var select: (HouseDestination) -> Void
+    let roundtableUnread: Int
     @AppStorage("alcoveTheme") private var themeName = "haven"
     @StateObject private var model = SidebarModel()
     private var theme: AlcoveTheme { .panelNamed(themeName) }

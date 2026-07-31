@@ -188,6 +188,8 @@ struct RoundtableView: View {
                     .frame(width: wallpaperSize.width, height: wallpaperSize.height)
                     .offset(x: (insets.trailing - insets.leading) / 2,
                             y: (insets.bottom - insets.top) / 2)
+                    // 键盘只顶起消息和输入框，不能把整张壁纸一起推上去。
+                    .ignoresSafeArea(.keyboard)
 
                 VStack(spacing: 0) {
                     header
@@ -368,9 +370,11 @@ struct RoundtableView: View {
                 LazyVStack(alignment: .leading, spacing: 10) {
                     ForEach(Array(store.messages.enumerated()), id: \.element.id) { idx, msg in
                         let prev = idx > 0 ? store.messages[idx - 1] : nil
+                        let next = idx + 1 < store.messages.count ? store.messages[idx + 1] : nil
                         // 同一个人连着说，头像只在第一条旁边出现一次
                         RoundtableRow(msg: msg,
                                       showAvatar: prev?.role != msg.role,
+                                      showTime: next?.role != msg.role,
                                       theme: theme)
                         .id(msg.id)
                     }
@@ -586,6 +590,7 @@ struct RoundtableView: View {
 private struct RoundtableRow: View {
     let msg: RoundtableMessage
     let showAvatar: Bool
+    let showTime: Bool
     let theme: AlcoveTheme
     // 0731 她定的：圆桌三个人的头像跟聊天页不通用，各存各的。
     @AppStorage("rtAvatarUser") private var rtAvatarUser = ""
@@ -678,10 +683,12 @@ private struct RoundtableRow: View {
                     }
                 }
                 if !msg.text.isEmpty { bubble }
-                Text(timestamp)
-                    .font(.system(size: 10, design: .serif))
-                    .foregroundColor(theme.timestamp)
-                    .padding(.horizontal, 12)
+                if showTime {
+                    Text(timestamp)
+                        .font(.system(size: 10, design: .serif))
+                        .foregroundColor(theme.timestamp)
+                        .padding(.horizontal, 12)
+                }
             }
             if isUser { avatarSlot } else { Spacer(minLength: 48) }
         }
