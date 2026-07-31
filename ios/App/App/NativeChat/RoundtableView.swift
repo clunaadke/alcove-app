@@ -542,7 +542,6 @@ struct RoundtableView: View {
             }
             .onPreferenceChange(RoundtableTailYKey.self) { tailY in
                 isNearBottom = tailY <= UIScreen.main.bounds.height + 200
-                if isNearBottom { hasUnreadTail = false }
             }
             .onAppear {
                 scrollToRoundtableTail(proxy, delays: [0, 0.08, 0.25, 0.6])
