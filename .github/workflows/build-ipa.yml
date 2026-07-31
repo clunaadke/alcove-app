@@ -39,6 +39,7 @@ jobs:
       - name: Build unsigned .app
         working-directory: ios/App
         run: |
+          set +e
           xcodebuild \
             -workspace App.xcworkspace \
             -scheme App \
@@ -51,7 +52,14 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
             DEVELOPMENT_TEAM="" \
-            PROVISIONING_PROFILE_SPECIFIER=""
+            PROVISIONING_PROFILE_SPECIFIER="" 2>&1 | tee /tmp/alcove-xcodebuild.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            grep -E '(^|[[:space:]])(error:|fatal error:)|\.swift:[0-9]+:[0-9]+: error:' /tmp/alcove-xcodebuild.log \
+              | tail -30 \
+              | while IFS= read -r line; do echo "::error::$line"; done
+          fi
+          exit "$status"
 
       - name: Strip signatures from frameworks
         working-directory: ios/App
