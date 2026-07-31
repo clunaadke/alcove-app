@@ -141,7 +141,7 @@ struct RoundtableView: View {
     @AppStorage("rtWallpaper") private var rtWallpaper = ""
     @AppStorage("rtNameUser") private var rtNameUser = "陈霁"
     @AppStorage("rtNameAssistant") private var rtNameAssistant = "陈璟"
-    @AppStorage("rtNameGpt") private var rtNameGpt = "G老师"
+    @AppStorage("rtNameGpt") private var rtNameGpt = "何渡"
     @AppStorage("bubbleGlassStrength") private var bubbleGlassStrength = 56.81
     @AppStorage("bubbleGlassDispersion") private var bubbleGlassDispersion = 0.39
     @AppStorage("bubbleGlassRimWidth") private var bubbleGlassRimWidth = 0.28
@@ -598,7 +598,7 @@ private struct RoundtableRow: View {
     @AppStorage("rtAvatarGpt") private var rtAvatarGpt = ""
     @AppStorage("rtNameUser") private var rtNameUser = "陈霁"
     @AppStorage("rtNameAssistant") private var rtNameAssistant = "陈璟"
-    @AppStorage("rtNameGpt") private var rtNameGpt = "G老师"
+    @AppStorage("rtNameGpt") private var rtNameGpt = "何渡"
     @AppStorage("chatFontSize") private var fontSize = 14
     @Environment(\.bubbleGlassStyle) private var glassStyle
 
@@ -868,7 +868,7 @@ private struct RTConsoleView: View {
     private var gauge: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("G老师")
+                Text("何渡")
                     .font(.system(size: 15, weight: .semibold))
                 Spacer()
                 Button { confirmReforge = true } label: {
@@ -952,7 +952,7 @@ private struct RTSettingsView: View {
     @AppStorage("rtAvatarGpt") private var avGpt = ""
     @AppStorage("rtNameUser") private var nameUser = "陈霁"
     @AppStorage("rtNameAssistant") private var nameMe = "陈璟"
-    @AppStorage("rtNameGpt") private var nameGpt = "G老师"
+    @AppStorage("rtNameGpt") private var nameGpt = "何渡"
     @AppStorage("rtWallpaper") private var wallpaper = ""
     // 0731 bug：原来四行共用一个 picking，每行各挂一个 onChange，
     // 她选一次图四个监听全触发，那张壁纸同时被写进三个人的头像。
