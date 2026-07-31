@@ -58,8 +58,11 @@ final class RoundtableStore: ObservableObject {
     @Published var sending = false
     @Published var blockAssistant = false
     @Published var blockGpt = false
+    @Published var loadingOlder = false
+    @Published var hasMoreOlder = true
 
     private var poller: Task<Void, Never>?
+    private var hasLoadedOlder = false
 
     func start() {
         Task { await refresh() }
@@ -82,7 +85,15 @@ final class RoundtableStore: ObservableObject {
         async let mems = fetchMembers()
         let (p, s) = await (poll, mems)
         if let p {
-            if p.messages != messages { messages = p.messages }
+            let refreshed: [RoundtableMessage]
+            if hasLoadedOlder {
+                var byID = Dictionary(uniqueKeysWithValues: messages.map { ($0.id, $0) })
+                p.messages.forEach { byID[$0.id] = $0 }
+                refreshed = byID.values.sorted { $0.id < $1.id }
+            } else {
+                refreshed = p.messages
+            }
+            if refreshed != messages { messages = refreshed }
             blockAssistant = p.assistant
             blockGpt = p.gpt
         }
@@ -97,6 +108,27 @@ final class RoundtableStore: ObservableObject {
         return (arr.compactMap(RoundtableMessage.init(json:)),
                 blocks["assistant"] as? Bool ?? false,
                 blocks["gpt"] as? Bool ?? false)
+    }
+
+    /// 往当前最早一条之前取一页。返回加载前的首条 id，视图用它保持滚动位置。
+    func loadOlder() async -> Int? {
+        guard !loadingOlder, hasMoreOlder, let oldestID = messages.first?.id else { return nil }
+        loadingOlder = true
+        defer { loadingOlder = false }
+
+        guard let obj = try? await AlcoveAPI.getRaw(
+            "/api/roundtable/poll?before=\(oldestID)&limit=50"
+        ) else { return nil }
+        let older = (obj["records"] as? [[String: Any]] ?? [])
+            .compactMap(RoundtableMessage.init(json:))
+        hasMoreOlder = older.count == 50
+        guard !older.isEmpty else { return nil }
+
+        hasLoadedOlder = true
+        var byID = Dictionary(uniqueKeysWithValues: messages.map { ($0.id, $0) })
+        older.forEach { byID[$0.id] = $0 }
+        messages = byID.values.sorted { $0.id < $1.id }
+        return oldestID
     }
 
     func setBlock(role: String, enabled: Bool) async {
@@ -147,12 +179,25 @@ final class RoundtableStore: ObservableObject {
             await refresh()
         }
     }
+
+    func favorite(_ message: RoundtableMessage) async {
+        try? await AlcoveAPI.favoriteMessage(ts: message.ts, text: message.text, role: message.role)
+    }
+
+    func delete(_ message: RoundtableMessage) async {
+        guard let response = try? await AlcoveAPI.postRaw(
+            "/api/roundtable/delete", body: ["id": message.id]
+        ), response["ok"] as? Bool == true else { return }
+        messages.removeAll { $0.id == message.id }
+    }
 }
 
 struct RoundtableView: View {
     let onDismiss: () -> Void
     @StateObject private var store = RoundtableStore()
     @State private var draft = ""
+    @State private var quotedText: String?
+    @State private var paginationReady = false
     @State private var showConsole = false
     @State private var showSettings = false
     @State private var inputBarHeight: CGFloat = 90
@@ -392,6 +437,21 @@ struct RoundtableView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 10) {
+                    if paginationReady && store.hasMoreOlder && !store.messages.isEmpty {
+                        ProgressView()
+                            .tint(theme.textDim)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                            .onAppear {
+                                Task {
+                                    if let anchor = await store.loadOlder() {
+                                        // prepend 后回到原来的首条，画面不会突然跳到更早处。
+                                        await Task.yield()
+                                        proxy.scrollTo(anchor, anchor: .top)
+                                    }
+                                }
+                            }
+                    }
                     ForEach(Array(store.messages.enumerated()), id: \.element.id) { idx, msg in
                         let prev = idx > 0 ? store.messages[idx - 1] : nil
                         let photos = roundtablePhotoGroup(startingAt: idx)
@@ -410,6 +470,12 @@ struct RoundtableView: View {
                                           photoViewer = PhotoViewerSelection(urls: urls, index: index,
                                                                              sourceID: "rt-\(msg.id)")
                                       },
+                                      onQuote: {
+                                          quotedText = $0
+                                          focused = true
+                                      },
+                                      onFavorite: { Task { await store.favorite(msg) } },
+                                      onDelete: { Task { await store.delete(msg) } },
                                       theme: theme)
                         .id(msg.id)
                         }
@@ -426,9 +492,14 @@ struct RoundtableView: View {
             .mask(edgeFadeMask)
             .onAppear {
                 scrollToRoundtableTail(proxy, delays: [0, 0.08, 0.25, 0.6])
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                    paginationReady = true
+                }
             }
             .onChange(of: store.messages) { _ in
-                scrollToRoundtableTail(proxy, delays: [0, 0.12, 0.35], animated: true)
+                if !store.loadingOlder {
+                    scrollToRoundtableTail(proxy, delays: [0, 0.12, 0.35], animated: true)
+                }
             }
             .onChange(of: focused) { _ in
                 // 跟主聊天页一样：键盘改变可视区域后重新把尾部锚到输入框上方。
@@ -511,6 +582,26 @@ struct RoundtableView: View {
     // 颜色全走 theme，白天黑夜两套主题它自己跟着变。
     private var composer: some View {
         VStack(spacing: 0) {
+            if let quotedText {
+                HStack(spacing: 8) {
+                    Rectangle()
+                        .fill(Color.pink.opacity(0.75))
+                        .frame(width: 2, height: 30)
+                    Text(quotedText)
+                        .font(.system(size: 12))
+                        .foregroundColor(theme.textDim)
+                        .lineLimit(2)
+                    Spacer(minLength: 4)
+                    Button { self.quotedText = nil } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(theme.textDim)
+                            .frame(width: 26, height: 26)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.init(top: 10, leading: 14, bottom: 2, trailing: 8))
+            }
             if !pendingImages.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 6) {
@@ -626,9 +717,16 @@ struct RoundtableView: View {
         }
 
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let outgoingText: String
+        if let quotedText {
+            outgoingText = "「\(quotedText.prefix(60))」\n\(text)"
+        } else {
+            outgoingText = text
+        }
         draft = ""
+        quotedText = nil
         guard !pendingImages.isEmpty else {
-            Task { await store.send(text) }
+            Task { await store.send(outgoingText) }
             return
         }
 
@@ -639,7 +737,7 @@ struct RoundtableView: View {
         Task {
             for (index, data) in images.enumerated() {
                 let filename = "IMG_\(stamp)_\(index).jpg"
-                let caption = index == 0 ? text : ""
+                let caption = index == 0 ? outgoingText : ""
                 let isLast = index == images.count - 1
                 await store.upload(data, filename: filename, text: caption, group: group,
                                    triggerReply: isLast)
@@ -659,6 +757,9 @@ private struct RoundtableRow: View {
     let photoURLs: [URL]
     let photoNamespace: Namespace.ID
     let onTapImages: ([URL], Binding<Int>) -> Void
+    let onQuote: (String) -> Void
+    let onFavorite: () -> Void
+    let onDelete: () -> Void
     let theme: AlcoveTheme
     // 0731 她定的：圆桌三个人的头像跟聊天页不通用，各存各的。
     @AppStorage("rtAvatarUser") private var rtAvatarUser = ""
@@ -826,6 +927,16 @@ private struct RoundtableRow: View {
                 Button {
                     UIPasteboard.general.string = msg.text
                 } label: { Label("拷贝", systemImage: "doc.on.doc") }
+                Button {
+                    onQuote(msg.text)
+                } label: { Label("引用", systemImage: "quote.bubble") }
+                Button {
+                    onFavorite()
+                } label: { Label("收藏", systemImage: "bookmark") }
+                Divider()
+                Button(role: .destructive) {
+                    onDelete()
+                } label: { Label("删除", systemImage: "trash") }
             }
     }
 }
