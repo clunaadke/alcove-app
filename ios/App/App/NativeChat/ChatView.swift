@@ -153,36 +153,7 @@ struct ChatView: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 6) {
                         ForEach(Array(store.messages.enumerated()), id: \.element.id) { idx, msg in
-                            let prev = idx > 0 ? store.messages[idx - 1] : nil
-                            let photoGroup = chatPhotoGroup(startingAt: idx)
-                            let groupEnd = idx + max(photoGroup.count, 1) - 1
-                            let next = groupEnd + 1 < store.messages.count ? store.messages[groupEnd + 1] : nil
-                            if isPhotoGroupContinuation(at: idx) {
-                                EmptyView()
-                            } else {
-                            if needsDivider(prev: prev, cur: msg) {
-                                TimeDivider(date: msg.date, color: theme.textDim)
-                            }
-                            MessageRow(msg: msg,
-                                       sticker: msg.stickerId.flatMap(store.sticker(for:)),
-                                       theme: theme,
-                                       fontSize: chatFontSize,
-                                       showTime: isGroupTail(cur: store.messages[groupEnd], next: next),
-                                       photoURLs: photoGroup,
-                                       photoNamespace: photoTransition,
-                                       recall: (msg.role == "assistant" && prev?.role == "user")
-                                           ? store.recall(forUserText: prev?.text ?? "") : nil,
-                                       onTapImages: { urls, index in
-                                           photoViewer = PhotoViewerSelection(urls: urls, index: index,
-                                                                              sourceID: msg.ts)
-                                       },
-                                       onDelete: { store.deleteMessage(msg) },
-                                       onFavorite: { store.favoriteMessage(msg) },
-                                       onQuote: { text in draft = "「\(text.prefix(60))」\n" },
-                                       onResend: { text in store.sendText(text) },
-                                       onContentChange: { scrollKick += 1 })
-                            .id(msg.id)
-                            }
+                            chatMessageRow(at: idx, message: msg)
                         }
                         // 0730 实时预览：他说完一段就先冒出来，不等整轮工具跑完
                         if let lv = store.live {
@@ -284,6 +255,46 @@ struct ChatView: View {
                     }
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private func chatMessageRow(at index: Int, message: ChatMessage) -> some View {
+        if !isPhotoGroupContinuation(at: index) {
+            let previous = index > 0 ? store.messages[index - 1] : nil
+            let photos = chatPhotoGroup(startingAt: index)
+            let groupEnd = index + max(photos.count, 1) - 1
+            let next = groupEnd + 1 < store.messages.count ? store.messages[groupEnd + 1] : nil
+            let recall = message.role == "assistant" && previous?.role == "user"
+                ? store.recall(forUserText: previous?.text ?? "")
+                : nil
+
+            if needsDivider(prev: previous, cur: message) {
+                TimeDivider(date: message.date, color: theme.textDim)
+            }
+            MessageRow(
+                msg: message,
+                sticker: message.stickerId.flatMap(store.sticker(for:)),
+                theme: theme,
+                fontSize: chatFontSize,
+                showTime: isGroupTail(cur: store.messages[groupEnd], next: next),
+                photoURLs: photos,
+                photoNamespace: photoTransition,
+                recall: recall,
+                onTapImages: { urls, selectedIndex in
+                    photoViewer = PhotoViewerSelection(
+                        urls: urls,
+                        index: selectedIndex,
+                        sourceID: message.ts
+                    )
+                },
+                onDelete: { store.deleteMessage(message) },
+                onFavorite: { store.favoriteMessage(message) },
+                onQuote: { text in draft = "「\(text.prefix(60))」\n" },
+                onResend: { text in store.sendText(text) },
+                onContentChange: { scrollKick += 1 }
+            )
+            .id(message.id)
         }
     }
 
