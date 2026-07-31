@@ -180,7 +180,7 @@ struct RoundtableView: View {
             ZStack {
                 // 可见壁纸和气泡透镜共用同一张图与同一套视口坐标。
                 ChatWallpaperRenderer(descriptor: wallpaperDescriptor)
-                    .ignoresSafeArea()
+                    .frame(width: root.size.width, height: root.size.height)
 
                 VStack(spacing: 0) {
                     header
@@ -371,9 +371,30 @@ struct RoundtableView: View {
                 .padding(.horizontal, 14)
                 .padding(.vertical, 12)
             }
+            .scrollDismissesKeyboard(.interactively)
+            .onTapGesture { focused = false }
             .mask(edgeFadeMask)
+            .onAppear {
+                scrollToRoundtableTail(proxy, delays: [0, 0.08, 0.25, 0.6])
+            }
             .onChange(of: store.messages) { _ in
-                withAnimation(.easeOut(duration: 0.2)) {
+                scrollToRoundtableTail(proxy, delays: [0, 0.12, 0.35], animated: true)
+            }
+        }
+    }
+
+    private func scrollToRoundtableTail(
+        _ proxy: ScrollViewProxy,
+        delays: [Double],
+        animated: Bool = false
+    ) {
+        for delay in delays {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                if animated {
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        proxy.scrollTo("rt-tail", anchor: .bottom)
+                    }
+                } else {
                     proxy.scrollTo("rt-tail", anchor: .bottom)
                 }
             }
