@@ -209,7 +209,6 @@ struct RoundtableView: View {
     @State private var observedTailID: Int?
     @State private var isNearBottom = true
     @State private var tailVisible = true
-    @State private var hasUnreadTail = false
     @State private var showConsole = false
     @State private var showSettings = false
     @State private var inputBarHeight: CGFloat = 90
@@ -503,7 +502,6 @@ struct RoundtableView: View {
                         .id("rt-tail")
                         .onAppear {
                             tailVisible = true
-                            hasUnreadTail = false
                         }
                         .onDisappear { tailVisible = false }
                         .background {
@@ -525,25 +523,16 @@ struct RoundtableView: View {
             .overlay(alignment: .bottomTrailing) {
                 if !tailVisible {
                     Button {
-                        hasUnreadTail = false
                         scrollToRoundtableTail(proxy, delays: [0], animated: true)
                     } label: {
-                        ZStack(alignment: .topTrailing) {
-                            Image(systemName: "chevron.down")
-                                .font(.system(size: 15, weight: .medium))
-                                .foregroundColor(theme.textDim)
-                                .frame(width: 36, height: 36)
-                                .background(.ultraThinMaterial, in: Circle())
-                                .background(theme.glassTint, in: Circle())
-                                .overlay(Circle().stroke(theme.glassBorder, lineWidth: 1))
-                                .shadow(color: .black.opacity(0.08), radius: 6, y: 2)
-                            if hasUnreadTail {
-                                Circle()
-                                    .fill(Color.red)
-                                    .frame(width: 8, height: 8)
-                                    .overlay(Circle().stroke(Color.white, lineWidth: 1))
-                            }
-                        }
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundColor(theme.textDim)
+                            .frame(width: 36, height: 36)
+                            .background(.ultraThinMaterial, in: Circle())
+                            .background(theme.glassTint, in: Circle())
+                            .overlay(Circle().stroke(theme.glassBorder, lineWidth: 1))
+                            .shadow(color: .black.opacity(0.08), radius: 6, y: 2)
                     }
                     .buttonStyle(.plain)
                     .padding(.trailing, 16)
@@ -574,8 +563,6 @@ struct RoundtableView: View {
                 if appendedAtTail && !preservingHistoryPosition {
                     if isNearBottom || tailVisible {
                         scrollToRoundtableTail(proxy, delays: [0, 0.12, 0.35], animated: true)
-                    } else {
-                        hasUnreadTail = true
                     }
                 }
             }
