@@ -278,9 +278,9 @@ struct ChatView: View {
                 theme: theme,
                 fontSize: chatFontSize,
                 showTime: isGroupTail(cur: store.messages[groupEnd], next: next),
+                recall: recall,
                 photoURLs: photos,
                 photoNamespace: photoTransition,
-                recall: recall,
                 onTapImages: { urls, selectedIndex in
                     photoViewer = PhotoViewerSelection(
                         urls: urls,
