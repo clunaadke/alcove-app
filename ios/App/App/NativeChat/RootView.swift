@@ -6,6 +6,7 @@ struct RootView: View {
     @State private var showSplash = true
     @State private var showPermissions = false
     @State private var showTerminal = false
+    @State private var showRoundtable = false   // 0731 圆桌：她要全屏，所以不走面板那条 sheet
     @State private var preparedPanelTexture: UIImage?
     @State private var preparedPanelTextureName = ""
     @Environment(\.scenePhase) private var scenePhase
@@ -33,6 +34,13 @@ struct RootView: View {
                 TerminalView(onDismiss: { withAnimation(.easeOut(duration: 0.15)) { showTerminal = false } })
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
                     .zIndex(20)
+            }
+            if showRoundtable {
+                RoundtableView(onDismiss: {
+                    withAnimation(.easeOut(duration: 0.15)) { showRoundtable = false }
+                })
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
+                .zIndex(21)
             }
             if showSplash {
                 SplashView()
@@ -69,10 +77,10 @@ struct RootView: View {
             NativeHouseSheet(
                 initial: target,
                 preparedTexture: preparedPanelTexture,
-                preparedTextureName: preparedPanelTextureName
-            ) {
-                showTerminal = true
-            }
+                preparedTextureName: preparedPanelTextureName,
+                showTerminal: { showTerminal = true },
+                showRoundtable: { showRoundtable = true }
+            )
         }
         .tint(Color(red: 0.86, green: 0.44, blue: 0.57))
     }

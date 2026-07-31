@@ -8,7 +8,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
     case home, calendar, wall, usage
     case memory, dreams, shelf, desire, nianlun, clockwork, album, portrait, impression
     case crosstalk, radio, coread, liao, daddyDay
-    case search, favorites, forge
+    case search, favorites, forge, roundtable
 
     var id: String { rawValue }
 
@@ -42,6 +42,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .search: return "Search"
         case .favorites: return "Favorites"
         case .forge: return "Forge"
+        case .roundtable: return "圆桌"
         }
     }
 
@@ -73,6 +74,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .search: return "magnifyingglass"
         case .favorites: return "bookmark"
         case .forge: return "hammer"
+        case .roundtable: return "person.3.sequence"
         default: return "sparkles"
         }
     }
@@ -81,6 +83,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
 struct NativeHouseSheet: View {
     let initial: HouseDestination
     var showTerminal: () -> Void
+    var showRoundtable: () -> Void = {}
     @Environment(\.dismiss) private var dismiss
     @State private var route: HouseDestination
     @State private var preparedTexture: UIImage?
@@ -97,10 +100,12 @@ struct NativeHouseSheet: View {
         initial: HouseDestination,
         preparedTexture: UIImage? = nil,
         preparedTextureName: String = "",
-        showTerminal: @escaping () -> Void
+        showTerminal: @escaping () -> Void,
+        showRoundtable: @escaping () -> Void = {}
     ) {
         self.initial = initial
         self.showTerminal = showTerminal
+        self.showRoundtable = showRoundtable
         _route = State(initialValue: initial)
         _preparedTexture = State(initialValue: preparedTexture)
         _preparedTextureName = State(initialValue: preparedTextureName)
@@ -256,6 +261,12 @@ struct NativeHouseSheet: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 withAnimation(.easeOut(duration: 0.2)) { showTerminal() }
             }
+        // 圆桌走全屏那条路，跟聊天页一样，不做成 86% 的半截面板
+        case .roundtable:
+            dismiss()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                withAnimation(.easeOut(duration: 0.2)) { showRoundtable() }
+            }
         default:
             withAnimation(.easeInOut(duration: 0.18)) { route = target }
         }
@@ -368,7 +379,7 @@ private struct NativeSidebarView: View {
                     ForEach(play) { destinationButton($0) }
                 }
                 sectionTitle("Chat")
-                destinationRow([.search, .favorites, .forge])
+                destinationRow([.roundtable, .search, .favorites, .forge])
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 28)

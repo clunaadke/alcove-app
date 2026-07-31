@@ -67,6 +67,15 @@ enum AlcoveAPI {
         return obj
     }
 
+    // 圆桌用的两个通用口子（0731）。上面那两个是 private，别的文件够不着。
+    static func getRaw(_ path: String) async throws -> [String: Any] {
+        try await getJSON(path)
+    }
+
+    static func postRaw(_ path: String, body: [String: Any]) async throws -> [String: Any] {
+        try await postJSON(path, body: body)
+    }
+
     static func history(limit: Int = 300) async throws -> [ChatMessage] {
         let obj = try await getJSON("/api/history?limit=\(limit)")
         let raw = obj["records"] as? [[String: Any]] ?? []
