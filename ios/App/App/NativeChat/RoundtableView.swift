@@ -177,10 +177,17 @@ struct RoundtableView: View {
 
     var body: some View {
         GeometryReader { root in
+            let insets = root.safeAreaInsets
+            let wallpaperSize = CGSize(
+                width: root.size.width + insets.leading + insets.trailing,
+                height: root.size.height + insets.top + insets.bottom
+            )
             ZStack {
                 // 可见壁纸和气泡透镜共用同一张图与同一套视口坐标。
                 ChatWallpaperRenderer(descriptor: wallpaperDescriptor)
-                    .frame(width: root.size.width, height: root.size.height)
+                    .frame(width: wallpaperSize.width, height: wallpaperSize.height)
+                    .offset(x: (insets.trailing - insets.leading) / 2,
+                            y: (insets.bottom - insets.top) / 2)
 
                 VStack(spacing: 0) {
                     header
@@ -193,7 +200,9 @@ struct RoundtableView: View {
             }
             .coordinateSpace(name: "alcoveChatRoot")
             .environment(\.chatWallpaperDescriptor, wallpaperDescriptor)
-            .environment(\.chatWallpaperViewportSize, root.size)
+            .environment(\.chatWallpaperViewportSize, wallpaperSize)
+            .environment(\.chatWallpaperViewportInset,
+                         CGSize(width: insets.leading, height: insets.top))
             .environment(\.bubbleGlassStyle, bubbleGlassStyle)
         }
         .foregroundColor(theme.text)

@@ -7,6 +7,10 @@ struct RootView: View {
     @State private var showPermissions = false
     @State private var showTerminal = false
     @State private var showRoundtable = false   // 0731 圆桌：她要全屏，所以不走面板那条 sheet
+    @State private var roundtableUnread = 0
+    @State private var latestRoundtableID = 0
+    @AppStorage("roundtableLastReadID") private var roundtableLastReadID = 0
+    @AppStorage("roundtableReadInitialized") private var roundtableReadInitialized = false
     @State private var preparedPanelTexture: UIImage?
     @State private var preparedPanelTextureName = ""
     @Environment(\.scenePhase) private var scenePhase
@@ -37,6 +41,7 @@ struct RootView: View {
             }
             if showRoundtable {
                 RoundtableView(onDismiss: {
+                    markRoundtableRead()
                     withAnimation(.easeOut(duration: 0.15)) { showRoundtable = false }
                 })
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
@@ -55,6 +60,12 @@ struct RootView: View {
             // 声波念完两个音节再进门，跟 PWA 一个节奏
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.3) {
                 withAnimation(.easeOut(duration: 0.6)) { showSplash = false }
+            }
+        }
+        .task {
+            while !Task.isCancelled {
+                await refreshRoundtableUnread()
+                try? await Task.sleep(nanoseconds: 10_000_000_000)
             }
         }
         .onChange(of: themeName) { _ in prewarmPanelTexture() }
@@ -79,10 +90,41 @@ struct RootView: View {
                 preparedTexture: preparedPanelTexture,
                 preparedTextureName: preparedPanelTextureName,
                 showTerminal: { showTerminal = true },
-                showRoundtable: { showRoundtable = true }
+                showRoundtable: {
+                    markRoundtableRead()
+                    showRoundtable = true
+                },
+                roundtableUnread: roundtableUnread
             )
         }
         .tint(Color(red: 0.86, green: 0.44, blue: 0.57))
+    }
+
+    private func refreshRoundtableUnread() async {
+        guard let obj = try? await AlcoveAPI.getRaw("/api/roundtable/poll") else { return }
+        let records = obj["records"] as? [[String: Any]] ?? []
+        let newest = records.compactMap { $0["id"] as? Int }.max() ?? 0
+        latestRoundtableID = newest
+        if !roundtableReadInitialized {
+            roundtableLastReadID = newest
+            roundtableReadInitialized = true
+            roundtableUnread = 0
+            return
+        }
+        if showRoundtable {
+            roundtableLastReadID = newest
+            roundtableUnread = 0
+        } else {
+            roundtableUnread = records.reduce(into: 0) { count, record in
+                guard let id = record["id"] as? Int, id > roundtableLastReadID else { return }
+                count += 1
+            }
+        }
+    }
+
+    private func markRoundtableRead() {
+        roundtableLastReadID = max(roundtableLastReadID, latestRoundtableID)
+        roundtableUnread = 0
     }
 
     // 左头像｜中间纯文字｜右侧三枚按钮共用一块清透玻璃胶囊

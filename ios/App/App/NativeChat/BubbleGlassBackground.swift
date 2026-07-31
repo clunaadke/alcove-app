@@ -125,6 +125,10 @@ private struct ChatWallpaperViewportSizeKey: EnvironmentKey {
     static let defaultValue = CGSize(width: 1, height: 1)
 }
 
+private struct ChatWallpaperViewportInsetKey: EnvironmentKey {
+    static let defaultValue = CGSize.zero
+}
+
 extension EnvironmentValues {
     var chatWallpaperDescriptor: ChatWallpaperDescriptor {
         get { self[ChatWallpaperDescriptorKey.self] }
@@ -134,6 +138,12 @@ extension EnvironmentValues {
     var chatWallpaperViewportSize: CGSize {
         get { self[ChatWallpaperViewportSizeKey.self] }
         set { self[ChatWallpaperViewportSizeKey.self] = newValue }
+    }
+
+
+    var chatWallpaperViewportInset: CGSize {
+        get { self[ChatWallpaperViewportInsetKey.self] }
+        set { self[ChatWallpaperViewportInsetKey.self] = newValue }
     }
 }
 
@@ -147,6 +157,7 @@ struct BubbleGlassBackground: View {
 
     @Environment(\.chatWallpaperDescriptor) private var wallpaper
     @Environment(\.chatWallpaperViewportSize) private var viewportSize
+    @Environment(\.chatWallpaperViewportInset) private var viewportInset
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     var body: some View {
@@ -207,7 +218,8 @@ struct BubbleGlassBackground: View {
 
         return ChatWallpaperRenderer(descriptor: wallpaper)
             .frame(width: rootSize.width, height: rootSize.height)
-            .offset(x: -frame.minX, y: -frame.minY)
+            .offset(x: -(frame.minX + viewportInset.width),
+                    y: -(frame.minY + viewportInset.height))
             .saturation(1.08)
             .blur(radius: style.backdropBlur)
             .frame(width: size.width, height: size.height, alignment: .topLeading)

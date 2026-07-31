@@ -84,6 +84,7 @@ struct NativeHouseSheet: View {
     let initial: HouseDestination
     var showTerminal: () -> Void
     var showRoundtable: () -> Void = {}
+    var roundtableUnread: Int = 0
     @Environment(\.dismiss) private var dismiss
     @State private var route: HouseDestination
     @State private var preparedTexture: UIImage?
@@ -101,11 +102,13 @@ struct NativeHouseSheet: View {
         preparedTexture: UIImage? = nil,
         preparedTextureName: String = "",
         showTerminal: @escaping () -> Void,
-        showRoundtable: @escaping () -> Void = {}
+        showRoundtable: @escaping () -> Void = {},
+        roundtableUnread: Int = 0
     ) {
         self.initial = initial
         self.showTerminal = showTerminal
         self.showRoundtable = showRoundtable
+        self.roundtableUnread = roundtableUnread
         _route = State(initialValue: initial)
         _preparedTexture = State(initialValue: preparedTexture)
         _preparedTextureName = State(initialValue: preparedTextureName)
@@ -436,6 +439,17 @@ private struct NativeSidebarView: View {
                 Image(systemName: target.icon)
                     .font(.system(size: 18, weight: .light))
                     .foregroundColor(theme.fyAccent)
+                    .overlay(alignment: .topTrailing) {
+                        if target == .roundtable && roundtableUnread > 0 {
+                            Text(roundtableUnread > 99 ? "99+" : "\(roundtableUnread)")
+                                .font(.system(size: 8, weight: .bold))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 4)
+                                .frame(minWidth: 15, minHeight: 15)
+                                .background(Color.red, in: Capsule())
+                                .offset(x: 11, y: -9)
+                        }
+                    }
                 Text(target.title)
                     .font(.system(size: 11))
                     .lineLimit(1)
