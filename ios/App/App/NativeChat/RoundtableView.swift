@@ -517,21 +517,32 @@ struct RoundtableView: View {
             .onTapGesture { focused = false }
             .mask(edgeFadeMask)
             .overlay(alignment: .bottomTrailing) {
-                if hasUnreadTail {
+                if !isNearBottom {
                     Button {
                         hasUnreadTail = false
                         scrollToRoundtableTail(proxy, delays: [0], animated: true)
                     } label: {
-                        Image(systemName: "arrow.down")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(theme.text)
-                            .frame(width: 38, height: 38)
-                            .background(.ultraThinMaterial, in: Circle())
-                            .overlay(Circle().stroke(theme.glassBorder, lineWidth: 1))
+                        ZStack(alignment: .topTrailing) {
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 15, weight: .medium))
+                                .foregroundColor(theme.textDim)
+                                .frame(width: 36, height: 36)
+                                .background(.ultraThinMaterial, in: Circle())
+                                .background(theme.glassTint, in: Circle())
+                                .overlay(Circle().stroke(theme.glassBorder, lineWidth: 1))
+                                .shadow(color: .black.opacity(0.08), radius: 6, y: 2)
+                            if hasUnreadTail {
+                                Circle()
+                                    .fill(Color.red)
+                                    .frame(width: 8, height: 8)
+                                    .overlay(Circle().stroke(Color.white, lineWidth: 1))
+                            }
+                        }
                     }
                     .buttonStyle(.plain)
                     .padding(.trailing, 16)
-                    .padding(.bottom, inputBarHeight + 14)
+                    .padding(.bottom, inputBarHeight + 12)
+                    .transition(.opacity)
                 }
             }
             .onPreferenceChange(RoundtableTailYKey.self) { tailY in
