@@ -148,11 +148,13 @@ final class ChatStore: ObservableObject {
     func sendImages(_ datas: [Data], caption: String) {
         optimisticTyping()
         Task {
+            let batch = Int(Date().timeIntervalSince1970 * 1000)
+            let group = datas.count > 1 ? UUID().uuidString : nil
             for (i, d) in datas.enumerated() {
-                let name = "IMG_\(Int(Date().timeIntervalSince1970))_\(i).jpg"
+                let name = "IMG_\(batch)_\(i).jpg"
                 do {
                     if let rec = try await AlcoveAPI.upload(data: d, filename: name,
-                                                           caption: i == 0 ? caption : "") {
+                                                           caption: i == 0 ? caption : "", group: group) {
                         appendNew([rec])
                         if let lt = lastTs, rec.ts > lt { lastTs = rec.ts }
                         else if lastTs == nil { lastTs = rec.ts }

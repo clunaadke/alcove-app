@@ -10,12 +10,13 @@ struct ChatView: View {
     @State private var showStickers = false
     @State private var photoItems: [PhotosPickerItem] = []
     @State private var pendingImages: [(thumb: UIImage, jpeg: Data)] = []
-    @State private var viewerURL: URL?
+    @State private var photoViewer: PhotoViewerSelection?
     @StateObject private var recorder = VoiceRecorder()
     @State private var atBottom = true
     @State private var showCamera = false
     @State private var showDocPicker = false
     @State private var showPhotoPicker = false
+    @Namespace private var photoTransition
     @State private var previewImage: UIImage?
     @State private var inputBarHeight: CGFloat = 90
     @State private var scrollKick = 0
@@ -96,8 +97,8 @@ struct ChatView: View {
                 }
             }
         }
-        .fullScreenCover(item: $viewerURL) { url in
-            ImageViewer(url: url) { viewerURL = nil }
+        .fullScreenCover(item: $photoViewer) { selection in
+            PhotoPageViewer(selection: selection, namespace: photoTransition) { photoViewer = nil }
         }
         .fullScreenCover(item: $previewImage) { img in
             LocalImageViewer(image: img) { previewImage = nil }
@@ -153,7 +154,12 @@ struct ChatView: View {
                     LazyVStack(alignment: .leading, spacing: 6) {
                         ForEach(Array(store.messages.enumerated()), id: \.element.id) { idx, msg in
                             let prev = idx > 0 ? store.messages[idx - 1] : nil
-                            let next = idx + 1 < store.messages.count ? store.messages[idx + 1] : nil
+                            let photoGroup = chatPhotoGroup(startingAt: idx)
+                            let groupEnd = idx + max(photoGroup.count, 1) - 1
+                            let next = groupEnd + 1 < store.messages.count ? store.messages[groupEnd + 1] : nil
+                            if isPhotoGroupContinuation(at: idx) {
+                                EmptyView()
+                            } else {
                             if needsDivider(prev: prev, cur: msg) {
                                 TimeDivider(date: msg.date, color: theme.textDim)
                             }
@@ -161,16 +167,22 @@ struct ChatView: View {
                                        sticker: msg.stickerId.flatMap(store.sticker(for:)),
                                        theme: theme,
                                        fontSize: chatFontSize,
-                                       showTime: isGroupTail(cur: msg, next: next),
+                                       showTime: isGroupTail(cur: store.messages[groupEnd], next: next),
+                                       photoURLs: photoGroup,
+                                       photoNamespace: photoTransition,
                                        recall: (msg.role == "assistant" && prev?.role == "user")
                                            ? store.recall(forUserText: prev?.text ?? "") : nil,
-                                       onTapImage: { url in viewerURL = url },
+                                       onTapImages: { urls, index in
+                                           photoViewer = PhotoViewerSelection(urls: urls, index: index,
+                                                                              sourceID: msg.ts)
+                                       },
                                        onDelete: { store.deleteMessage(msg) },
                                        onFavorite: { store.favoriteMessage(msg) },
                                        onQuote: { text in draft = "「\(text.prefix(60))」\n" },
                                        onResend: { text in store.sendText(text) },
                                        onContentChange: { scrollKick += 1 })
                             .id(msg.id)
+                            }
                         }
                         // 0730 实时预览：他说完一段就先冒出来，不等整轮工具跑完
                         if let lv = store.live {
@@ -303,6 +315,25 @@ struct ChatView: View {
         guard let next else { return true }
         if next.role != cur.role { return true }
         return next.date.timeIntervalSince(cur.date) > 120
+    }
+
+    private func chatPhotoGroup(startingAt index: Int) -> [URL] {
+        guard index < store.messages.count,
+              let key = store.messages[index].photoBatchKey else { return [] }
+        var urls: [URL] = []
+        var i = index
+        while i < store.messages.count,
+              store.messages[i].photoBatchKey == key,
+              let raw = store.messages[i].attachmentUrl {
+            urls.append(AlcoveAPI.attachmentURL(raw))
+            i += 1
+        }
+        return urls.count > 1 ? urls : []
+    }
+
+    private func isPhotoGroupContinuation(at index: Int) -> Bool {
+        guard index > 0, let key = store.messages[index].photoBatchKey else { return false }
+        return store.messages[index - 1].photoBatchKey == key
     }
 
     // MARK: alpha淡出mask（不用背景色渐变，内容本身按alpha淡出）
@@ -542,7 +573,9 @@ struct MessageRow: View {
     var fontSize: Int = 14
     var showTime: Bool = true
     var recall: RecallItem? = nil
-    var onTapImage: (URL) -> Void
+    var photoURLs: [URL] = []
+    var photoNamespace: Namespace.ID
+    var onTapImages: ([URL], Binding<Int>) -> Void
     var onDelete: (() -> Void)? = nil
     var onFavorite: (() -> Void)? = nil
     var onQuote: ((String) -> Void)? = nil
@@ -570,7 +603,11 @@ struct MessageRow: View {
                 if msg.isSticker {
                     stickerBody
                 } else {
-                    if msg.isImage, let raw = msg.attachmentUrl {
+                    if photoURLs.count > 1 {
+                        PhotoStackMessageView(urls: photoURLs, messageID: msg.ts,
+                                              onOpen: onTapImages)
+                            .matchedTransitionSource(id: msg.ts, in: photoNamespace)
+                    } else if msg.isImage, let raw = msg.attachmentUrl {
                         imageBody(raw)
                     }
                     if msg.isAudio, let raw = msg.attachmentUrl {
@@ -849,7 +886,8 @@ struct MessageRow: View {
         }
         .frame(maxWidth: 220, maxHeight: 300)
         .clipShape(RoundedRectangle(cornerRadius: 14))
-        .onTapGesture { onTapImage(url) }
+        .matchedTransitionSource(id: msg.ts, in: photoNamespace)
+        .onTapGesture { onTapImages([url], .constant(0)) }
     }
 
     static let hm: DateFormatter = {
@@ -1015,6 +1053,199 @@ struct AudioBubble: View {
             .background(isUser ? theme.bubbleUser : theme.bubbleAI,
                         in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         }
+    }
+}
+
+struct PhotoViewerSelection: Identifiable {
+    let id = UUID()
+    let urls: [URL]
+    let index: Binding<Int>
+    let sourceID: String
+}
+
+// 一条消息只保留三张可见卡。翻牌只改轻量几何状态，AsyncImage 的 URL 身份不变，
+// 所以拖动和换位期间不会重新解码或把卡片尺寸撑开。
+struct PhotoStackMessageView: View {
+    let urls: [URL]
+    let messageID: String
+    let onOpen: ([URL], Binding<Int>) -> Void
+
+    private let cardSize = CGSize(width: 220, height: 276)
+    @State private var currentIndex = 0
+    @State private var dragX: CGFloat = 0
+    @State private var isHorizontalDrag = false
+    @State private var isAnimatingOut = false
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            ZStack {
+                ForEach(Array(visibleSlots.reversed()), id: \.self) { slot in
+                    photoCard(url: url(at: slot))
+                        .offset(layerOffset(slot))
+                        .rotationEffect(.degrees(layerRotation(slot)))
+                        .scaleEffect(layerScale(slot))
+                        .zIndex(Double(3 - slot))
+                        .allowsHitTesting(slot == 0)
+                        .offset(x: slot == 0 ? dragX : 0)
+                        .rotationEffect(.degrees(slot == 0
+                            ? Double(dragX / cardSize.width) * 4 : 0))
+                        .contentShape(RoundedRectangle(cornerRadius: 21, style: .continuous))
+                        .onTapGesture {
+                            guard !isHorizontalDrag && !isAnimatingOut else { return }
+                            onOpen(urls, Binding(
+                                get: { currentIndex },
+                                set: { currentIndex = min(max($0, 0), urls.count - 1) }
+                            ))
+                        }
+                        .simultaneousGesture(dragGesture)
+                }
+            }
+            if urls.count > 3 {
+                Text("\(urls.count)")
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .foregroundStyle(.primary.opacity(0.82))
+                    .padding(.horizontal, 8)
+                    .frame(height: 24)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .overlay(Capsule().stroke(.white.opacity(0.22), lineWidth: 0.5))
+                    .padding(.top, 9)
+                    .padding(.trailing, 8)
+                    .zIndex(10)
+                    .allowsHitTesting(false)
+            }
+        }
+        .frame(width: cardSize.width + 14, height: cardSize.height + 13)
+        .id(messageID)
+        .onChange(of: urls) { _ in
+            if currentIndex >= urls.count { currentIndex = 0 }
+        }
+    }
+
+    private var visibleSlots: Range<Int> { 0..<min(3, urls.count) }
+
+    private func url(at slot: Int) -> URL {
+        urls[(currentIndex + slot) % urls.count]
+    }
+
+    private func photoCard(url: URL) -> some View {
+        AsyncImage(url: url, transaction: Transaction(animation: nil)) { phase in
+            switch phase {
+            case .success(let image):
+                image.resizable().scaledToFill()
+            case .failure:
+                Color(.tertiarySystemFill).overlay(Image(systemName: "photo"))
+            default:
+                Color(.tertiarySystemFill).overlay(ProgressView())
+            }
+        }
+        .frame(width: cardSize.width, height: cardSize.height)
+        .clipShape(RoundedRectangle(cornerRadius: 21, style: .continuous))
+    }
+
+    private func layerOffset(_ slot: Int) -> CGSize {
+        let progress = min(abs(dragX) / (cardSize.width * 0.75), 1)
+        switch slot {
+        case 1: return CGSize(width: 7 * (1 - progress), height: -7 * (1 - progress))
+        case 2: return CGSize(width: -5 + 12 * progress, height: -5 - 2 * progress)
+        default: return .zero
+        }
+    }
+
+    private func layerRotation(_ slot: Int) -> Double {
+        let progress = min(abs(dragX) / (cardSize.width * 0.75), 1)
+        if slot == 1 { return 1.5 * Double(1 - progress) }
+        if slot == 2 { return -1 + 2.5 * Double(progress) }
+        return 0
+    }
+
+    private func layerScale(_ slot: Int) -> CGFloat {
+        guard slot > 0 else { return 1 }
+        let progress = min(abs(dragX) / (cardSize.width * 0.75), 1)
+        return 0.995 + (slot == 1 ? 0.005 * progress : 0)
+    }
+
+    private var dragGesture: some Gesture {
+        DragGesture(minimumDistance: 10, coordinateSpace: .local)
+            .onChanged { value in
+                guard !isAnimatingOut else { return }
+                let horizontal = abs(value.translation.width) > abs(value.translation.height) * 1.15
+                if !isHorizontalDrag && !horizontal { return }
+                isHorizontalDrag = true
+                dragX = value.translation.width
+            }
+            .onEnded { value in
+                guard isHorizontalDrag else { return }
+                let projected = value.predictedEndTranslation.width
+                let shouldAdvance = abs(dragX) > cardSize.width * 0.25 || abs(projected) > cardSize.width * 0.48
+                if shouldAdvance {
+                    isAnimatingOut = true
+                    let direction: CGFloat = (dragX == 0 ? projected : dragX) >= 0 ? 1 : -1
+                    withAnimation(.easeOut(duration: 0.20)) {
+                        dragX = direction * (cardSize.width + 80)
+                    }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.20) {
+                        var transaction = Transaction()
+                        transaction.disablesAnimations = true
+                        withTransaction(transaction) {
+                            currentIndex = (currentIndex + 1) % urls.count
+                            dragX = 0
+                            isAnimatingOut = false
+                            isHorizontalDrag = false
+                        }
+                    }
+                } else {
+                    withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) { dragX = 0 }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.34) { isHorizontalDrag = false }
+                }
+            }
+    }
+}
+
+struct PhotoPageViewer: View {
+    let selection: PhotoViewerSelection
+    let namespace: Namespace.ID
+    let dismiss: () -> Void
+    @Binding private var index: Int
+
+    init(selection: PhotoViewerSelection, namespace: Namespace.ID, dismiss: @escaping () -> Void) {
+        self.selection = selection
+        self.namespace = namespace
+        self.dismiss = dismiss
+        _index = selection.index
+    }
+
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            TabView(selection: $index) {
+                ForEach(Array(selection.urls.enumerated()), id: \.offset) { offset, url in
+                    ZoomableRemoteImage(url: url).tag(offset)
+                }
+            }
+            .tabViewStyle(.page(indexDisplayMode: selection.urls.count > 1 ? .automatic : .never))
+        }
+        .overlay(alignment: .topTrailing) {
+            Button(action: dismiss) {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 30)).foregroundColor(.white.opacity(0.8)).padding()
+            }
+        }
+        .navigationTransition(.zoom(sourceID: selection.sourceID, in: namespace))
+    }
+}
+
+private struct ZoomableRemoteImage: View {
+    let url: URL
+    @State private var scale: CGFloat = 1
+    var body: some View {
+        AsyncImage(url: url) { image in
+            image.resizable().scaledToFit()
+                .scaleEffect(scale)
+                .gesture(MagnificationGesture()
+                    .onChanged { scale = max(1, $0) }
+                    .onEnded { _ in withAnimation { scale = 1 } })
+        } placeholder: { ProgressView().tint(.white) }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 

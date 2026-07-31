@@ -16,6 +16,7 @@ struct ChatMessage: Identifiable, Equatable {
     var attachmentUrl: String?
     var attachmentType: String?
     var attachmentFilename: String?
+    var attachmentGroup: String?
     var asleepAtSend: Bool
     var msgType: String?      // "sticker" 等
     var stickerId: String?
@@ -41,6 +42,11 @@ struct ChatMessage: Identifiable, Equatable {
             .contains((u as NSString).pathExtension.lowercased())
     }
 
+    var photoBatchKey: String? {
+        guard isImage, let group = attachmentGroup, !group.isEmpty else { return nil }
+        return group
+    }
+
     static func == (lhs: ChatMessage, rhs: ChatMessage) -> Bool { lhs.uid == rhs.uid }
 
     // 服务端字段名不固定走 Codable，手动从 JSON 字典解析更宽松
@@ -64,6 +70,7 @@ struct ChatMessage: Identifiable, Equatable {
         self.attachmentUrl = json["attachment_url"] as? String
         self.attachmentType = json["attachment_type"] as? String
         self.attachmentFilename = json["attachment_filename"] as? String
+        self.attachmentGroup = json["att_group"] as? String
         if let a = json["asleep_at_send"] as? Int { self.asleepAtSend = a != 0 }
         else if let a = json["asleep_at_send"] as? Bool { self.asleepAtSend = a }
         else { self.asleepAtSend = false }

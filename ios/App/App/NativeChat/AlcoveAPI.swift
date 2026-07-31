@@ -186,11 +186,12 @@ enum AlcoveAPI {
         return obj["items"] as? [[String: Any]] ?? []
     }
 
-    static func upload(data: Data, filename: String, caption: String) async throws -> ChatMessage? {
+    static func upload(data: Data, filename: String, caption: String, group: String? = nil) async throws -> ChatMessage? {
         var comps = URLComponents(url: fullURL("/api/upload"), resolvingAgainstBaseURL: false)!
         var items = [URLQueryItem(name: "filename", value: filename),
                      URLQueryItem(name: "role", value: "user")]
         if !caption.isEmpty { items.append(URLQueryItem(name: "text", value: caption)) }
+        if let group, !group.isEmpty { items.append(URLQueryItem(name: "group", value: group)) }
         comps.queryItems = items
         var req = URLRequest(url: comps.url!)
         req.httpMethod = "POST"
@@ -201,12 +202,13 @@ enum AlcoveAPI {
         return (obj?["record"] as? [String: Any]).flatMap(ChatMessage.init(json:))
     }
 
-    static func uploadRoundtable(data: Data, filename: String, text: String) async throws -> [String: Any]? {
+    static func uploadRoundtable(data: Data, filename: String, text: String, group: String? = nil) async throws -> [String: Any]? {
         var comps = URLComponents(url: fullURL("/api/roundtable/upload"), resolvingAgainstBaseURL: false)!
         var items = [URLQueryItem(name: "filename", value: filename),
                      URLQueryItem(name: "role", value: "user"),
                      URLQueryItem(name: "sender", value: "陈霁")]
         if !text.isEmpty { items.append(URLQueryItem(name: "text", value: text)) }
+        if let group, !group.isEmpty { items.append(URLQueryItem(name: "group", value: group)) }
         comps.queryItems = items
         var req = URLRequest(url: comps.url!)
         req.httpMethod = "POST"

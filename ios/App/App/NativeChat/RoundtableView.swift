@@ -20,6 +20,7 @@ struct RoundtableMessage: Identifiable, Equatable {
     let attachmentURL: String?
     let attachmentType: String?
     let attachmentFilename: String?
+    let attachmentGroup: String?
 
     init?(json: [String: Any]) {
         guard let id = json["id"] as? Int else { return nil }
@@ -31,6 +32,12 @@ struct RoundtableMessage: Identifiable, Equatable {
         self.attachmentURL = json["attachment_url"] as? String
         self.attachmentType = json["attachment_type"] as? String
         self.attachmentFilename = json["attachment_filename"] as? String
+        self.attachmentGroup = json["att_group"] as? String
+    }
+
+    var photoBatchKey: String? {
+        guard attachmentType == "image", let group = attachmentGroup, !group.isEmpty else { return nil }
+        return group
     }
 }
 
@@ -106,10 +113,11 @@ final class RoundtableStore: ObservableObject {
         await refresh()
     }
 
-    func upload(_ data: Data, filename: String, text: String = "", triggerReply: Bool = true) async {
+    func upload(_ data: Data, filename: String, text: String = "", group: String? = nil,
+                triggerReply: Bool = true) async {
         sending = true
         defer { sending = false }
-        _ = try? await AlcoveAPI.uploadRoundtable(data: data, filename: filename, text: text)
+        _ = try? await AlcoveAPI.uploadRoundtable(data: data, filename: filename, text: text, group: group)
         await refresh()
         if triggerReply {
             _ = try? await AlcoveAPI.postRaw("/api/roundtable/codex", body: [:])
@@ -131,6 +139,8 @@ struct RoundtableView: View {
     @State private var showPhotoPicker = false
     @State private var showStickers = false
     @State private var previewImage: UIImage?
+    @State private var photoViewer: PhotoViewerSelection?
+    @Namespace private var photoTransition
     @StateObject private var recorder = VoiceRecorder()
     @FocusState private var focused: Bool
     @AppStorage("alcoveTheme") private var themeName = "haven"
@@ -177,19 +187,10 @@ struct RoundtableView: View {
 
     var body: some View {
         GeometryReader { root in
-            let insets = root.safeAreaInsets
-            let wallpaperSize = CGSize(
-                width: root.size.width + insets.leading + insets.trailing,
-                height: root.size.height + insets.top + insets.bottom
-            )
             ZStack {
                 // 可见壁纸和气泡透镜共用同一张图与同一套视口坐标。
                 ChatWallpaperRenderer(descriptor: wallpaperDescriptor)
-                    .frame(width: wallpaperSize.width, height: wallpaperSize.height)
-                    .offset(x: (insets.trailing - insets.leading) / 2,
-                            y: (insets.bottom - insets.top) / 2)
-                    // 键盘只顶起消息和输入框，不能把整张壁纸一起推上去。
-                    .ignoresSafeArea(.keyboard)
+                    .ignoresSafeArea()
 
                 VStack(spacing: 0) {
                     header
@@ -199,12 +200,11 @@ struct RoundtableView: View {
 
                 composer
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                    .ignoresSafeArea(.container, edges: .bottom)
             }
             .coordinateSpace(name: "alcoveChatRoot")
             .environment(\.chatWallpaperDescriptor, wallpaperDescriptor)
-            .environment(\.chatWallpaperViewportSize, wallpaperSize)
-            .environment(\.chatWallpaperViewportInset,
-                         CGSize(width: insets.leading, height: insets.top))
+            .environment(\.chatWallpaperViewportSize, root.size)
             .environment(\.bubbleGlassStyle, bubbleGlassStyle)
         }
         .foregroundColor(theme.text)
@@ -247,6 +247,9 @@ struct RoundtableView: View {
         }
         .fullScreenCover(item: $previewImage) { image in
             LocalImageViewer(image: image) { previewImage = nil }
+        }
+        .fullScreenCover(item: $photoViewer) { selection in
+            PhotoPageViewer(selection: selection, namespace: photoTransition) { photoViewer = nil }
         }
         .sheet(isPresented: $showConsole) {
             RTConsoleView(theme: theme)
@@ -370,13 +373,25 @@ struct RoundtableView: View {
                 LazyVStack(alignment: .leading, spacing: 10) {
                     ForEach(Array(store.messages.enumerated()), id: \.element.id) { idx, msg in
                         let prev = idx > 0 ? store.messages[idx - 1] : nil
-                        let next = idx + 1 < store.messages.count ? store.messages[idx + 1] : nil
+                        let photos = roundtablePhotoGroup(startingAt: idx)
+                        let end = idx + max(photos.count, 1) - 1
+                        let next = end + 1 < store.messages.count ? store.messages[end + 1] : nil
                         // 同一个人连着说，头像只在第一条旁边出现一次
+                        if isRoundtablePhotoContinuation(at: idx) {
+                            EmptyView()
+                        } else {
                         RoundtableRow(msg: msg,
                                       showAvatar: prev?.role != msg.role,
                                       showTime: next?.role != msg.role,
+                                      photoURLs: photos,
+                                      photoNamespace: photoTransition,
+                                      onTapImages: { urls, index in
+                                          photoViewer = PhotoViewerSelection(urls: urls, index: index,
+                                                                             sourceID: "rt-\(msg.id)")
+                                      },
                                       theme: theme)
                         .id(msg.id)
+                        }
                     }
                     Color.clear.frame(height: inputBarHeight + 8)
                     Color.clear.frame(height: 1).id("rt-tail")
@@ -394,6 +409,25 @@ struct RoundtableView: View {
                 scrollToRoundtableTail(proxy, delays: [0, 0.12, 0.35], animated: true)
             }
         }
+    }
+
+    private func roundtablePhotoGroup(startingAt index: Int) -> [URL] {
+        guard index < store.messages.count,
+              let key = store.messages[index].photoBatchKey else { return [] }
+        var urls: [URL] = []
+        var i = index
+        while i < store.messages.count,
+              store.messages[i].photoBatchKey == key,
+              let raw = store.messages[i].attachmentURL {
+            urls.append(AlcoveAPI.attachmentURL(raw))
+            i += 1
+        }
+        return urls.count > 1 ? urls : []
+    }
+
+    private func isRoundtablePhotoContinuation(at index: Int) -> Bool {
+        guard index > 0, let key = store.messages[index].photoBatchKey else { return false }
+        return store.messages[index - 1].photoBatchKey == key
     }
 
     private func scrollToRoundtableTail(
@@ -571,13 +605,15 @@ struct RoundtableView: View {
 
         let images: [Data] = pendingImages.map { $0.jpeg }
         pendingImages = []
-        let stamp = Int(Date().timeIntervalSince1970)
+        let stamp = Int(Date().timeIntervalSince1970 * 1000)
+        let group = images.count > 1 ? UUID().uuidString : nil
         Task {
             for (index, data) in images.enumerated() {
                 let filename = "IMG_\(stamp)_\(index).jpg"
                 let caption = index == 0 ? text : ""
                 let isLast = index == images.count - 1
-                await store.upload(data, filename: filename, text: caption, triggerReply: isLast)
+                await store.upload(data, filename: filename, text: caption, group: group,
+                                   triggerReply: isLast)
             }
         }
     }
@@ -591,6 +627,9 @@ private struct RoundtableRow: View {
     let msg: RoundtableMessage
     let showAvatar: Bool
     let showTime: Bool
+    let photoURLs: [URL]
+    let photoNamespace: Namespace.ID
+    let onTapImages: ([URL], Binding<Int>) -> Void
     let theme: AlcoveTheme
     // 0731 她定的：圆桌三个人的头像跟聊天页不通用，各存各的。
     @AppStorage("rtAvatarUser") private var rtAvatarUser = ""
@@ -668,12 +707,18 @@ private struct RoundtableRow: View {
                         .font(.system(size: 11))
                         .foregroundColor(theme.textDim.opacity(0.65))
                 }
-                if msg.attachmentType == "image", let raw = msg.attachmentURL {
+                if photoURLs.count > 1 {
+                    PhotoStackMessageView(urls: photoURLs, messageID: "rt-\(msg.id)",
+                                          onOpen: onTapImages)
+                        .matchedTransitionSource(id: "rt-\(msg.id)", in: photoNamespace)
+                } else if msg.attachmentType == "image", let raw = msg.attachmentURL {
                     AsyncImage(url: AlcoveAPI.attachmentURL(raw)) { image in image.resizable().scaledToFit() }
                     placeholder: { ProgressView().frame(width: 180, height: 140) }
                     .frame(maxWidth: msg.attachmentFilename?.hasPrefix("sticker_") == true ? 110 : 220,
                            maxHeight: msg.attachmentFilename?.hasPrefix("sticker_") == true ? 110 : 300)
                     .clipShape(RoundedRectangle(cornerRadius: 14))
+                    .matchedTransitionSource(id: "rt-\(msg.id)", in: photoNamespace)
+                    .onTapGesture { onTapImages([AlcoveAPI.attachmentURL(raw)], .constant(0)) }
                 } else if msg.attachmentType == "audio", let raw = msg.attachmentURL {
                     AudioBubble(url: AlcoveAPI.attachmentURL(raw), isUser: isUser, theme: theme)
                 } else if let raw = msg.attachmentURL {
