@@ -105,6 +105,7 @@ struct RoundtableView: View {
     @State private var draft = ""
     @State private var showConsole = false
     @State private var showSettings = false
+    @State private var inputBarHeight: CGFloat = 90
     @FocusState private var focused: Bool
     @AppStorage("alcoveTheme") private var themeName = "haven"
     // 三个人的头像跟聊天页不通用，各存各的（她定的）
@@ -115,7 +116,24 @@ struct RoundtableView: View {
     @AppStorage("rtNameUser") private var rtNameUser = "陈霁"
     @AppStorage("rtNameAssistant") private var rtNameAssistant = "陈璟"
     @AppStorage("rtNameGpt") private var rtNameGpt = "G老师"
+    @AppStorage("bubbleGlassStrength") private var bubbleGlassStrength = 56.81
+    @AppStorage("bubbleGlassDispersion") private var bubbleGlassDispersion = 0.39
+    @AppStorage("bubbleGlassRimWidth") private var bubbleGlassRimWidth = 0.28
+    @AppStorage("bubbleGlassMagnify") private var bubbleGlassMagnify = 0.0
+    @AppStorage("bubbleGlassBlur") private var bubbleGlassBlur = 0.10
+    @AppStorage("bubbleGlassSize") private var bubbleGlassSize = 174.33
     private var theme: AlcoveTheme { .named(themeName) }
+
+    private var bubbleGlassStyle: BubbleGlassStyle {
+        BubbleGlassStyle(
+            strength: CGFloat(bubbleGlassStrength),
+            dispersion: CGFloat(bubbleGlassDispersion),
+            rimWidth: CGFloat(bubbleGlassRimWidth),
+            magnify: CGFloat(bubbleGlassMagnify),
+            backdropBlur: CGFloat(bubbleGlassBlur),
+            size: CGFloat(bubbleGlassSize)
+        )
+    }
 
     private var rtWallpaperImage: UIImage? {
         guard !rtWallpaper.isEmpty else { return nil }
@@ -124,24 +142,31 @@ struct RoundtableView: View {
         return Data(base64Encoded: b64).flatMap(UIImage.init(data:))
     }
 
+    private var wallpaperDescriptor: ChatWallpaperDescriptor {
+        if let image = rtWallpaperImage {
+            return ChatWallpaperDescriptor(source: .image(image))
+        }
+        return ChatWallpaperDescriptor(source: .gradient(theme.wallGradient))
+    }
+
     var body: some View {
-        ZStack {
-            // 圆桌自己的壁纸；没设就用主题渐变（她说先默认，后面自己换）
-            if let bg = rtWallpaperImage {
-                Image(uiImage: bg)
-                    .resizable().scaledToFill()
+        GeometryReader { root in
+            ZStack {
+                // 可见壁纸和气泡透镜共用同一张图与同一套视口坐标。
+                ChatWallpaperRenderer(descriptor: wallpaperDescriptor)
                     .ignoresSafeArea()
-            } else {
-                LinearGradient(colors: theme.wallGradient,
-                               startPoint: .top, endPoint: .bottom)
-                    .ignoresSafeArea()
+
+                VStack(spacing: 0) {
+                    header
+                    Divider().opacity(0.18)
+                    messageList
+                    composer
+                }
             }
-            VStack(spacing: 0) {
-                header
-                Divider().opacity(0.18)
-                messageList
-                composer
-            }
+            .coordinateSpace(name: "alcoveChatRoot")
+            .environment(\.chatWallpaperDescriptor, wallpaperDescriptor)
+            .environment(\.chatWallpaperViewportSize, root.size)
+            .environment(\.bubbleGlassStyle, bubbleGlassStyle)
         }
         .foregroundColor(theme.text)
         .onAppear { store.start() }
@@ -279,11 +304,42 @@ struct RoundtableView: View {
                 .padding(.horizontal, 14)
                 .padding(.vertical, 12)
             }
+            .mask(edgeFadeMask)
             .onChange(of: store.messages) { _ in
                 withAnimation(.easeOut(duration: 0.2)) {
                     proxy.scrollTo("rt-tail", anchor: .bottom)
                 }
             }
+        }
+    }
+
+    // 与主聊天页一致：消息进入顶栏和输入框后按 alpha 淡出。
+    private var edgeFadeMask: some View {
+        VStack(spacing: 0) {
+            LinearGradient(
+                stops: [
+                    .init(color: .clear, location: 0),
+                    .init(color: .clear, location: 0.15),
+                    .init(color: .black.opacity(0.3), location: 0.4),
+                    .init(color: .black.opacity(0.7), location: 0.65),
+                    .init(color: .black, location: 1.0),
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(height: 120)
+            Color.black
+            LinearGradient(
+                stops: [
+                    .init(color: .black, location: 0),
+                    .init(color: .black.opacity(0.7), location: 0.3),
+                    .init(color: .black.opacity(0.3), location: 0.6),
+                    .init(color: .clear, location: 1.0),
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(height: inputBarHeight + 8)
         }
     }
 
