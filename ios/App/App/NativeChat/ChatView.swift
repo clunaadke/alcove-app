@@ -285,7 +285,7 @@ struct ChatView: View {
                     photoViewer = PhotoViewerSelection(
                         urls: urls,
                         index: selectedIndex,
-                        sourceID: message.ts
+                        sourceID: "chat-\(message.id)"
                     )
                 },
                 onDelete: { store.deleteMessage(message) },
@@ -615,9 +615,9 @@ struct MessageRow: View {
                     stickerBody
                 } else {
                     if photoURLs.count > 1 {
-                        PhotoStackMessageView(urls: photoURLs, messageID: msg.ts,
+                        PhotoStackMessageView(urls: photoURLs, messageID: "chat-\(msg.id)",
                                               onOpen: onTapImages)
-                            .matchedTransitionSource(id: msg.ts, in: photoNamespace)
+                            .matchedTransitionSource(id: "chat-\(msg.id)", in: photoNamespace)
                     } else if msg.isImage, let raw = msg.attachmentUrl {
                         imageBody(raw)
                     }
@@ -897,7 +897,7 @@ struct MessageRow: View {
         }
         .frame(maxWidth: 220, maxHeight: 300)
         .clipShape(RoundedRectangle(cornerRadius: 14))
-        .matchedTransitionSource(id: msg.ts, in: photoNamespace)
+        .matchedTransitionSource(id: "chat-\(msg.id)", in: photoNamespace)
         .onTapGesture { onTapImages([url], .constant(0)) }
     }
 
@@ -1086,8 +1086,49 @@ struct PhotoStackMessageView: View {
     @State private var dragX: CGFloat = 0
     @State private var isHorizontalDrag = false
     @State private var isAnimatingOut = false
+    @State private var isExpanded = false
 
     var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Button {
+                withAnimation(.spring(response: 0.42, dampingFraction: 0.84)) {
+                    isExpanded.toggle()
+                    if !isExpanded { currentIndex = 0 }
+                }
+            } label: {
+                Text(isExpanded ? "收起" : "展开 \(urls.count)")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(Color(uiColor: .darkGray))
+                    .padding(.horizontal, 10)
+                    .frame(height: 28)
+                    .background(Color(uiColor: .systemGray5).opacity(0.82), in: Capsule())
+            }
+            .buttonStyle(.plain)
+            .padding(.top, (cardSize.height - 28) / 2)
+
+            if isExpanded {
+                VStack(spacing: 8) {
+                    ForEach(Array(urls.enumerated()), id: \.offset) { index, url in
+                        photoCard(url: url)
+                            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .onTapGesture { openPhoto(at: index) }
+                            .transition(.offset(y: -CGFloat(index) * (cardSize.height * 0.72))
+                                .combined(with: .opacity))
+                    }
+                }
+            } else {
+                collapsedStack
+                    .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .top)))
+            }
+        }
+        .id(messageID)
+        .animation(.spring(response: 0.42, dampingFraction: 0.84), value: isExpanded)
+        .onChange(of: urls) { _ in
+            if currentIndex >= urls.count { currentIndex = 0 }
+        }
+    }
+
+    private var collapsedStack: some View {
         ZStack(alignment: .topTrailing) {
             ZStack {
                 ForEach(Array(visibleSlots.reversed()), id: \.self) { slot in
@@ -1103,33 +1144,36 @@ struct PhotoStackMessageView: View {
                         .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                         .onTapGesture {
                             guard !isHorizontalDrag && !isAnimatingOut else { return }
-                            onOpen(urls, Binding(
-                                get: { currentIndex },
-                                set: { currentIndex = min(max($0, 0), urls.count - 1) }
-                            ))
+                            openPhoto(at: currentIndex)
                         }
                         .simultaneousGesture(dragGesture)
                 }
             }
-            if urls.count > 3 {
-                Text("\(urls.count)")
-                    .font(.system(size: 12, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.primary.opacity(0.82))
-                    .padding(.horizontal, 8)
-                    .frame(height: 24)
-                    .background(.ultraThinMaterial, in: Capsule())
-                    .overlay(Capsule().stroke(.white.opacity(0.22), lineWidth: 0.5))
-                    .padding(.top, 9)
-                    .padding(.trailing, 8)
-                    .zIndex(10)
-                    .allowsHitTesting(false)
-            }
+            if urls.count > 3 { countBadge }
         }
         .frame(width: cardSize.width + 14, height: cardSize.height + 13)
-        .id(messageID)
-        .onChange(of: urls) { _ in
-            if currentIndex >= urls.count { currentIndex = 0 }
-        }
+    }
+
+    private var countBadge: some View {
+        Text("\(urls.count)")
+            .font(.system(size: 12, weight: .semibold, design: .rounded))
+            .foregroundStyle(.primary.opacity(0.82))
+            .padding(.horizontal, 8)
+            .frame(height: 24)
+            .background(.ultraThinMaterial, in: Capsule())
+            .overlay(Capsule().stroke(.white.opacity(0.22), lineWidth: 0.5))
+            .padding(.top, 9)
+            .padding(.trailing, 8)
+            .zIndex(10)
+            .allowsHitTesting(false)
+    }
+
+    private func openPhoto(at index: Int) {
+        currentIndex = min(max(index, 0), urls.count - 1)
+        onOpen(urls, Binding(
+            get: { currentIndex },
+            set: { currentIndex = min(max($0, 0), urls.count - 1) }
+        ))
     }
 
     private var visibleSlots: Range<Int> { 0..<min(3, urls.count) }
