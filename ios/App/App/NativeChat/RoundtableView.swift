@@ -185,6 +185,12 @@ struct RoundtableView: View {
         return ChatWallpaperDescriptor(source: .gradient(theme.wallGradient))
     }
 
+    private var safeBottom: CGFloat {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first?.windows.first?.safeAreaInsets.bottom ?? 0
+    }
+
     var body: some View {
         GeometryReader { root in
             ZStack {
@@ -200,6 +206,7 @@ struct RoundtableView: View {
 
                 composer
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                    .padding(.bottom, safeBottom)
                     .ignoresSafeArea(.container, edges: .bottom)
             }
             .coordinateSpace(name: "alcoveChatRoot")
@@ -705,7 +712,7 @@ private struct RoundtableRow: View {
                 if showAvatar && !isUser {
                     Text(displayName)
                         .font(.system(size: 11))
-                        .foregroundColor(theme.textDim.opacity(0.65))
+                        .foregroundColor(.white)
                 }
                 if photoURLs.count > 1 {
                     PhotoStackMessageView(urls: photoURLs, messageID: "rt-\(msg.id)",
