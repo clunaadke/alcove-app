@@ -198,6 +198,7 @@ struct RoundtableView: View {
     @State private var draft = ""
     @State private var quotedText: String?
     @State private var paginationReady = false
+    @State private var preservingHistoryPosition = false
     @State private var showConsole = false
     @State private var showSettings = false
     @State private var inputBarHeight: CGFloat = 90
@@ -444,11 +445,16 @@ struct RoundtableView: View {
                             .padding(.vertical, 8)
                             .onAppear {
                                 Task {
+                                    guard !preservingHistoryPosition else { return }
+                                    preservingHistoryPosition = true
                                     if let anchor = await store.loadOlder() {
                                         // prepend 后回到原来的首条，画面不会突然跳到更早处。
                                         await Task.yield()
                                         proxy.scrollTo(anchor, anchor: .top)
                                     }
+                                    // messages 的 onChange 可能比 await 返回晚一拍，下一轮再放开滚尾。
+                                    try? await Task.sleep(nanoseconds: 150_000_000)
+                                    preservingHistoryPosition = false
                                 }
                             }
                     }
@@ -497,7 +503,7 @@ struct RoundtableView: View {
                 }
             }
             .onChange(of: store.messages) { _ in
-                if !store.loadingOlder {
+                if !preservingHistoryPosition {
                     scrollToRoundtableTail(proxy, delays: [0, 0.12, 0.35], animated: true)
                 }
             }
