@@ -1,5 +1,7 @@
 import SwiftUI
 import PhotosUI
+import AVFoundation
+import UniformTypeIdentifiers
 
 // 圆桌 · 2026-07-31
 // 她要的：一个页面，三个人，互相看得见对方说的话，她不用再在中间当翻译。
@@ -15,6 +17,9 @@ struct RoundtableMessage: Identifiable, Equatable {
     let role: String        // user / assistant / gpt
     let sender: String
     let text: String
+    let attachmentURL: String?
+    let attachmentType: String?
+    let attachmentFilename: String?
 
     init?(json: [String: Any]) {
         guard let id = json["id"] as? Int else { return nil }
@@ -23,6 +28,9 @@ struct RoundtableMessage: Identifiable, Equatable {
         self.role = json["role"] as? String ?? "user"
         self.sender = json["sender"] as? String ?? ""
         self.text = json["text"] as? String ?? ""
+        self.attachmentURL = json["attachment_url"] as? String
+        self.attachmentType = json["attachment_type"] as? String
+        self.attachmentFilename = json["attachment_filename"] as? String
     }
 }
 
@@ -97,6 +105,17 @@ final class RoundtableStore: ObservableObject {
         _ = try? await AlcoveAPI.postRaw("/api/roundtable/codex", body: [:])
         await refresh()
     }
+
+    func upload(_ data: Data, filename: String, text: String = "", triggerReply: Bool = true) async {
+        sending = true
+        defer { sending = false }
+        _ = try? await AlcoveAPI.uploadRoundtable(data: data, filename: filename, text: text)
+        await refresh()
+        if triggerReply {
+            _ = try? await AlcoveAPI.postRaw("/api/roundtable/codex", body: [:])
+            await refresh()
+        }
+    }
 }
 
 struct RoundtableView: View {
@@ -106,6 +125,13 @@ struct RoundtableView: View {
     @State private var showConsole = false
     @State private var showSettings = false
     @State private var inputBarHeight: CGFloat = 90
+    @State private var pendingImages: [(thumb: UIImage, jpeg: Data)] = []
+    @State private var showCamera = false
+    @State private var showDocPicker = false
+    @State private var showPhotoPicker = false
+    @State private var showStickers = false
+    @State private var previewImage: UIImage?
+    @StateObject private var recorder = VoiceRecorder()
     @FocusState private var focused: Bool
     @AppStorage("alcoveTheme") private var themeName = "haven"
     // 三个人的头像跟聊天页不通用，各存各的（她定的）
@@ -160,8 +186,10 @@ struct RoundtableView: View {
                     header
                     Divider().opacity(0.18)
                     messageList
-                    composer
                 }
+
+                composer
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
             }
             .coordinateSpace(name: "alcoveChatRoot")
             .environment(\.chatWallpaperDescriptor, wallpaperDescriptor)
@@ -171,6 +199,44 @@ struct RoundtableView: View {
         .foregroundColor(theme.text)
         .onAppear { store.start() }
         .onDisappear { store.stop() }
+        .sheet(isPresented: $showCamera) {
+            CameraView { image in
+                if let jpeg = image.jpegData(compressionQuality: 0.85) { pendingImages.append((image, jpeg)) }
+            }
+        }
+        .sheet(isPresented: $showDocPicker) {
+            DocumentPicker { urls in
+                for url in urls {
+                    guard url.startAccessingSecurityScopedResource() else { continue }
+                    defer { url.stopAccessingSecurityScopedResource() }
+                    if let data = try? Data(contentsOf: url) {
+                        Task { await store.upload(data, filename: url.lastPathComponent) }
+                    }
+                }
+            }
+        }
+        .sheet(isPresented: $showPhotoPicker) {
+            PhotoLibraryPicker(maxCount: 9) { images in
+                for image in images {
+                    if let jpeg = image.jpegData(compressionQuality: 0.85) { pendingImages.append((image, jpeg)) }
+                }
+            }
+        }
+        .sheet(isPresented: $showStickers) {
+            RoundtableStickerPicker { sticker in
+                showStickers = false
+                Task {
+                    guard let (data, _) = try? await URLSession.shared.data(from: AlcoveAPI.stickerURL(sticker.url)) else { return }
+                    let ext = AlcoveAPI.stickerURL(sticker.url).pathExtension.isEmpty
+                        ? "jpg" : AlcoveAPI.stickerURL(sticker.url).pathExtension
+                    await store.upload(data, filename: "sticker_\(sticker.id).\(ext)")
+                }
+            }
+            .presentationDetents([.medium, .large])
+        }
+        .fullScreenCover(item: $previewImage) { image in
+            LocalImageViewer(image: image) { previewImage = nil }
+        }
         .sheet(isPresented: $showConsole) {
             RTConsoleView(theme: theme)
         }
@@ -299,6 +365,7 @@ struct RoundtableView: View {
                                       theme: theme)
                         .id(msg.id)
                     }
+                    Color.clear.frame(height: inputBarHeight + 8)
                     Color.clear.frame(height: 1).id("rt-tail")
                 }
                 .padding(.horizontal, 14)
@@ -347,7 +414,30 @@ struct RoundtableView: View {
     // 颜色全走 theme，白天黑夜两套主题它自己跟着变。
     private var composer: some View {
         VStack(spacing: 0) {
-            TextField(
+            if !pendingImages.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(Array(pendingImages.enumerated()), id: \.offset) { index, item in
+                            ZStack(alignment: .topTrailing) {
+                                Image(uiImage: item.thumb).resizable().scaledToFill()
+                                    .frame(width: 64, height: 64).clipShape(RoundedRectangle(cornerRadius: 10))
+                                    .onTapGesture { previewImage = item.thumb }
+                                Button { pendingImages.remove(at: index) } label: {
+                                    Image(systemName: "xmark.circle.fill").font(.system(size: 20)).foregroundColor(.white).shadow(radius: 2)
+                                }.offset(x: 5, y: -5)
+                            }
+                        }
+                    }.padding(.init(top: 8, leading: 12, bottom: 4, trailing: 12))
+                }
+            }
+            if recorder.isRecording {
+                HStack(spacing: 10) {
+                    Circle().fill(.red).frame(width: 8, height: 8)
+                    Text(String(format: "%d:%02d", recorder.seconds / 60, recorder.seconds % 60)).monospacedDigit()
+                    Text("录音中…").foregroundColor(theme.textDim)
+                    Spacer()
+                }.padding(.init(top: 16, leading: 14, bottom: 4, trailing: 14))
+            } else { TextField(
                 "",
                 text: $draft,
                 prompt: Text("ring the chime …")
@@ -361,14 +451,33 @@ struct RoundtableView: View {
             .tint(Color(uiColor: .systemGray3))
             .padding(.init(top: 16, leading: 14, bottom: 12, trailing: 14))
             .contentShape(Rectangle())
+            }
 
             HStack(spacing: 2) {
-                Spacer()
+                if recorder.isRecording {
+                    Button { recorder.cancel() } label: { Image(systemName: "xmark").foregroundColor(theme.textDim).frame(width: 32, height: 32) }
+                    Spacer()
+                } else {
+                    Menu {
+                        Button { showPhotoPicker = true } label: { Label("从相册选择", systemImage: "photo.on.rectangle") }
+                        Button { showCamera = true } label: { Label("拍照或录像", systemImage: "camera") }
+                        Button { showDocPicker = true } label: { Label("选取文件", systemImage: "doc") }
+                    } label: { Image(systemName: "paperclip").foregroundColor(theme.textDim).frame(width: 32, height: 32) }
+                    Button { showStickers = true } label: { Image(systemName: "face.smiling").foregroundColor(theme.textDim).frame(width: 32, height: 32) }
+                    Button { recorder.start() } label: { Image(systemName: "mic").foregroundColor(theme.textDim).frame(width: 32, height: 32) }
+                    Spacer()
+                }
                 Button {
-                    let t = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !t.isEmpty else { return }
-                    draft = ""
-                    Task { await store.send(t) }
+                    if recorder.isRecording {
+                        if let data = recorder.stopAndTake() { Task { await store.upload(data, filename: "voice_\(Int(Date().timeIntervalSince1970 * 1000)).m4a") } }
+                    } else {
+                        let t = draft.trimmingCharacters(in: .whitespacesAndNewlines); draft = ""
+                        if pendingImages.isEmpty { Task { await store.send(t) } }
+                        else {
+                            let images = pendingImages.map(\.jpeg); pendingImages = []
+                            Task { for (index, data) in images.enumerated() { await store.upload(data, filename: "IMG_\(Int(Date().timeIntervalSince1970))_\(index).jpg", text: index == 0 ? t : "", triggerReply: index == images.count - 1) } }
+                        }
+                    }
                 } label: {
                     Image(systemName: "paperplane.fill")
                         .font(.system(size: 15, weight: .semibold))
@@ -381,9 +490,9 @@ struct RoundtableView: View {
                                            endPoint: .bottomTrailing))
                         .clipShape(Circle())
                         .shadow(color: .black.opacity(0.2), radius: 4, y: 2)
-                        .opacity(canSend ? 1 : 0.35)
+                        .opacity(canSend || recorder.isRecording ? 1 : 0.35)
                 }
-                .disabled(!canSend)
+                .disabled(!canSend && !recorder.isRecording)
             }
             .padding(.init(top: 4, leading: 8, bottom: 8, trailing: 8))
         }
@@ -396,11 +505,15 @@ struct RoundtableView: View {
         .modifier(RTInputGlass(tint: theme.capsuleTint, border: theme.capsuleBorder))
         .shadow(color: .black.opacity(0.05), radius: 14, y: 2)
         .padding(.horizontal, 14)
-        .padding(.bottom, 8)
+        .padding(.bottom, 0)
+        .background(GeometryReader { geo in
+            Color.clear.preference(key: InputBarHeightKey.self, value: geo.size.height)
+        })
+        .onPreferenceChange(InputBarHeightKey.self) { inputBarHeight = $0 }
     }
 
     private var canSend: Bool {
-        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !store.sending
+        (!draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !pendingImages.isEmpty) && !store.sending
     }
 }
 
@@ -447,6 +560,19 @@ private struct RoundtableRow: View {
         }
     }
 
+    private var timestamp: String {
+        let date = ISO8601DateFormatter.alcove.date(from: msg.ts)
+            ?? ISO8601DateFormatter.alcoveFrac.date(from: msg.ts)
+        guard let date else { return msg.ts }
+        return Self.hm.string(from: date)
+    }
+
+    private static let hm: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm"
+        return f
+    }()
+
     private var avatarTint: Color {
         switch msg.role {
         case "assistant": return Color(red: 0.45, green: 0.60, blue: 0.85)
@@ -471,7 +597,25 @@ private struct RoundtableRow: View {
                         .font(.system(size: 11))
                         .foregroundColor(theme.textDim.opacity(0.65))
                 }
-                bubble
+                if msg.attachmentType == "image", let raw = msg.attachmentURL {
+                    AsyncImage(url: AlcoveAPI.attachmentURL(raw)) { image in image.resizable().scaledToFit() }
+                    placeholder: { ProgressView().frame(width: 180, height: 140) }
+                    .frame(maxWidth: msg.attachmentFilename?.hasPrefix("sticker_") == true ? 110 : 220,
+                           maxHeight: msg.attachmentFilename?.hasPrefix("sticker_") == true ? 110 : 300)
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
+                } else if msg.attachmentType == "audio", let raw = msg.attachmentURL {
+                    AudioBubble(url: AlcoveAPI.attachmentURL(raw), isUser: isUser, theme: theme)
+                } else if let raw = msg.attachmentURL {
+                    Link(destination: AlcoveAPI.attachmentURL(raw)) {
+                        Label(msg.attachmentFilename ?? "附件", systemImage: "doc.fill")
+                            .padding(12).background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
+                    }
+                }
+                if !msg.text.isEmpty { bubble }
+                Text(timestamp)
+                    .font(.system(size: 10, design: .serif))
+                    .foregroundColor(theme.timestamp)
+                    .padding(.horizontal, 12)
             }
             if isUser { avatarSlot } else { Spacer(minLength: 48) }
         }
@@ -909,5 +1053,35 @@ private struct RTInputGlass: ViewModifier {
                 .background(tint, in: shape)
                 .overlay(shape.stroke(border, lineWidth: 1))
         }
+    }
+}
+
+// 圆桌只需要从现有贴纸库选择；选中后按图片上传到圆桌记录。
+private struct RoundtableStickerPicker: View {
+    let onSelect: (Sticker) -> Void
+    @State private var stickers: [Sticker] = []
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 82), spacing: 12)], spacing: 12) {
+                    ForEach(stickers) { sticker in
+                        Button { onSelect(sticker) } label: {
+                            AsyncImage(url: AlcoveAPI.stickerURL(sticker.url)) { image in
+                                image.resizable().scaledToFit()
+                            } placeholder: {
+                                ProgressView()
+                            }
+                            .frame(height: 82)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(16)
+            }
+            .navigationTitle("贴纸")
+            .navigationBarTitleDisplayMode(.inline)
+        }
+        .task { stickers = (try? await AlcoveAPI.stickers()) ?? [] }
     }
 }

@@ -200,4 +200,20 @@ enum AlcoveAPI {
         let obj = try JSONSerialization.jsonObject(with: respData) as? [String: Any]
         return (obj?["record"] as? [String: Any]).flatMap(ChatMessage.init(json:))
     }
+
+    static func uploadRoundtable(data: Data, filename: String, text: String) async throws -> [String: Any]? {
+        var comps = URLComponents(url: fullURL("/api/roundtable/upload"), resolvingAgainstBaseURL: false)!
+        var items = [URLQueryItem(name: "filename", value: filename),
+                     URLQueryItem(name: "role", value: "user"),
+                     URLQueryItem(name: "sender", value: "陈霁")]
+        if !text.isEmpty { items.append(URLQueryItem(name: "text", value: text)) }
+        comps.queryItems = items
+        var req = URLRequest(url: comps.url!)
+        req.httpMethod = "POST"
+        req.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
+        req.timeoutInterval = 120
+        let (responseData, _) = try await session.upload(for: req, from: data)
+        let obj = try JSONSerialization.jsonObject(with: responseData) as? [String: Any]
+        return obj?["record"] as? [String: Any]
+    }
 }
