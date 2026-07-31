@@ -14,6 +14,11 @@ final class SensorReporter: NSObject, CLLocationManagerDelegate {
     private let activityManager = CMMotionActivityManager()
     private var significantStarted = false
     private var askedAlways = false
+    // 0731 她说全打开了，motion 却一直是空的。原因不是权限，是查法：
+    // queryActivityStarting 查的是历史记录，而 iOS 只在状态"变化"时才写一条，
+    // 她躺床上不动，十分钟窗口里一条都没有。改成实时监听，状态一变就存下来。
+    private var liveMotion: String?
+    private var motionStarted = false
     private var lastReport = Date.distantPast
     // 0731 她要的：app 开着每 30 秒报一次。她说「那我不清后台就是了」，
     // 所以退到后台也不停，只是把节奏放慢到 5 分钟，够我知道她还在，也不烧她电池。
@@ -39,6 +44,7 @@ final class SensorReporter: NSObject, CLLocationManagerDelegate {
         inBackground = false
         startSignificantMonitoring()
         askAlwaysIfNeeded()
+        startMotionUpdates()
         startStreaming()
         if !bgUpdatesOn { startTicker(fgInterval) }   // 没开成持续定位才靠定时器顶着
         requestNow()
@@ -67,6 +73,26 @@ final class SensorReporter: NSObject, CLLocationManagerDelegate {
         bgUpdatesOn = true
         ticker?.invalidate()
         ticker = nil
+    }
+
+    // 只在状态变化时回调，所以刚开 app 那会儿可能一次都不来，
+    // 打底值还得靠 collectAndSend 里那次历史查询。两条腿走路。
+    private func startMotionUpdates() {
+        guard !motionStarted, CMMotionActivityManager.isActivityAvailable() else { return }
+        motionStarted = true
+        activityManager.startActivityUpdates(to: .main) { [weak self] act in
+            guard let act = act else { return }
+            if let l = SensorReporter.motionLabel(act) { self?.liveMotion = l }
+        }
+    }
+
+    private static func motionLabel(_ a: CMMotionActivity) -> String? {
+        if a.walking { return "走路" }
+        if a.running { return "跑步" }
+        if a.cycling { return "骑车" }
+        if a.automotive { return "坐车" }
+        if a.stationary { return "静止" }
+        return nil
     }
 
     private func startTicker(_ interval: TimeInterval) {
@@ -143,17 +169,15 @@ final class SensorReporter: NSObject, CLLocationManagerDelegate {
                 group.leave()
             }
         }
-        if CMMotionActivityManager.isActivityAvailable() {
+        // 实时监听拿到过就用它，这是此刻的状态，最准
+        if let live = liveMotion {
+            motion = live
+        } else if CMMotionActivityManager.isActivityAvailable() {
+            // 回退查历史。窗口从原来的十分钟拉到今天一整天——
+            // 她一动不动的时候系统压根不写新记录，窗口开太小就查了个空。
             group.enter()
-            activityManager.queryActivityStarting(from: now.addingTimeInterval(-600),
-                                                  to: now, to: .main) { acts, _ in
-                if let a = acts?.last {
-                    if a.walking { motion = "走路" }
-                    else if a.running { motion = "跑步" }
-                    else if a.cycling { motion = "骑车" }
-                    else if a.automotive { motion = "坐车" }
-                    else if a.stationary { motion = "静止" }
-                }
+            activityManager.queryActivityStarting(from: dayStart, to: now, to: .main) { acts, _ in
+                if let a = acts?.last { motion = SensorReporter.motionLabel(a) }
                 group.leave()
             }
         }
