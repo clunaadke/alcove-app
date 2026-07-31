@@ -221,11 +221,10 @@ struct RoundtableView: View {
                 ChatWallpaperRenderer(descriptor: wallpaperDescriptor)
                     .ignoresSafeArea()
 
-                VStack(spacing: 0) {
-                    header
-                    Divider().opacity(0.18)
-                    messageList
-                }
+                messageList
+
+                header
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
 
                 composer
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
@@ -427,7 +426,8 @@ struct RoundtableView: View {
                     Color.clear.frame(height: 1).id("rt-tail")
                 }
                 .padding(.horizontal, 14)
-                .padding(.vertical, 12)
+                .padding(.top, 64)
+                .padding(.bottom, 12)
             }
             .scrollDismissesKeyboard(.interactively)
             .onTapGesture { focused = false }
