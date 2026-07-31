@@ -21,6 +21,7 @@ struct RoundtableMessage: Identifiable, Equatable {
     let attachmentType: String?
     let attachmentFilename: String?
     let attachmentGroup: String?
+    let hiddenFrom: String
 
     init?(json: [String: Any]) {
         guard let id = json["id"] as? Int else { return nil }
@@ -33,6 +34,7 @@ struct RoundtableMessage: Identifiable, Equatable {
         self.attachmentType = json["attachment_type"] as? String
         self.attachmentFilename = json["attachment_filename"] as? String
         self.attachmentGroup = json["att_group"] as? String
+        self.hiddenFrom = json["hidden_from"] as? String ?? ""
     }
 
     var photoBatchKey: String? {
@@ -54,6 +56,8 @@ final class RoundtableStore: ObservableObject {
     @Published var messages: [RoundtableMessage] = []
     @Published var members: [RoundtableMember] = []
     @Published var sending = false
+    @Published var blockAssistant = false
+    @Published var blockGpt = false
 
     private var poller: Task<Void, Never>?
 
@@ -74,18 +78,37 @@ final class RoundtableStore: ObservableObject {
     }
 
     func refresh() async {
-        async let msgs = fetchMessages()
+        async let poll = fetchMessages()
         async let mems = fetchMembers()
-        let (m, s) = await (msgs, mems)
-        if let m = m, m != messages { messages = m }
+        let (p, s) = await (poll, mems)
+        if let p {
+            if p.messages != messages { messages = p.messages }
+            blockAssistant = p.assistant
+            blockGpt = p.gpt
+        }
         if let s = s, s != members { members = s }
     }
 
-    private func fetchMessages() async -> [RoundtableMessage]? {
+    private func fetchMessages() async -> (messages: [RoundtableMessage], assistant: Bool, gpt: Bool)? {
         guard let obj = try? await AlcoveAPI.getRaw("/api/roundtable/poll") else { return nil }
         // 后端这个口子返回的键是 records，不是 messages（试出来的，别再改回去）
         let arr = (obj["records"] as? [[String: Any]]) ?? []
-        return arr.compactMap(RoundtableMessage.init(json:))
+        let blocks = obj["blocks"] as? [String: Any] ?? [:]
+        return (arr.compactMap(RoundtableMessage.init(json:)),
+                blocks["assistant"] as? Bool ?? false,
+                blocks["gpt"] as? Bool ?? false)
+    }
+
+    func setBlock(role: String, enabled: Bool) async {
+        if role == "assistant" { blockAssistant = enabled }
+        if role == "gpt" { blockGpt = enabled }
+        guard let response = try? await AlcoveAPI.postRaw("/api/roundtable/blocks", body: [role: enabled]),
+              let blocks = response["blocks"] as? [String: Any] else {
+            await refresh()
+            return
+        }
+        blockAssistant = blocks["assistant"] as? Bool ?? false
+        blockGpt = blocks["gpt"] as? Bool ?? false
     }
 
     private func fetchMembers() async -> [RoundtableMember]? {
@@ -262,7 +285,7 @@ struct RoundtableView: View {
             RTConsoleView(theme: theme)
         }
         .sheet(isPresented: $showSettings) {
-            RTSettingsView(theme: theme)
+            RTSettingsView(store: store, theme: theme)
         }
     }
 
@@ -735,6 +758,12 @@ private struct RoundtableRow: View {
                     }
                 }
                 if !msg.text.isEmpty { bubble }
+                if !msg.hiddenFrom.isEmpty {
+                    Text(hiddenLabel)
+                        .font(.system(size: 10))
+                        .foregroundColor(.white.opacity(0.7))
+                        .padding(.horizontal, 12)
+                }
                 if showTime {
                     Text(timestamp)
                         .font(.system(size: 10, design: .serif))
@@ -744,6 +773,13 @@ private struct RoundtableRow: View {
             }
             if isUser { avatarSlot } else { Spacer(minLength: 48) }
         }
+    }
+
+    private var hiddenLabel: String {
+        let roles = Set(msg.hiddenFrom.split(separator: ",").map(String.init))
+        let names = [("assistant", "陈璟"), ("gpt", "何渡")]
+            .compactMap { roles.contains($0.0) ? $0.1 : nil }
+        return names.isEmpty ? "" : "⊘ 挡住了\(names.joined(separator: "、"))"
     }
 
     private var avatarSlot: some View {
@@ -997,6 +1033,7 @@ private struct RTConsoleView: View {
 // 圆桌设置。她定的三样：改壁纸、改三个人头像、改三个人名字。
 // 头像跟聊天页不通用，名字也只在圆桌里生效。
 private struct RTSettingsView: View {
+    @ObservedObject var store: RoundtableStore
     let theme: AlcoveTheme
     @Environment(\.dismiss) private var dismiss
     @AppStorage("rtAvatarUser") private var avUser = ""
@@ -1043,6 +1080,11 @@ private struct RTSettingsView: View {
                                   pick: $pickGpt, fallback: "渡")
                     }
 
+                    section("屏蔽") {
+                        blockToggle("屏蔽陈璟", role: "assistant", isOn: store.blockAssistant)
+                        blockToggle("屏蔽何渡", role: "gpt", isOn: store.blockGpt)
+                    }
+
                     section("壁纸") {
                         HStack(spacing: 12) {
                             RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -1077,6 +1119,15 @@ private struct RTSettingsView: View {
             }
         }
         .foregroundColor(theme.text)
+    }
+
+    private func blockToggle(_ title: String, role: String, isOn: Bool) -> some View {
+        Toggle(title, isOn: Binding(
+            get: { isOn },
+            set: { enabled in Task { await store.setBlock(role: role, enabled: enabled) } }
+        ))
+        .font(.system(size: 14))
+        .tint(theme.fyAccent)
     }
 
     private func section<C: View>(_ title: String,
