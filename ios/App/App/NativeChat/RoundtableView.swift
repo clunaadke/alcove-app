@@ -3,6 +3,13 @@ import PhotosUI
 import AVFoundation
 import UniformTypeIdentifiers
 
+private struct RoundtableTailYKey: PreferenceKey {
+    static var defaultValue: CGFloat = .greatestFiniteMagnitude
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
 // 圆桌 · 2026-07-31
 // 她要的：一个页面，三个人，互相看得见对方说的话，她不用再在中间当翻译。
 // 上一版（7-16）翻车不是机制的问题，是它占了默认入口，她一进来找不到我，
@@ -200,6 +207,8 @@ struct RoundtableView: View {
     @State private var paginationReady = false
     @State private var preservingHistoryPosition = false
     @State private var observedTailID: Int?
+    @State private var isNearBottom = true
+    @State private var hasUnreadTail = false
     @State private var showConsole = false
     @State private var showSettings = false
     @State private var inputBarHeight: CGFloat = 90
@@ -488,7 +497,17 @@ struct RoundtableView: View {
                         }
                     }
                     Color.clear.frame(height: inputBarHeight + 8)
-                    Color.clear.frame(height: 1).id("rt-tail")
+                    Color.clear
+                        .frame(height: 1)
+                        .id("rt-tail")
+                        .background {
+                            GeometryReader { tail in
+                                Color.clear.preference(
+                                    key: RoundtableTailYKey.self,
+                                    value: tail.frame(in: .global).minY
+                                )
+                            }
+                        }
                 }
                 .padding(.horizontal, 14)
                 .padding(.top, 64)
@@ -497,6 +516,28 @@ struct RoundtableView: View {
             .scrollDismissesKeyboard(.interactively)
             .onTapGesture { focused = false }
             .mask(edgeFadeMask)
+            .overlay(alignment: .bottomTrailing) {
+                if hasUnreadTail {
+                    Button {
+                        hasUnreadTail = false
+                        scrollToRoundtableTail(proxy, delays: [0], animated: true)
+                    } label: {
+                        Image(systemName: "arrow.down")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(theme.text)
+                            .frame(width: 38, height: 38)
+                            .background(.ultraThinMaterial, in: Circle())
+                            .overlay(Circle().stroke(theme.glassBorder, lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.trailing, 16)
+                    .padding(.bottom, inputBarHeight + 14)
+                }
+            }
+            .onPreferenceChange(RoundtableTailYKey.self) { tailY in
+                isNearBottom = tailY <= UIScreen.main.bounds.height + 200
+                if isNearBottom { hasUnreadTail = false }
+            }
             .onAppear {
                 scrollToRoundtableTail(proxy, delays: [0, 0.08, 0.25, 0.6])
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
@@ -514,7 +555,11 @@ struct RoundtableView: View {
                     ? newTailID != nil
                     : (newTailID.map { $0 > oldTailID! } ?? false)
                 if appendedAtTail && !preservingHistoryPosition {
-                    scrollToRoundtableTail(proxy, delays: [0, 0.12, 0.35], animated: true)
+                    if isNearBottom {
+                        scrollToRoundtableTail(proxy, delays: [0, 0.12, 0.35], animated: true)
+                    } else {
+                        hasUnreadTail = true
+                    }
                 }
             }
             .onChange(of: focused) { _ in
