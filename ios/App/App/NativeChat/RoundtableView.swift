@@ -208,6 +208,7 @@ struct RoundtableView: View {
     @State private var preservingHistoryPosition = false
     @State private var observedTailID: Int?
     @State private var isNearBottom = true
+    @State private var tailVisible = true
     @State private var hasUnreadTail = false
     @State private var showConsole = false
     @State private var showSettings = false
@@ -500,6 +501,11 @@ struct RoundtableView: View {
                     Color.clear
                         .frame(height: 1)
                         .id("rt-tail")
+                        .onAppear {
+                            tailVisible = true
+                            hasUnreadTail = false
+                        }
+                        .onDisappear { tailVisible = false }
                         .background {
                             GeometryReader { tail in
                                 Color.clear.preference(
@@ -517,7 +523,7 @@ struct RoundtableView: View {
             .onTapGesture { focused = false }
             .mask(edgeFadeMask)
             .overlay(alignment: .bottomTrailing) {
-                if !isNearBottom {
+                if !tailVisible {
                     Button {
                         hasUnreadTail = false
                         scrollToRoundtableTail(proxy, delays: [0], animated: true)
@@ -566,7 +572,7 @@ struct RoundtableView: View {
                     ? newTailID != nil
                     : (newTailID.map { $0 > oldTailID! } ?? false)
                 if appendedAtTail && !preservingHistoryPosition {
-                    if isNearBottom {
+                    if isNearBottom || tailVisible {
                         scrollToRoundtableTail(proxy, delays: [0, 0.12, 0.35], animated: true)
                     } else {
                         hasUnreadTail = true
