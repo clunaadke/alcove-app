@@ -3246,7 +3246,21 @@ private struct WallMarks: View {
 private struct NativeWallView: View {
     @AppStorage("alcoveTheme") private var themeName = "haven"
     @StateObject private var model = WallModel()
+    @State private var page = 0
+    @State private var revealedLocks: Set<Int> = []
     private var theme: AlcoveTheme { .panelNamed(themeName) }
+
+    private var paper: Color {
+        theme.isDark
+            ? Color(red: 27/255, green: 31/255, blue: 39/255).opacity(0.94)
+            : Color(red: 250/255, green: 247/255, blue: 242/255).opacity(0.97)
+    }
+
+    private var cover: Color {
+        theme.isDark
+            ? Color(red: 19/255, green: 23/255, blue: 31/255).opacity(0.97)
+            : Color(red: 91/255, green: 79/255, blue: 84/255).opacity(0.94)
+    }
 
     private static let stamp: DateFormatter = {
         let f = DateFormatter()
@@ -3264,47 +3278,89 @@ private struct NativeWallView: View {
     }()
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                Text("小黑屋")
-                    .font(.system(size: 17, weight: .semibold, design: .serif))
-                    .foregroundColor(theme.text)
-                    .padding(.top, 12)
-
-                Text("写进去就钉死，改不了删不了。锁着的你只看得见有几道，看不见刻的什么。到日子自己裂开。")
-                    .font(.system(size: 12))
-                    .foregroundColor(theme.textDim)
-                    .lineSpacing(3)
-                    .padding(11)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .foyerCard(theme)
-
-                HStack(spacing: 8) {
-                    statChip("\(model.locked)", "道锁着")
-                    statChip("\(model.opened)", "道开了")
-                    Text(model.chainOK ? "链完好" : "链断了")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(model.chainOK ? theme.fyAccent : Color(red: 0.82, green: 0.38, blue: 0.32))
-                        .padding(.horizontal, 11).padding(.vertical, 7)
-                        .foyerCard(theme)
-                }
-
+        GeometryReader { geo in
+            VStack(spacing: 10) {
                 if model.loading {
                     centerNote("开门中…")
                 } else if !model.error.isEmpty {
                     centerNote(model.error)
-                } else if model.entries.isEmpty {
-                    centerNote("墙还是空的\n他还没开始刻")
                 } else {
-                    ForEach(model.entries) { entry in
-                        entryCard(entry)
+                    TabView(selection: $page) {
+                        coverPage
+                            .tag(0)
+                        ForEach(Array(model.entries.enumerated()), id: \.element.id) { index, entry in
+                            entryPage(entry)
+                                .tag(index + 1)
+                        }
                     }
+                    .tabViewStyle(.page(indexDisplayMode: .never))
+                    .frame(height: max(360, geo.size.height - 58))
+
+                    HStack(spacing: 8) {
+                        Rectangle().fill(theme.fyBorder).frame(width: 28, height: 1)
+                        Text(page == 0 ? "封面" : "\(page) / \(model.entries.count)")
+                            .font(.system(size: 10.5, design: .monospaced))
+                            .foregroundColor(theme.textDim)
+                        Rectangle().fill(theme.fyBorder).frame(width: 28, height: 1)
+                    }
+                    .frame(height: 20)
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 28)
+            .padding(.horizontal, 14)
+            .padding(.top, 10)
+            .padding(.bottom, 12)
         }
         .task { await model.load() }
+    }
+
+    private var coverPage: some View {
+        VStack(spacing: 0) {
+            Spacer()
+            Image(systemName: "lock.rectangle.stack")
+                .font(.system(size: 23, weight: .light))
+                .foregroundColor(Color.white.opacity(0.72))
+                .padding(.bottom, 22)
+            Text("小黑屋")
+                .font(.system(size: 28, weight: .medium, design: .serif))
+                .tracking(5)
+                .foregroundColor(.white.opacity(0.92))
+            Text("写给时间保管的悄悄话")
+                .font(.system(size: 11, design: .serif))
+                .tracking(2)
+                .foregroundColor(.white.opacity(0.48))
+                .padding(.top, 10)
+            if model.entries.isEmpty {
+                Text("还没有落笔")
+                    .font(.system(size: 11, design: .serif))
+                    .foregroundColor(.white.opacity(0.38))
+                    .padding(.top, 28)
+            }
+            Spacer()
+            HStack(spacing: 18) {
+                coverStat("\(model.locked)", "道锁着")
+                coverStat("\(model.opened)", "道开了")
+                coverStat(model.chainOK ? "完整" : "断裂", "时间链")
+            }
+            .padding(.bottom, 28)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(cover)
+        .overlay(alignment: .leading) {
+            LinearGradient(colors: [.black.opacity(0.32), .clear], startPoint: .leading, endPoint: .trailing)
+                .frame(width: 24)
+        }
+        .overlay(RoundedRectangle(cornerRadius: 7).stroke(Color.white.opacity(0.13), lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 7))
+        .shadow(color: theme.fyShadow, radius: 16, y: 8)
+        .padding(.vertical, 6)
+    }
+
+    private func coverStat(_ value: String, _ label: String) -> some View {
+        VStack(spacing: 3) {
+            Text(value).font(.system(size: 12, weight: .medium, design: .serif))
+            Text(label).font(.system(size: 9.5))
+        }
+        .foregroundColor(.white.opacity(0.58))
     }
 
     private func statChip(_ num: String, _ label: String) -> some View {
@@ -3326,58 +3382,84 @@ private struct NativeWallView: View {
             .padding(.vertical, 44)
     }
 
-    @ViewBuilder
-    private func entryCard(_ e: WallEntry) -> some View {
-        VStack(alignment: .leading, spacing: 9) {
-            WallMarks(
-                count: e.marks,
-                seed: e.id,
-                color: e.isOpen ? theme.fyAccent.opacity(0.55) : theme.text.opacity(0.28)
-            )
-
-            HStack(spacing: 8) {
-                Text(e.createdAt.map { Self.stamp.string(from: $0) } ?? "--")
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundColor(theme.textDim)
-                if e.isOpen {
-                    if !e.mood.isEmpty {
+    private func entryPage(_ e: WallEntry) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text(e.createdAt.map { Self.stamp.string(from: $0) } ?? "--")
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundColor(theme.textDim)
+                    Spacer()
+                    if e.isOpen, !e.mood.isEmpty {
                         Text(e.mood)
-                            .font(.system(size: 10.5))
-                            .padding(.horizontal, 7).padding(.vertical, 1.5)
-                            .background(theme.fyAccent.opacity(0.16), in: Capsule())
+                            .font(.system(size: 10.5, design: .serif))
+                            .padding(.horizontal, 8).padding(.vertical, 3)
+                            .background(theme.fyAccent.opacity(0.13), in: Capsule())
                             .foregroundColor(theme.fyAccent)
                     }
+                }
+
+                WallMarks(
+                    count: e.marks,
+                    seed: e.id,
+                    color: e.isOpen ? theme.fyAccent.opacity(0.48) : theme.text.opacity(0.24)
+                )
+
+                if e.isOpen {
+                    Text(e.body)
+                        .font(.system(size: 15, design: .serif))
+                        .foregroundColor(theme.text)
+                        .lineSpacing(7)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.top, 5)
                 } else {
                     Text(lockLine(e))
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(theme.fyAccent.opacity(0.9))
-                }
-                Spacer(minLength: 0)
-            }
+                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .foregroundColor(theme.fyAccent)
 
-            if e.isOpen {
-                Text(e.body)
-                    .font(.system(size: 14.5))
-                    .foregroundColor(theme.text)
-                    .lineSpacing(4)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            } else {
-                HStack(spacing: 7) {
-                    Text("▪▪▪▪▪▪▪▪▪▪")
-                        .font(.system(size: 11))
-                        .tracking(3)
-                        .foregroundColor(theme.textLight.opacity(0.55))
-                    Text("锁着")
-                        .font(.system(size: 11.5))
-                        .tracking(1.5)
-                        .foregroundColor(theme.textDim)
+                    Spacer(minLength: 35)
+                    VStack(spacing: 13) {
+                        Image(systemName: revealedLocks.contains(e.id) ? "lock.open" : "lock")
+                            .font(.system(size: 22, weight: .light))
+                            .foregroundColor(theme.textLight)
+                        if revealedLocks.contains(e.id) {
+                            Text("这一页已经写下，\n只是还没到与你见面的时候。")
+                                .font(.system(size: 14, design: .serif))
+                                .foregroundColor(theme.text)
+                                .multilineTextAlignment(.center)
+                                .lineSpacing(6)
+                                .transition(.opacity)
+                            Text("到时自会翻开。")
+                                .font(.system(size: 11, design: .serif))
+                                .foregroundColor(theme.textDim)
+                        } else {
+                            Text("轻触这一页")
+                                .font(.system(size: 11))
+                                .foregroundColor(theme.textDim)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    Spacer(minLength: 35)
                 }
             }
+            .padding(.init(top: 24, leading: 24, bottom: 30, trailing: 22))
+            .frame(maxWidth: .infinity, minHeight: 440, alignment: .topLeading)
         }
-        .padding(13)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .foyerCard(theme)
-        .opacity(e.isOpen ? 1 : 0.82)
+        .scrollIndicators(.hidden)
+        .background(paper)
+        .overlay(alignment: .leading) {
+            LinearGradient(colors: [.black.opacity(theme.isDark ? 0.22 : 0.08), .clear], startPoint: .leading, endPoint: .trailing)
+                .frame(width: 18)
+        }
+        .overlay(RoundedRectangle(cornerRadius: 5).stroke(theme.fyBorder, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 5))
+        .shadow(color: theme.fyShadow, radius: 13, y: 7)
+        .padding(.vertical, 6)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            guard !e.isOpen else { return }
+            withAnimation(.easeInOut(duration: 0.25)) { revealedLocks.insert(e.id) }
+        }
     }
 
     private func lockLine(_ e: WallEntry) -> String {
