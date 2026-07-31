@@ -1081,7 +1081,7 @@ struct PhotoStackMessageView: View {
     let messageID: String
     let onOpen: ([URL], Binding<Int>) -> Void
 
-    private let cardSize = CGSize(width: 220, height: 276)
+    private let cardSize = CGSize(width: 143, height: 179)
     @State private var currentIndex = 0
     @State private var dragX: CGFloat = 0
     @State private var isHorizontalDrag = false
@@ -1100,7 +1100,7 @@ struct PhotoStackMessageView: View {
                         .offset(x: slot == 0 ? dragX : 0)
                         .rotationEffect(.degrees(slot == 0
                             ? Double(dragX / cardSize.width) * 4 : 0))
-                        .contentShape(RoundedRectangle(cornerRadius: 21, style: .continuous))
+                        .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                         .onTapGesture {
                             guard !isHorizontalDrag && !isAnimatingOut else { return }
                             onOpen(urls, Binding(
@@ -1150,7 +1150,7 @@ struct PhotoStackMessageView: View {
             }
         }
         .frame(width: cardSize.width, height: cardSize.height)
-        .clipShape(RoundedRectangle(cornerRadius: 21, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
     private func layerOffset(_ slot: Int) -> CGSize {
