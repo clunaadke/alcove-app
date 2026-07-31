@@ -199,6 +199,7 @@ struct RoundtableView: View {
     @State private var quotedText: String?
     @State private var paginationReady = false
     @State private var preservingHistoryPosition = false
+    @State private var observedTailID: Int?
     @State private var showConsole = false
     @State private var showSettings = false
     @State private var inputBarHeight: CGFloat = 90
@@ -503,7 +504,16 @@ struct RoundtableView: View {
                 }
             }
             .onChange(of: store.messages) { _ in
-                if !preservingHistoryPosition {
+                let newTailID = store.messages.last?.id
+                let oldTailID = observedTailID
+                observedTailID = newTailID
+
+                // 只有初次拿到消息，或尾部确实追加了更大的 id 才滚到底。
+                // 头插历史、删除任意气泡、刷新已有记录都保持当前位置。
+                let appendedAtTail = oldTailID == nil
+                    ? newTailID != nil
+                    : (newTailID.map { $0 > oldTailID! } ?? false)
+                if appendedAtTail && !preservingHistoryPosition {
                     scrollToRoundtableTail(proxy, delays: [0, 0.12, 0.35], animated: true)
                 }
             }
