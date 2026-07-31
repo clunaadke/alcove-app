@@ -1124,7 +1124,9 @@ private struct InputBarShape: Shape {
     }
 }
 
-private struct InputBarHeightKey: PreferenceKey {
+// 0731 去掉 private：圆桌那个悬浮输入框也要用它量高度，
+// private 挡住了跨文件访问，b1fe6df 就是编译在这儿炸的。
+struct InputBarHeightKey: PreferenceKey {
     static var defaultValue: CGFloat = 90
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = nextValue()
