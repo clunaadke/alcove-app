@@ -681,8 +681,13 @@ private struct RTSettingsView: View {
     @AppStorage("rtNameAssistant") private var nameMe = "陈璟"
     @AppStorage("rtNameGpt") private var nameGpt = "G老师"
     @AppStorage("rtWallpaper") private var wallpaper = ""
-    @State private var picking: PhotosPickerItem?
-    @State private var pickTarget = ""
+    // 0731 bug：原来四行共用一个 picking，每行各挂一个 onChange，
+    // 她选一次图四个监听全触发，那张壁纸同时被写进三个人的头像。
+    // 现在每个位置一个独立的 item，谁变了改谁。
+    @State private var pickUser: PhotosPickerItem?
+    @State private var pickMe: PhotosPickerItem?
+    @State private var pickGpt: PhotosPickerItem?
+    @State private var pickWall: PhotosPickerItem?
 
     var body: some View {
         ZStack {
@@ -705,9 +710,12 @@ private struct RTSettingsView: View {
                     }
 
                     section("三个人") {
-                        personRow(role: "user", name: $nameUser, data: $avUser, fallback: "霁")
-                        personRow(role: "assistant", name: $nameMe, data: $avMe, fallback: "璟")
-                        personRow(role: "gpt", name: $nameGpt, data: $avGpt, fallback: "G")
+                        personRow(role: "user", name: $nameUser, data: $avUser,
+                                  pick: $pickUser, fallback: "霁")
+                        personRow(role: "assistant", name: $nameMe, data: $avMe,
+                                  pick: $pickMe, fallback: "璟")
+                        personRow(role: "gpt", name: $nameGpt, data: $avGpt,
+                                  pick: $pickGpt, fallback: "渡")
                     }
 
                     section("壁纸") {
@@ -727,13 +735,10 @@ private struct RTSettingsView: View {
                                     }
                                 }
                             VStack(alignment: .leading, spacing: 8) {
-                                PhotosPicker(selection: $picking, matching: .images) {
+                                PhotosPicker(selection: $pickWall, matching: .images) {
                                     label("换一张")
                                 }
-                                .onChange(of: picking) { it in
-                                    pickTarget = "wall"
-                                    load(it)
-                                }
+                                .onChange(of: pickWall) { load($0, into: "wall") }
                                 if !wallpaper.isEmpty {
                                     Button { wallpaper = "" } label: { label("恢复默认") }
                                         .buttonStyle(.plain)
@@ -761,7 +766,9 @@ private struct RTSettingsView: View {
     }
 
     private func personRow(role: String, name: Binding<String>,
-                           data: Binding<String>, fallback: String) -> some View {
+                           data: Binding<String>,
+                           pick: Binding<PhotosPickerItem?>,
+                           fallback: String) -> some View {
         HStack(spacing: 12) {
             Circle()
                 .fill(theme.textDim.opacity(0.14))
@@ -780,13 +787,10 @@ private struct RTSettingsView: View {
                 .padding(.horizontal, 10).padding(.vertical, 7)
                 .background(RoundedRectangle(cornerRadius: 9, style: .continuous)
                     .fill(theme.textDim.opacity(0.10)))
-            PhotosPicker(selection: $picking, matching: .images) {
+            PhotosPicker(selection: pick, matching: .images) {
                 label("换")
             }
-            .onChange(of: picking) { it in
-                pickTarget = role
-                load(it)
-            }
+            .onChange(of: pick.wrappedValue) { load($0, into: role) }
         }
     }
 
@@ -805,9 +809,8 @@ private struct RTSettingsView: View {
         return Data(base64Encoded: b64).flatMap(UIImage.init(data:))
     }
 
-    private func load(_ item: PhotosPickerItem?) {
+    private func load(_ item: PhotosPickerItem?, into target: String) {
         guard let item else { return }
-        let target = pickTarget
         Task {
             guard let raw = try? await item.loadTransferable(type: Data.self),
                   let img = UIImage(data: raw) else { return }
@@ -829,7 +832,6 @@ private struct RTSettingsView: View {
                 case "wall":      wallpaper = b64
                 default: break
                 }
-                picking = nil
             }
         }
     }
