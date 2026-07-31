@@ -451,55 +451,17 @@ struct RoundtableView: View {
                     }.padding(.init(top: 8, leading: 12, bottom: 4, trailing: 12))
                 }
             }
-            if recorder.isRecording {
-                HStack(spacing: 10) {
-                    Circle().fill(.red).frame(width: 8, height: 8)
-                    Text(String(format: "%d:%02d", recorder.seconds / 60, recorder.seconds % 60)).monospacedDigit()
-                    Text("录音中…").foregroundColor(theme.textDim)
-                    Spacer()
-                }.padding(.init(top: 16, leading: 14, bottom: 4, trailing: 14))
-            } else { TextField(
-                "",
-                text: $draft,
-                prompt: Text("ring the chime …")
-                    .font(.system(size: 15.5, design: .serif))
-                    .italic(),
-                axis: .vertical
-            )
-            .focused($focused)
-            .lineLimit(1...5)
-            .font(.system(size: 15.5))
-            .tint(Color(uiColor: .systemGray3))
-            .padding(.init(top: 16, leading: 14, bottom: 12, trailing: 14))
-            .contentShape(Rectangle())
-            }
+            if recorder.isRecording { recordingStatus } else { draftField }
 
             HStack(spacing: 2) {
                 if recorder.isRecording {
-                    Button { recorder.cancel() } label: { Image(systemName: "xmark").foregroundColor(theme.textDim).frame(width: 32, height: 32) }
+                    cancelRecordingButton
                     Spacer()
                 } else {
-                    Menu {
-                        Button { showPhotoPicker = true } label: { Label("从相册选择", systemImage: "photo.on.rectangle") }
-                        Button { showCamera = true } label: { Label("拍照或录像", systemImage: "camera") }
-                        Button { showDocPicker = true } label: { Label("选取文件", systemImage: "doc") }
-                    } label: { Image(systemName: "paperclip").foregroundColor(theme.textDim).frame(width: 32, height: 32) }
-                    Button { showStickers = true } label: { Image(systemName: "face.smiling").foregroundColor(theme.textDim).frame(width: 32, height: 32) }
-                    Button { recorder.start() } label: { Image(systemName: "mic").foregroundColor(theme.textDim).frame(width: 32, height: 32) }
+                    attachmentControls
                     Spacer()
                 }
-                Button {
-                    if recorder.isRecording {
-                        if let data = recorder.stopAndTake() { Task { await store.upload(data, filename: "voice_\(Int(Date().timeIntervalSince1970 * 1000)).m4a") } }
-                    } else {
-                        let t = draft.trimmingCharacters(in: .whitespacesAndNewlines); draft = ""
-                        if pendingImages.isEmpty { Task { await store.send(t) } }
-                        else {
-                            let images = pendingImages.map(\.jpeg); pendingImages = []
-                            Task { for (index, data) in images.enumerated() { await store.upload(data, filename: "IMG_\(Int(Date().timeIntervalSince1970))_\(index).jpg", text: index == 0 ? t : "", triggerReply: index == images.count - 1) } }
-                        }
-                    }
-                } label: {
+                Button(action: sendComposerContent) {
                     Image(systemName: "paperplane.fill")
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundColor(.white)
@@ -531,6 +493,80 @@ struct RoundtableView: View {
             Color.clear.preference(key: InputBarHeightKey.self, value: geo.size.height)
         })
         .onPreferenceChange(InputBarHeightKey.self) { inputBarHeight = $0 }
+    }
+
+    private var draftField: some View {
+        TextField("", text: $draft,
+                  prompt: Text("ring the chime …")
+                    .font(.system(size: 15.5, design: .serif)).italic(),
+                  axis: .vertical)
+            .focused($focused)
+            .lineLimit(1...5)
+            .font(.system(size: 15.5))
+            .tint(Color(uiColor: .systemGray3))
+            .padding(.init(top: 16, leading: 14, bottom: 12, trailing: 14))
+            .contentShape(Rectangle())
+    }
+
+    private var recordingStatus: some View {
+        HStack(spacing: 10) {
+            Circle().fill(Color.red).frame(width: 8, height: 8)
+            Text(String(format: "%d:%02d", recorder.seconds / 60, recorder.seconds % 60))
+                .monospacedDigit()
+            Text("录音中…").foregroundColor(theme.textDim)
+            Spacer()
+        }
+        .padding(.init(top: 16, leading: 14, bottom: 4, trailing: 14))
+    }
+
+    private var cancelRecordingButton: some View {
+        Button { recorder.cancel() } label: {
+            Image(systemName: "xmark").foregroundColor(theme.textDim).frame(width: 32, height: 32)
+        }
+    }
+
+    private var attachmentControls: some View {
+        Group {
+            Menu {
+                Button { showPhotoPicker = true } label: { Label("从相册选择", systemImage: "photo.on.rectangle") }
+                Button { showCamera = true } label: { Label("拍照或录像", systemImage: "camera") }
+                Button { showDocPicker = true } label: { Label("选取文件", systemImage: "doc") }
+            } label: { composerIcon("paperclip") }
+            Button { showStickers = true } label: { composerIcon("face.smiling") }
+            Button { recorder.start() } label: { composerIcon("mic") }
+        }
+    }
+
+    private func composerIcon(_ name: String) -> some View {
+        Image(systemName: name).foregroundColor(theme.textDim).frame(width: 32, height: 32)
+    }
+
+    private func sendComposerContent() {
+        if recorder.isRecording {
+            guard let data = recorder.stopAndTake() else { return }
+            let stamp = Int(Date().timeIntervalSince1970 * 1000)
+            Task { await store.upload(data, filename: "voice_\(stamp).m4a") }
+            return
+        }
+
+        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        draft = ""
+        guard !pendingImages.isEmpty else {
+            Task { await store.send(text) }
+            return
+        }
+
+        let images: [Data] = pendingImages.map { $0.jpeg }
+        pendingImages = []
+        let stamp = Int(Date().timeIntervalSince1970)
+        Task {
+            for (index, data) in images.enumerated() {
+                let filename = "IMG_\(stamp)_\(index).jpg"
+                let caption = index == 0 ? text : ""
+                let isLast = index == images.count - 1
+                await store.upload(data, filename: filename, text: caption, triggerReply: isLast)
+            }
+        }
     }
 
     private var canSend: Bool {
