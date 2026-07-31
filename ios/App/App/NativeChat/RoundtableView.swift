@@ -208,12 +208,6 @@ struct RoundtableView: View {
         return ChatWallpaperDescriptor(source: .gradient(theme.wallGradient))
     }
 
-    private var safeBottom: CGFloat {
-        UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .first?.windows.first?.safeAreaInsets.bottom ?? 0
-    }
-
     var body: some View {
         GeometryReader { root in
             ZStack {
@@ -228,8 +222,6 @@ struct RoundtableView: View {
 
                 composer
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-                    .padding(.bottom, safeBottom)
-                    .ignoresSafeArea(.container, edges: .bottom)
             }
             .coordinateSpace(name: "alcoveChatRoot")
             .environment(\.chatWallpaperDescriptor, wallpaperDescriptor)
@@ -437,6 +429,13 @@ struct RoundtableView: View {
             }
             .onChange(of: store.messages) { _ in
                 scrollToRoundtableTail(proxy, delays: [0, 0.12, 0.35], animated: true)
+            }
+            .onChange(of: focused) { _ in
+                // 跟主聊天页一样：键盘改变可视区域后重新把尾部锚到输入框上方。
+                scrollToRoundtableTail(proxy, delays: [0.05, 0.25, 0.5], animated: true)
+            }
+            .onChange(of: inputBarHeight) { _ in
+                scrollToRoundtableTail(proxy, delays: [0.05, 0.3], animated: true)
             }
         }
     }
