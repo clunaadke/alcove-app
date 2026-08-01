@@ -146,14 +146,14 @@ struct RootView: View {
                     HStack(spacing: 4) {
                         Text("thinking quietly")
                             .font(.system(size: 13))
-                            .foregroundColor(Color(red: 0.94, green: 0.47, blue: 0.65))
+                            .foregroundColor(theme.textDim)
                         if switchingThinking {
                             ProgressView().controlSize(.mini).scaleEffect(0.72)
                                 .frame(width: 24, height: 18)
                         } else {
                             Capsule()
-                                .fill(thinkingEnabled ? Color(red: 0.94, green: 0.47, blue: 0.65)
-                                                      : textDim.opacity(0.25))
+                                .fill(thinkingEnabled ? theme.text.opacity(theme.isDark ? 0.78 : 0.58)
+                                                      : textDim.opacity(0.22))
                                 .frame(width: 24, height: 14)
                                 .overlay(alignment: thinkingEnabled ? .trailing : .leading) {
                                     Circle().fill(.white).frame(width: 10, height: 10).padding(2)
@@ -241,7 +241,24 @@ struct RootView: View {
                   let screen = try? await AlcoveAPI.terminalCapture() else { return }
             let tail = screen.components(separatedBy: .newlines).suffix(12).joined(separator: "\n")
             guard tail.contains("❯") && !tail.localizedCaseInsensitiveContains("esc to interrupt") else { return }
-            do { try await AlcoveAPI.terminalSendKey("M-t") } catch { return }
+            do {
+                try await AlcoveAPI.terminalSendKey("M-t")
+                try? await Task.sleep(nanoseconds: 350_000_000)
+                // The current Claude Code opens a picker rather than toggling
+                // directly. It always focuses Enabled first.
+                if oldValue { try await AlcoveAPI.terminalSendKey("Down") }
+                try await AlcoveAPI.terminalSendKey("Enter")
+                // Mid-conversation changes add a second confirmation screen.
+                // Wait for it instead of assuming the terminal renders instantly.
+                for _ in 0..<6 {
+                    try? await Task.sleep(nanoseconds: 250_000_000)
+                    if let confirm = try? await AlcoveAPI.terminalCapture(lines: 20),
+                       confirm.contains("Do you want to proceed?") {
+                        try await AlcoveAPI.terminalSendKey("Enter")
+                        break
+                    }
+                }
+            } catch { return }
             for _ in 0..<12 {
                 try? await Task.sleep(nanoseconds: 600_000_000)
                 if let screen = try? await AlcoveAPI.terminalCapture(lines: 12),
