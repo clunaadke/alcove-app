@@ -21,6 +21,9 @@ struct ChatView: View {
     @State private var inputBarHeight: CGFloat = 90
     @State private var scrollKick = 0
     @State private var showMusicPlayer = false
+    @State private var showModelPicker = false
+    @State private var switchingModel = false
+    @State private var modelSwitchError = ""
     @ObservedObject private var music = MusicModel.shared
     @FocusState private var inputFocused: Bool
     @Environment(\.scenePhase) private var scenePhase
@@ -507,10 +510,29 @@ struct ChatView: View {
                                 .frame(width: 32, height: 32)
                         }
                         if !store.modelLabel.isEmpty {
-                            Text(store.modelLabel)
-                                .font(.system(size: 12))
+                            Button {
+                                withAnimation(.spring(response: 0.32, dampingFraction: 0.78)) {
+                                    showModelPicker.toggle()
+                                }
+                            } label: {
+                                HStack(spacing: 4) {
+                                    if switchingModel { ProgressView().controlSize(.mini) }
+                                    Text(store.modelLabel)
+                                    Image(systemName: "chevron.up.chevron.down").font(.system(size: 8))
+                                }
+                                .font(.system(size: 11, weight: .medium))
                                 .foregroundColor(theme.textLight)
-                                .padding(.leading, 4)
+                                .padding(.horizontal, 9).frame(height: 27)
+                                .background(theme.glassTint.opacity(theme.isDark ? 0.72 : 0.92),
+                                            in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+                                .overlay(RoundedRectangle(cornerRadius: 11).stroke(theme.glassBorder, lineWidth: 1))
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(switchingModel)
+                            .popover(isPresented: $showModelPicker, arrowEdge: .bottom) {
+                                modelPickerCard
+                                    .presentationCompactAdaptation(.popover)
+                            }
                         }
                         Spacer()
                         // 攒气泡：空行入库不触发回复（她的 hold 功能）
@@ -578,6 +600,89 @@ struct ChatView: View {
             Color.clear.preference(key: InputBarHeightKey.self, value: geo.size.height)
         })
         .onPreferenceChange(InputBarHeightKey.self) { inputBarHeight = $0 }
+    }
+
+    private struct ClaudeModelOption: Identifiable {
+        let id: String
+        let label: String
+        let note: String
+    }
+
+    private var claudeModels: [ClaudeModelOption] {[
+        .init(id: "claude-fable-5", label: "Fable 5", note: "需要 usage credits"),
+        .init(id: "claude-opus-5", label: "Opus 5", note: "最强推理"),
+        .init(id: "claude-sonnet-5", label: "Sonnet 5", note: "日常更快"),
+        .init(id: "claude-haiku-4-5", label: "Haiku 4.5", note: "最快"),
+        .init(id: "claude-opus-4-8", label: "Opus 4.8", note: ""),
+        .init(id: "claude-opus-4-7", label: "Opus 4.7", note: ""),
+        .init(id: "claude-opus-4-6", label: "Opus 4.6", note: ""),
+        .init(id: "claude-sonnet-4-6", label: "Sonnet 4.6", note: "")
+    ]}
+
+    private var modelPickerCard: some View {
+        VStack(spacing: 0) {
+            ForEach(Array(claudeModels.enumerated()), id: \.element.id) { index, option in
+                Button { switchClaudeModel(option) } label: {
+                    HStack(spacing: 10) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(option.label).font(.system(size: 13, weight: .medium))
+                            if !option.note.isEmpty {
+                                Text(option.note).font(.system(size: 9)).foregroundColor(theme.textDim)
+                            }
+                        }
+                        Spacer()
+                        if store.modelLabel == option.label {
+                            Image(systemName: "checkmark").font(.system(size: 12, weight: .semibold))
+                                .foregroundColor(theme.sendTop)
+                        }
+                    }.padding(.horizontal, 13).frame(minHeight: option.note.isEmpty ? 38 : 46)
+                }.buttonStyle(.plain)
+                if index < claudeModels.count - 1 { Divider().opacity(0.45).padding(.horizontal, 10) }
+            }
+            if !modelSwitchError.isEmpty {
+                Text(modelSwitchError).font(.system(size: 10)).foregroundColor(.red)
+                    .padding(.horizontal, 12).padding(.vertical, 8)
+            }
+        }
+        .foregroundColor(theme.text)
+        .frame(width: 238)
+        .padding(.vertical, 6)
+        .background(theme.isDark ? Color.black.opacity(0.48) : Color.white.opacity(0.58))
+    }
+
+    private func switchClaudeModel(_ option: ClaudeModelOption) {
+        guard !switchingModel, store.modelLabel != option.label else { showModelPicker = false; return }
+        guard !store.isTyping, store.live?.active != true else {
+            modelSwitchError = "他还在说话  等他说完再换"
+            return
+        }
+        switchingModel = true
+        modelSwitchError = ""
+        Task {
+            do {
+                let screen = try await AlcoveAPI.terminalCapture()
+                let tail = screen.components(separatedBy: .newlines).suffix(12).joined(separator: "\n")
+                guard tail.contains("❯") && !tail.localizedCaseInsensitiveContains("esc to interrupt") else {
+                    throw NSError(domain: "AlcoveModel", code: 1,
+                                  userInfo: [NSLocalizedDescriptionKey: "他还没空下来"])
+                }
+                try await AlcoveAPI.terminalSend("/model \(option.id)")
+                var confirmed = false
+                for _ in 0..<6 {
+                    try? await Task.sleep(nanoseconds: 700_000_000)
+                    if (try? await AlcoveAPI.modelLabel()) == option.label { confirmed = true; break }
+                }
+                guard confirmed else {
+                    throw NSError(domain: "AlcoveModel", code: 2,
+                                  userInfo: [NSLocalizedDescriptionKey: "没收到切换成功回执"])
+                }
+                store.modelLabel = option.label
+                showModelPicker = false
+            } catch {
+                modelSwitchError = error.localizedDescription
+            }
+            switchingModel = false
+        }
     }
 
     // MARK: 表情面板（她下午做的 Stickers：陈霁/陈璟 tab + 上传 + 原比例网格）

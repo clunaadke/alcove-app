@@ -130,6 +130,19 @@ enum AlcoveAPI {
         return obj["label"] as? String ?? ""
     }
 
+    static func terminalCapture(session: String = "main", lines: Int = 30) async throws -> String {
+        let obj = try await getJSON("/api/terminal/capture?session=\(session)&lines=\(lines)")
+        guard obj["ok"] as? Bool == true else { throw URLError(.cannotConnectToHost) }
+        return obj["content"] as? String ?? ""
+    }
+
+    static func terminalSend(_ text: String, session: String = "main") async throws {
+        let obj = try await postJSON("/api/terminal/send", body: [
+            "session": session, "keys": text, "enter": true
+        ])
+        guard obj["ok"] as? Bool == true else { throw URLError(.cannotWriteToFile) }
+    }
+
     // 0730 实时预览：他这一秒在想什么/说了什么/在跑什么工具
     static func liveStream() async throws -> LiveState {
         let obj = try await getJSON("/api/stream/current")
