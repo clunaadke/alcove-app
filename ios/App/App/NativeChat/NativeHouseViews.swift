@@ -1119,6 +1119,20 @@ struct MusicLyric: Identifiable, Equatable {
     let translation: String?
 }
 
+struct MusicPlaylist: Identifiable, Equatable {
+    let id: String
+    let name: String
+    let cover: String
+    let count: Int
+
+    init(_ json: [String: Any]) {
+        id = json.string("id")
+        name = json.string("name")
+        cover = MusicSong.secureURL(json.string("coverImgUrl", "picUrl"))
+        count = json.int("trackCount")
+    }
+}
+
 @MainActor
 final class MusicModel: ObservableObject {
     static let shared = MusicModel()
@@ -1131,6 +1145,10 @@ final class MusicModel: ObservableObject {
     @Published var duration: Double = 0
     @Published var lyrics: [MusicLyric] = []
     @Published var lyricsLoading = false
+    @Published var playlists: [MusicPlaylist] = []
+    @Published var recommended: [MusicPlaylist] = []
+    @Published var playlistSongs: [MusicSong] = []
+    @Published var homeLoading = false
     private var player: AVPlayer?
     private var timeObserver: Any?
     private var playHistory: [MusicSong] = []
@@ -1160,13 +1178,21 @@ final class MusicModel: ObservableObject {
             message = "这首暂时放不了"
             return
         }
-        let playable = MusicSong.secureURL(raw)
-        guard let url = URL(string: playable) else {
+        let url = raw.hasPrefix("/") ? AlcoveAPI.fullURL(raw)
+            : URL(string: MusicSong.secureURL(raw))
+        guard let url else {
             message = "播放地址坏了"
             return
         }
         message = ""
         cleanup()
+        do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.playback, mode: .default, options: [])
+            try session.setActive(true)
+        } catch {
+            message = "音频通道没打开"
+        }
         player = AVPlayer(url: url)
         player?.play()
         nowPlaying = song
@@ -1198,6 +1224,28 @@ final class MusicModel: ObservableObject {
         }
         await loadLyrics(song.id)
         await reportNowPlaying()
+    }
+
+    func loadHome() async {
+        guard playlists.isEmpty else { return }
+        homeLoading = true
+        defer { homeLoading = false }
+        async let mine = try? NativeHouseAPI.object("/api/music/user/playlist?uid=1441382791&limit=50")
+        async let recs = try? NativeHouseAPI.object("/api/music/recommend/resource")
+        let (myObject, recObject) = await (mine, recs)
+        playlists = (myObject?["playlist"] as? [[String: Any]] ?? []).map(MusicPlaylist.init)
+        recommended = (recObject?["recommend"] as? [[String: Any]] ?? []).map(MusicPlaylist.init)
+    }
+
+    func loadPlaylist(_ playlist: MusicPlaylist) async {
+        loading = true
+        defer { loading = false }
+        guard let obj = try? await NativeHouseAPI.object(
+            "/api/music/playlist/track/all?id=\(playlist.id)&limit=500") else {
+            playlistSongs = []; message = "歌单没拉下来"; return
+        }
+        playlistSongs = (obj["songs"] as? [[String: Any]] ?? []).map(MusicSong.init)
+        songs = playlistSongs
     }
 
     func toggle() {
@@ -1319,132 +1367,160 @@ final class MusicModel: ObservableObject {
 private struct NativeMusicView: View {
     @ObservedObject private var model = MusicModel.shared
     @State private var query = ""
+    @State private var selectedPlaylist: MusicPlaylist?
+    @State private var showPlayer = false
     @AppStorage("alcoveTheme") private var themeName = "haven"
     private var theme: AlcoveTheme { .panelNamed(themeName) }
 
     var body: some View {
         VStack(spacing: 0) {
-            FoyerPanelTitle(title: "Music", theme: theme)
-            HStack {
-                Image(systemName: "magnifyingglass").foregroundColor(theme.textLight)
-                TextField("搜索歌名或歌手", text: $query)
-                    .submitLabel(.search)
-                    .onSubmit { Task { await model.search(query) } }
-                if model.loading { ProgressView().controlSize(.small).tint(theme.fyAccent) }
-                else if !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    Button { Task { await model.search(query) } } label: {
-                        Image(systemName: "arrow.right.circle.fill")
-                            .font(.system(size: 19))
-                            .foregroundColor(theme.fyAccent)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(11)
-            .foyerCard(theme)
-            .padding(.horizontal, 16).padding(.top, 10)
-
-            ScrollView(showsIndicators: false) {
-                LazyVStack(spacing: 8) {
-                    ForEach(model.songs) { song in
-                        Button { Task { await model.play(song) } } label: {
-                            HStack(spacing: 10) {
-                                AsyncImage(url: URL(string: song.cover)) { image in
-                                    image.resizable().scaledToFill()
-                                } placeholder: { theme.fyCardSub }
-                                .frame(width: 44, height: 44)
-                                .clipShape(RoundedRectangle(cornerRadius: 9))
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(song.name).font(.system(size: 13)).lineLimit(1)
-                                    Text(song.artist).font(.system(size: 11))
-                                        .foregroundColor(theme.textDim)
-                                }
-                                Spacer()
-                                Image(systemName: model.nowPlaying == song && model.isPlaying
-                                      ? "waveform" : "play.fill")
-                                    .font(.system(size: 12))
-                                    .foregroundColor(theme.fyAccent)
-                            }
-                            .padding(10)
-                            .foyerCard(theme)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    if model.songs.isEmpty && !model.loading {
-                        Text(model.message.isEmpty ? "搜一首想听的歌" : model.message)
-                            .font(.system(size: 12))
-                            .foregroundColor(theme.textDim).padding(30)
-                    }
-                }
-                .padding(.top, 10)
-                .padding(.horizontal, 16)
-            }
-            if let song = model.nowPlaying {
-                VStack(spacing: 6) {
-                    HStack(spacing: 12) {
-                        AsyncImage(url: URL(string: song.cover)) { img in
-                            img.resizable().scaledToFill()
-                        } placeholder: { theme.fyCardSub }
-                        .frame(width: 40, height: 40)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(song.name).font(.system(size: 13, weight: .medium)).lineLimit(1)
-                            Text(song.artist).font(.system(size: 10))
-                                .foregroundColor(theme.textDim)
-                        }
-                        Spacer()
-                    }
-                    if model.duration > 0 {
-                        Slider(value: Binding(
-                            get: { model.progress },
-                            set: { model.seek(to: $0) }
-                        ), in: 0...model.duration)
-                        .tint(theme.fyAccent)
-                        HStack {
-                            Text(Self.fmt(model.progress))
-                                .font(.system(size: 9, design: .monospaced))
-                            Spacer()
-                            Text(Self.fmt(model.duration))
-                                .font(.system(size: 9, design: .monospaced))
-                        }
-                        .foregroundColor(theme.textLight)
-                    }
-                    HStack(spacing: 20) {
-                        Button { model.prev() } label: {
-                            Image(systemName: "backward.fill")
-                                .font(.system(size: 16))
-                                .foregroundColor(model.hasPrev ? theme.text : theme.textLight)
-                        }
-                        .disabled(!model.hasPrev)
-                        Button(action: model.toggle) {
-                            Image(systemName: model.isPlaying ? "pause.fill" : "play.fill")
-                                .font(.system(size: 16))
-                                .frame(width: 40, height: 40)
-                                .background(theme.fyAccent, in: Circle())
-                                .foregroundColor(.white)
-                        }
-                        Button { model.next() } label: {
-                            Image(systemName: "forward.fill")
-                                .font(.system(size: 16))
-                                .foregroundColor(model.hasNext ? theme.text : theme.textLight)
-                        }
-                        .disabled(!model.hasNext)
-                    }
-                }
-                .padding(12)
-                .foyerCard(theme)
-                .padding(.horizontal, 16)
-                .padding(.bottom, 14)
+            FoyerPanelTitle(title: selectedPlaylist?.name ?? "音乐", theme: theme)
+            searchBar
+            if let selectedPlaylist { playlistPage(selectedPlaylist) }
+            else if !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !model.songs.isEmpty {
+                songList(model.songs)
+            } else { homePage }
+            if model.nowPlaying != nil {
+                MusicMiniPlayer(model: model) { showPlayer = true }
+                    .padding(.horizontal, 14).padding(.bottom, 12)
             }
         }
         .foregroundColor(theme.text)
         .foyerPanel(theme)
         .padding(.horizontal, 12).padding(.top, 8)
+        .task { await model.loadHome() }
+        .sheet(isPresented: $showPlayer) {
+            MusicPlayerSheet(model: model)
+                .presentationDetents([.fraction(0.72)])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(.ultraThinMaterial)
+        }
     }
 
-    private static func fmt(_ s: Double) -> String {
-        let m = Int(s) / 60; let sec = Int(s) % 60
-        return String(format: "%d:%02d", m, sec)
+    private var searchBar: some View {
+        HStack {
+            if selectedPlaylist != nil {
+                Button { selectedPlaylist = nil; model.playlistSongs = [] } label: {
+                    Image(systemName: "chevron.left")
+                }.buttonStyle(.plain)
+            }
+            Image(systemName: "magnifyingglass").foregroundColor(theme.textLight)
+            TextField("搜索歌名或歌手", text: $query)
+                .submitLabel(.search)
+                .onSubmit { selectedPlaylist = nil; Task { await model.search(query) } }
+            if model.loading { ProgressView().controlSize(.small).tint(theme.fyAccent) }
+            else if !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Button { selectedPlaylist = nil; Task { await model.search(query) } } label: {
+                    Image(systemName: "arrow.right.circle.fill").font(.system(size: 19))
+                }.buttonStyle(.plain)
+            }
+        }.padding(11).foyerCard(theme).padding(.horizontal, 16).padding(.top, 10)
+    }
+
+    private var homePage: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 22) {
+                HStack(spacing: 13) {
+                    AsyncImage(url: URL(string: "https://p1.music.126.net/_D-Yb1jPhcxPfnp66P1uYA==/109951170625651054.jpg")) { image in
+                        image.resizable().scaledToFill()
+                    } placeholder: { theme.fyCardSub }
+                    .frame(width: 58, height: 58).clipShape(Circle())
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("hxhxhxxxxn").font(.system(size: 19, weight: .semibold))
+                        Text("网易云音乐 · 已连接").font(.system(size: 11)).foregroundColor(theme.textDim)
+                    }
+                    Spacer()
+                }.padding(14).foyerCard(theme)
+
+                if let liked = model.playlists.first {
+                    Button { open(liked) } label: {
+                        HStack(spacing: 13) {
+                            AsyncImage(url: URL(string: liked.cover)) { $0.resizable().scaledToFill() }
+                                placeholder: { theme.fyCardSub }
+                                .frame(width: 68, height: 68).clipShape(RoundedRectangle(cornerRadius: 12))
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text("我喜欢的音乐").font(.system(size: 17, weight: .semibold))
+                                Text("\(liked.count) 首").font(.system(size: 11)).foregroundColor(theme.textDim)
+                            }
+                            Spacer(); Image(systemName: "heart.fill").foregroundColor(theme.fyAccent)
+                        }.padding(12).foyerCard(theme)
+                    }.buttonStyle(.plain)
+                }
+
+                playlistSection("我的歌单", items: Array(model.playlists.dropFirst()))
+                playlistSection("为你推荐", items: model.recommended)
+            }.padding(.horizontal, 16).padding(.vertical, 14)
+        }
+        .overlay { if model.homeLoading { ProgressView().tint(theme.fyAccent) } }
+    }
+
+    private func playlistSection(_ title: String, items: [MusicPlaylist]) -> some View {
+        VStack(alignment: .leading, spacing: 11) {
+            Text(title).font(.system(size: 17, weight: .semibold))
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 14) {
+                ForEach(items) { playlist in
+                    Button { open(playlist) } label: {
+                        VStack(alignment: .leading, spacing: 6) {
+                            AsyncImage(url: URL(string: playlist.cover)) { $0.resizable().scaledToFill() }
+                                placeholder: { theme.fyCardSub }
+                                .aspectRatio(1, contentMode: .fit)
+                                .clipShape(RoundedRectangle(cornerRadius: 11))
+                            Text(playlist.name).font(.system(size: 11, weight: .medium)).lineLimit(2)
+                            Text("\(playlist.count) 首").font(.system(size: 9)).foregroundColor(theme.textDim)
+                        }
+                    }.buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
+    private func playlistPage(_ playlist: MusicPlaylist) -> some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 13) {
+                AsyncImage(url: URL(string: playlist.cover)) { $0.resizable().scaledToFill() }
+                    placeholder: { theme.fyCardSub }
+                    .frame(width: 82, height: 82).clipShape(RoundedRectangle(cornerRadius: 13))
+                VStack(alignment: .leading, spacing: 7) {
+                    Text(playlist.name).font(.system(size: 17, weight: .semibold)).lineLimit(2)
+                    Text("\(playlist.count) 首").font(.system(size: 11)).foregroundColor(theme.textDim)
+                    Button { if let first = model.playlistSongs.first { Task { await model.play(first) } } } label: {
+                        Label("播放全部", systemImage: "play.fill").font(.system(size: 11, weight: .medium))
+                    }.buttonStyle(.borderedProminent).tint(theme.fyAccent)
+                }; Spacer()
+            }.padding(14)
+            songList(model.playlistSongs)
+        }.overlay { if model.loading { ProgressView().tint(theme.fyAccent) } }
+    }
+
+    private func songList(_ songs: [MusicSong]) -> some View {
+        ScrollView(showsIndicators: false) {
+            LazyVStack(spacing: 5) {
+                ForEach(Array(songs.enumerated()), id: \.element.id) { index, song in
+                    Button { Task { await model.play(song) } } label: {
+                        HStack(spacing: 11) {
+                            Text("\(index + 1)").font(.system(size: 11, design: .monospaced))
+                                .foregroundColor(theme.textLight).frame(width: 24)
+                            AsyncImage(url: URL(string: song.cover)) { $0.resizable().scaledToFill() }
+                                placeholder: { theme.fyCardSub }
+                                .frame(width: 42, height: 42).clipShape(RoundedRectangle(cornerRadius: 8))
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(song.name).font(.system(size: 13, weight: .medium)).lineLimit(1)
+                                Text(song.artist).font(.system(size: 10)).foregroundColor(theme.textDim).lineLimit(1)
+                            }
+                            Spacer()
+                            Image(systemName: model.nowPlaying?.id == song.id && model.isPlaying ? "waveform" : "play.fill")
+                                .foregroundColor(theme.fyAccent)
+                        }.padding(.horizontal, 10).padding(.vertical, 6)
+                    }.buttonStyle(.plain)
+                }
+            }.padding(.horizontal, 14).padding(.vertical, 8)
+        }
+    }
+
+    private func open(_ playlist: MusicPlaylist) {
+        query = ""
+        selectedPlaylist = playlist
+        Task { await model.loadPlaylist(playlist) }
     }
 }
 
@@ -1542,13 +1618,22 @@ struct MusicPlayerSheet: View {
     private var theme: AlcoveTheme { .panelNamed(themeName) }
 
     var body: some View {
-        TabView {
-            playerPage
-            lyricPage
+        ZStack {
+            if let cover = model.nowPlaying?.cover {
+                AsyncImage(url: URL(string: cover)) { image in
+                    image.resizable().scaledToFill()
+                } placeholder: { theme.splashBg }
+                .blur(radius: 48).scaleEffect(1.3).opacity(0.42).ignoresSafeArea()
+            }
+            theme.splashBg.opacity(0.36).ignoresSafeArea()
+            TabView {
+                playerPage
+                lyricPage
+            }
+            .tabViewStyle(.page(indexDisplayMode: .always))
+            .padding(.top, 10)
         }
-        .tabViewStyle(.page(indexDisplayMode: .always))
         .foregroundColor(theme.text)
-        .padding(.top, 10)
     }
 
     private var playerPage: some View {
@@ -1558,7 +1643,9 @@ struct MusicPlayerSheet: View {
                     image.resizable().scaledToFill()
                 } placeholder: { theme.fyCardSub }
                 .frame(width: 230, height: 230).clipShape(Circle())
-                .overlay(Circle().stroke(theme.fyBorder, lineWidth: 1))
+                .padding(14)
+                .background(Circle().fill(.black.opacity(0.22)))
+                .overlay(Circle().stroke(.white.opacity(0.18), lineWidth: 1))
                 .shadow(color: .black.opacity(0.18), radius: 20, y: 10)
                 Text(song.name).font(.system(size: 20, weight: .semibold)).lineLimit(1)
                 Text(song.artist).font(.system(size: 13)).foregroundColor(theme.textDim)
