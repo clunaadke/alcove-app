@@ -1149,6 +1149,7 @@ final class MusicModel: ObservableObject {
     @Published var recommended: [MusicPlaylist] = []
     @Published var playlistSongs: [MusicSong] = []
     @Published var homeLoading = false
+    @Published var likedSongIDs: Set<String> = []
     private var player: AVPlayer?
     private var timeObserver: Any?
     private var playHistory: [MusicSong] = []
@@ -1232,9 +1233,30 @@ final class MusicModel: ObservableObject {
         defer { homeLoading = false }
         async let mine = try? NativeHouseAPI.object("/api/music/user/playlist?uid=1441382791&limit=50")
         async let recs = try? NativeHouseAPI.object("/api/music/recommend/resource")
-        let (myObject, recObject) = await (mine, recs)
+        async let likes = try? NativeHouseAPI.object("/api/music/likelist")
+        let (myObject, recObject, likeObject) = await (mine, recs, likes)
         playlists = (myObject?["playlist"] as? [[String: Any]] ?? []).map(MusicPlaylist.init)
         recommended = (recObject?["recommend"] as? [[String: Any]] ?? []).map(MusicPlaylist.init)
+        likedSongIDs = Set((likeObject?["ids"] as? [Any] ?? []).compactMap {
+            if let n = $0 as? NSNumber { return n.stringValue }
+            return $0 as? String
+        })
+    }
+
+    func toggleLike() async {
+        guard let song = nowPlaying else { return }
+        let shouldLike = !likedSongIDs.contains(song.id)
+        guard (try? await NativeHouseAPI.object(
+            "/api/music/like?id=\(song.id)&like=\(shouldLike ? "true" : "false")")) != nil else {
+            message = "红心没点上"; return
+        }
+        if shouldLike { likedSongIDs.insert(song.id) }
+        else { likedSongIDs.remove(song.id) }
+    }
+
+    var currentIsLiked: Bool {
+        guard let id = nowPlaying?.id else { return false }
+        return likedSongIDs.contains(id)
     }
 
     func loadPlaylist(_ playlist: MusicPlaylist) async {
@@ -1664,6 +1686,11 @@ struct MusicPlayerSheet: View {
                 .shadow(color: .black.opacity(0.18), radius: 20, y: 10)
                 Text(song.name).font(.system(size: 20, weight: .semibold)).lineLimit(1)
                 Text(song.artist).font(.system(size: 13)).foregroundColor(theme.textDim)
+                Button { Task { await model.toggleLike() } } label: {
+                    Image(systemName: model.currentIsLiked ? "heart.fill" : "heart")
+                        .font(.system(size: 26))
+                        .foregroundColor(model.currentIsLiked ? .red : theme.text)
+                }.buttonStyle(.plain)
                 VStack(spacing: 5) {
                     Slider(value: Binding(get: { model.progress }, set: { model.seek(to: $0) }),
                            in: 0...max(model.duration, 1)).tint(theme.fyAccent)
@@ -1688,7 +1715,7 @@ struct MusicPlayerSheet: View {
     private var lyricPage: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 18) {
+                LazyVStack(alignment: .center, spacing: 18) {
                     Color.clear.frame(height: 100)
                     if model.lyricsLoading { ProgressView().frame(maxWidth: .infinity) }
                     else if model.lyrics.isEmpty {
@@ -1696,18 +1723,30 @@ struct MusicPlayerSheet: View {
                     } else {
                         ForEach(Array(model.lyrics.enumerated()), id: \.element.id) { index, line in
                             Button { model.seek(to: line.time) } label: {
-                                VStack(alignment: .leading, spacing: 5) {
+                                VStack(alignment: .center, spacing: 5) {
                                     Text(line.text).font(.system(size: index == activeLyric ? 19 : 15,
                                                                 weight: index == activeLyric ? .semibold : .regular))
+                                        .multilineTextAlignment(.center)
                                     if let trans = line.translation, !trans.isEmpty {
                                         Text(trans).font(.system(size: 11)).foregroundColor(theme.textDim)
+                                            .multilineTextAlignment(.center)
                                     }
-                                }.opacity(index == activeLyric ? 1 : 0.48)
+                                }.frame(maxWidth: .infinity, alignment: .center)
+                                    .opacity(index == activeLyric ? 1 : 0.48)
                             }.buttonStyle(.plain).id(index)
                         }
                     }
                     Color.clear.frame(height: 160)
-                }.padding(.horizontal, 26)
+                }.frame(maxWidth: .infinity).padding(.horizontal, 26)
+            }
+            .overlay(alignment: .bottom) {
+                Button { Task { await model.toggleLike() } } label: {
+                    Image(systemName: model.currentIsLiked ? "heart.fill" : "heart")
+                        .font(.system(size: 25))
+                        .foregroundColor(model.currentIsLiked ? .red : theme.text)
+                        .frame(width: 48, height: 48)
+                        .background(.ultraThinMaterial, in: Circle())
+                }.buttonStyle(.plain).padding(.bottom, 20)
             }
             .onChange(of: activeLyric) { idx in
                 guard idx >= 0 else { return }
