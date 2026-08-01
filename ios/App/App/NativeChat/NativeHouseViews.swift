@@ -1625,6 +1625,10 @@ struct MusicMessageCard: View {
 
     private var isCurrent: Bool { model.nowPlaying?.id == song.id }
     private var isPlaying: Bool { isCurrent && model.isPlaying }
+    private var progressFraction: Double {
+        guard isCurrent, model.duration > 0 else { return 0 }
+        return min(max(model.progress / model.duration, 0), 1)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
@@ -1659,7 +1663,15 @@ struct MusicMessageCard: View {
                     .foregroundColor(theme.textDim)
                     .lineLimit(3)
             }
-            Capsule().fill(theme.fyAccent.opacity(0.65)).frame(height: 2)
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(theme.fyAccent.opacity(0.18))
+                    Capsule().fill(theme.fyAccent.opacity(0.75))
+                        .frame(width: geo.size.width * CGFloat(progressFraction))
+                }
+            }
+            .frame(height: 2)
+            .animation(.linear(duration: 0.35), value: progressFraction)
         }
         .padding(14)
         .frame(maxWidth: 340)
