@@ -2890,12 +2890,12 @@ private struct NativeDesireView: View {
     private func loadEmotion() async {
         loading = state.isEmpty
         let stateResult = try? await NativeHouseAPI.object("/api/emotion/state")
-        let historyResult = try? await NativeHouseAPI.object("/api/emotion/history?range=24h&step=10")
+        let historyResult = try? await NativeHouseAPI.object("/api/emotion/history?range=3h&step=5")
         let eventsResult = try? await NativeHouseAPI.object("/api/emotion/events?limit=20")
 
         if let stateResult { state = stateResult }
         if let rawPoints = historyResult?["points"] as? [[String: Any]] {
-            history = rawPoints.compactMap { raw in
+            let parsedPoints = rawPoints.compactMap { raw -> EmotionHistoryPoint? in
                 guard let tsRaw = raw["ts"] as? String, let ts = parseDate(tsRaw) else { return nil }
                 let rawCurrent = raw["current"] as? [String: Any] ?? [:]
                 let values = rawCurrent.reduce(into: [String: Double]()) { result, pair in
@@ -2907,6 +2907,14 @@ private struct NativeDesireView: View {
                     activation: number(raw["activation"]),
                     dominant: raw["dominant"] as? String ?? ""
                 )
+            }
+            // The chart keeps "now" in its center: retain only the visible
+            // ninety-minute history and leave the right half for what comes next.
+            if let now = parsedPoints.last?.ts {
+                let visibleStart = now.addingTimeInterval(-90 * 60)
+                history = parsedPoints.filter { $0.ts >= visibleStart && $0.ts <= now }
+            } else {
+                history = []
             }
         }
         if let rawEvents = eventsResult?["events"] as? [[String: Any]] {
@@ -2941,8 +2949,8 @@ private struct EmotionPulseChart: View {
     let theme: AlcoveTheme
 
     private var timeBounds: (start: Date, end: Date)? {
-        guard let start = points.first?.ts, let end = points.last?.ts, end > start else { return nil }
-        return (start, end)
+        guard let now = points.last?.ts else { return nil }
+        return (now.addingTimeInterval(-90 * 60), now.addingTimeInterval(90 * 60))
     }
 
     var body: some View {
@@ -2993,6 +3001,8 @@ private struct EmotionPulseChart: View {
 
                     for event in events {
                         guard let eventDate = event.startedAt,
+                              let bounds = timeBounds,
+                              eventDate >= bounds.start, eventDate <= bounds.end,
                               let nearest = nearestPoint(to: eventDate),
                               points.indices.contains(nearest) else { continue }
                         let p = positions[nearest]
@@ -3030,7 +3040,7 @@ private struct EmotionPulseChart: View {
                 HStack {
                     Text(bounds.start, format: .dateTime.hour().minute())
                     Spacer()
-                    Text("过去 24 小时")
+                    Text("现在")
                     Spacer()
                     Text(bounds.end, format: .dateTime.hour().minute())
                 }
