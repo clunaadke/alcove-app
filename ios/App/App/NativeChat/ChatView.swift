@@ -20,6 +20,8 @@ struct ChatView: View {
     @State private var previewImage: UIImage?
     @State private var inputBarHeight: CGFloat = 90
     @State private var scrollKick = 0
+    @State private var showMusicPlayer = false
+    @ObservedObject private var music = MusicModel.shared
     @FocusState private var inputFocused: Bool
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("alcoveTheme") private var themeName = "haven"
@@ -69,6 +71,12 @@ struct ChatView: View {
             .environment(\.bubbleGlassStyle, bubbleGlassStyle)
         }
         .sheet(isPresented: $showStickers) { stickerSheet }
+        .sheet(isPresented: $showMusicPlayer) {
+            MusicPlayerSheet(model: music)
+                .presentationDetents([.fraction(0.72)])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(.ultraThinMaterial)
+        }
         .sheet(isPresented: $showCamera) {
             CameraView { image in
                 if let jpeg = image.jpegData(compressionQuality: 0.85) {
@@ -110,6 +118,7 @@ struct ChatView: View {
                 wallStamp: wallStamp
             )
             store.start()
+            music.startRemotePolling()
         }
         .onChange(of: themeName) { newThemeName in
             wallpaperStore.refresh(
@@ -168,7 +177,7 @@ struct ChatView: View {
                                             theme: theme)
                                 .id("typing")
                         }
-                        Color.clear.frame(height: inputBarHeight + 8)
+                        Color.clear.frame(height: inputBarHeight + (music.nowPlaying == nil ? 8 : 76))
                         Color.clear.frame(height: 1).id("tail")
                             .onAppear { atBottom = true }
                             .onDisappear { atBottom = false }
@@ -181,6 +190,13 @@ struct ChatView: View {
                 .mask(edgeFadeMask)
 
                 floatingInput
+
+                if music.nowPlaying != nil {
+                    MusicMiniPlayer(model: music) { showMusicPlayer = true }
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, inputBarHeight + 4)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
 
                 if !atBottom {
                     Button {
@@ -292,6 +308,7 @@ struct ChatView: View {
                 onFavorite: { store.favoriteMessage(message) },
                 onQuote: { text in draft = "「\(text.prefix(60))」\n" },
                 onResend: { text in store.sendText(text) },
+                onPlayMusic: { song in Task { await music.play(song) } },
                 onContentChange: { scrollKick += 1 }
             )
             .id(message.id)
@@ -591,6 +608,7 @@ struct MessageRow: View {
     var onFavorite: (() -> Void)? = nil
     var onQuote: ((String) -> Void)? = nil
     var onResend: ((String) -> Void)? = nil
+    var onPlayMusic: ((MusicSong) -> Void)? = nil
     var onContentChange: (() -> Void)? = nil
     @State private var showThinking = false
     @State private var showActivity = false   // 0730 过程记录展开
@@ -624,7 +642,9 @@ struct MessageRow: View {
                     if msg.isAudio, let raw = msg.attachmentUrl {
                         AudioBubble(url: AlcoveAPI.attachmentURL(raw), isUser: isUser, theme: theme)
                     }
-                    if !msg.text.isEmpty && !(msg.isSticker) {
+                    if let song = msg.musicCard {
+                        MusicMessageCard(song: song, theme: theme) { onPlayMusic?(song) }
+                    } else if !msg.text.isEmpty && !(msg.isSticker) {
                         bubble
                     }
                 }

@@ -31,6 +31,7 @@ struct ChatMessage: Identifiable, Equatable {
     var hasActivity: Bool { activity.contains { $0.kind == "tool" } }
 
     var isSticker: Bool { msgType == "sticker" && stickerId != nil }
+    var musicCard: MusicSong? { MusicSong.card(from: text) }
     var isImage: Bool {
         guard let t = attachmentType, let u = attachmentUrl, !u.isEmpty else { return false }
         return t == "image"

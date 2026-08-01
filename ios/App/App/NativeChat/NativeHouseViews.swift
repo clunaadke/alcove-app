@@ -1065,11 +1065,12 @@ private struct NativeChecklistView: View {
     }
 }
 
-private struct MusicSong: Identifiable, Equatable {
+struct MusicSong: Identifiable, Equatable, Codable {
     let id: String
     let name: String
     let artist: String
     let cover: String
+    var message: String = ""
 
     init(_ json: [String: Any]) {
         id = json.string("id", "song_id")
@@ -1081,40 +1082,90 @@ private struct MusicSong: Identifiable, Equatable {
         } else {
             artist = json.string("artist")
         }
-        cover = json.object("al").string("picUrl").isEmpty
+        let rawCover = json.object("al").string("picUrl").isEmpty
             ? json.string("cover", "picUrl") : json.object("al").string("picUrl")
+        cover = Self.secureURL(rawCover)
+        message = json.string("message")
+    }
+
+    init(id: String, name: String, artist: String, cover: String, message: String = "") {
+        self.id = id
+        self.name = name
+        self.artist = artist
+        self.cover = Self.secureURL(cover)
+        self.message = message
+    }
+
+    static func card(from text: String) -> MusicSong? {
+        let prefix = "[MUSIC_CARD]", suffix = "[/MUSIC_CARD]"
+        guard text.hasPrefix(prefix), text.hasSuffix(suffix) else { return nil }
+        let start = text.index(text.startIndex, offsetBy: prefix.count)
+        let end = text.index(text.endIndex, offsetBy: -suffix.count)
+        guard let data = String(text[start..<end]).data(using: .utf8),
+              let raw = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        return MusicSong(raw)
+    }
+
+    static func secureURL(_ raw: String) -> String {
+        raw.hasPrefix("http://") ? "https://" + String(raw.dropFirst("http://".count)) : raw
     }
 }
 
 @MainActor
-private final class MusicModel: ObservableObject {
+struct MusicLyric: Identifiable, Equatable {
+    let id = UUID()
+    let time: Double
+    let text: String
+    let translation: String?
+}
+
+@MainActor
+final class MusicModel: ObservableObject {
+    static let shared = MusicModel()
     @Published var songs: [MusicSong] = []
     @Published var nowPlaying: MusicSong?
     @Published var isPlaying = false
     @Published var loading = false
+    @Published var message = ""
     @Published var progress: Double = 0
     @Published var duration: Double = 0
+    @Published var lyrics: [MusicLyric] = []
+    @Published var lyricsLoading = false
     private var player: AVPlayer?
     private var timeObserver: Any?
     private var playHistory: [MusicSong] = []
     private var historyIndex = -1
+    private var playbackPoll: Task<Void, Never>?
 
     func search(_ query: String) async {
-        guard let q = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+        let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let q = term.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
               !q.isEmpty else { return }
         loading = true
+        message = ""
         defer { loading = false }
         guard let obj = try? await NativeHouseAPI.object("/api/music/cloudsearch?keywords=\(q)") else {
-            songs = []; return
+            songs = []
+            message = "没连上音乐服务"
+            return
         }
         songs = obj.object("result").array("songs").map(MusicSong.init)
+        if songs.isEmpty { message = "没搜到  换个词试试" }
     }
 
     func play(_ song: MusicSong) async {
         guard let obj = try? await NativeHouseAPI.object("/api/music/song/url?id=\(song.id)"),
               let rows = obj["data"] as? [[String: Any]],
-              let raw = rows.first?.string("url"), !raw.isEmpty,
-              let url = URL(string: raw) else { return }
+              let raw = rows.first?.string("url"), !raw.isEmpty else {
+            message = "这首暂时放不了"
+            return
+        }
+        let playable = MusicSong.secureURL(raw)
+        guard let url = URL(string: playable) else {
+            message = "播放地址坏了"
+            return
+        }
+        message = ""
         cleanup()
         player = AVPlayer(url: url)
         player?.play()
@@ -1145,6 +1196,8 @@ private final class MusicModel: ObservableObject {
                 self?.progress = self?.duration ?? 0
             }
         }
+        await loadLyrics(song.id)
+        await reportNowPlaying()
     }
 
     func toggle() {
@@ -1156,6 +1209,80 @@ private final class MusicModel: ObservableObject {
     func seek(to seconds: Double) {
         player?.seek(to: CMTime(seconds: seconds, preferredTimescale: 600))
         progress = seconds
+    }
+
+    func startRemotePolling() {
+        guard playbackPoll == nil else { return }
+        playbackPoll = Task { [weak self] in
+            while !Task.isCancelled {
+                await self?.consumeRemoteCommand()
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+            }
+        }
+    }
+
+    private func consumeRemoteCommand() async {
+        guard let obj = try? await NativeHouseAPI.object("/api/playback"),
+              !obj.bool("consumed"), let command = obj["command"] as? String else { return }
+        switch command {
+        case "set":
+            if let raw = obj["song"] as? [String: Any] {
+                var song = MusicSong(raw)
+                if song.message.isEmpty { song.message = obj.string("message") }
+                await play(song)
+            }
+        case "play": if !isPlaying { toggle() }
+        case "pause": if isPlaying { toggle() }
+        case "next": next()
+        case "prev": prev()
+        default: break
+        }
+        try? await NativeHouseAPI.post("/api/playback", body: ["command": "ack"])
+    }
+
+    private func reportNowPlaying() async {
+        guard let song = nowPlaying else { return }
+        try? await NativeHouseAPI.post("/api/playback", body: [
+            "command": "report",
+            "now_playing": ["id": song.id, "name": song.name, "artist": song.artist,
+                            "paused": !isPlaying, "time": Int(progress), "duration": Int(duration)]
+        ])
+    }
+
+    func loadLyrics(_ songID: String) async {
+        lyricsLoading = true
+        defer { lyricsLoading = false }
+        guard let obj = try? await NativeHouseAPI.object("/api/music/lyric?id=\(songID)") else {
+            lyrics = []; return
+        }
+        let base = Self.parseLRC(obj.object("lrc").string("lyric"))
+        let translated = Self.parseLRC(obj.object("tlyric").string("lyric"))
+            .reduce(into: [Int: String]()) { $0[$1.timeKey] = $1.text }
+        lyrics = base.map { MusicLyric(time: $0.time, text: $0.text,
+                                       translation: translated[$0.timeKey]) }
+    }
+
+    private struct ParsedLyric { let time: Double; let text: String; let timeKey: Int }
+    private static func parseLRC(_ raw: String) -> [ParsedLyric] {
+        let pattern = #"\[(\d+):(\d+)(?:\.(\d+))?\](.*)"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
+        return raw.components(separatedBy: .newlines).compactMap { line in
+            let range = NSRange(line.startIndex..., in: line)
+            guard let m = regex.firstMatch(in: line, range: range), m.numberOfRanges == 5,
+                  let mr = Range(m.range(at: 1), in: line),
+                  let sr = Range(m.range(at: 2), in: line),
+                  let tr = Range(m.range(at: 4), in: line),
+                  let min = Double(line[mr]), let sec = Double(line[sr]) else { return nil }
+            var fraction = 0.0
+            if let fr = Range(m.range(at: 3), in: line) {
+                let digits = String(line[fr])
+                fraction = (Double(digits) ?? 0) / pow(10, Double(digits.count))
+            }
+            let time = min * 60 + sec + fraction
+            let text = String(line[tr]).trimmingCharacters(in: .whitespaces)
+            return text.isEmpty ? nil : ParsedLyric(time: time, text: text,
+                                                     timeKey: Int((time * 100).rounded()))
+        }.sorted { $0.time < $1.time }
     }
 
     func prev() {
@@ -1190,7 +1317,7 @@ private final class MusicModel: ObservableObject {
 }
 
 private struct NativeMusicView: View {
-    @StateObject private var model = MusicModel()
+    @ObservedObject private var model = MusicModel.shared
     @State private var query = ""
     @AppStorage("alcoveTheme") private var themeName = "haven"
     private var theme: AlcoveTheme { .panelNamed(themeName) }
@@ -1201,8 +1328,17 @@ private struct NativeMusicView: View {
             HStack {
                 Image(systemName: "magnifyingglass").foregroundColor(theme.textLight)
                 TextField("搜索歌名或歌手", text: $query)
+                    .submitLabel(.search)
                     .onSubmit { Task { await model.search(query) } }
                 if model.loading { ProgressView().controlSize(.small).tint(theme.fyAccent) }
+                else if !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Button { Task { await model.search(query) } } label: {
+                        Image(systemName: "arrow.right.circle.fill")
+                            .font(.system(size: 19))
+                            .foregroundColor(theme.fyAccent)
+                    }
+                    .buttonStyle(.plain)
+                }
             }
             .padding(11)
             .foyerCard(theme)
@@ -1235,7 +1371,7 @@ private struct NativeMusicView: View {
                         .buttonStyle(.plain)
                     }
                     if model.songs.isEmpty && !model.loading {
-                        Text("搜一首想听的歌")
+                        Text(model.message.isEmpty ? "搜一首想听的歌" : model.message)
                             .font(.system(size: 12))
                             .foregroundColor(theme.textDim).padding(30)
                     }
@@ -1309,6 +1445,181 @@ private struct NativeMusicView: View {
     private static func fmt(_ s: Double) -> String {
         let m = Int(s) / 60; let sec = Int(s) % 60
         return String(format: "%d:%02d", m, sec)
+    }
+}
+
+struct MusicMessageCard: View {
+    let song: MusicSong
+    let theme: AlcoveTheme
+    let play: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            Text("♫ 为你点播")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(theme.textDim)
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(song.name).font(.system(size: 18, weight: .semibold)).lineLimit(1)
+                    Text(song.artist).font(.system(size: 13)).foregroundColor(theme.textDim).lineLimit(1)
+                }
+                Spacer(minLength: 8)
+                AsyncImage(url: URL(string: song.cover)) { image in
+                    image.resizable().scaledToFill()
+                } placeholder: { theme.fyCardSub }
+                .frame(width: 58, height: 58)
+                .clipShape(Circle())
+                Button(action: play) {
+                    Image(systemName: "play.fill")
+                        .font(.system(size: 16))
+                        .foregroundColor(theme.text)
+                        .frame(width: 44, height: 44)
+                        .background(theme.fyCardSub, in: Circle())
+                }.buttonStyle(.plain)
+            }
+            if !song.message.isEmpty {
+                Text("›  \(song.message)")
+                    .font(.system(size: 12))
+                    .foregroundColor(theme.textDim)
+                    .lineLimit(3)
+            }
+            Capsule().fill(theme.fyAccent.opacity(0.65)).frame(height: 2)
+        }
+        .padding(14)
+        .frame(maxWidth: 340)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .background(theme.fyCard.opacity(0.62), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 24).stroke(theme.fyBorder, lineWidth: 1))
+    }
+}
+
+struct MusicMiniPlayer: View {
+    @ObservedObject var model: MusicModel
+    let open: () -> Void
+    @AppStorage("alcoveTheme") private var themeName = "haven"
+    private var theme: AlcoveTheme { .named(themeName) }
+
+    var body: some View {
+        if let song = model.nowPlaying {
+            Button(action: open) {
+                HStack(spacing: 10) {
+                    AsyncImage(url: URL(string: song.cover)) { image in
+                        image.resizable().scaledToFill()
+                    } placeholder: { theme.glassTint }
+                    .frame(width: 44, height: 44).clipShape(RoundedRectangle(cornerRadius: 9))
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(song.name).font(.system(size: 13, weight: .semibold)).lineLimit(1)
+                        Text(song.artist).font(.system(size: 11)).foregroundColor(theme.textDim).lineLimit(1)
+                    }
+                    Spacer()
+                    Button { model.prev() } label: { Image(systemName: "backward.fill") }
+                        .buttonStyle(.plain)
+                    Button { model.toggle() } label: {
+                        Image(systemName: model.isPlaying ? "pause.fill" : "play.fill")
+                            .frame(width: 32, height: 32)
+                    }.buttonStyle(.plain)
+                    Button { model.next() } label: { Image(systemName: "forward.fill") }
+                        .buttonStyle(.plain)
+                }
+                .foregroundColor(theme.text)
+                .padding(.horizontal, 10).frame(height: 62)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .background(theme.capsuleTint, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .overlay(alignment: .bottomLeading) {
+                    GeometryReader { geo in
+                        Capsule().fill(theme.fyAccent)
+                            .frame(width: geo.size.width * CGFloat(model.duration > 0 ? model.progress / model.duration : 0), height: 2)
+                    }.frame(height: 2)
+                }
+            }.buttonStyle(.plain)
+        }
+    }
+}
+
+struct MusicPlayerSheet: View {
+    @ObservedObject var model: MusicModel
+    @AppStorage("alcoveTheme") private var themeName = "haven"
+    private var theme: AlcoveTheme { .panelNamed(themeName) }
+
+    var body: some View {
+        TabView {
+            playerPage
+            lyricPage
+        }
+        .tabViewStyle(.page(indexDisplayMode: .always))
+        .foregroundColor(theme.text)
+        .padding(.top, 10)
+    }
+
+    private var playerPage: some View {
+        VStack(spacing: 18) {
+            if let song = model.nowPlaying {
+                AsyncImage(url: URL(string: song.cover)) { image in
+                    image.resizable().scaledToFill()
+                } placeholder: { theme.fyCardSub }
+                .frame(width: 230, height: 230).clipShape(Circle())
+                .overlay(Circle().stroke(theme.fyBorder, lineWidth: 1))
+                .shadow(color: .black.opacity(0.18), radius: 20, y: 10)
+                Text(song.name).font(.system(size: 20, weight: .semibold)).lineLimit(1)
+                Text(song.artist).font(.system(size: 13)).foregroundColor(theme.textDim)
+                VStack(spacing: 5) {
+                    Slider(value: Binding(get: { model.progress }, set: { model.seek(to: $0) }),
+                           in: 0...max(model.duration, 1)).tint(theme.fyAccent)
+                    HStack {
+                        Text(Self.time(model.progress)); Spacer(); Text(Self.time(model.duration))
+                    }.font(.system(size: 10, design: .monospaced)).foregroundColor(theme.textDim)
+                }.padding(.horizontal, 28)
+                HStack(spacing: 42) {
+                    Button { model.prev() } label: { Image(systemName: "backward.fill") }
+                    Button { model.toggle() } label: {
+                        Image(systemName: model.isPlaying ? "pause.fill" : "play.fill")
+                            .font(.system(size: 23)).frame(width: 58, height: 58)
+                            .background(theme.fyAccent, in: Circle()).foregroundColor(.white)
+                    }
+                    Button { model.next() } label: { Image(systemName: "forward.fill") }
+                }.font(.system(size: 20)).buttonStyle(.plain)
+            }
+            Spacer(minLength: 4)
+        }.padding(.horizontal, 18)
+    }
+
+    private var lyricPage: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 18) {
+                    Color.clear.frame(height: 100)
+                    if model.lyricsLoading { ProgressView().frame(maxWidth: .infinity) }
+                    else if model.lyrics.isEmpty {
+                        Text("这首没有歌词").foregroundColor(theme.textDim).frame(maxWidth: .infinity)
+                    } else {
+                        ForEach(Array(model.lyrics.enumerated()), id: \.element.id) { index, line in
+                            Button { model.seek(to: line.time) } label: {
+                                VStack(alignment: .leading, spacing: 5) {
+                                    Text(line.text).font(.system(size: index == activeLyric ? 19 : 15,
+                                                                weight: index == activeLyric ? .semibold : .regular))
+                                    if let trans = line.translation, !trans.isEmpty {
+                                        Text(trans).font(.system(size: 11)).foregroundColor(theme.textDim)
+                                    }
+                                }.opacity(index == activeLyric ? 1 : 0.48)
+                            }.buttonStyle(.plain).id(index)
+                        }
+                    }
+                    Color.clear.frame(height: 160)
+                }.padding(.horizontal, 26)
+            }
+            .onChange(of: activeLyric) { idx in
+                guard idx >= 0 else { return }
+                withAnimation(.easeOut(duration: 0.3)) { proxy.scrollTo(idx, anchor: .center) }
+            }
+        }
+    }
+
+    private var activeLyric: Int {
+        model.lyrics.lastIndex(where: { $0.time <= model.progress }) ?? -1
+    }
+    private static func time(_ seconds: Double) -> String {
+        guard seconds.isFinite, seconds >= 0 else { return "0:00" }
+        return String(format: "%d:%02d", Int(seconds) / 60, Int(seconds) % 60)
     }
 }
 
