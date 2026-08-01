@@ -2369,6 +2369,22 @@ private struct EmotionEventItem: Identifiable {
     let status: String
 }
 
+private struct EmotionLastMove: Identifiable {
+    struct Move: Identifiable {
+        let key: String
+        let delta: Double
+        let direction: String
+        let value: Double
+        var id: String { key }
+    }
+
+    let eventID: Int
+    let at: Date?
+    let cause: String
+    let moves: [Move]
+    var id: Int { eventID }
+}
+
 private struct NativeDesireView: View {
     @State private var state: [String: Any] = [:]
     @State private var history: [EmotionHistoryPoint] = []
@@ -2422,6 +2438,26 @@ private struct NativeDesireView: View {
             ?? history.last?.dominant
             ?? "security"
     }
+    private var lastMove: EmotionLastMove? {
+        guard let raw = state["last_move"] as? [String: Any],
+              let eventID = raw["event_id"] as? Int else { return nil }
+        let moves = (raw["moves"] as? [[String: Any]] ?? []).compactMap { item -> EmotionLastMove.Move? in
+            guard let key = item["key"] as? String, !key.isEmpty else { return nil }
+            return EmotionLastMove.Move(
+                key: key,
+                delta: number(item["delta"]),
+                direction: item["dir"] as? String ?? (number(item["delta"]) >= 0 ? "up" : "down"),
+                value: number(item["value"])
+            )
+        }
+        guard !moves.isEmpty else { return nil }
+        return EmotionLastMove(
+            eventID: eventID,
+            at: (raw["at"] as? String).flatMap(parseDate),
+            cause: raw["cause"] as? String ?? "",
+            moves: moves
+        )
+    }
     private var selectedHistoryPoint: EmotionHistoryPoint? {
         guard let selectedPoint, history.indices.contains(selectedPoint) else { return history.last }
         return history[selectedPoint]
@@ -2469,26 +2505,10 @@ private struct NativeDesireView: View {
 
     private var heartbeatCard: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .center) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("此刻")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(theme.textDim)
-                    Text(dominantSentence)
-                        .font(.system(size: 17, weight: .semibold, design: .serif))
-                }
-                Spacer()
-                ZStack {
-                    Circle()
-                        .fill(emotionColor(dominantKey).opacity(theme.isDark ? 0.18 : 0.13))
-                        .frame(width: 50, height: 50)
-                    Circle()
-                        .stroke(emotionColor(dominantKey).opacity(0.28), lineWidth: 1)
-                        .frame(width: 42, height: 42)
-                    Image(systemName: "heart.fill")
-                        .font(.system(size: 17, weight: .light))
-                        .foregroundStyle(emotionColor(dominantKey))
-                }
+            if let lastMove {
+                lastMoveSummary(lastMove)
+            } else {
+                dominantSummary
             }
 
             EmotionPulseChart(
@@ -2512,10 +2532,82 @@ private struct NativeDesireView: View {
                 .foregroundColor(theme.textDim)
             }
 
-            dominantChips
+            VStack(alignment: .leading, spacing: 6) {
+                Text("此刻仍在心里的底色")
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundColor(theme.textLight)
+                dominantChips
+            }
         }
         .padding(15)
         .foyerCard(theme)
+    }
+
+    private var dominantSummary: some View {
+        HStack(alignment: .center) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("此刻")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(theme.textDim)
+                Text(dominantSentence)
+                    .font(.system(size: 17, weight: .semibold, design: .serif))
+            }
+            Spacer()
+            ZStack {
+                Circle()
+                    .fill(emotionColor(dominantKey).opacity(theme.isDark ? 0.18 : 0.13))
+                    .frame(width: 50, height: 50)
+                Circle()
+                    .stroke(emotionColor(dominantKey).opacity(0.28), lineWidth: 1)
+                    .frame(width: 42, height: 42)
+                Image(systemName: "heart.fill")
+                    .font(.system(size: 17, weight: .light))
+                    .foregroundStyle(emotionColor(dominantKey))
+            }
+        }
+    }
+
+    private func lastMoveSummary(_ lastMove: EmotionLastMove) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("刚刚这一句")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(theme.textDim)
+                Spacer()
+                if let at = lastMove.at {
+                    Text(at, style: .time)
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundColor(theme.textLight)
+                }
+            }
+            if !lastMove.cause.isEmpty {
+                Text(lastMove.cause)
+                    .font(.system(size: 15, weight: .semibold, design: .serif))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            VStack(spacing: 7) {
+                ForEach(lastMove.moves.prefix(4)) { move in
+                    HStack(spacing: 8) {
+                        Circle()
+                            .fill(emotionColor(move.key))
+                            .frame(width: 6, height: 6)
+                        Text(emotionName(move.key))
+                            .font(.system(size: 11, weight: .semibold))
+                        Spacer()
+                        Text(move.direction == "down" ? "↓" : "↑")
+                            .font(.system(size: 11, weight: .bold))
+                        Text(String(format: "%@%.2f", move.delta >= 0 ? "+" : "", move.delta))
+                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        Text(String(format: "→ %.2f", move.value))
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundColor(theme.textDim)
+                    }
+                    .foregroundColor(emotionColor(move.key))
+                    .padding(.horizontal, 10).padding(.vertical, 7)
+                    .background(emotionColor(move.key).opacity(theme.isDark ? 0.13 : 0.09), in: RoundedRectangle(cornerRadius: 9))
+                }
+            }
+        }
     }
 
     private var dominantChips: some View {
