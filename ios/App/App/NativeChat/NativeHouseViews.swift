@@ -1,6 +1,7 @@
 import SwiftUI
 import PhotosUI
 import AVFoundation
+import MediaPlayer
 import WebKit
 
 enum HouseDestination: String, Identifiable, CaseIterable {
@@ -1156,6 +1157,10 @@ final class MusicModel: ObservableObject {
     private var historyIndex = -1
     private var playbackPoll: Task<Void, Never>?
 
+    private init() {
+        configureRemoteCommands()
+    }
+
     func search(_ query: String) async {
         let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let q = term.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
@@ -1212,6 +1217,7 @@ final class MusicModel: ObservableObject {
                 if dur.isFinite && dur > 0 {
                     self.duration = dur
                     self.progress = time.seconds
+                    self.publishNowPlaying()
                 }
             }
         }
@@ -1224,6 +1230,7 @@ final class MusicModel: ObservableObject {
             }
         }
         await loadLyrics(song.id)
+        publishNowPlaying(loadArtwork: true)
         await reportNowPlaying()
     }
 
@@ -1274,6 +1281,7 @@ final class MusicModel: ObservableObject {
         guard let player else { return }
         if isPlaying { player.pause() } else { player.play() }
         isPlaying.toggle()
+        publishNowPlaying()
     }
 
     func stopAndClear() {
@@ -1285,12 +1293,63 @@ final class MusicModel: ObservableObject {
         progress = 0
         duration = 0
         lyrics = []
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 
     func seek(to seconds: Double) {
         player?.seek(to: CMTime(seconds: seconds, preferredTimescale: 600))
         progress = seconds
+        publishNowPlaying()
+    }
+
+    private func configureRemoteCommands() {
+        let center = MPRemoteCommandCenter.shared()
+        center.playCommand.addTarget { [weak self] _ in
+            Task { @MainActor in if self?.isPlaying == false { self?.toggle() } }
+            return .success
+        }
+        center.pauseCommand.addTarget { [weak self] _ in
+            Task { @MainActor in if self?.isPlaying == true { self?.toggle() } }
+            return .success
+        }
+        center.togglePlayPauseCommand.addTarget { [weak self] _ in
+            Task { @MainActor in self?.toggle() }
+            return .success
+        }
+        center.nextTrackCommand.addTarget { [weak self] _ in
+            Task { @MainActor in self?.next() }
+            return .success
+        }
+        center.previousTrackCommand.addTarget { [weak self] _ in
+            Task { @MainActor in self?.prev() }
+            return .success
+        }
+        center.changePlaybackPositionCommand.addTarget { [weak self] event in
+            guard let event = event as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
+            Task { @MainActor in self?.seek(to: event.positionTime) }
+            return .success
+        }
+    }
+
+    private func publishNowPlaying(loadArtwork: Bool = false) {
+        guard let song = nowPlaying else { return }
+        var info = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
+        info[MPMediaItemPropertyTitle] = song.name
+        info[MPMediaItemPropertyArtist] = song.artist
+        info[MPMediaItemPropertyPlaybackDuration] = duration
+        info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = progress
+        info[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? 1.0 : 0.0
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+        guard loadArtwork, let url = URL(string: song.cover) else { return }
+        Task {
+            guard let (data, _) = try? await URLSession.shared.data(from: url),
+                  let image = UIImage(data: data), self.nowPlaying?.id == song.id else { return }
+            let artwork = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+            var updated = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
+            updated[MPMediaItemPropertyArtwork] = artwork
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = updated
+        }
     }
 
     func startRemotePolling() {
@@ -1562,6 +1621,10 @@ struct MusicMessageCard: View {
     let song: MusicSong
     let theme: AlcoveTheme
     let play: () -> Void
+    @ObservedObject private var model = MusicModel.shared
+
+    private var isCurrent: Bool { model.nowPlaying?.id == song.id }
+    private var isPlaying: Bool { isCurrent && model.isPlaying }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
@@ -1579,9 +1642,12 @@ struct MusicMessageCard: View {
                 } placeholder: { theme.fyCardSub }
                 .frame(width: 58, height: 58)
                 .clipShape(Circle())
-                Button(action: play) {
-                    Image(systemName: "play.fill")
+                Button {
+                    if isCurrent { model.toggle() } else { play() }
+                } label: {
+                    Image(systemName: isPlaying ? "pause.fill" : "play.fill")
                         .font(.system(size: 16))
+                        .contentTransition(.symbolEffect(.replace))
                         .foregroundColor(theme.text)
                         .frame(width: 44, height: 44)
                         .background(theme.fyCardSub, in: Circle())
