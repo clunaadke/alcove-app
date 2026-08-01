@@ -1042,6 +1042,8 @@ private final class RTConsoleStore: ObservableObject {
     @Published var percent = 0.0
     @Published var threadId = ""
     @Published var handoffAt = ""
+    @Published var busy = false
+    @Published var reforgeError = ""
     private var poller: Task<Void, Never>?
 
     func start() {
@@ -1074,11 +1076,30 @@ private final class RTConsoleStore: ObservableObject {
             threadId = o["thread_id"] as? String ?? ""
             handoffAt = o["handoff_at"] as? String ?? ""
         }
+        if let o = try? await AlcoveAPI.getRaw("/api/roundtable/status"),
+           let members = o["members"] as? [[String: Any]],
+           let me = members.first(where: { ($0["name"] as? String) == "何渡" }) {
+            busy = me["busy"] as? Bool ?? false
+        }
     }
 
     // 换线程 = 他从自己写的交接材料重新睁眼
     func reforge() async {
-        _ = try? await AlcoveAPI.postRaw("/api/roundtable/reforge", body: [:])
+        await refresh()
+        guard !busy else {
+            reforgeError = "何渡还在说话  等他停下来再换"
+            return
+        }
+        guard !handoffAt.isEmpty else {
+            reforgeError = "交接文件还没准备好"
+            return
+        }
+        guard let result = try? await AlcoveAPI.postRaw("/api/roundtable/reforge", body: [:]),
+              result["ok"] as? Bool == true else {
+            reforgeError = "没换成功  当前线程还留着"
+            return
+        }
+        reforgeError = ""
         await refresh()
     }
 }
@@ -1123,8 +1144,14 @@ private struct RTConsoleView: View {
             Button("换", role: .destructive) { Task { await store.reforge() } }
             Button("算了", role: .cancel) {}
         } message: {
-            Text("他会从自己写的交接材料重新睁眼，这条线程里的对话他就不记得了。")
+            Text(store.busy
+                 ? "何渡还在说话  现在不能换"
+                 : "他会从自己写的交接材料重新睁眼。交接最后更新：\(handoffDisplay)")
         }
+        .alert("没换成", isPresented: Binding(
+            get: { !store.reforgeError.isEmpty },
+            set: { if !$0 { store.reforgeError = "" } }
+        )) { Button("知道了") {} } message: { Text(store.reforgeError) }
     }
 
     private var gauge: some View {
@@ -1134,12 +1161,14 @@ private struct RTConsoleView: View {
                     .font(.system(size: 15, weight: .semibold))
                 Spacer()
                 Button { confirmReforge = true } label: {
-                    Text("换线程")
+                    Text(store.busy ? "忙碌中" : "换线程")
                         .font(.system(size: 12))
                         .padding(.horizontal, 10).padding(.vertical, 5)
                         .background(Capsule().fill(theme.textDim.opacity(0.12)))
                 }
                 .buttonStyle(.plain)
+                .disabled(store.busy || store.handoffAt.isEmpty)
+                .opacity(store.busy || store.handoffAt.isEmpty ? 0.45 : 1)
                 Button { dismiss() } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 13, weight: .light))
@@ -1172,6 +1201,11 @@ private struct RTConsoleView: View {
         .padding(.horizontal, 16)
         .padding(.top, 14)
         .padding(.bottom, 10)
+    }
+
+    private var handoffDisplay: String {
+        guard !store.handoffAt.isEmpty else { return "没有交接" }
+        return store.handoffAt.replacingOccurrences(of: "T", with: " ").prefix(16).description
     }
 
     private func row(_ l: RTConsoleLine) -> some View {
