@@ -137,12 +137,12 @@ struct RootView: View {
     // 左头像｜中间纯文字｜右侧三枚按钮共用一块清透玻璃胶囊
     private var topBar: some View {
         ZStack {
-            Button { toggleThinking() } label: {
-                VStack(spacing: -1) {
-                    Text(assistantName)
-                        .font(.system(size: 15, weight: .semibold))
-                        .tracking(1.5)
-                        .foregroundColor(theme.text)
+            VStack(spacing: -1) {
+                Text(assistantName)
+                    .font(.system(size: 15, weight: .semibold))
+                    .tracking(1.5)
+                    .foregroundColor(theme.text)
+                Button { toggleThinking() } label: {
                     HStack(spacing: 4) {
                         Text("thinking quietly")
                             .font(.system(size: 13))
@@ -164,12 +164,12 @@ struct RootView: View {
                         }
                     }
                     .frame(minHeight: 25)
+                    .contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
+                .disabled(switchingThinking || !thinkingKnown)
             }
-            .buttonStyle(.plain)
-            .disabled(switchingThinking || !thinkingKnown)
-            .frame(width: 180, height: 44, alignment: .center)
-            .contentShape(Rectangle())
+            .frame(height: 44, alignment: .center)
             // The full-width left/right control row is drawn after this view.
             // Keep the center button above its transparent Spacer so taps
             // reach the thinking switch instead of being swallowed.
