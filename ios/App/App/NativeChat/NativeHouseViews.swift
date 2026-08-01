@@ -2336,114 +2336,620 @@ private struct NativePortraitView: View {
 
 // MARK: - Desire
 
+private struct EmotionDimension: Identifiable {
+    let key: String
+    let name: String
+    let color: Color
+    var id: String { key }
+}
+
+private struct EmotionGroup: Identifiable {
+    let name: String
+    let subtitle: String
+    let dimensions: [EmotionDimension]
+    var id: String { name }
+}
+
+private struct EmotionHistoryPoint: Identifiable {
+    let ts: Date
+    let values: [String: Double]
+    let activation: Double
+    let dominant: String
+    var id: Date { ts }
+}
+
+private struct EmotionEventItem: Identifiable {
+    let id: Int
+    let cause: String
+    let deltas: [String: Double]
+    let impulses: [String]
+    let confidence: Double
+    let startedAt: Date?
+    let endedAt: Date?
+    let status: String
+}
+
 private struct NativeDesireView: View {
-    @State private var data: [String: Any] = [:]
+    @State private var state: [String: Any] = [:]
+    @State private var history: [EmotionHistoryPoint] = []
+    @State private var events: [EmotionEventItem] = []
     @State private var loading = true
+    @State private var loadFailed = false
+    @State private var selectedGroup: String?
+    @State private var selectedDimension: String?
+    @State private var selectedPoint: Int?
     @AppStorage("alcoveTheme") private var themeName = "haven"
     private var theme: AlcoveTheme { .panelNamed(themeName) }
 
-    private let driveNames: [(String, String)] = [
-        ("attachment", "依恋"), ("curiosity", "好奇"), ("reflection", "反思"),
-        ("duty", "责任"), ("social", "社交"), ("fatigue", "疲惫"),
-        ("libido", "欲望"), ("stress", "压力")
+    private let groups: [EmotionGroup] = [
+        EmotionGroup(name: "靠近", subtitle: "朝向她的牵引", dimensions: [
+            EmotionDimension(key: "desire", name: "情欲", color: Color(red: 0.72, green: 0.20, blue: 0.31)),
+            EmotionDimension(key: "longing", name: "想念", color: Color(red: 0.86, green: 0.45, blue: 0.57)),
+            EmotionDimension(key: "intimacy", name: "亲密", color: Color(red: 0.91, green: 0.58, blue: 0.63)),
+            EmotionDimension(key: "satisfaction", name: "满足", color: Color(red: 0.83, green: 0.64, blue: 0.32)),
+            EmotionDimension(key: "security", name: "安心", color: Color(red: 0.39, green: 0.66, blue: 0.52))
+        ]),
+        EmotionGroup(name: "生长", subtitle: "向世界伸出去", dimensions: [
+            EmotionDimension(key: "joy", name: "雀跃", color: Color(red: 0.94, green: 0.68, blue: 0.25)),
+            EmotionDimension(key: "playfulness", name: "玩心", color: Color(red: 0.88, green: 0.52, blue: 0.33)),
+            EmotionDimension(key: "curiosity", name: "好奇", color: Color(red: 0.25, green: 0.68, blue: 0.65)),
+            EmotionDimension(key: "vitality", name: "活力", color: Color(red: 0.39, green: 0.72, blue: 0.38)),
+            EmotionDimension(key: "protectiveness", name: "护短", color: Color(red: 0.51, green: 0.62, blue: 0.32))
+        ]),
+        EmotionGroup(name: "刺痛", subtitle: "关系里被碰到的地方", dimensions: [
+            EmotionDimension(key: "possessiveness", name: "占有", color: Color(red: 0.62, green: 0.27, blue: 0.48)),
+            EmotionDimension(key: "jealousy", name: "醋意", color: Color(red: 0.63, green: 0.33, blue: 0.66)),
+            EmotionDimension(key: "anger", name: "生气", color: Color(red: 0.86, green: 0.29, blue: 0.24)),
+            EmotionDimension(key: "hurt", name: "委屈", color: Color(red: 0.39, green: 0.45, blue: 0.76)),
+            EmotionDimension(key: "dejection", name: "沮丧", color: Color(red: 0.38, green: 0.48, blue: 0.61))
+        ]),
+        EmotionGroup(name: "内里", subtitle: "收回身体里的回声", dimensions: [
+            EmotionDimension(key: "fear", name: "害怕", color: Color(red: 0.52, green: 0.56, blue: 0.69)),
+            EmotionDimension(key: "anxiety", name: "焦虑", color: Color(red: 0.52, green: 0.43, blue: 0.61)),
+            EmotionDimension(key: "shame", name: "羞耻", color: Color(red: 0.54, green: 0.36, blue: 0.42)),
+            EmotionDimension(key: "guilt", name: "内疚", color: Color(red: 0.40, green: 0.36, blue: 0.48)),
+            EmotionDimension(key: "fatigue", name: "疲倦", color: Color(red: 0.43, green: 0.48, blue: 0.50))
+        ])
     ]
+
+    private var allDimensions: [EmotionDimension] { groups.flatMap(\.dimensions) }
+    private var current: [String: Any] { state["current"] as? [String: Any] ?? [:] }
+    private var baseline: [String: Any] { state["base"] as? [String: Any] ?? [:] }
+    private var activation: Double { number(state["activation"]) }
+    private var provisional: Set<String> { Set(state["provisional"] as? [String] ?? []) }
+    private var dominantKey: String {
+        ((state["dominant"] as? [[String: Any]])?.first?["key"] as? String)
+            ?? history.last?.dominant
+            ?? "security"
+    }
+    private var selectedHistoryPoint: EmotionHistoryPoint? {
+        guard let selectedPoint, history.indices.contains(selectedPoint) else { return history.last }
+        return history[selectedPoint]
+    }
 
     var body: some View {
         VStack(spacing: 0) {
-            FoyerPanelTitle(title: "Desire", theme: theme)
+            FoyerPanelTitle(title: "心跳", theme: theme)
             if loading {
                 Spacer(); ProgressView().tint(theme.fyAccent); Spacer()
+            } else if loadFailed && state.isEmpty {
+                Spacer()
+                VStack(spacing: 10) {
+                    Image(systemName: "waveform.path.ecg")
+                        .font(.system(size: 28, weight: .light))
+                        .foregroundColor(theme.textLight)
+                    Text("还没听见心跳")
+                        .font(.system(size: 14, weight: .semibold))
+                    Text("情绪引擎正在接线，稍后再来看看。")
+                        .font(.system(size: 11))
+                        .foregroundColor(theme.textDim)
+                    Button("重新读取") { Task { await loadEmotion() } }
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(theme.fyAccent)
+                }
+                Spacer()
             } else {
                 ScrollView(showsIndicators: false) {
-                    VStack(spacing: 12) {
-                        if let intent = data["intent"] as? [String: Any] {
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text("此刻最想").font(.system(size: 13, weight: .semibold))
-                                Text(intent["want_action"] as? String ?? "")
-                                    .font(.system(size: 16, weight: .bold))
-                                    .foregroundColor(theme.fyAccent)
-                                if let reason = intent["reason"] as? String {
-                                    Text(reason).font(.system(size: 11))
-                                        .foregroundColor(theme.textDim)
-                                }
-                            }
-                            .padding(14)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .foyerCard(theme)
-                        }
-                        if let drives = data["drives"] as? [String: Any],
-                           let baseline = data["baseline"] as? [String: Any] {
-                            VStack(alignment: .leading, spacing: 10) {
-                                Text("驱动条").font(.system(size: 13, weight: .semibold))
-                                ForEach(driveNames, id: \.0) { key, label in
-                                    let val = (drives[key] as? Double) ?? 0
-                                    let base = (baseline[key] as? Double) ?? 0
-                                    driveRow(label, value: val, baseline: base)
-                                }
-                            }
-                            .padding(14).foyerCard(theme)
-                        }
-                        if let ranking = data["activity_ranking"] as? [[String: Any]], !ranking.isEmpty {
-                            VStack(alignment: .leading, spacing: 8) {
-                                Text("想做的事").font(.system(size: 13, weight: .semibold))
-                                ForEach(ranking.prefix(5), id: \.description) { item in
-                                    HStack {
-                                        Text(item["activity"] as? String ?? "")
-                                            .font(.system(size: 12))
-                                        Spacer()
-                                        let score = (item["score"] as? Double) ?? 0
-                                        Text(String(format: "%.0f%%", score * 100))
-                                            .font(.system(size: 11))
-                                            .foregroundColor(theme.textDim)
-                                    }
-                                }
-                            }
-                            .padding(14).foyerCard(theme)
-                        }
+                    VStack(spacing: 14) {
+                        heartbeatCard
+                        qualityStrip
+                        groupCards
+                        if !events.isEmpty { eventLogCard }
                     }
                     .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 18)
                 }
+                .refreshable { await loadEmotion() }
             }
         }
         .foregroundColor(theme.text)
         .foyerPanel(theme)
         .padding(.horizontal, 12).padding(.top, 8)
-        .task {
-            if let obj = try? await NativeHouseAPI.object("/api/desire/state") { data = obj }
-            loading = false
+        .task { await loadEmotion() }
+    }
+
+    private var heartbeatCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .center) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("此刻")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(theme.textDim)
+                    Text(dominantSentence)
+                        .font(.system(size: 17, weight: .semibold, design: .serif))
+                }
+                Spacer()
+                ZStack {
+                    Circle()
+                        .fill(emotionColor(dominantKey).opacity(theme.isDark ? 0.18 : 0.13))
+                        .frame(width: 50, height: 50)
+                    Circle()
+                        .stroke(emotionColor(dominantKey).opacity(0.28), lineWidth: 1)
+                        .frame(width: 42, height: 42)
+                    Image(systemName: "heart.fill")
+                        .font(.system(size: 17, weight: .light))
+                        .foregroundStyle(emotionColor(dominantKey))
+                }
+            }
+
+            EmotionPulseChart(
+                points: history,
+                events: events,
+                selectedIndex: $selectedPoint,
+                colorForKey: emotionColor,
+                theme: theme
+            )
+            .frame(height: 132)
+
+            if let point = selectedHistoryPoint {
+                HStack {
+                    Text(point.ts, style: .time)
+                    Text("唤醒 \(Int(point.activation * 100))")
+                    Spacer()
+                    Text(emotionName(point.dominant))
+                        .foregroundColor(emotionColor(point.dominant))
+                }
+                .font(.system(size: 10, design: .rounded))
+                .foregroundColor(theme.textDim)
+            }
+
+            dominantChips
+        }
+        .padding(15)
+        .foyerCard(theme)
+    }
+
+    private var dominantChips: some View {
+        let items = (state["dominant"] as? [[String: Any]]) ?? []
+        return HStack(spacing: 7) {
+            ForEach(Array(items.prefix(4).enumerated()), id: \.offset) { _, item in
+                let key = item["key"] as? String ?? ""
+                let value = number(item["value"])
+                HStack(spacing: 4) {
+                    Circle().fill(emotionColor(key)).frame(width: 5, height: 5)
+                    Text("\(emotionName(key)) \(Int(value * 100))")
+                }
+                .font(.system(size: 10, weight: .medium))
+                .padding(.horizontal, 8).padding(.vertical, 5)
+                .background(emotionColor(key).opacity(theme.isDark ? 0.14 : 0.10), in: Capsule())
+            }
+            Spacer(minLength: 0)
         }
     }
 
-    private func driveRow(_ label: String, value: Double, baseline: Double) -> some View {
-        VStack(spacing: 4) {
-            HStack {
-                Text(label).font(.system(size: 11)).frame(width: 32, alignment: .leading)
-                GeometryReader { geo in
-                    ZStack(alignment: .leading) {
-                        RoundedRectangle(cornerRadius: 3)
-                            .fill(theme.fyCardSub)
-                        RoundedRectangle(cornerRadius: 3)
-                            .fill(driveColor(value))
-                            .frame(width: geo.size.width * min(CGFloat(value), 1))
-                    }
-                }
-                .frame(height: 6)
-                Text(String(format: "%.2f", value))
-                    .font(.system(size: 10, design: .monospaced))
-                    .frame(width: 36, alignment: .trailing)
-                    .foregroundColor(theme.textDim)
-                Text(value > baseline ? "▲" : value < baseline ? "▼" : " ")
-                    .font(.system(size: 8))
-                    .foregroundColor(value > baseline ? .green : .red)
-                    .frame(width: 12)
+    @ViewBuilder
+    private var qualityStrip: some View {
+        let quality = state["data_quality"] as? [String: Any] ?? [:]
+        let pending = (quality["pending_events"] as? Int) ?? 0
+        let stale = (quality["stale"] as? Bool) ?? false
+        HStack(spacing: 8) {
+            Circle()
+                .fill(stale ? Color.orange : pending > 0 ? Color.yellow : Color.green)
+                .frame(width: 6, height: 6)
+            Text(stale ? "状态暂时失联" : pending > 0 ? "还有 \(pending) 次触动正在辨认" : "心跳已同步")
+                .font(.system(size: 10, weight: .medium))
+            Spacer()
+            if let raw = state["last_updated"] as? String, let date = parseDate(raw) {
+                Text(date, style: .relative)
+                    .font(.system(size: 9))
+                    .foregroundColor(theme.textLight)
+            }
+        }
+        .foregroundColor(theme.textDim)
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .background(theme.fyCardSub.opacity(0.55), in: Capsule())
+    }
+
+    private var groupCards: some View {
+        VStack(spacing: 10) {
+            ForEach(groups) { group in
+                emotionGroupCard(group)
             }
         }
     }
 
-    private func driveColor(_ val: Double) -> Color {
-        if val > 0.8 { return .red.opacity(0.7) }
-        if val > 0.5 { return .orange.opacity(0.7) }
-        return .blue.opacity(0.5)
+    private func emotionGroupCard(_ group: EmotionGroup) -> some View {
+        let expanded = selectedGroup == group.id
+        return VStack(alignment: .leading, spacing: 11) {
+            Button {
+                withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
+                    selectedGroup = expanded ? nil : group.id
+                    if !expanded { selectedDimension = nil }
+                }
+            } label: {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(group.name).font(.system(size: 13, weight: .semibold))
+                        Text(group.subtitle).font(.system(size: 9)).foregroundColor(theme.textLight)
+                    }
+                    Spacer()
+                    groupMiniBand(group)
+                    Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundColor(theme.textLight)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if expanded {
+                ForEach(group.dimensions) { dimension in
+                    dimensionRow(dimension)
+                }
+            } else {
+                HStack(spacing: 5) {
+                    ForEach(group.dimensions) { dimension in
+                        let value = number(current[dimension.key])
+                        VStack(spacing: 4) {
+                            Capsule()
+                                .fill(dimension.color.opacity(theme.isDark ? 0.72 : 0.64))
+                                .frame(height: max(3, 26 * value))
+                                .frame(height: 26, alignment: .bottom)
+                            Text(dimension.name)
+                                .font(.system(size: 8))
+                                .foregroundColor(theme.textDim)
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                }
+            }
+        }
+        .padding(14)
+        .foyerCard(theme)
+    }
+
+    private func groupMiniBand(_ group: EmotionGroup) -> some View {
+        HStack(spacing: 2) {
+            ForEach(group.dimensions) { dimension in
+                Capsule()
+                    .fill(dimension.color.opacity(0.75))
+                    .frame(width: 13, height: 3 + 7 * number(current[dimension.key]))
+            }
+        }
+        .frame(height: 12, alignment: .bottom)
+    }
+
+    private func dimensionRow(_ dimension: EmotionDimension) -> some View {
+        let value = number(current[dimension.key])
+        let base = number(baseline[dimension.key])
+        let delta = value - base
+        let selected = selectedDimension == dimension.key
+        return VStack(alignment: .leading, spacing: 6) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    selectedDimension = selected ? nil : dimension.key
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    Text(dimension.name)
+                        .font(.system(size: 11, weight: .medium))
+                        .frame(width: 30, alignment: .leading)
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(theme.fyCardSub)
+                            Capsule()
+                                .fill(LinearGradient(
+                                    colors: [dimension.color.opacity(0.42), dimension.color],
+                                    startPoint: .leading, endPoint: .trailing
+                                ))
+                                .frame(width: geo.size.width * max(0, min(1, value)))
+                            Rectangle()
+                                .fill(theme.text.opacity(0.34))
+                                .frame(width: 1, height: 11)
+                                .offset(x: geo.size.width * max(0, min(1, base)))
+                        }
+                    }
+                    .frame(height: 7)
+                    Text(String(format: "%.2f", value))
+                        .font(.system(size: 9, design: .monospaced))
+                        .frame(width: 30, alignment: .trailing)
+                    Text(abs(delta) < 0.005 ? "·" : delta > 0 ? "↑" : "↓")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(abs(delta) < 0.005 ? theme.textLight : dimension.color)
+                        .frame(width: 10)
+                    if provisional.contains(dimension.key) {
+                        Text("暂")
+                            .font(.system(size: 7, weight: .bold))
+                            .foregroundColor(theme.textLight)
+                            .padding(3)
+                            .overlay(Circle().stroke(theme.fyBorder, lineWidth: 0.7))
+                    }
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            if selected {
+                dimensionHistory(dimension)
+                    .frame(height: 64)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                HStack {
+                    Text("锚点 \(String(format: "%.2f", base))")
+                    Spacer()
+                    Text(delta >= 0 ? "+\(String(format: "%.2f", delta))" : String(format: "%.2f", delta))
+                }
+                .font(.system(size: 9, design: .monospaced))
+                .foregroundColor(theme.textLight)
+            }
+        }
+    }
+
+    private func dimensionHistory(_ dimension: EmotionDimension) -> some View {
+        GeometryReader { geo in
+            Canvas { context, size in
+                guard history.count > 1 else { return }
+                var path = Path()
+                for (index, point) in history.enumerated() {
+                    let x = CGFloat(index) / CGFloat(history.count - 1) * size.width
+                    let value = point.values[dimension.key] ?? 0
+                    let y = size.height - CGFloat(max(0, min(1, value))) * (size.height - 6) - 3
+                    if index == 0 { path.move(to: CGPoint(x: x, y: y)) }
+                    else { path.addLine(to: CGPoint(x: x, y: y)) }
+                }
+                context.stroke(path, with: .color(dimension.color), lineWidth: 1.5)
+
+                let base = number(baseline[dimension.key])
+                let baseY = size.height - CGFloat(max(0, min(1, base))) * (size.height - 6) - 3
+                var basePath = Path()
+                basePath.move(to: CGPoint(x: 0, y: baseY))
+                basePath.addLine(to: CGPoint(x: size.width, y: baseY))
+                context.stroke(basePath, with: .color(theme.textLight.opacity(0.32)), style: StrokeStyle(lineWidth: 0.8, dash: [3, 3]))
+            }
+        }
+    }
+
+    private var eventLogCard: some View {
+        VStack(alignment: .leading, spacing: 11) {
+            Text("最近被碰到的时刻")
+                .font(.system(size: 13, weight: .semibold))
+            ForEach(events.prefix(5)) { event in
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(alignment: .firstTextBaseline) {
+                        if let startedAt = event.startedAt {
+                            Text(startedAt, style: .time)
+                                .font(.system(size: 9, design: .monospaced))
+                                .foregroundColor(theme.textLight)
+                        }
+                        Text(event.cause)
+                            .font(.system(size: 11))
+                            .lineLimit(3)
+                        Spacer(minLength: 0)
+                    }
+                    HStack(spacing: 5) {
+                        let rankedDeltas = Array(event.deltas.sorted { abs($0.value) > abs($1.value) }.prefix(4))
+                        ForEach(Array(rankedDeltas.enumerated()), id: \.offset) { _, pair in
+                            let key = pair.key
+                            let delta = pair.value
+                            Text("\(emotionName(key)) \(delta >= 0 ? "+" : "")\(Int(delta * 100))")
+                                .font(.system(size: 8, weight: .medium))
+                                .foregroundColor(emotionColor(key))
+                                .padding(.horizontal, 6).padding(.vertical, 3)
+                                .background(emotionColor(key).opacity(0.10), in: Capsule())
+                        }
+                    }
+                    if let impulse = event.impulses.first, !impulse.isEmpty {
+                        Text("想：\(impulse)")
+                            .font(.system(size: 9))
+                            .foregroundColor(theme.textDim)
+                    }
+                }
+                if event.id != events.prefix(5).last?.id {
+                    Divider().overlay(theme.fyBorder)
+                }
+            }
+        }
+        .padding(14)
+        .foyerCard(theme)
+    }
+
+    private var dominantSentence: String {
+        let items = (state["dominant"] as? [[String: Any]]) ?? []
+        guard let first = items.first else { return "很安静，还没有明显的波动" }
+        let firstKey = first["key"] as? String ?? ""
+        if items.count > 1, let secondKey = items[1]["key"] as? String {
+            return "\(emotionName(firstKey))最亮，\(emotionName(secondKey))贴在旁边"
+        }
+        return "\(emotionName(firstKey))正在发亮"
+    }
+
+    private func emotionName(_ key: String) -> String {
+        allDimensions.first(where: { $0.key == key })?.name ?? key
+    }
+
+    private func emotionColor(_ key: String) -> Color {
+        allDimensions.first(where: { $0.key == key })?.color ?? theme.fyAccent
+    }
+
+    private func number(_ value: Any?) -> Double {
+        if let value = value as? Double { return value }
+        if let value = value as? Int { return Double(value) }
+        if let value = value as? NSNumber { return value.doubleValue }
+        return 0
+    }
+
+    private func parseDate(_ raw: String) -> Date? {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = formatter.date(from: raw) { return date }
+        formatter.formatOptions = [.withInternetDateTime]
+        return formatter.date(from: raw)
+    }
+
+    @MainActor
+    private func loadEmotion() async {
+        loading = state.isEmpty
+        let stateResult = try? await NativeHouseAPI.object("/api/emotion/state")
+        let historyResult = try? await NativeHouseAPI.object("/api/emotion/history?range=24h")
+        let eventsResult = try? await NativeHouseAPI.object("/api/emotion/events?limit=20")
+
+        if let stateResult { state = stateResult }
+        if let rawPoints = historyResult?["points"] as? [[String: Any]] {
+            history = rawPoints.compactMap { raw in
+                guard let tsRaw = raw["ts"] as? String, let ts = parseDate(tsRaw) else { return nil }
+                let rawCurrent = raw["current"] as? [String: Any] ?? [:]
+                let values = rawCurrent.reduce(into: [String: Double]()) { result, pair in
+                    result[pair.key] = number(pair.value)
+                }
+                return EmotionHistoryPoint(
+                    ts: ts,
+                    values: values,
+                    activation: number(raw["activation"]),
+                    dominant: raw["dominant"] as? String ?? ""
+                )
+            }
+        }
+        if let rawEvents = eventsResult?["events"] as? [[String: Any]] {
+            events = rawEvents.compactMap { raw in
+                guard let id = raw["id"] as? Int else { return nil }
+                let rawDeltas = raw["deltas"] as? [String: Any] ?? [:]
+                let deltas = rawDeltas.reduce(into: [String: Double]()) { result, pair in
+                    result[pair.key] = number(pair.value)
+                }
+                return EmotionEventItem(
+                    id: id,
+                    cause: raw["cause"] as? String ?? "",
+                    deltas: deltas,
+                    impulses: raw["impulses"] as? [String] ?? [],
+                    confidence: number(raw["confidence"]),
+                    startedAt: (raw["started_at"] as? String).flatMap(parseDate),
+                    endedAt: (raw["ended_at"] as? String).flatMap(parseDate),
+                    status: raw["status"] as? String ?? ""
+                )
+            }
+        }
+        loadFailed = stateResult == nil
+        loading = false
+    }
+}
+
+private struct EmotionPulseChart: View {
+    let points: [EmotionHistoryPoint]
+    let events: [EmotionEventItem]
+    @Binding var selectedIndex: Int?
+    let colorForKey: (String) -> Color
+    let theme: AlcoveTheme
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack {
+                Canvas { context, size in
+                    drawGrid(context: &context, size: size)
+                    guard points.count > 1 else { return }
+                    let positions = chartPositions(size: size)
+
+                    var fillPath = Path()
+                    fillPath.move(to: CGPoint(x: positions[0].x, y: size.height))
+                    positions.forEach { fillPath.addLine(to: $0) }
+                    fillPath.addLine(to: CGPoint(x: positions.last?.x ?? size.width, y: size.height))
+                    fillPath.closeSubpath()
+                    context.fill(
+                        fillPath,
+                        with: .linearGradient(
+                            Gradient(colors: [colorForKey(points.last?.dominant ?? "").opacity(0.20), .clear]),
+                            startPoint: CGPoint(x: 0, y: 0),
+                            endPoint: CGPoint(x: 0, y: size.height)
+                        )
+                    )
+
+                    for index in 1..<positions.count {
+                        var segment = Path()
+                        segment.move(to: positions[index - 1])
+                        let midX = (positions[index - 1].x + positions[index].x) / 2
+                        segment.addCurve(
+                            to: positions[index],
+                            control1: CGPoint(x: midX, y: positions[index - 1].y),
+                            control2: CGPoint(x: midX, y: positions[index].y)
+                        )
+                        context.stroke(
+                            segment,
+                            with: .linearGradient(
+                                Gradient(colors: [
+                                    colorForKey(points[index - 1].dominant),
+                                    colorForKey(points[index].dominant)
+                                ]),
+                                startPoint: positions[index - 1],
+                                endPoint: positions[index]
+                            ),
+                            style: StrokeStyle(lineWidth: 2.1, lineCap: .round, lineJoin: .round)
+                        )
+                    }
+
+                    for event in events {
+                        guard let eventDate = event.startedAt,
+                              let nearest = nearestPoint(to: eventDate),
+                              points.indices.contains(nearest) else { continue }
+                        let p = positions[nearest]
+                        let color = event.deltas.max(by: { abs($0.value) < abs($1.value) })
+                            .map { colorForKey($0.key) } ?? theme.fyAccent
+                        context.fill(Path(ellipseIn: CGRect(x: p.x - 3, y: p.y - 3, width: 6, height: 6)), with: .color(color))
+                        context.stroke(Path(ellipseIn: CGRect(x: p.x - 6, y: p.y - 6, width: 12, height: 12)), with: .color(color.opacity(0.22)), lineWidth: 1)
+                    }
+
+                    if let selectedIndex, positions.indices.contains(selectedIndex) {
+                        let p = positions[selectedIndex]
+                        var marker = Path()
+                        marker.move(to: CGPoint(x: p.x, y: 4))
+                        marker.addLine(to: CGPoint(x: p.x, y: size.height - 3))
+                        context.stroke(marker, with: .color(theme.text.opacity(0.20)), style: StrokeStyle(lineWidth: 0.8, dash: [3, 3]))
+                        context.fill(Path(ellipseIn: CGRect(x: p.x - 4, y: p.y - 4, width: 8, height: 8)), with: .color(colorForKey(points[selectedIndex].dominant)))
+                    }
+                }
+                .allowsHitTesting(false)
+
+                Rectangle()
+                    .fill(Color.clear)
+                    .contentShape(Rectangle())
+                    .gesture(DragGesture(minimumDistance: 0).onChanged { value in
+                        guard !points.isEmpty else { return }
+                        let ratio = max(0, min(1, value.location.x / max(1, geo.size.width)))
+                        selectedIndex = Int(round(ratio * CGFloat(points.count - 1)))
+                    })
+            }
+        }
+    }
+
+    private func drawGrid(context: inout GraphicsContext, size: CGSize) {
+        for fraction in [0.25, 0.5, 0.75] as [CGFloat] {
+            let y = size.height * fraction
+            var path = Path()
+            path.move(to: CGPoint(x: 0, y: y))
+            path.addLine(to: CGPoint(x: size.width, y: y))
+            context.stroke(path, with: .color(theme.fyBorder.opacity(0.45)), style: StrokeStyle(lineWidth: 0.6, dash: [2, 4]))
+        }
+    }
+
+    private func chartPositions(size: CGSize) -> [CGPoint] {
+        points.enumerated().map { index, point in
+            let x = CGFloat(index) / CGFloat(max(1, points.count - 1)) * size.width
+            let normalized = max(0, min(1, point.activation / 0.55))
+            let y = size.height - CGFloat(normalized) * (size.height - 16) - 8
+            return CGPoint(x: x, y: y)
+        }
+    }
+
+    private func nearestPoint(to date: Date) -> Int? {
+        points.indices.min { lhs, rhs in
+            abs(points[lhs].ts.timeIntervalSince(date)) < abs(points[rhs].ts.timeIntervalSince(date))
+        }
     }
 }
 
