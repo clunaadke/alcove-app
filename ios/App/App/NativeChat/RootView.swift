@@ -9,6 +9,9 @@ struct RootView: View {
     @State private var showRoundtable = false   // 0731 圆桌：她要全屏，所以不走面板那条 sheet
     @State private var roundtableUnread = 0
     @State private var latestRoundtableID = 0
+    @State private var thinkingEnabled = false
+    @State private var thinkingKnown = false
+    @State private var switchingThinking = false
     @AppStorage("roundtableLastReadID") private var roundtableLastReadID = 0
     @AppStorage("roundtableReadInitialized") private var roundtableReadInitialized = false
     @State private var preparedPanelTexture: UIImage?
@@ -57,6 +60,7 @@ struct RootView: View {
         .animation(.easeOut(duration: 0.20), value: housePage != nil)
         .onAppear {
             prewarmPanelTexture()
+            Task { await refreshThinkingState() }
             // 声波念完两个音节再进门，跟 PWA 一个节奏
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.3) {
                 withAnimation(.easeOut(duration: 0.6)) { showSplash = false }
@@ -71,7 +75,10 @@ struct RootView: View {
         .onChange(of: themeName) { _ in prewarmPanelTexture() }
         .preferredColorScheme(theme.isDark ? .dark : .light) // 跟 PWA 主题走，不跟系统
         .onChange(of: scenePhase) { phase in
-            if phase == .active { SensorReporter.shared.appActive() }
+            if phase == .active {
+                SensorReporter.shared.appActive()
+                Task { await refreshThinkingState() }
+            }
             else { SensorReporter.shared.appBackground() }
         }
         .onReceive(NotificationCenter.default.publisher(for: .alcoveShowPermissions)) { _ in
@@ -130,17 +137,39 @@ struct RootView: View {
     // 左头像｜中间纯文字｜右侧三枚按钮共用一块清透玻璃胶囊
     private var topBar: some View {
         ZStack {
-            VStack(spacing: 0) {
+            VStack(spacing: -1) {
                 Text(assistantName)
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.system(size: 15, weight: .semibold))
                     .tracking(1.5)
                     .foregroundColor(theme.text)
-                Text("a word")
-                    .font(.system(size: 11))
-                    .foregroundColor(textDim)
+                Button { toggleThinking() } label: {
+                    HStack(spacing: 4) {
+                        Text("thinking quietly")
+                            .font(.system(size: 13))
+                            .foregroundColor(Color(red: 0.94, green: 0.47, blue: 0.65))
+                        if switchingThinking {
+                            ProgressView().controlSize(.mini).scaleEffect(0.72)
+                                .frame(width: 24, height: 18)
+                        } else {
+                            Capsule()
+                                .fill(thinkingEnabled ? Color(red: 0.94, green: 0.47, blue: 0.65)
+                                                      : textDim.opacity(0.25))
+                                .frame(width: 24, height: 14)
+                                .overlay(alignment: thinkingEnabled ? .trailing : .leading) {
+                                    Circle().fill(.white).frame(width: 10, height: 10).padding(2)
+                                }
+                                .opacity(thinkingKnown ? 1 : 0.45)
+                                .animation(.spring(response: 0.24, dampingFraction: 0.8),
+                                           value: thinkingEnabled)
+                        }
+                    }
+                    .frame(minHeight: 25)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(switchingThinking || !thinkingKnown)
             }
             .frame(height: 44, alignment: .center)
-            .allowsHitTesting(false)
 
             HStack(alignment: .center, spacing: 0) {
                 Button { showTerminal = true } label: {
@@ -186,6 +215,42 @@ struct RootView: View {
         }
         .frame(height: 44)
         .padding(.horizontal, 12)
+    }
+
+    private func refreshThinkingState() async {
+        if let screen = try? await AlcoveAPI.terminalCapture(lines: 12),
+           let enabled = thinkingState(in: screen) {
+            thinkingEnabled = enabled
+            thinkingKnown = true
+        }
+    }
+
+    private func thinkingState(in screen: String) -> Bool? {
+        if screen.contains("thinking:on") { return true }
+        if screen.contains("thinking:off") { return false }
+        return nil
+    }
+
+    private func toggleThinking() {
+        guard thinkingKnown, !switchingThinking else { return }
+        switchingThinking = true
+        let oldValue = thinkingEnabled
+        Task {
+            defer { switchingThinking = false }
+            guard let live = try? await AlcoveAPI.liveStream(), !live.active,
+                  let screen = try? await AlcoveAPI.terminalCapture() else { return }
+            let tail = screen.components(separatedBy: .newlines).suffix(12).joined(separator: "\n")
+            guard tail.contains("❯") && !tail.localizedCaseInsensitiveContains("esc to interrupt") else { return }
+            do { try await AlcoveAPI.terminalSendKey("M-t") } catch { return }
+            for _ in 0..<12 {
+                try? await Task.sleep(nanoseconds: 600_000_000)
+                if let screen = try? await AlcoveAPI.terminalCapture(lines: 12),
+                   let current = thinkingState(in: screen), current != oldValue {
+                    thinkingEnabled = current
+                    return
+                }
+            }
+        }
     }
 
     private func topBarControl(

@@ -143,6 +143,13 @@ enum AlcoveAPI {
         guard obj["ok"] as? Bool == true else { throw URLError(.cannotWriteToFile) }
     }
 
+    static func terminalSendKey(_ key: String, session: String = "main") async throws {
+        let obj = try await postJSON("/api/terminal/send", body: [
+            "session": session, "key": key
+        ])
+        guard obj["ok"] as? Bool == true else { throw URLError(.cannotWriteToFile) }
+    }
+
     // 0730 实时预览：他这一秒在想什么/说了什么/在跑什么工具
     static func liveStream() async throws -> LiveState {
         let obj = try await getJSON("/api/stream/current")
