@@ -3012,13 +3012,17 @@ private struct EmotionPulseChart: View {
                         context.stroke(Path(ellipseIn: CGRect(x: p.x - 6, y: p.y - 6, width: 12, height: 12)), with: .color(color.opacity(0.22)), lineWidth: 1)
                     }
 
-                    if let selectedIndex, positions.indices.contains(selectedIndex) {
-                        let p = positions[selectedIndex]
+                    let markerIndex: Int? = selectedIndex != nil ? selectedIndex : points.indices.last
+                    if let markerIndex, positions.indices.contains(markerIndex) {
+                        let p = positions[markerIndex]
                         var marker = Path()
                         marker.move(to: CGPoint(x: p.x, y: 4))
                         marker.addLine(to: CGPoint(x: p.x, y: size.height - 3))
                         context.stroke(marker, with: .color(theme.text.opacity(0.20)), style: StrokeStyle(lineWidth: 0.8, dash: [3, 3]))
-                        context.fill(Path(ellipseIn: CGRect(x: p.x - 4, y: p.y - 4, width: 8, height: 8)), with: .color(colorForKey(points[selectedIndex].dominant)))
+                        let color = colorForKey(points[markerIndex].dominant)
+                        context.fill(Path(ellipseIn: CGRect(x: p.x - 8, y: p.y - 8, width: 16, height: 16)), with: .color(color.opacity(0.16)))
+                        context.fill(Path(ellipseIn: CGRect(x: p.x - 5, y: p.y - 5, width: 10, height: 10)), with: .color(color))
+                        context.stroke(Path(ellipseIn: CGRect(x: p.x - 5, y: p.y - 5, width: 10, height: 10)), with: .color(theme.text.opacity(0.55)), lineWidth: 1)
                     }
                 }
                 .allowsHitTesting(false)
