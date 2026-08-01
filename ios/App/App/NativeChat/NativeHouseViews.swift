@@ -2890,7 +2890,7 @@ private struct NativeDesireView: View {
     private func loadEmotion() async {
         loading = state.isEmpty
         let stateResult = try? await NativeHouseAPI.object("/api/emotion/state")
-        let historyResult = try? await NativeHouseAPI.object("/api/emotion/history?range=24h")
+        let historyResult = try? await NativeHouseAPI.object("/api/emotion/history?range=24h&step=10")
         let eventsResult = try? await NativeHouseAPI.object("/api/emotion/events?limit=20")
 
         if let stateResult { state = stateResult }
@@ -2940,9 +2940,15 @@ private struct EmotionPulseChart: View {
     let colorForKey: (String) -> Color
     let theme: AlcoveTheme
 
+    private var timeBounds: (start: Date, end: Date)? {
+        guard let start = points.first?.ts, let end = points.last?.ts, end > start else { return nil }
+        return (start, end)
+    }
+
     var body: some View {
-        GeometryReader { geo in
-            ZStack {
+        VStack(spacing: 4) {
+            GeometryReader { geo in
+                ZStack {
                 Canvas { context, size in
                     drawGrid(context: &context, size: size)
                     guard points.count > 1 else { return }
@@ -3011,10 +3017,25 @@ private struct EmotionPulseChart: View {
                     .fill(Color.clear)
                     .contentShape(Rectangle())
                     .gesture(DragGesture(minimumDistance: 0).onChanged { value in
-                        guard !points.isEmpty else { return }
+                        guard !points.isEmpty, let bounds = timeBounds else { return }
                         let ratio = max(0, min(1, value.location.x / max(1, geo.size.width)))
-                        selectedIndex = Int(round(ratio * CGFloat(points.count - 1)))
+                        let date = bounds.start.addingTimeInterval(
+                            bounds.end.timeIntervalSince(bounds.start) * Double(ratio)
+                        )
+                        selectedIndex = nearestPoint(to: date)
                     })
+                }
+            }
+            if let bounds = timeBounds {
+                HStack {
+                    Text(bounds.start, format: .dateTime.hour().minute())
+                    Spacer()
+                    Text("过去 24 小时")
+                    Spacer()
+                    Text(bounds.end, format: .dateTime.hour().minute())
+                }
+                .font(.system(size: 8, weight: .medium, design: .monospaced))
+                .foregroundColor(theme.textLight)
             }
         }
     }
@@ -3030,8 +3051,10 @@ private struct EmotionPulseChart: View {
     }
 
     private func chartPositions(size: CGSize) -> [CGPoint] {
-        points.enumerated().map { index, point in
-            let x = CGFloat(index) / CGFloat(max(1, points.count - 1)) * size.width
+        guard let bounds = timeBounds else { return [] }
+        let duration = max(1, bounds.end.timeIntervalSince(bounds.start))
+        return points.map { point in
+            let x = CGFloat(point.ts.timeIntervalSince(bounds.start) / duration) * size.width
             let normalized = max(0, min(1, point.activation / 0.55))
             let y = size.height - CGFloat(normalized) * (size.height - 16) - 8
             return CGPoint(x: x, y: y)

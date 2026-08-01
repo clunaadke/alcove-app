@@ -9,6 +9,12 @@ enum NativeHouseAPI {
         var request = URLRequest(url: AlcoveAPI.fullURL(path))
         request.httpMethod = method
         request.timeoutInterval = 35
+        // House state is live data. Do not let URLSession satisfy a refresh from
+        // its local cache even if an intermediary accidentally omits headers.
+        if method == "GET" {
+            request.cachePolicy = .reloadIgnoringLocalCacheData
+            request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
+        }
         if let body {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.httpBody = try JSONSerialization.data(withJSONObject: body)
