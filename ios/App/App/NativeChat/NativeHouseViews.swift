@@ -1254,6 +1254,18 @@ final class MusicModel: ObservableObject {
         isPlaying.toggle()
     }
 
+    func stopAndClear() {
+        player?.pause()
+        cleanup()
+        player = nil
+        nowPlaying = nil
+        isPlaying = false
+        progress = 0
+        duration = 0
+        lyrics = []
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+    }
+
     func seek(to seconds: Double) {
         player?.seek(to: CMTime(seconds: seconds, preferredTimescale: 600))
         progress = seconds
@@ -1577,7 +1589,7 @@ struct MusicMiniPlayer: View {
 
     var body: some View {
         if let song = model.nowPlaying {
-            Button(action: open) {
+            HStack(spacing: 10) {
                 HStack(spacing: 10) {
                     AsyncImage(url: URL(string: song.cover)) { image in
                         image.resizable().scaledToFill()
@@ -1587,27 +1599,27 @@ struct MusicMiniPlayer: View {
                         Text(song.name).font(.system(size: 13, weight: .semibold)).lineLimit(1)
                         Text(song.artist).font(.system(size: 11)).foregroundColor(theme.textDim).lineLimit(1)
                     }
-                    Spacer()
-                    Button { model.prev() } label: { Image(systemName: "backward.fill") }
-                        .buttonStyle(.plain)
-                    Button { model.toggle() } label: {
-                        Image(systemName: model.isPlaying ? "pause.fill" : "play.fill")
-                            .frame(width: 32, height: 32)
-                    }.buttonStyle(.plain)
-                    Button { model.next() } label: { Image(systemName: "forward.fill") }
-                        .buttonStyle(.plain)
-                }
-                .foregroundColor(theme.text)
-                .padding(.horizontal, 10).frame(height: 62)
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                .background(theme.capsuleTint, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                .overlay(alignment: .bottomLeading) {
-                    GeometryReader { geo in
-                        Capsule().fill(theme.fyAccent)
-                            .frame(width: geo.size.width * CGFloat(model.duration > 0 ? model.progress / model.duration : 0), height: 2)
-                    }.frame(height: 2)
-                }
-            }.buttonStyle(.plain)
+                }.contentShape(Rectangle()).onTapGesture(perform: open)
+                Spacer()
+                Button { model.prev() } label: { Image(systemName: "backward.fill") }.buttonStyle(.plain)
+                Button { model.toggle() } label: {
+                    Image(systemName: model.isPlaying ? "pause.fill" : "play.fill").frame(width: 30, height: 32)
+                }.buttonStyle(.plain)
+                Button { model.next() } label: { Image(systemName: "forward.fill") }.buttonStyle(.plain)
+                Button { model.stopAndClear() } label: {
+                    Image(systemName: "xmark").font(.system(size: 14, weight: .medium)).frame(width: 28, height: 32)
+                }.buttonStyle(.plain)
+            }
+            .foregroundColor(theme.text)
+            .padding(.horizontal, 10).frame(height: 62)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .background(theme.capsuleTint, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(alignment: .bottomLeading) {
+                GeometryReader { geo in
+                    Capsule().fill(theme.fyAccent)
+                        .frame(width: geo.size.width * CGFloat(model.duration > 0 ? model.progress / model.duration : 0), height: 2)
+                }.frame(height: 2)
+            }
         }
     }
 }
