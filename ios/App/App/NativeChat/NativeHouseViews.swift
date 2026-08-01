@@ -1622,10 +1622,13 @@ struct MusicPlayerSheet: View {
             if let cover = model.nowPlaying?.cover {
                 AsyncImage(url: URL(string: cover)) { image in
                     image.resizable().scaledToFill()
-                } placeholder: { theme.splashBg }
+                } placeholder: {
+                    LinearGradient(colors: theme.splashBg, startPoint: .top, endPoint: .bottom)
+                }
                 .blur(radius: 48).scaleEffect(1.3).opacity(0.42).ignoresSafeArea()
             }
-            theme.splashBg.opacity(0.36).ignoresSafeArea()
+            LinearGradient(colors: theme.splashBg, startPoint: .top, endPoint: .bottom)
+                .opacity(0.36).ignoresSafeArea()
             TabView {
                 playerPage
                 lyricPage
