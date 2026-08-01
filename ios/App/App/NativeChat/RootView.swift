@@ -248,9 +248,9 @@ struct RootView: View {
             do {
                 try await AlcoveAPI.terminalSendKey("M-t")
                 try? await Task.sleep(nanoseconds: 350_000_000)
-                // The current Claude Code opens a picker rather than toggling
-                // directly. It always focuses Enabled first.
-                if oldValue { try await AlcoveAPI.terminalSendKey("Down") }
+                // The picker focuses the current value: Enabled is row one,
+                // Disabled row two. Move once toward the requested value.
+                try await AlcoveAPI.terminalSendKey(oldValue ? "Down" : "Up")
                 try await AlcoveAPI.terminalSendKey("Enter")
                 // Mid-conversation changes add a second confirmation screen.
                 // Wait for it instead of assuming the terminal renders instantly.
