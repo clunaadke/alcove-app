@@ -170,6 +170,10 @@ struct RootView: View {
                 .disabled(switchingThinking || !thinkingKnown)
             }
             .frame(height: 44, alignment: .center)
+            // The full-width left/right control row is drawn after this view.
+            // Keep the center button above its transparent Spacer so taps
+            // reach the thinking switch instead of being swallowed.
+            .zIndex(2)
 
             HStack(alignment: .center, spacing: 0) {
                 Button { showTerminal = true } label: {
