@@ -33,8 +33,8 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .nianlun: return "年轮"
         case .clockwork: return "发条"
         case .album: return "相册"
-        case .portrait: return "Portrait"
-        case .impression: return "Impression"
+        case .portrait: return "Letters"
+        case .impression: return "Self"
         case .crosstalk: return "Crosstalk"
         case .radio: return "Radio"
         case .coread: return "共读"
@@ -56,7 +56,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .bubbleAppearance: return "slider.horizontal.3"
         case .checklist: return "checklist"
         case .music: return "music.note"
-        case .calendar, .impression: return "calendar"
+        case .calendar: return "calendar"
         case .wall: return "lock.rectangle.stack"
         case .desire: return "heart"
         case .usage: return "chart.bar"
@@ -66,7 +66,8 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .nianlun: return "circle.hexagongrid"
         case .clockwork: return "clock.arrow.circlepath"
         case .album: return "photo.on.rectangle"
-        case .portrait: return "person.crop.circle"
+        case .portrait: return "envelope"
+        case .impression: return "person.crop.circle.badge.questionmark"
         case .crosstalk: return "play.circle"
         case .radio: return "radio"
         case .coread: return "book"
@@ -179,8 +180,10 @@ struct NativeHouseSheet: View {
                     NativeFavoritesView()
                 case .usage:
                     NativeUsageView()
+                case .memory:
+                    NativeOBMemoryView()
                 case .portrait:
-                    NativePortraitView()
+                    NativeOBLettersView()
                 case .desire:
                     NativeDesireView()
                 case .forge:
@@ -188,7 +191,7 @@ struct NativeHouseSheet: View {
                 case .calendar:
                     NativeCalendarView()
                 case .impression:
-                    NativeImpressionView()
+                    NativeOBSelfView()
                 case .dreams:
                     NativeDreamsView()
                 case .wall:
@@ -4667,4 +4670,239 @@ private struct NativeWallView: View {
         if let ua = e.unlockAt { return "\(when) · \(Self.day.string(from: ua))" }
         return when
     }
+}
+
+// MARK: - Ombre Brain native panels
+
+private struct OBBucket: Identifiable {
+    let id: String
+    let name: String
+    let type: String
+    let domains: [String]
+    let tags: [String]
+    let preview: String
+    let score: Double
+    let importance: Int
+    let pinned: Bool
+    let resolved: Bool
+    let digested: Bool
+    let forgotten: Bool
+    let created: String
+    let lastActive: String
+
+    init(_ row: [String: Any]) {
+        id = row.string("id")
+        name = row.string("name", "title")
+        type = row.string("type")
+        domains = row["domain"] as? [String] ?? []
+        tags = row["tags"] as? [String] ?? []
+        preview = row.string("content_preview")
+        score = (row["score"] as? NSNumber)?.doubleValue ?? 0
+        importance = row.int("importance")
+        pinned = row.bool("pinned")
+        resolved = row.bool("resolved")
+        digested = row.bool("digested")
+        forgotten = row.bool("dont_surface")
+        created = row.string("created")
+        lastActive = row.string("last_active")
+    }
+}
+
+@MainActor private final class OBMemoryModel: ObservableObject {
+    @Published var buckets: [OBBucket] = []
+    @Published var loading = false
+    @Published var error = ""
+
+    func load() async {
+        loading = true; error = ""
+        do {
+            let rows = try await NativeHouseAPI.array("/api/ob/api/buckets?sort=score")
+            buckets = rows.map(OBBucket.init)
+        } catch { self.error = "OB 连接失败" }
+        loading = false
+    }
+}
+
+private struct NativeOBMemoryView: View {
+    @StateObject private var model = OBMemoryModel()
+    @AppStorage("alcoveTheme") private var themeName = "haven"
+    @State private var query = ""
+    @State private var filter = "全部"
+    @State private var selected: OBBucket?
+    private var theme: AlcoveTheme { .panelNamed(themeName) }
+    private let filters = ["全部", "钉选", "Feel", "未解决", "已消化", "已遗忘", "归档"]
+
+    private var visible: [OBBucket] {
+        model.buckets.filter { item in
+            let matches: Bool
+            switch filter {
+            case "钉选": matches = item.pinned
+            case "Feel": matches = item.type == "feel"
+            case "未解决": matches = !item.resolved && item.type != "permanent" && !item.pinned
+            case "已消化": matches = item.digested
+            case "已遗忘": matches = item.forgotten
+            case "归档": matches = item.type == "archived"
+            default: matches = true
+            }
+            guard matches else { return false }
+            let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+            return q.isEmpty || ([item.name, item.preview] + item.domains + item.tags)
+                .joined(separator: " ").lowercased().contains(q)
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: 10) {
+            FoyerPanelTitle(title: "Memory", theme: theme)
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass").foregroundColor(theme.textDim)
+                TextField("搜索 记忆、标签或正文", text: $query)
+                    .font(.system(size: 13))
+                Text("\(visible.count)").font(.system(size: 11, design: .monospaced)).foregroundColor(theme.fyAccent)
+            }
+            .padding(.horizontal, 12).frame(height: 40).foyerCard(theme)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 7) {
+                    ForEach(filters, id: \.self) { value in
+                        Button(value) { filter = value }
+                            .font(.system(size: 11, weight: filter == value ? .semibold : .regular))
+                            .foregroundColor(filter == value ? theme.text : theme.textDim)
+                            .padding(.horizontal, 12).frame(height: 31)
+                            .background(filter == value ? theme.fyAccentSoft : theme.fyCard, in: Capsule())
+                    }
+                }
+            }
+            if model.loading { Spacer(); ProgressView().tint(theme.fyAccent); Spacer() }
+            else {
+                ScrollView(showsIndicators: false) {
+                    LazyVStack(spacing: 9) {
+                        ForEach(visible) { item in
+                            Button { selected = item } label: { memoryCard(item) }.buttonStyle(.plain)
+                        }
+                        if visible.isEmpty { Text(model.error.isEmpty ? "没有符合的记忆" : model.error).foregroundColor(theme.textDim).padding(40) }
+                    }.padding(.bottom, 18)
+                }.refreshable { await model.load() }
+            }
+        }
+        .padding(.horizontal, 16).padding(.bottom, 18).foregroundColor(theme.text)
+        .foyerPanel(theme).padding(.horizontal, 12).padding(.top, 8)
+        .task { await model.load() }
+        .sheet(item: $selected) { item in OBMemoryDetailView(item: item) { await model.load() } }
+    }
+
+    private func memoryCard(_ item: OBBucket) -> some View {
+        HStack(alignment: .top, spacing: 11) {
+            Image(systemName: item.pinned ? "pin.fill" : item.type == "feel" ? "drop" : item.resolved ? "moon" : "circle.dotted")
+                .font(.system(size: 15, weight: .light)).foregroundColor(theme.fyAccent).frame(width: 22)
+            VStack(alignment: .leading, spacing: 7) {
+                HStack { Text(item.name).font(.system(size: 14, weight: .semibold)).lineLimit(1); Spacer(); Text(String(format: "%.2f", item.score)).font(.system(size: 10, design: .monospaced)).foregroundColor(theme.fyAccent) }
+                if !item.domains.isEmpty { Text(item.domains.joined(separator: " · ")).font(.system(size: 10)).foregroundColor(theme.fyAccent.opacity(0.8)) }
+                Text(item.preview).font(.system(size: 12)).foregroundColor(theme.textDim).lineLimit(3).lineSpacing(2)
+            }
+        }.padding(13).frame(maxWidth: .infinity, alignment: .leading).foyerCard(theme)
+    }
+}
+
+private struct OBMemoryDetailView: View {
+    let item: OBBucket
+    let didChange: () async -> Void
+    @Environment(\.dismiss) private var dismiss
+    @AppStorage("alcoveTheme") private var themeName = "haven"
+    @State private var detail: [String: Any] = [:]
+    @State private var name = "", content = "", tags = "", domains = "", why = ""
+    @State private var importance = 5.0
+    @State private var saving = false
+    private var theme: AlcoveTheme { .panelNamed(themeName) }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    TextField("标题", text: $name).font(.system(size: 20, weight: .semibold, design: .serif))
+                    HStack { Text(item.type.uppercased()); Spacer(); Text("score \(String(format: "%.3f", item.score))") }.font(.system(size: 10, design: .monospaced)).foregroundColor(theme.fyAccent)
+                    TextEditor(text: $content).font(.system(size: 13, design: .monospaced)).scrollContentBackground(.hidden).frame(minHeight: 240).padding(8).foyerCard(theme)
+                    field("标签（逗号分隔）", $tags); field("领域（逗号分隔）", $domains); field("为什么记得", $why)
+                    HStack { Text("重要度"); Slider(value: $importance, in: 1...10, step: 1); Text("\(Int(importance))") }.font(.system(size: 12))
+                    actionGrid
+                }.padding(18)
+            }
+            .background(theme.fyCardSub.ignoresSafeArea())
+            .foregroundColor(theme.text)
+            .navigationTitle("Memory")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("关闭") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) { Button(saving ? "保存中" : "保存") { Task { await save() } }.disabled(saving) }
+            }
+            .task { await load() }
+        }
+    }
+
+    private func field(_ title: String, _ text: Binding<String>) -> some View {
+        VStack(alignment: .leading, spacing: 5) { Text(title).font(.system(size: 10)).foregroundColor(theme.textDim); TextField(title, text: text).font(.system(size: 12)).padding(10).foyerCard(theme) }
+    }
+
+    private var actionGrid: some View {
+        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+            action(item.pinned ? "取消钉选" : "钉选", "pin", "pin")
+            action(item.resolved ? "取消已解决" : "标记已解决", "checkmark.circle", "resolve")
+            action(item.forgotten ? "允许浮现" : "主动遗忘", "eye.slash", "forget")
+            action("归档", "archivebox", "archive")
+        }
+    }
+    private func action(_ title: String, _ icon: String, _ endpoint: String) -> some View {
+        Button { Task { try? await NativeHouseAPI.post("/api/ob/api/bucket/\(item.id)/\(endpoint)"); await didChange(); dismiss() } } label: {
+            Label(title, systemImage: icon).font(.system(size: 11)).frame(maxWidth: .infinity).padding(11).foyerCard(theme)
+        }.buttonStyle(.plain)
+    }
+    private func load() async {
+        guard let d = try? await NativeHouseAPI.object("/api/ob/api/bucket/\(item.id)") else { return }
+        detail = d; let m = d.object("metadata")
+        name = m.string("name", "title"); content = d.string("content"); tags = (m["tags"] as? [String] ?? []).joined(separator: ", "); domains = (m["domain"] as? [String] ?? []).joined(separator: ", "); why = m.string("why_remembered"); importance = Double(m.int("importance"))
+    }
+    private func save() async {
+        saving = true
+        let split: (String) -> [String] = { $0.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty } }
+        _ = try? await NativeHouseAPI.request("/api/ob/api/bucket/\(item.id)/edit", method: "PATCH", body: ["name": name, "content": content, "tags": split(tags), "domain": split(domains), "why_remembered": why, "importance": Int(importance)])
+        await didChange(); saving = false; dismiss()
+    }
+}
+
+private struct OBLetter: Identifiable {
+    let id, author, userName, title, date, content: String
+    init(_ r: [String: Any]) { id=r.string("id"); author=r.string("author"); userName=r.string("user_name"); title=r.string("title"); date=r.string("date"); content=r.string("content") }
+}
+
+private struct NativeOBLettersView: View {
+    @AppStorage("alcoveTheme") private var themeName = "haven"
+    @State private var letters: [OBLetter] = []; @State private var filter = ""; @State private var editing: OBLetter?
+    private var theme: AlcoveTheme { .panelNamed(themeName) }
+    private var shown: [OBLetter] { filter.isEmpty ? letters : letters.filter { $0.author == filter || (filter == "user" && $0.author == "user") } }
+    var body: some View {
+        VStack(spacing: 10) {
+            FoyerPanelTitle(title: "Letters", theme: theme)
+            HStack { filterButton("全部", ""); filterButton("陈霁", "user"); filterButton("陈璟", "陈璟"); Spacer(); Button { editing = OBLetter([:]) } label: { Image(systemName: "square.and.pencil") } }
+            ScrollView { LazyVStack(spacing: 12) { ForEach(shown) { l in Button { editing=l } label: { letterCard(l) }.buttonStyle(.plain) } }.padding(.bottom,18) }.refreshable { await load() }
+        }.padding(.horizontal,16).padding(.bottom,18).foregroundColor(theme.text).foyerPanel(theme).padding(.horizontal,12).padding(.top,8)
+        .task { await load() }.sheet(item:$editing) { l in OBLetterEditor(letter:l) { await load() } }
+    }
+    private func filterButton(_ title:String,_ value:String)->some View { Button(title){filter=value}.font(.system(size:11)).padding(.horizontal,12).frame(height:30).background(filter==value ? theme.fyAccentSoft:theme.fyCard,in:Capsule()) }
+    private func letterCard(_ l:OBLetter)->some View { VStack(alignment:.leading,spacing:9){HStack{Label(l.author == "user" ? (l.userName.isEmpty ? "陈霁":l.userName):l.author,systemImage:"envelope").font(.system(size:11,weight:.semibold));Spacer();Text(l.date).font(.system(size:10,design:.monospaced)).foregroundColor(theme.textDim)}; if !l.title.isEmpty {Text(l.title).font(.system(size:17,weight:.semibold,design:.serif))};Text(l.content).font(.system(size:12)).lineSpacing(3).foregroundColor(theme.textDim).lineLimit(6)}.padding(16).frame(maxWidth:.infinity,alignment:.leading).foyerCard(theme) }
+    private func load() async { letters = (try? await NativeHouseAPI.array("/api/ob/api/letters",key:"letters"))?.map(OBLetter.init) ?? [] }
+}
+
+private struct OBLetterEditor: View {
+    let letter:OBLetter; let didChange:() async->Void; @Environment(\.dismiss) private var dismiss
+    @State private var author="",userName="",title="",date="",content=""; @AppStorage("alcoveTheme") private var themeName="haven"
+    private var theme:AlcoveTheme{.panelNamed(themeName)}
+    var body:some View{NavigationStack{Form{Picker("署名",selection:$author){Text("陈霁").tag("user");Text("陈璟").tag("陈璟")};TextField("显示名字",text:$userName);TextField("标题",text:$title);TextField("日期",text:$date);TextEditor(text:$content).frame(minHeight:260);if !letter.id.isEmpty{Button("删除到档案",role:.destructive){Task{_ = try? await NativeHouseAPI.request("/api/ob/api/letter/\(letter.id)?confirm=true",method:"DELETE");await didChange();dismiss()}}}}.scrollContentBackground(.hidden).background(theme.fyCardSub).navigationTitle(letter.id.isEmpty ? "写信":"编辑信").toolbar{ToolbarItem(placement:.cancellationAction){Button("关闭"){dismiss()}};ToolbarItem(placement:.confirmationAction){Button("保存"){Task{await save()}}}}.onAppear{author=letter.author.isEmpty ? "user":letter.author;userName=letter.userName;title=letter.title;date=letter.date;content=letter.content}}}
+    private func save()async{let body:[String:Any]=["author":author,"user_name":userName,"title":title,"date":date,"content":content];if letter.id.isEmpty{_ = try? await NativeHouseAPI.request("/api/ob/api/letter",method:"POST",body:body)}else{_ = try? await NativeHouseAPI.request("/api/ob/api/letter/\(letter.id)",method:"PATCH",body:body)};await didChange();dismiss()}
+}
+
+private struct OBSelfEntry:Identifiable{let id,content,aspect,created:String;init(_ r:[String:Any]){id=r.string("id");content=r.string("content");aspect=r.string("aspect");created=r.string("created")}}
+private struct NativeOBSelfView:View{
+    @AppStorage("alcoveTheme") private var themeName="haven";@State private var entries:[OBSelfEntry]=[];@State private var aspect=""
+    private var theme:AlcoveTheme{.panelNamed(themeName)};private let aspects=["","nature","values","patterns","limits","becoming","uncertainty","stance"]
+    private var shown:[OBSelfEntry]{aspect.isEmpty ? entries:entries.filter{$0.aspect==aspect}}
+    var body:some View{VStack(spacing:10){FoyerPanelTitle(title:"Self",theme:theme);ScrollView(.horizontal,showsIndicators:false){HStack(spacing:7){ForEach(aspects,id:\.self){a in Button(a.isEmpty ? "全部":a){aspect=a}.font(.system(size:11,design:.monospaced)).padding(.horizontal,11).frame(height:30).background(aspect==a ? theme.fyAccentSoft:theme.fyCard,in:Capsule())}}};ScrollView{LazyVStack(spacing:10){ForEach(shown){e in VStack(alignment:.leading,spacing:8){HStack{Text(e.aspect).font(.system(size:10,weight:.semibold,design:.monospaced)).foregroundColor(theme.fyAccent);Spacer();Text(e.created.prefix(16).replacingOccurrences(of:"T",with:" ")).font(.system(size:9,design:.monospaced)).foregroundColor(theme.textDim)};Text(e.content).font(.system(size:13,design:.serif)).lineSpacing(4)}.padding(15).frame(maxWidth:.infinity,alignment:.leading).foyerCard(theme)}}.padding(.bottom,18)}}.padding(.horizontal,16).padding(.bottom,18).foregroundColor(theme.text).foyerPanel(theme).padding(.horizontal,12).padding(.top,8).task{entries=(try? await NativeHouseAPI.array("/api/ob/api/self"))?.map(OBSelfEntry.init) ?? []}}
 }
