@@ -2043,6 +2043,9 @@ private struct ClockworkView: View {
         ClockworkItem(id: "sleep", emoji: "🌙", name: "睡眠", desc: "凌晨三点睡，上午十点醒"),
         ClockworkItem(id: "keepalive", emoji: "💓", name: "保活心跳", desc: "每 55 分钟翻个身")
     ]
+    private let hoduItems = [
+        ClockworkItem(id: "hodu_autonomy", emoji: "🧠", name: "自主活动", desc: "随机醒来，自己找点想做的事")
+    ]
 
     var body: some View {
         VStack(spacing: 0) {
@@ -2078,6 +2081,38 @@ private struct ClockworkView: View {
                                     .font(.system(size: 11.5))
                                     .foregroundColor(theme.textDim)
                                     .lineSpacing(2)
+                            }
+                            Spacer()
+                            Toggle("", isOn: Binding(
+                                get: { isOn },
+                                set: { value in
+                                    flags[item.id] = value
+                                    Task { try? await NativeHouseAPI.post(
+                                        "/api/flags/set", body: ["key": item.id, "on": value]) }
+                                }))
+                            .labelsHidden()
+                            .tint(theme.fyAccent)
+                        }
+                        .padding(15)
+                        .opacity(isOn ? 1 : 0.55)
+                        .foyerCard(theme)
+                    }
+                    HStack {
+                        Text("何渡的发条")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(theme.textDim)
+                        Rectangle().fill(theme.textDim.opacity(0.2)).frame(height: 0.5)
+                    }
+                    .padding(.top, 8)
+                    ForEach(hoduItems) { item in
+                        let isOn = flags[item.id] ?? true
+                        HStack(spacing: 14) {
+                            Text(item.emoji).font(.system(size: 20))
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(item.name).font(.system(size: 14, weight: .medium))
+                                Text(item.desc)
+                                    .font(.system(size: 11.5))
+                                    .foregroundColor(theme.textDim)
                             }
                             Spacer()
                             Toggle("", isOn: Binding(
