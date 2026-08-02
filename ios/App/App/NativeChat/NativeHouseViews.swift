@@ -4761,6 +4761,7 @@ private struct OBBucket: Identifiable {
     let resolved: Bool
     let digested: Bool
     let forgotten: Bool
+    let anchor: Bool
     let created: String
     let lastActive: String
 
@@ -4777,6 +4778,7 @@ private struct OBBucket: Identifiable {
         resolved = row.bool("resolved")
         digested = row.bool("digested")
         forgotten = row.bool("dont_surface")
+        anchor = row.bool("anchor")
         created = row.string("created")
         lastActive = row.string("last_active")
     }
@@ -4803,6 +4805,10 @@ private struct NativeOBMemoryView: View {
     @State private var query = ""
     @State private var filter = "全部"
     @State private var selected: OBBucket?
+    @State private var selecting = false
+    @State private var checked: Set<String> = []
+    @State private var showAnchors = false
+    @State private var showNetwork = false
     private var theme: AlcoveTheme { .panelNamed(themeName) }
     private let filters = ["全部", "钉选", "Feel", "未解决", "已消化", "已遗忘", "归档"]
 
@@ -4829,6 +4835,16 @@ private struct NativeOBMemoryView: View {
         VStack(spacing: 10) {
             FoyerPanelTitle(title: "Memory", theme: theme)
             HStack(spacing: 8) {
+                Button { showAnchors = true } label: { Label("Anchors", systemImage: "scope") }
+                Button { showNetwork = true } label: { Label("记忆网络", systemImage: "point.3.connected.trianglepath.dotted") }
+                Spacer()
+                Button(selecting ? "完成" : "批量") {
+                    selecting.toggle(); if !selecting { checked.removeAll() }
+                }
+            }
+            .font(.system(size: 11, weight: .medium))
+            .buttonStyle(.plain).foregroundColor(theme.fyAccent)
+            HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass").foregroundColor(theme.textDim)
                 TextField("搜索 记忆、标签或正文", text: $query)
                     .font(.system(size: 13))
@@ -4851,7 +4867,11 @@ private struct NativeOBMemoryView: View {
                 ScrollView(showsIndicators: false) {
                     LazyVStack(spacing: 9) {
                         ForEach(visible) { item in
-                            Button { selected = item } label: { memoryCard(item) }.buttonStyle(.plain)
+                            Button {
+                                if selecting {
+                                    if checked.contains(item.id) { checked.remove(item.id) } else { checked.insert(item.id) }
+                                } else { selected = item }
+                            } label: { memoryCard(item) }.buttonStyle(.plain)
                         }
                         if visible.isEmpty { Text(model.error.isEmpty ? "没有符合的记忆" : model.error).foregroundColor(theme.textDim).padding(40) }
                     }.padding(.bottom, 18)
@@ -4862,10 +4882,28 @@ private struct NativeOBMemoryView: View {
         .foyerPanel(theme).padding(.horizontal, 12).padding(.top, 8)
         .task { await model.load() }
         .sheet(item: $selected) { item in OBMemoryDetailView(item: item) { await model.load() } }
+        .sheet(isPresented: $showAnchors) { OBAnchorsView { await model.load() } }
+        .sheet(isPresented: $showNetwork) { OBNetworkView() }
+        .safeAreaInset(edge: .bottom) {
+            if selecting && !checked.isEmpty {
+                HStack(spacing: 10) {
+                    Text("已选 \(checked.count)").font(.system(size: 11, design: .monospaced))
+                    Spacer()
+                    batchButton("遗忘", "forget")
+                    batchButton("解决", "resolve")
+                    batchButton("归档", "archive")
+                }.padding(.horizontal, 16).frame(height: 52)
+                    .background(.ultraThinMaterial).foregroundColor(theme.text)
+            }
+        }
     }
 
     private func memoryCard(_ item: OBBucket) -> some View {
         HStack(alignment: .top, spacing: 11) {
+            if selecting {
+                Image(systemName: checked.contains(item.id) ? "checkmark.circle.fill" : "circle")
+                    .foregroundColor(theme.fyAccent)
+            }
             Image(systemName: item.pinned ? "pin.fill" : item.type == "feel" ? "drop" : item.resolved ? "moon" : "circle.dotted")
                 .font(.system(size: 15, weight: .light)).foregroundColor(theme.fyAccent).frame(width: 22)
             VStack(alignment: .leading, spacing: 7) {
@@ -4875,6 +4913,72 @@ private struct NativeOBMemoryView: View {
             }
         }.padding(13).frame(maxWidth: .infinity, alignment: .leading).foyerCard(theme)
     }
+
+    private func batchButton(_ title: String, _ action: String) -> some View {
+        Button(title) {
+            let ids = Array(checked)
+            Task {
+                _ = try? await NativeHouseAPI.request("/api/ob/api/buckets/batch", method: "POST", body: ["ids": ids, "action": action])
+                checked.removeAll(); selecting = false; await model.load()
+            }
+        }.font(.system(size: 11, weight: .semibold)).padding(.horizontal, 10).frame(height: 30)
+            .background(theme.fyAccentSoft, in: Capsule())
+    }
+}
+
+private struct OBAnchor: Identifiable {
+    let id, name, preview, type: String; let domains, tags: [String]
+    init(_ r: [String: Any]) { id=r.string("id"); name=r.string("name"); preview=r.string("preview"); type=r.string("type"); domains=r["domain"] as? [String] ?? []; tags=r["tags"] as? [String] ?? [] }
+}
+
+private struct OBAnchorsView: View {
+    let didChange: () async -> Void
+    @Environment(\.dismiss) private var dismiss
+    @AppStorage("alcoveTheme") private var themeName="haven"
+    @State private var anchors:[OBAnchor]=[]; @State private var count=0; @State private var limit=24; @State private var error=""
+    private var theme:AlcoveTheme{.panelNamed(themeName)}
+    var body: some View { NavigationStack {
+        ScrollView { LazyVStack(spacing:10) {
+            HStack { Text("\(count) / \(limit) 个坐标锚点").font(.system(size:11,design:.monospaced)); Spacer() }.foregroundColor(theme.fyAccent)
+            ForEach(anchors) { a in
+                VStack(alignment:.leading,spacing:8) {
+                    HStack { Image(systemName:"scope"); Text(a.name).font(.system(size:14,weight:.semibold)); Spacer(); Text(a.type).font(.system(size:9,design:.monospaced)) }
+                    if !a.domains.isEmpty { Text(a.domains.joined(separator:" · ")).font(.system(size:10)).foregroundColor(theme.fyAccent) }
+                    Text(a.preview).font(.system(size:12)).foregroundColor(theme.textDim).lineLimit(4)
+                    Button("移出 Anchors", role:.destructive) { Task { _ = try? await NativeHouseAPI.request("/api/ob/api/bucket/\(a.id)/anchor",method:"POST",body:["value":false]); await load(); await didChange() } }.font(.system(size:11))
+                }.padding(14).frame(maxWidth:.infinity,alignment:.leading).foyerCard(theme)
+            }
+            if anchors.isEmpty { Text(error.isEmpty ? "还没有 anchor":"读取失败：\(error)").foregroundColor(theme.textDim).padding(40) }
+        }.padding(16) }.background(theme.fyCardSub.ignoresSafeArea()).foregroundColor(theme.text)
+            .navigationTitle("Anchors").navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement:.confirmationAction){Button("关闭"){dismiss()}} }.task{await load()}
+    }}
+    private func load() async { do { let o=try await NativeHouseAPI.object("/api/ob/api/anchors"); anchors=(o["anchors"] as? [[String:Any]] ?? []).map(OBAnchor.init); count=o.int("count"); limit=o.int("limit") } catch { self.error=error.localizedDescription } }
+}
+
+private struct OBNetworkNode: Identifiable { let id,label,kind:String; let frequency:Int; let anchor:Bool; let buckets:[String]; init(_ r:[String:Any]){id=r.string("id");label=r.string("label","name");kind=r.string("kind");frequency=r.int("freq");anchor=r.bool("anchor");buckets=r["buckets"] as? [String] ?? []} }
+private struct OBNetworkEdge { let source,target:String; let weight:Double; init(_ r:[String:Any]){source=r.string("source");target=r.string("target");weight=(r["weight"] as? NSNumber)?.doubleValue ?? 1} }
+
+private struct OBNetworkView: View {
+    @Environment(\.dismiss) private var dismiss
+    @AppStorage("alcoveTheme") private var themeName="haven"
+    @State private var nodes:[OBNetworkNode]=[]; @State private var edges:[OBNetworkEdge]=[]; @State private var mode="concept"; @State private var selected:OBNetworkNode?
+    private var theme:AlcoveTheme{.panelNamed(themeName)}
+    var body:some View { NavigationStack { VStack(spacing:10) {
+        Picker("模式",selection:$mode){Text("概念").tag("concept");Text("语义").tag("embedding")}.pickerStyle(.segmented).padding(.horizontal,16)
+        GeometryReader { geo in
+            let positions = layout(size:geo.size)
+            ZStack {
+                Canvas { ctx,_ in for e in edges { if let a=positions[e.source],let b=positions[e.target] { var p=Path();p.move(to:a);p.addLine(to:b);ctx.stroke(p,with:.color(theme.textDim.opacity(min(0.55,0.12+e.weight*0.09))),lineWidth:max(0.5,min(3,e.weight))) } } }
+                ForEach(nodes) { n in if let p=positions[n.id] { Button { selected=n } label:{ Text(n.label).font(.system(size:n.anchor ? 11:9,weight:n.anchor ? .bold:.medium)).lineLimit(1).padding(.horizontal,7).frame(height:24).background(n.anchor ? theme.fyAccentSoft:theme.fyCard,in:Capsule()).overlay(Capsule().stroke(theme.fyAccent.opacity(n.anchor ? 0.8:0.18)))}.buttonStyle(.plain).position(p) } }
+            }.clipped()
+        }
+        Text("\(nodes.count) 个节点 · \(edges.count) 条连接").font(.system(size:10,design:.monospaced)).foregroundColor(theme.textDim).padding(.bottom,12)
+    }.padding(.top,10).background(theme.fyCardSub.ignoresSafeArea()).foregroundColor(theme.text).navigationTitle("记忆网络").navigationBarTitleDisplayMode(.inline).toolbar{ToolbarItem(placement:.confirmationAction){Button("关闭"){dismiss()}}}.task(id:mode){await load()} }
+    .sheet(item:$selected){n in NavigationStack{VStack(alignment:.leading,spacing:14){Text(n.label).font(.system(size:24,weight:.semibold,design:.serif));Text("\(n.kind) · 出现在 \(n.frequency) 条记忆中").foregroundColor(theme.fyAccent);Text(n.buckets.joined(separator:"\n")).font(.system(size:11,design:.monospaced)).foregroundColor(theme.textDim);Spacer()}.padding(22).frame(maxWidth:.infinity,alignment:.leading).background(theme.fyCardSub.ignoresSafeArea()).foregroundColor(theme.text).toolbar{ToolbarItem(placement:.confirmationAction){Button("关闭"){selected=nil}}}}}
+    }
+    private func load()async{if let o=try? await NativeHouseAPI.object("/api/ob/api/network?mode=\(mode)"){nodes=(o["nodes"] as? [[String:Any]] ?? []).map(OBNetworkNode.init);edges=(o["edges"] as? [[String:Any]] ?? []).map(OBNetworkEdge.init)}}
+    private func layout(size:CGSize)->[String:CGPoint]{var out:[String:CGPoint]=[:];let ranked=nodes.sorted{$0.frequency>$1.frequency};let cx=size.width/2,cy=size.height/2;for (i,n) in ranked.enumerated(){if i==0{out[n.id]=CGPoint(x:cx,y:cy);continue};let ring=Double((i-1)/10+1),slot=Double((i-1)%10),angle=slot*(2*Double.pi/10)+ring*0.31;let radius=min(Double(min(size.width,size.height))*0.43,55+ring*55);out[n.id]=CGPoint(x:cx+CGFloat(cos(angle)*radius),y:cy+CGFloat(sin(angle)*radius))};return out}
 }
 
 private struct OBMemoryDetailView: View {
@@ -4925,6 +5029,9 @@ private struct OBMemoryDetailView: View {
             action(item.pinned ? "取消钉选" : "钉选", "pin", "pin")
             action(item.resolved ? "取消已解决" : "标记已解决", "checkmark.circle", "resolve")
             action(item.forgotten ? "允许浮现" : "主动遗忘", "eye.slash", "forget")
+            Button { Task { _ = try? await NativeHouseAPI.request("/api/ob/api/bucket/\(item.id)/anchor", method: "POST", body: ["value": !item.anchor]); await didChange(); dismiss() } } label: {
+                Label(item.anchor ? "移出 Anchor" : "加入 Anchor", systemImage: "scope").font(.system(size: 11)).frame(maxWidth: .infinity).padding(11).foyerCard(theme)
+            }.buttonStyle(.plain)
             action("归档", "archivebox", "archive")
         }
     }
