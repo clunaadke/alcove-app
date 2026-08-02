@@ -219,6 +219,10 @@ struct RoundtableView: View {
     @State private var showStickers = false
     @State private var previewImage: UIImage?
     @State private var photoViewer: PhotoViewerSelection?
+    @State private var cachedRTWallpaper: UIImage?
+    @State private var cachedRTAvatarUser: UIImage?
+    @State private var cachedRTAvatarAssistant: UIImage?
+    @State private var cachedRTAvatarGpt: UIImage?
     @Namespace private var photoTransition
     @StateObject private var recorder = VoiceRecorder()
     @FocusState private var focused: Bool
@@ -250,15 +254,8 @@ struct RoundtableView: View {
         )
     }
 
-    private var rtWallpaperImage: UIImage? {
-        guard !rtWallpaper.isEmpty else { return nil }
-        let parts = rtWallpaper.split(separator: ",", maxSplits: 1)
-        let b64 = parts.count == 2 ? String(parts[1]) : rtWallpaper
-        return Data(base64Encoded: b64).flatMap(UIImage.init(data:))
-    }
-
     private var wallpaperDescriptor: ChatWallpaperDescriptor {
-        if let image = rtWallpaperImage {
+        if let image = cachedRTWallpaper {
             return ChatWallpaperDescriptor(source: .image(image))
         }
         return ChatWallpaperDescriptor(source: .gradient(theme.wallGradient))
@@ -285,8 +282,15 @@ struct RoundtableView: View {
             .environment(\.bubbleGlassStyle, bubbleGlassStyle)
         }
         .foregroundColor(theme.text)
-        .onAppear { store.start() }
+        .onAppear {
+            refreshRTImageCache()
+            store.start()
+        }
         .onDisappear { store.stop() }
+        .onChange(of: rtWallpaper) { _ in refreshRTImageCache() }
+        .onChange(of: rtAvatarUser) { _ in refreshRTImageCache() }
+        .onChange(of: rtAvatarAssistant) { _ in refreshRTImageCache() }
+        .onChange(of: rtAvatarGpt) { _ in refreshRTImageCache() }
         .sheet(isPresented: $showCamera) {
             CameraView { image in
                 if let jpeg = image.jpegData(compressionQuality: 0.85) { pendingImages.append((image, jpeg)) }
@@ -424,16 +428,25 @@ struct RoundtableView: View {
     }
 
     private func avatarFor(_ role: String) -> UIImage? {
-        let raw: String
         switch role {
-        case "assistant": raw = rtAvatarAssistant
-        case "gpt":       raw = rtAvatarGpt
-        default:          raw = rtAvatarUser
+        case "assistant": return cachedRTAvatarAssistant
+        case "gpt":       return cachedRTAvatarGpt
+        default:          return cachedRTAvatarUser
         }
+    }
+
+    private func decodeStoredImage(_ raw: String) -> UIImage? {
         guard !raw.isEmpty else { return nil }
         let parts = raw.split(separator: ",", maxSplits: 1)
         let b64 = parts.count == 2 ? String(parts[1]) : raw
         return Data(base64Encoded: b64).flatMap(UIImage.init(data:))
+    }
+
+    private func refreshRTImageCache() {
+        cachedRTWallpaper = decodeStoredImage(rtWallpaper)
+        cachedRTAvatarUser = decodeStoredImage(rtAvatarUser)
+        cachedRTAvatarAssistant = decodeStoredImage(rtAvatarAssistant)
+        cachedRTAvatarGpt = decodeStoredImage(rtAvatarGpt)
     }
 
     private func initialFor(_ role: String) -> String {
