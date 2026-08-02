@@ -263,7 +263,10 @@ struct ChatView: View {
             }
             .onChange(of: scrollKick) { _ in
                 if atBottom || inputFocused {
-                    scrollToTail(proxy, delays: [0.05, 0.3, 0.6], animated: true)
+                    // 展开 thinking/activity 时内容本身已经在做 0.15s 动画。
+                    // 再连跑三次滚尾会让整页先上再下，真机看起来像闪一下。
+                    // 等布局落稳后无动画校正一次就够了。
+                    scrollToTail(proxy, delays: [0.18], animated: false)
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: .alcoveJumpToMessage)) { note in

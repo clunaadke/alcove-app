@@ -554,6 +554,15 @@ struct RoundtableView: View {
                 let oldTailID = observedTailID
                 observedTailID = newTailID
 
+                // 首屏 onAppear 经常早于网络返回；那时 rt-tail 还不存在，
+                // 所有预定 scrollTo 都是空操作。数据回来后 oldTailID 仍为 nil，
+                // 这一轮必须无条件落到最新消息，不能拿尚未测准的 tailVisible/
+                // isNearBottom 拦住，否则就会停在 LazyVStack 中间某个已布局位置。
+                if oldTailID == nil, newTailID != nil {
+                    scrollToRoundtableTail(proxy, delays: [0, 0.08, 0.25], animated: false)
+                    return
+                }
+
                 // 只有初次拿到消息，或尾部确实追加了更大的 id 才滚到底。
                 // 头插历史、删除任意气泡、刷新已有记录都保持当前位置。
                 let appendedAtTail = oldTailID == nil
