@@ -4809,7 +4809,11 @@ private struct OBMemoryDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage("alcoveTheme") private var themeName = "haven"
     @State private var detail: [String: Any] = [:]
-    @State private var name = "", content = "", tags = "", domains = "", why = ""
+    @State private var name = ""
+    @State private var content = ""
+    @State private var tags = ""
+    @State private var domains = ""
+    @State private var why = ""
     @State private var importance = 5.0
     @State private var saving = false
     private var theme: AlcoveTheme { .panelNamed(themeName) }
@@ -4893,7 +4897,12 @@ private struct NativeOBLettersView: View {
 
 private struct OBLetterEditor: View {
     let letter:OBLetter; let didChange:() async->Void; @Environment(\.dismiss) private var dismiss
-    @State private var author="",userName="",title="",date="",content=""; @AppStorage("alcoveTheme") private var themeName="haven"
+    @State private var author = ""
+    @State private var userName = ""
+    @State private var title = ""
+    @State private var date = ""
+    @State private var content = ""
+    @AppStorage("alcoveTheme") private var themeName="haven"
     private var theme:AlcoveTheme{.panelNamed(themeName)}
     var body:some View{NavigationStack{Form{Picker("署名",selection:$author){Text("陈霁").tag("user");Text("陈璟").tag("陈璟")};TextField("显示名字",text:$userName);TextField("标题",text:$title);TextField("日期",text:$date);TextEditor(text:$content).frame(minHeight:260);if !letter.id.isEmpty{Button("删除到档案",role:.destructive){Task{_ = try? await NativeHouseAPI.request("/api/ob/api/letter/\(letter.id)?confirm=true",method:"DELETE");await didChange();dismiss()}}}}.scrollContentBackground(.hidden).background(theme.fyCardSub).navigationTitle(letter.id.isEmpty ? "写信":"编辑信").toolbar{ToolbarItem(placement:.cancellationAction){Button("关闭"){dismiss()}};ToolbarItem(placement:.confirmationAction){Button("保存"){Task{await save()}}}}.onAppear{author=letter.author.isEmpty ? "user":letter.author;userName=letter.userName;title=letter.title;date=letter.date;content=letter.content}}}
     private func save()async{let body:[String:Any]=["author":author,"user_name":userName,"title":title,"date":date,"content":content];if letter.id.isEmpty{_ = try? await NativeHouseAPI.request("/api/ob/api/letter",method:"POST",body:body)}else{_ = try? await NativeHouseAPI.request("/api/ob/api/letter/\(letter.id)",method:"PATCH",body:body)};await didChange();dismiss()}
