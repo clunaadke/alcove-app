@@ -1034,6 +1034,71 @@ private struct RTConsoleLine: Identifiable, Equatable {
     let text: String
 }
 
+private struct CodexMemoryItem: Identifiable, Equatable {
+    let id: String
+    var title: String
+    var content: String
+    var tags: [String]
+    var importance: Int
+    var source: String
+    var sourceRef: String
+    var updatedAt: String
+
+    init?(_ o: [String: Any]) {
+        guard let id = o["id"] as? String else { return nil }
+        self.id = id
+        title = o["title"] as? String ?? ""
+        content = o["content"] as? String ?? ""
+        tags = o["tags"] as? [String] ?? []
+        importance = o["importance"] as? Int ?? 5
+        source = o["source"] as? String ?? "manual"
+        sourceRef = o["source_ref"] as? String ?? ""
+        updatedAt = o["updated_at"] as? String ?? ""
+    }
+}
+
+@MainActor
+private final class CodexMemoryStore: ObservableObject {
+    @Published var items: [CodexMemoryItem] = []
+    @Published var loading = false
+    @Published var error = ""
+
+    func load(query: String = "") async {
+        loading = true
+        defer { loading = false }
+        let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        let path = query.isEmpty ? "/api/codex/memories?limit=100" :
+                                   "/api/codex/memories?limit=30&q=\(encoded)"
+        do {
+            let o = try await AlcoveAPI.getRaw(path)
+            items = (o["items"] as? [[String: Any]] ?? []).compactMap(CodexMemoryItem.init)
+            error = ""
+        } catch { self.error = "记忆没读到  \(error.localizedDescription)" }
+    }
+
+    func save(id: String?, title: String, content: String, tags: [String], importance: Int) async -> Bool {
+        var body: [String: Any] = ["title": title, "content": content,
+                                   "tags": tags, "importance": importance,
+                                   "source": "app"]
+        let path: String
+        if let id { body["id"] = id; path = "/api/codex/memory/update" }
+        else { path = "/api/codex/memory/create" }
+        do {
+            let o = try await AlcoveAPI.postRaw(path, body: body)
+            guard o["ok"] as? Bool == true else { return false }
+            await load()
+            return true
+        } catch { self.error = "没保存上  \(error.localizedDescription)"; return false }
+    }
+
+    func delete(_ item: CodexMemoryItem) async {
+        do {
+            _ = try await AlcoveAPI.postRaw("/api/codex/memory/delete", body: ["id": item.id])
+            items.removeAll { $0.id == item.id }
+        } catch { self.error = "没删掉  \(error.localizedDescription)" }
+    }
+}
+
 @MainActor
 private final class RTConsoleStore: ObservableObject {
     @Published var lines: [RTConsoleLine] = []
@@ -1109,6 +1174,7 @@ private struct RTConsoleView: View {
     @StateObject private var store = RTConsoleStore()
     @Environment(\.dismiss) private var dismiss
     @State private var confirmReforge = false
+    @State private var showMemories = false
 
     var body: some View {
         ZStack {
@@ -1140,6 +1206,9 @@ private struct RTConsoleView: View {
         .foregroundColor(theme.text)
         .onAppear { store.start() }
         .onDisappear { store.stop() }
+        .sheet(isPresented: $showMemories) {
+            CodexMemoryView(theme: theme)
+        }
         .alert("换一条线程？", isPresented: $confirmReforge) {
             Button("换", role: .destructive) { Task { await store.reforge() } }
             Button("算了", role: .cancel) {}
@@ -1160,6 +1229,13 @@ private struct RTConsoleView: View {
                 Text("何渡")
                     .font(.system(size: 15, weight: .semibold))
                 Spacer()
+                Button { showMemories = true } label: {
+                    Label("记忆", systemImage: "brain.head.profile")
+                        .font(.system(size: 12))
+                        .padding(.horizontal, 10).padding(.vertical, 5)
+                        .background(Capsule().fill(theme.textDim.opacity(0.12)))
+                }
+                .buttonStyle(.plain)
                 Button { confirmReforge = true } label: {
                     Text(store.busy ? "忙碌中" : "换线程")
                         .font(.system(size: 12))
@@ -1234,6 +1310,142 @@ private struct RTConsoleView: View {
         case "改": return .green
         case "量": return theme.textDim.opacity(0.5)
         default:   return theme.textDim.opacity(0.4)
+        }
+    }
+}
+
+private struct CodexMemoryView: View {
+    let theme: AlcoveTheme
+    @StateObject private var store = CodexMemoryStore()
+    @Environment(\.dismiss) private var dismiss
+    @State private var query = ""
+    @State private var editing: CodexMemoryItem?
+    @State private var adding = false
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                LinearGradient(colors: theme.wallGradient, startPoint: .top, endPoint: .bottom)
+                    .ignoresSafeArea()
+                if store.loading && store.items.isEmpty { ProgressView() }
+                else if store.items.isEmpty {
+                    ContentUnavailableView(query.isEmpty ? "还没有记忆" : "没有找到",
+                                           systemImage: "brain.head.profile",
+                                           description: Text(query.isEmpty ? "何渡以后记下的东西会放在这里" : "换句话再找找"))
+                } else {
+                    List {
+                        ForEach(store.items) { item in
+                            Button { editing = item } label: { memoryRow(item) }
+                                .buttonStyle(.plain)
+                                .listRowBackground(theme.textDim.opacity(0.06))
+                                .swipeActions {
+                                    Button(role: .destructive) { Task { await store.delete(item) } } label: {
+                                        Label("删除", systemImage: "trash")
+                                    }
+                                }
+                        }
+                    }
+                    .scrollContentBackground(.hidden)
+                }
+            }
+            .foregroundColor(theme.text)
+            .navigationTitle("何渡的记忆")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) { Button("关闭") { dismiss() } }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { adding = true } label: { Image(systemName: "plus") }
+                }
+            }
+            .searchable(text: $query, prompt: "按意思搜索")
+            .onSubmit(of: .search) { Task { await store.load(query: query) } }
+            .onChange(of: query) { value in if value.isEmpty { Task { await store.load() } } }
+            .task { await store.load() }
+            .sheet(isPresented: $adding) {
+                CodexMemoryEditor(theme: theme, item: nil) { title, content, tags, importance in
+                    let ok = await store.save(id: nil, title: title, content: content,
+                                              tags: tags, importance: importance)
+                    if ok { adding = false }
+                }
+            }
+            .sheet(item: $editing) { item in
+                CodexMemoryEditor(theme: theme, item: item) { title, content, tags, importance in
+                    let ok = await store.save(id: item.id, title: title, content: content,
+                                              tags: tags, importance: importance)
+                    if ok { editing = nil }
+                }
+            }
+            .alert("记忆库出了点问题", isPresented: Binding(
+                get: { !store.error.isEmpty }, set: { if !$0 { store.error = "" } }
+            )) { Button("知道了") {} } message: { Text(store.error) }
+        }
+    }
+
+    private func memoryRow(_ item: CodexMemoryItem) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(item.title.isEmpty ? String(item.content.prefix(24)) : item.title)
+                .font(.system(size: 15, weight: .semibold)).lineLimit(1)
+            Text(item.content).font(.system(size: 13)).foregroundColor(theme.textDim).lineLimit(3)
+            HStack {
+                if !item.tags.isEmpty { Text(item.tags.joined(separator: " · ")) }
+                Spacer()
+                Text("重要度 \(item.importance)")
+            }
+            .font(.system(size: 10)).foregroundColor(theme.textDim.opacity(0.65))
+        }.padding(.vertical, 5)
+    }
+}
+
+private struct CodexMemoryEditor: View {
+    let theme: AlcoveTheme
+    let item: CodexMemoryItem?
+    let onSave: (String, String, [String], Int) async -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var title: String
+    @State private var content: String
+    @State private var tags: String
+    @State private var importance: Int
+    @State private var saving = false
+
+    init(theme: AlcoveTheme, item: CodexMemoryItem?,
+         onSave: @escaping (String, String, [String], Int) async -> Void) {
+        self.theme = theme; self.item = item; self.onSave = onSave
+        _title = State(initialValue: item?.title ?? "")
+        _content = State(initialValue: item?.content ?? "")
+        _tags = State(initialValue: item?.tags.joined(separator: ", ") ?? "")
+        _importance = State(initialValue: item?.importance ?? 5)
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                TextField("标题（可以不填）", text: $title)
+                Section("记忆") { TextEditor(text: $content).frame(minHeight: 180) }
+                TextField("标签，用逗号分开", text: $tags)
+                Stepper("重要度  \(importance)", value: $importance, in: 1...10)
+                if let item {
+                    Section("来源") {
+                        Text(item.source + (item.sourceRef.isEmpty ? "" : " · " + item.sourceRef))
+                            .font(.footnote).foregroundColor(theme.textDim)
+                    }
+                }
+            }
+            .navigationTitle(item == nil ? "添一条记忆" : "编辑记忆")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(saving ? "保存中" : "保存") {
+                        saving = true
+                        Task {
+                            await onSave(title, content,
+                                tags.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty },
+                                importance)
+                            saving = false
+                        }
+                    }.disabled(content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || saving)
+                }
+            }
         }
     }
 }
