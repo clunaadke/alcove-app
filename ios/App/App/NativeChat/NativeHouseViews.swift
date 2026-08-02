@@ -523,6 +523,12 @@ private struct NativeSettingsView: View {
     @State private var aiPhoto: PhotosPickerItem?
     @State private var userPhoto: PhotosPickerItem?
     @State private var wallPhoto: PhotosPickerItem?
+    @State private var backendOnline = false
+    @State private var codexOnline = false
+    @State private var backendLatency: Int?
+    @State private var codexLatency: Int?
+    @State private var codexThreadConnected = false
+    @State private var servicesLoading = false
     private var theme: AlcoveTheme { .panelNamed(themeName) }
 
     var body: some View {
@@ -580,6 +586,31 @@ private struct NativeSettingsView: View {
                     }
                     .font(.system(size: 13))
                 }
+                section("服务") {
+                    serviceCard(
+                        name: "Alcove Backend",
+                        address: "https://alcove.ob-memory.uk",
+                        online: backendOnline,
+                        latency: backendLatency,
+                        detail: "App 接口 · 消息 · 附件 · OB 代理"
+                    )
+                    Divider().opacity(0.25)
+                    serviceCard(
+                        name: "何渡 · Codex",
+                        address: "local://alcove-codex/appserver.sock",
+                        online: codexOnline,
+                        latency: codexLatency,
+                        detail: codexThreadConnected ? "独立常驻 · 当前线程已连接" : "独立常驻 · 等待线程连接"
+                    )
+                    Button { Task { await loadServices() } } label: {
+                        Label(servicesLoading ? "刷新中" : "刷新服务状态", systemImage: "arrow.clockwise")
+                            .font(.system(size: 11))
+                            .foregroundColor(theme.textDim)
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(servicesLoading)
+                }
                 section("App") {
                     Button(action: showPermissions) {
                         settingRow("系统权限", "位置、日历、运动、麦克风等权限") {
@@ -596,6 +627,7 @@ private struct NativeSettingsView: View {
         .onChange(of: userPhoto) { item in loadDataURL(item, into: $userAvatar) }
         .onChange(of: aiPhoto) { item in loadDataURL(item, into: $assistantAvatar) }
         .onChange(of: wallPhoto) { item in saveWallpaper(item) }
+        .task { await loadServices() }
     }
 
     private func panelTitle(_ text: String) -> some View {
@@ -629,6 +661,48 @@ private struct NativeSettingsView: View {
             Spacer()
             trailing()
         }
+    }
+
+    private func serviceCard(
+        name: String, address: String, online: Bool, latency: Int?, detail: String
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack {
+                Text(name).font(.system(size: 14, weight: .medium))
+                Spacer()
+                Circle().fill(online ? Color.green : Color.red.opacity(0.8)).frame(width: 8, height: 8)
+                Text(online ? "在线" : "离线")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(online ? .green : .red.opacity(0.8))
+            }
+            Text(address).font(.system(size: 11, design: .monospaced)).foregroundColor(theme.textLight)
+            HStack {
+                Text(detail)
+                Spacer()
+                if let latency { Text("\(latency)ms") }
+            }
+            .font(.system(size: 10)).foregroundColor(theme.textDim)
+        }
+        .padding(.vertical, 2)
+    }
+
+    @MainActor private func loadServices() async {
+        servicesLoading = true
+        let started = Date()
+        do {
+            let value = try await NativeHouseAPI.object("/services/status")
+            let backend = value.object("backend")
+            let codex = value.object("codex")
+            backendOnline = backend.bool("online")
+            backendLatency = max(backend.int("latency_ms"), Int(Date().timeIntervalSince(started) * 1000))
+            codexOnline = codex.bool("online")
+            codexLatency = codex["latency_ms"] is NSNull ? nil : codex.int("latency_ms")
+            codexThreadConnected = codex.bool("thread_connected")
+        } catch {
+            backendOnline = false; codexOnline = false
+            backendLatency = nil; codexLatency = nil; codexThreadConnected = false
+        }
+        servicesLoading = false
     }
 
     private func themeChoice(
