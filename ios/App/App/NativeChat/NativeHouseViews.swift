@@ -29,7 +29,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .memory: return "Memory"
         case .dreams: return "Dreams"
         case .shelf: return "渡鸦的架子"
-        case .desire: return "Desire"
+        case .desire: return "Eventide"
         case .nianlun: return "年轮"
         case .clockwork: return "发条"
         case .album: return "相册"
@@ -58,7 +58,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .music: return "music.note"
         case .calendar: return "calendar"
         case .wall: return "lock.rectangle.stack"
-        case .desire: return "heart"
+        case .desire: return "water.waves"
         case .usage: return "chart.bar"
         case .memory: return "brain.head.profile"
         case .dreams: return "moon.stars"
@@ -3027,7 +3027,198 @@ private struct EmotionLastMove: Identifiable {
     var id: Int { eventID }
 }
 
+private struct EventideBodyField: Identifiable {
+    let key: String
+    let label: String
+    let value: Int
+    let level: String
+    let description: String
+    var id: String { key }
+}
+
 private struct NativeDesireView: View {
+    @State private var state: [String: Any] = [:]
+    @State private var loading = true
+    @State private var failed = false
+    @AppStorage("alcoveTheme") private var themeName = "haven"
+    private var theme: AlcoveTheme { .panelNamed(themeName) }
+
+    private let fieldOrder = ["heat", "pressure", "control", "sensitivity", "reserve", "possessiveness", "fatigue"]
+    private let fieldColors: [String: Color] = [
+        "heat": Color(red: 0.91, green: 0.29, blue: 0.22),
+        "pressure": Color(red: 0.76, green: 0.27, blue: 0.42),
+        "control": Color(red: 0.28, green: 0.55, blue: 0.72),
+        "sensitivity": Color(red: 0.88, green: 0.46, blue: 0.58),
+        "reserve": Color(red: 0.72, green: 0.40, blue: 0.67),
+        "possessiveness": Color(red: 0.48, green: 0.30, blue: 0.58),
+        "fatigue": Color(red: 0.36, green: 0.48, blue: 0.53)
+    ]
+
+    private var cycle: [String: Any] { state["cycle"] as? [String: Any] ?? [:] }
+    private var event: [String: Any]? { state["event"] as? [String: Any] }
+    private var fields: [EventideBodyField] {
+        let body = state["body"] as? [String: Any] ?? [:]
+        return fieldOrder.compactMap { key in
+            guard let raw = body[key] as? [String: Any] else { return nil }
+            return EventideBodyField(
+                key: key,
+                label: raw["label"] as? String ?? key,
+                value: (raw["value"] as? NSNumber)?.intValue ?? 0,
+                level: raw["level"] as? String ?? "",
+                description: raw["description"] as? String ?? ""
+            )
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            FoyerPanelTitle(title: "身体潮汐", theme: theme)
+            if loading {
+                Spacer(); ProgressView().tint(theme.fyAccent); Spacer()
+            } else if failed {
+                Spacer()
+                VStack(spacing: 10) {
+                    Image(systemName: "waveform.path.ecg")
+                        .font(.system(size: 28, weight: .light))
+                        .foregroundColor(theme.textLight)
+                    Text("还没接上身体")
+                        .font(.system(size: 14, weight: .semibold))
+                    Text("Eventide 状态引擎暂时没有回应。")
+                        .font(.system(size: 11)).foregroundColor(theme.textDim)
+                    Button("重新读取") { Task { await load() } }
+                        .font(.system(size: 12, weight: .semibold)).foregroundColor(theme.fyAccent)
+                }
+                Spacer()
+            } else {
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: 14) {
+                        cycleCard
+                        if event != nil { eventCard }
+                        bodyCard
+                        attribution
+                    }
+                    .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 18)
+                }
+                .refreshable { await load() }
+            }
+        }
+        .foregroundColor(theme.text)
+        .foyerPanel(theme)
+        .padding(.horizontal, 12).padding(.top, 8)
+        .task { await load() }
+    }
+
+    private var cycleCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("当前周期")
+                        .font(.system(size: 10, weight: .semibold)).foregroundColor(theme.textDim)
+                    Text(cycle["label"] as? String ?? "平稳期")
+                        .font(.system(size: 25, weight: .semibold, design: .serif))
+                }
+                Spacer()
+                ZStack {
+                    Circle().fill(theme.fyAccent.opacity(theme.isDark ? 0.18 : 0.11)).frame(width: 54, height: 54)
+                    Image(systemName: "water.waves")
+                        .font(.system(size: 20, weight: .light)).foregroundColor(theme.fyAccent)
+                }
+            }
+            Text(cycle["description"] as? String ?? "")
+                .font(.system(size: 12)).foregroundColor(theme.textDim)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack {
+                Label(remainingText(cycle["remaining_seconds"]), systemImage: "clock")
+                Spacer()
+                Text("下一次变化由时间和互动共同推进")
+            }
+            .font(.system(size: 9, design: .rounded)).foregroundColor(theme.textLight)
+        }
+        .padding(16).foyerCard(theme)
+    }
+
+    private var eventCard: some View {
+        let raw = event ?? [:]
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label("身体事件", systemImage: "bolt.heart.fill")
+                    .font(.system(size: 10, weight: .semibold)).foregroundColor(fieldColors["heat"])
+                Spacer()
+                Text(remainingText(raw["remaining_seconds"]))
+                    .font(.system(size: 9, design: .monospaced)).foregroundColor(theme.textLight)
+            }
+            Text(raw["label"] as? String ?? "")
+                .font(.system(size: 18, weight: .semibold, design: .serif))
+            Text(raw["description"] as? String ?? "")
+                .font(.system(size: 11)).foregroundColor(theme.textDim)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(15)
+        .background(fieldColors["heat"]!.opacity(theme.isDark ? 0.10 : 0.06), in: RoundedRectangle(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(fieldColors["heat"]!.opacity(0.18), lineWidth: 0.8))
+    }
+
+    private var bodyCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("身体读数").font(.system(size: 13, weight: .semibold))
+            ForEach(fields) { field in
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text(field.label).font(.system(size: 11, weight: .semibold))
+                        Text(field.level).font(.system(size: 9)).foregroundColor(theme.textLight)
+                        Spacer()
+                        Text("\(field.value)").font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    }
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(theme.fyCardSub)
+                            Capsule()
+                                .fill(LinearGradient(colors: [color(field.key).opacity(0.38), color(field.key)], startPoint: .leading, endPoint: .trailing))
+                                .frame(width: geo.size.width * CGFloat(max(0, min(100, field.value))) / 100)
+                        }
+                    }
+                    .frame(height: 7)
+                    Text(field.description)
+                        .font(.system(size: 9)).foregroundColor(theme.textDim)
+                }
+            }
+        }
+        .padding(15).foyerCard(theme)
+    }
+
+    private var attribution: some View {
+        VStack(spacing: 3) {
+            Text("Powered by Eventide")
+                .font(.system(size: 9, weight: .semibold))
+            Text("Copyright 2026 Chuli (@chuli1122) · PolyForm Noncommercial 1.0.0")
+                .font(.system(size: 8)).foregroundColor(theme.textLight)
+        }
+        .frame(maxWidth: .infinity).padding(.vertical, 4).foregroundColor(theme.textDim)
+    }
+
+    private func color(_ key: String) -> Color { fieldColors[key] ?? theme.fyAccent }
+
+    private func remainingText(_ value: Any?) -> String {
+        let seconds = (value as? NSNumber)?.intValue ?? 0
+        if seconds < 90 * 60 { return "约 \(max(1, seconds / 60)) 分钟" }
+        if seconds < 48 * 3600 { return "约 \(max(1, seconds / 3600)) 小时" }
+        return "约 \(max(1, seconds / 86400)) 天"
+    }
+
+    @MainActor
+    private func load() async {
+        loading = state.isEmpty
+        if let value = try? await NativeHouseAPI.object("/api/eventide/state") {
+            state = value; failed = false
+        } else {
+            failed = true
+        }
+        loading = false
+    }
+}
+
+// Kept temporarily for rollback while Eventide is validated on-device.
+private struct LegacyNativeDesireView: View {
     @State private var state: [String: Any] = [:]
     @State private var history: [EmotionHistoryPoint] = []
     @State private var events: [EmotionEventItem] = []
