@@ -3063,6 +3063,15 @@ private struct NativeDesireView: View {
     @State private var triggerType = "phrase"
     @State private var dreamExpiresAt = ""
     @State private var editingTriggerIndex: Int?
+    @State private var showRawConfig = false
+    @State private var configText = ""
+    @State private var configError = ""
+    @State private var editingDreamID: String?
+    @State private var editingCardID: String?
+    @State private var cardTitle = ""
+    @State private var cardSummary = ""
+    @State private var cardContent = ""
+    @State private var cardTags: Set<String> = []
     @AppStorage("alcoveTheme") private var themeName = "haven"
     private var theme: AlcoveTheme { .panelNamed(themeName) }
 
@@ -3124,6 +3133,7 @@ private struct NativeDesireView: View {
                         if event != nil { eventCard }
                         bodyCard
                         controlsCard
+                        configurationCard
                         dreamCard
                         historyCard
                         attribution
@@ -3381,6 +3391,9 @@ private struct NativeDesireView: View {
                             .font(.system(size: 9)).foregroundColor(theme.textLight)
                     }
                     Spacer()
+                    Button { editDreamSeed(seed) } label: {
+                        Image(systemName: "pencil").font(.system(size: 10))
+                    }.foregroundColor(theme.fyAccent)
                     Button { Task { await deleteDream(seed.string("id")) } } label: {
                         Image(systemName: "trash").font(.system(size: 10))
                     }.foregroundColor(theme.textLight)
@@ -3398,8 +3411,22 @@ private struct NativeDesireView: View {
                             let tags = card["after_effect_tags"] as? [String] ?? []
                             Text(tags.joined(separator: " · ")).font(.system(size: 8, design: .monospaced)).foregroundColor(theme.fyAccent)
                             Text(card.string("created_at")).font(.system(size: 8, design: .monospaced)).foregroundColor(theme.textLight)
+                            HStack {
+                                Button("编辑") { editDreamCard(card) }
+                                Button("删除", role: .destructive) { Task { await deleteDreamCard(card.string("id")) } }
+                            }.font(.system(size: 9, weight: .semibold))
                         }.padding(.top, 6)
                     }.font(.system(size: 10, weight: .semibold))
+                }
+                if editingCardID != nil {
+                    TextField("标题", text: $cardTitle).font(.system(size: 10)).padding(8).background(theme.fyCardSub, in: RoundedRectangle(cornerRadius: 8))
+                    TextField("摘要", text: $cardSummary, axis: .vertical).font(.system(size: 10)).padding(8).background(theme.fyCardSub, in: RoundedRectangle(cornerRadius: 8))
+                    TextEditor(text: $cardContent).frame(minHeight: 100).font(.system(size: 9)).padding(6).background(theme.fyCardSub, in: RoundedRectangle(cornerRadius: 8))
+                    HStack { ForEach(["aroused","released","unfinished","possessive","tender"], id: \.self) { tag in
+                        Button(tag) { if cardTags.contains(tag) { cardTags.remove(tag) } else if cardTags.count < 3 { cardTags.insert(tag) } }
+                            .font(.system(size: 8)).foregroundColor(cardTags.contains(tag) ? theme.fyAccent : theme.textLight)
+                    } }
+                    Button("保存梦卡修改") { Task { await updateDreamCard() } }.font(.system(size: 10, weight: .semibold)).foregroundColor(theme.fyAccent)
                 }
             }
             Button("现在检查一次梦境窗口") { Task { await checkDream() } }
@@ -3425,6 +3452,31 @@ private struct NativeDesireView: View {
             }
         }
         .padding(15).foyerCard(theme)
+    }
+
+    private var configurationCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label("完整内核配置", systemImage: "gearshape.2")
+                    .font(.system(size: 13, weight: .semibold))
+                Spacer()
+                Button(showRawConfig ? "收起" : "编辑") { showRawConfig.toggle(); if showRawConfig && configText.isEmpty { Task { await loadConfig() } } }
+                    .font(.system(size: 10, weight: .semibold)).foregroundColor(theme.fyAccent)
+            }
+            Text("周期、事件、持续时间、目标数值、增长曲线、事件增减、状态卡文案、双方名称与初始值都在这里，与 Eventide 原始 PhysiologyConfig 一一对应。")
+                .font(.system(size: 9)).foregroundColor(theme.textDim)
+            if showRawConfig {
+                TextEditor(text: $configText).frame(minHeight: 280)
+                    .font(.system(size: 8, design: .monospaced)).padding(6)
+                    .background(theme.fyCardSub, in: RoundedRectangle(cornerRadius: 10))
+                if !configError.isEmpty { Text(configError).font(.system(size: 9)).foregroundColor(.red) }
+                HStack {
+                    Button("保存完整配置") { Task { await saveConfig() } }
+                    Spacer()
+                    Button("恢复 Eventide 默认值", role: .destructive) { Task { await resetConfig() } }
+                }.font(.system(size: 10, weight: .semibold)).foregroundColor(theme.fyAccent)
+            }
+        }.padding(15).foyerCard(theme)
     }
 
     private var historyCard: some View {
@@ -3526,14 +3578,22 @@ private struct NativeDesireView: View {
         saving = true; defer { saving = false }
         var body: [String: Any] = ["theme": dreamTheme, "intensity": dreamIntensity,
             "enabled": dreamEnabled, "min_chars": Int(dreamMinChars) ?? 2000]
+        if let editingDreamID { body["id"] = editingDreamID }
         body["expires_at"] = dreamExpiresAt.isEmpty ? NSNull() : dreamExpiresAt
         if let value = try? await NativeHouseAPI.object("/api/eventide/dream-seed", method: "POST", body: body) {
-            state = value; dreamTheme = ""; showDreamComposer = false
+            state = value; dreamTheme = ""; dreamExpiresAt = ""; editingDreamID = nil; showDreamComposer = false
         }
     }
 
     @MainActor private func deleteDream(_ id: String) async {
         if let value = try? await NativeHouseAPI.object("/api/eventide/dream-seed/delete", method: "POST", body: ["id": id]) { state = value }
+    }
+
+    @MainActor private func editDreamSeed(_ seed: [String: Any]) {
+        editingDreamID = seed.string("id"); dreamTheme = seed.string("theme")
+        dreamIntensity = seed.string("intensity").isEmpty ? "medium" : seed.string("intensity")
+        dreamEnabled = seed.bool("enabled"); dreamMinChars = seed.string("min_chars")
+        dreamExpiresAt = seed.string("expires_at"); showDreamComposer = true
     }
 
     @MainActor private func postAndReload(_ path: String, _ body: [String: Any]) async {
@@ -3567,6 +3627,22 @@ private struct NativeDesireView: View {
         dreamContent = ""; dreamTags.removeAll()
     }
 
+    @MainActor private func editDreamCard(_ card: [String: Any]) {
+        editingCardID = card.string("id"); cardTitle = card.string("title"); cardSummary = card.string("summary"); cardContent = card.string("content")
+        cardTags = Set(card["after_effect_tags"] as? [String] ?? [])
+    }
+
+    @MainActor private func updateDreamCard() async {
+        guard let id = editingCardID else { return }
+        await postAndReload("/api/eventide/dream-card/update", ["id":id,"title":cardTitle,"summary":cardSummary,"content":cardContent,"after_effect_tags":Array(cardTags)])
+        editingCardID=nil
+    }
+
+    @MainActor private func deleteDreamCard(_ id: String) async {
+        await postAndReload("/api/eventide/dream-card/delete", ["id":id])
+        if editingCardID==id { editingCardID=nil }
+    }
+
     @MainActor private func saveSettlement() async {
         var body: [String: Any] = ["settlement_reason": settlementReason, "settlement_result": settlementResult,
             "ejaculated": settlementResult == "released"]
@@ -3586,6 +3662,24 @@ private struct NativeDesireView: View {
     @MainActor private func requestClaudeSettlement() async {
         _ = try? await NativeHouseAPI.object("/api/eventide/settlement-request", method: "POST", body: ["limit": 20])
         await load()
+    }
+
+    @MainActor private func loadConfig() async {
+        guard let value = try? await NativeHouseAPI.object("/api/eventide/config"), let config = value["config"],
+              JSONSerialization.isValidJSONObject(config),
+              let data = try? JSONSerialization.data(withJSONObject: config, options: [.prettyPrinted, .sortedKeys]) else { return }
+        configText = String(data: data, encoding: .utf8) ?? ""; configError = ""
+    }
+
+    @MainActor private func saveConfig() async {
+        guard let data = configText.data(using: .utf8),
+              let config = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { configError = "JSON 格式不正确"; return }
+        do { _ = try await NativeHouseAPI.object("/api/eventide/config", method: "POST", body: ["config": config]); configError = ""; await load() }
+        catch { configError = "配置校验失败，没有覆盖当前版本" }
+    }
+
+    @MainActor private func resetConfig() async {
+        _ = try? await NativeHouseAPI.object("/api/eventide/config/reset", method: "POST", body: [:]); configText = ""; await loadConfig(); await load()
     }
 }
 
