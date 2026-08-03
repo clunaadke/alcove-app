@@ -3049,6 +3049,19 @@ private struct NativeDesireView: View {
     @State private var dreamTags: Set<String> = []
     @State private var settlementResult = "neutral"
     @State private var settlementReason = ""
+    @State private var dreamIntensity = "medium"
+    @State private var dreamMinChars = "2000"
+    @State private var dreamEnabled = true
+    @State private var showAdvanced = false
+    @State private var dreamSilence = "120"
+    @State private var dreamWindowStart = "00:00"
+    @State private var dreamWindowEnd = "08:30"
+    @State private var dreamCooldown = "24"
+    @State private var dreamProbability = "1.0"
+    @State private var eventProbability = "1.0"
+    @State private var settlementDeltas: [String: Int] = [:]
+    @State private var triggerType = "phrase"
+    @State private var dreamExpiresAt = ""
     @AppStorage("alcoveTheme") private var themeName = "haven"
     private var theme: AlcoveTheme { .panelNamed(themeName) }
 
@@ -3167,6 +3180,9 @@ private struct NativeDesireView: View {
                 Button("保存") { Task { await updateSettings(["safeword": safewordDraft]) } }
                     .font(.system(size: 10, weight: .semibold)).foregroundColor(theme.fyAccent)
             }.padding(9).background(theme.fyCardSub, in: RoundedRectangle(cornerRadius: 9))
+            Picker("触发类型", selection: $triggerType) {
+                Text("称呼").tag("nickname"); Text("名字").tag("name"); Text("关键词").tag("phrase")
+            }.pickerStyle(.segmented)
             HStack {
                 TextField("添加称呼触发词", text: $triggerDraft).textFieldStyle(.plain).font(.system(size: 10))
                 Button("添加") { Task { await addTrigger() } }
@@ -3255,6 +3271,19 @@ private struct NativeDesireView: View {
             eventideToggle("向陈璟注入身体感受", key: "inject_body_state_context")
             eventideToggle("允许生成梦境", key: "dream_enabled")
             eventideToggle("允许私人成人梦境", key: "adult_private_mode_enabled")
+            DisclosureGroup("调度参数", isExpanded: $showAdvanced) {
+                VStack(spacing: 8) {
+                    settingField("梦境静默分钟", text: $dreamSilence)
+                    settingField("梦境窗口开始", text: $dreamWindowStart)
+                    settingField("梦境窗口结束", text: $dreamWindowEnd)
+                    settingField("梦卡最低字数", text: $dreamMinChars)
+                    settingField("梦境冷却小时", text: $dreamCooldown)
+                    settingField("梦境概率倍率", text: $dreamProbability)
+                    settingField("身体事件概率倍率", text: $eventProbability)
+                    Button("保存调度参数") { Task { await saveAdvancedSettings() } }
+                        .font(.system(size: 10, weight: .semibold)).foregroundColor(theme.fyAccent)
+                }.padding(.top, 8)
+            }.font(.system(size: 11, weight: .medium))
             Divider().opacity(0.3)
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
@@ -3285,6 +3314,11 @@ private struct NativeDesireView: View {
         .font(.system(size: 11, weight: .medium)).tint(theme.fyAccent)
     }
 
+    private func settingField(_ title: String, text: Binding<String>) -> some View {
+        HStack { Text(title).font(.system(size: 9)).foregroundColor(theme.textDim); Spacer(); TextField("", text: text).multilineTextAlignment(.trailing).font(.system(size: 9, design: .monospaced)).frame(width: 72) }
+        .padding(.horizontal, 8).padding(.vertical, 6).background(theme.fyCardSub, in: RoundedRectangle(cornerRadius: 8))
+    }
+
     private var dreamCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -3295,6 +3329,13 @@ private struct NativeDesireView: View {
                     .font(.system(size: 10, weight: .semibold)).foregroundColor(theme.fyAccent)
             }
             if showDreamComposer {
+                Picker("强度", selection: $dreamIntensity) {
+                    Text("普通").tag("medium"); Text("私人").tag("explicit")
+                }.pickerStyle(.segmented)
+                Toggle("启用这颗梦种", isOn: $dreamEnabled).font(.system(size: 10)).tint(theme.fyAccent)
+                TextField("有效期 ISO 时间（留空为长期）", text: $dreamExpiresAt)
+                    .font(.system(size: 9, design: .monospaced)).padding(9)
+                    .background(theme.fyCardSub, in: RoundedRectangle(cornerRadius: 9))
                 TextField("梦种主题", text: $dreamTheme, axis: .vertical)
                     .font(.system(size: 11)).padding(10)
                     .background(theme.fyCardSub, in: RoundedRectangle(cornerRadius: 10))
@@ -3321,6 +3362,18 @@ private struct NativeDesireView: View {
             if !cards.isEmpty {
                 Divider().opacity(0.3)
                 Text("梦卡 \(cards.count) 张").font(.system(size: 10, weight: .semibold))
+                ForEach(Array(cards.reversed().enumerated()), id: \.offset) { _, card in
+                    DisclosureGroup(card.string("title").isEmpty ? "梦卡" : card.string("title")) {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(card.string("summary")).font(.system(size: 9, weight: .medium))
+                            Text(card.string("content")).font(.system(size: 9)).foregroundColor(theme.textDim)
+                                .textSelection(.enabled)
+                            let tags = card["after_effect_tags"] as? [String] ?? []
+                            Text(tags.joined(separator: " · ")).font(.system(size: 8, design: .monospaced)).foregroundColor(theme.fyAccent)
+                            Text(card.string("created_at")).font(.system(size: 8, design: .monospaced)).foregroundColor(theme.textLight)
+                        }.padding(.top, 6)
+                    }.font(.system(size: 10, weight: .semibold))
+                }
             }
             Button("现在检查一次梦境窗口") { Task { await checkDream() } }
                 .font(.system(size: 10, weight: .semibold)).foregroundColor(theme.fyAccent)
@@ -3360,6 +3413,11 @@ private struct NativeDesireView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(historyTitle(row)).font(.system(size: 10, weight: .medium))
                         Text(row.string("at")).font(.system(size: 8, design: .monospaced)).foregroundColor(theme.textLight)
+                        if let values = row["values"] as? [String: Any] {
+                            Text(fieldOrder.map { "\($0) \(values.int($0))" }.joined(separator: " · "))
+                                .font(.system(size: 7, design: .monospaced)).foregroundColor(theme.textLight)
+                                .lineLimit(2)
+                        }
                     }
                 }
             }
@@ -3378,6 +3436,11 @@ private struct NativeDesireView: View {
             }.font(.system(size: 10, weight: .semibold)).foregroundColor(theme.fyAccent)
             TextField("结算说明", text: $settlementReason, axis: .vertical)
                 .font(.system(size: 10)).padding(8).background(theme.fyCardSub, in: RoundedRectangle(cornerRadius: 9))
+            ForEach(fieldOrder, id: \.self) { key in
+                Stepper(value: Binding(get: { settlementDeltas[key] ?? 0 }, set: { settlementDeltas[key] = $0 }), in: -20...20) {
+                    HStack { Text(fields.first(where: { $0.key == key })?.label ?? key); Spacer(); Text("\(settlementDeltas[key] ?? 0)").font(.system(size: 9, design: .monospaced)) }
+                }.font(.system(size: 9))
+            }
             Button("写入互动结算") { Task { await saveSettlement() } }
                 .font(.system(size: 10, weight: .semibold)).foregroundColor(theme.fyAccent)
         }
@@ -3410,6 +3473,11 @@ private struct NativeDesireView: View {
         if let value = try? await NativeHouseAPI.object("/api/eventide/dashboard") {
             state = value; failed = false
             if safewordDraft.isEmpty { safewordDraft = (value["settings"] as? [String: Any] ?? [:]).string("safeword") }
+            let s = value["settings"] as? [String: Any] ?? [:]
+            dreamSilence = s.string("dream_silence_min_minutes"); dreamWindowStart = s.string("dream_window_start")
+            dreamWindowEnd = s.string("dream_window_end"); dreamMinChars = s.string("dream_card_min_chars")
+            dreamCooldown = s.string("dream_cooldown_hours"); dreamProbability = s.string("dream_probability_multiplier")
+            eventProbability = s.string("event_probability_multiplier")
         } else {
             failed = true
         }
@@ -3422,7 +3490,10 @@ private struct NativeDesireView: View {
 
     @MainActor private func saveDream() async {
         saving = true; defer { saving = false }
-        if let value = try? await NativeHouseAPI.object("/api/eventide/dream-seed", method: "POST", body: ["theme": dreamTheme, "intensity": "medium", "enabled": true]) {
+        var body: [String: Any] = ["theme": dreamTheme, "intensity": dreamIntensity,
+            "enabled": dreamEnabled, "min_chars": Int(dreamMinChars) ?? 2000]
+        body["expires_at"] = dreamExpiresAt.isEmpty ? NSNull() : dreamExpiresAt
+        if let value = try? await NativeHouseAPI.object("/api/eventide/dream-seed", method: "POST", body: body) {
             state = value; dreamTheme = ""; showDreamComposer = false
         }
     }
@@ -3438,7 +3509,7 @@ private struct NativeDesireView: View {
     @MainActor private func addTrigger() async {
         let text = triggerDraft.trimmingCharacters(in: .whitespacesAndNewlines); guard !text.isEmpty else { return }
         var list = state["triggers"] as? [[String: Any]] ?? []
-        list.append(["key": "custom:\(UUID().uuidString)", "text": text, "type": "phrase"])
+        list.append(["key": "custom:\(UUID().uuidString)", "text": text, "type": triggerType])
         await updateSettings(["trigger_words": list]); triggerDraft = ""
     }
 
@@ -3460,8 +3531,17 @@ private struct NativeDesireView: View {
     @MainActor private func saveSettlement() async {
         var body: [String: Any] = ["settlement_reason": settlementReason, "settlement_result": settlementResult,
             "ejaculated": settlementResult == "released"]
-        for key in fieldOrder { body["\(key)_delta"] = 0 }
-        await postAndReload("/api/eventide/settlement", body); settlementReason = ""
+        for key in fieldOrder { body["\(key)_delta"] = settlementDeltas[key] ?? 0 }
+        await postAndReload("/api/eventide/settlement", body); settlementReason = ""; settlementDeltas = [:]
+    }
+
+    @MainActor private func saveAdvancedSettings() async {
+        await updateSettings(["dream_silence_min_minutes": Int(dreamSilence) ?? 120,
+            "dream_window_start": dreamWindowStart, "dream_window_end": dreamWindowEnd,
+            "dream_card_min_chars": Int(dreamMinChars) ?? 2000,
+            "dream_cooldown_hours": Int(dreamCooldown) ?? 24,
+            "dream_probability_multiplier": Double(dreamProbability) ?? 1,
+            "event_probability_multiplier": Double(eventProbability) ?? 1])
     }
 }
 
