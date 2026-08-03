@@ -3040,6 +3040,9 @@ private struct NativeDesireView: View {
     @State private var state: [String: Any] = [:]
     @State private var loading = true
     @State private var failed = false
+    @State private var dreamTheme = ""
+    @State private var showDreamComposer = false
+    @State private var saving = false
     @AppStorage("alcoveTheme") private var themeName = "haven"
     private var theme: AlcoveTheme { .panelNamed(themeName) }
 
@@ -3056,6 +3059,9 @@ private struct NativeDesireView: View {
 
     private var cycle: [String: Any] { state["cycle"] as? [String: Any] ?? [:] }
     private var event: [String: Any]? { state["event"] as? [String: Any] }
+    private var settings: [String: Any] { state["settings"] as? [String: Any] ?? [:] }
+    private var dreams: [String: Any] { state["dreams"] as? [String: Any] ?? [:] }
+    private var eventHistory: [[String: Any]] { state["history"] as? [[String: Any]] ?? [] }
     private var fields: [EventideBodyField] {
         let body = state["body"] as? [String: Any] ?? [:]
         return fieldOrder.compactMap { key in
@@ -3095,6 +3101,9 @@ private struct NativeDesireView: View {
                         cycleCard
                         if event != nil { eventCard }
                         bodyCard
+                        controlsCard
+                        dreamCard
+                        historyCard
                         attribution
                     }
                     .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 18)
@@ -3196,6 +3205,122 @@ private struct NativeDesireView: View {
         .frame(maxWidth: .infinity).padding(.vertical, 4).foregroundColor(theme.textDim)
     }
 
+    private var controlsCard: some View {
+        VStack(alignment: .leading, spacing: 13) {
+            Label("身体系统", systemImage: "slider.horizontal.3")
+                .font(.system(size: 13, weight: .semibold))
+            eventideToggle("周期继续流动", key: "body_cycle_enabled")
+            eventideToggle("向陈璟注入身体感受", key: "inject_body_state_context")
+            eventideToggle("允许私人成人梦境", key: "adult_private_mode_enabled")
+            Divider().opacity(0.3)
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("安全词").font(.system(size: 11, weight: .semibold))
+                    Text(settings.string("safeword").isEmpty ? "尚未设置" : settings.string("safeword"))
+                        .font(.system(size: 10)).foregroundColor(theme.textDim)
+                }
+                Spacer()
+                Text("称呼触发词 \((state["triggers"] as? [[String: Any]] ?? []).count) 个")
+                    .font(.system(size: 9)).foregroundColor(theme.textLight)
+            }
+            if let scheduler = state["scheduler"] as? [String: Any] {
+                Text(scheduler.string("last_event_check_at").isEmpty
+                     ? "事件调度尚未进行首次检查"
+                     : "上次事件检查  \(scheduler.string("last_event_check_at"))")
+                    .font(.system(size: 9)).foregroundColor(theme.textLight)
+                    .lineLimit(1)
+            }
+        }
+        .padding(15).foyerCard(theme)
+    }
+
+    private func eventideToggle(_ title: String, key: String) -> some View {
+        Toggle(title, isOn: Binding(
+            get: { settings.bool(key) },
+            set: { value in Task { await updateSettings([key: value]) } }
+        ))
+        .font(.system(size: 11, weight: .medium)).tint(theme.fyAccent)
+    }
+
+    private var dreamCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label("梦境", systemImage: "moon.stars.fill")
+                    .font(.system(size: 13, weight: .semibold))
+                Spacer()
+                Button(showDreamComposer ? "收起" : "种一个梦") { showDreamComposer.toggle() }
+                    .font(.system(size: 10, weight: .semibold)).foregroundColor(theme.fyAccent)
+            }
+            if showDreamComposer {
+                TextField("梦种主题", text: $dreamTheme, axis: .vertical)
+                    .font(.system(size: 11)).padding(10)
+                    .background(theme.fyCardSub, in: RoundedRectangle(cornerRadius: 10))
+                Button("保存梦种") { Task { await saveDream() } }
+                    .buttonStyle(.borderedProminent).tint(theme.fyAccent)
+                    .disabled(dreamTheme.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || saving)
+            }
+            let seeds = dreams["seeds"] as? [[String: Any]] ?? []
+            let cards = dreams["cards"] as? [[String: Any]] ?? []
+            if seeds.isEmpty { Text("还没有梦种").font(.system(size: 10)).foregroundColor(theme.textDim) }
+            ForEach(Array(seeds.enumerated()), id: \.offset) { _, seed in
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(seed.string("theme")).font(.system(size: 11, weight: .medium))
+                        Text(seed.string("intensity") == "explicit" ? "私人梦境" : "普通梦境")
+                            .font(.system(size: 9)).foregroundColor(theme.textLight)
+                    }
+                    Spacer()
+                    Button { Task { await deleteDream(seed.string("id")) } } label: {
+                        Image(systemName: "trash").font(.system(size: 10))
+                    }.foregroundColor(theme.textLight)
+                }
+            }
+            if !cards.isEmpty {
+                Divider().opacity(0.3)
+                Text("梦卡 \(cards.count) 张").font(.system(size: 10, weight: .semibold))
+            }
+        }
+        .padding(15).foyerCard(theme)
+    }
+
+    private var historyCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("事件与结算", systemImage: "clock.arrow.circlepath")
+                .font(.system(size: 13, weight: .semibold))
+            if eventHistory.isEmpty {
+                Text("还没有身体记录").font(.system(size: 10)).foregroundColor(theme.textDim)
+            }
+            ForEach(Array(eventHistory.prefix(12).enumerated()), id: \.offset) { _, row in
+                HStack(alignment: .top, spacing: 8) {
+                    Circle().fill(theme.fyAccent.opacity(0.65)).frame(width: 5, height: 5).padding(.top, 4)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(historyTitle(row)).font(.system(size: 10, weight: .medium))
+                        Text(row.string("at")).font(.system(size: 8, design: .monospaced)).foregroundColor(theme.textLight)
+                    }
+                }
+            }
+            if let settlement = state["last_settlement"] as? [String: Any] {
+                Divider().opacity(0.3)
+                Text("最近互动结算 · \(settlement.string("settlement_result"))")
+                    .font(.system(size: 10, weight: .semibold))
+                Text(settlement.string("settlement_reason"))
+                    .font(.system(size: 9)).foregroundColor(theme.textDim)
+            }
+        }
+        .padding(15).foyerCard(theme)
+    }
+
+    private func historyTitle(_ row: [String: Any]) -> String {
+        switch row.string("kind") {
+        case "cycle": return "周期变化"
+        case "event_start": return "事件开始 · \(row.string("event_key"))"
+        case "event_end": return "事件结束 · \(row.string("event_key"))"
+        case "stimulus": return "称呼刺激"
+        case "settlement": return "互动结算"
+        default: return row.string("kind")
+        }
+    }
+
     private func color(_ key: String) -> Color { fieldColors[key] ?? theme.fyAccent }
 
     private func remainingText(_ value: Any?) -> String {
@@ -3208,12 +3333,27 @@ private struct NativeDesireView: View {
     @MainActor
     private func load() async {
         loading = state.isEmpty
-        if let value = try? await NativeHouseAPI.object("/api/eventide/state") {
+        if let value = try? await NativeHouseAPI.object("/api/eventide/dashboard") {
             state = value; failed = false
         } else {
             failed = true
         }
         loading = false
+    }
+
+    @MainActor private func updateSettings(_ changes: [String: Any]) async {
+        if let value = try? await NativeHouseAPI.object("/api/eventide/settings", method: "POST", body: changes) { state = value }
+    }
+
+    @MainActor private func saveDream() async {
+        saving = true; defer { saving = false }
+        if let value = try? await NativeHouseAPI.object("/api/eventide/dream-seed", method: "POST", body: ["theme": dreamTheme, "intensity": "medium", "enabled": true]) {
+            state = value; dreamTheme = ""; showDreamComposer = false
+        }
+    }
+
+    @MainActor private func deleteDream(_ id: String) async {
+        if let value = try? await NativeHouseAPI.object("/api/eventide/dream-seed/delete", method: "POST", body: ["id": id]) { state = value }
     }
 }
 
