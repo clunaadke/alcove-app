@@ -3457,6 +3457,10 @@ private struct NativeDesireView: View {
             }
             Button("写入互动结算") { Task { await saveSettlement() } }
                 .font(.system(size: 10, weight: .semibold)).foregroundColor(theme.fyAccent)
+            Button("让陈璟结算最近互动") { Task { await requestClaudeSettlement() } }
+                .font(.system(size: 10, weight: .semibold)).foregroundColor(theme.fyAccent)
+            Text("使用陈璟自己的 Claude，在后台读取最近互动并按 Eventide 原始 schema 写回；不会另发聊天消息。")
+                .font(.system(size: 8)).foregroundColor(theme.textLight)
         }
         .padding(15).foyerCard(theme)
     }
@@ -3561,6 +3565,11 @@ private struct NativeDesireView: View {
             "dream_cooldown_hours": Int(dreamCooldown) ?? 24,
             "dream_probability_multiplier": Double(dreamProbability) ?? 1,
             "event_probability_multiplier": Double(eventProbability) ?? 1])
+    }
+
+    @MainActor private func requestClaudeSettlement() async {
+        _ = try? await NativeHouseAPI.object("/api/eventide/settlement-request", method: "POST", body: ["limit": 20])
+        await load()
     }
 }
 
