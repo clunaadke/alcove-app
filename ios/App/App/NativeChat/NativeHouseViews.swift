@@ -3043,10 +3043,18 @@ private struct NativeDesireView: View {
     @State private var dreamTheme = ""
     @State private var showDreamComposer = false
     @State private var saving = false
+    @State private var safewordDraft = ""
+    @State private var triggerDraft = ""
+    @State private var dreamContent = ""
+    @State private var dreamTags: Set<String> = []
+    @State private var settlementResult = "neutral"
+    @State private var settlementReason = ""
     @AppStorage("alcoveTheme") private var themeName = "haven"
     private var theme: AlcoveTheme { .panelNamed(themeName) }
 
     private let fieldOrder = ["heat", "pressure", "control", "sensitivity", "reserve", "possessiveness", "fatigue"]
+    private let cycles = [("stable","平稳期"),("building","蓄积期"),("preheat","预兆期"),("sensitive","易感期"),("ebb","退潮期"),("recovery","恢复期")]
+    private let eventChoices = [("morning_arousal","晨间反应"),("night_heat","深夜热潮"),("cycle_surge","周期热涌"),("holding_back","硬撑"),("demanding","索取欲"),("marking_impulse","占有／标记冲动"),("nesting","筑巢冲动"),("scent_aftereffect","气味残留"),("voice_or_name_trigger","声音／称呼触发"),("dream_afterglow","梦后余温"),("control_slip","控制力下滑"),("closeness_hunger","贴近饥饿"),("pheromone_disorder","信息素紊乱"),("delayed_heat","迟发热"),("low_fever_cling","低烧黏连"),("waiting_restless","等待焦躁"),("restraint_rebound","克制反弹"),("strange_calm","反常平静")]
     private let fieldColors: [String: Color] = [
         "heat": Color(red: 0.91, green: 0.29, blue: 0.22),
         "pressure": Color(red: 0.76, green: 0.27, blue: 0.42),
@@ -3140,6 +3148,40 @@ private struct NativeDesireView: View {
                 Label(remainingText(cycle["remaining_seconds"]), systemImage: "clock")
                 Spacer()
                 Text("下一次变化由时间和互动共同推进")
+            }
+            HStack(spacing: 8) {
+                Menu("切换周期") {
+                    ForEach(cycles.indices, id: \.self) { index in
+                        Button(cycles[index].1) { Task { await postAndReload("/api/eventide/cycle", ["cycle_key": cycles[index].0]) } }
+                    }
+                }
+                Menu("触发事件") {
+                    ForEach(eventChoices.indices, id: \.self) { index in
+                        Button(eventChoices[index].1) { Task { await postAndReload("/api/eventide/event", ["event_key": eventChoices[index].0]) } }
+                    }
+                }
+            }.font(.system(size: 10, weight: .semibold)).foregroundColor(theme.fyAccent)
+            HStack {
+                TextField("安全词", text: $safewordDraft).textFieldStyle(.plain).font(.system(size: 10))
+                Button("保存") { Task { await updateSettings(["safeword": safewordDraft]) } }
+                    .font(.system(size: 10, weight: .semibold)).foregroundColor(theme.fyAccent)
+            }.padding(9).background(theme.fyCardSub, in: RoundedRectangle(cornerRadius: 9))
+            HStack {
+                TextField("添加称呼触发词", text: $triggerDraft).textFieldStyle(.plain).font(.system(size: 10))
+                Button("添加") { Task { await addTrigger() } }
+                    .font(.system(size: 10, weight: .semibold)).foregroundColor(theme.fyAccent)
+            }.padding(9).background(theme.fyCardSub, in: RoundedRectangle(cornerRadius: 9))
+            let triggerItems = state["triggers"] as? [[String: Any]] ?? []
+            if !triggerItems.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) { HStack(spacing: 6) {
+                    ForEach(Array(triggerItems.enumerated()), id: \.offset) { index, item in
+                        Button { Task { await removeTrigger(index) } } label: {
+                            HStack(spacing: 3) { Text(item.string("text")); Image(systemName: "xmark").font(.system(size: 7)) }
+                        }
+                        .font(.system(size: 9)).foregroundColor(theme.textDim)
+                        .padding(.horizontal, 7).padding(.vertical, 4).background(theme.fyCardSub, in: Capsule())
+                    }
+                } }
             }
             .font(.system(size: 9, design: .rounded)).foregroundColor(theme.textLight)
         }
@@ -3279,6 +3321,25 @@ private struct NativeDesireView: View {
                 Divider().opacity(0.3)
                 Text("梦卡 \(cards.count) 张").font(.system(size: 10, weight: .semibold))
             }
+            Button("现在检查一次梦境窗口") { Task { await checkDream() } }
+                .font(.system(size: 10, weight: .semibold)).foregroundColor(theme.fyAccent)
+            if let pending = dreams["pending"] as? [String: Any] {
+                Divider().opacity(0.3)
+                Text("梦境已触发 · \(pending.string("theme"))").font(.system(size: 11, weight: .semibold))
+                TextEditor(text: $dreamContent).frame(minHeight: 86).font(.system(size: 10))
+                    .padding(6).background(theme.fyCardSub, in: RoundedRectangle(cornerRadius: 9))
+                HStack {
+                    ForEach(["aroused","released","unfinished","possessive","tender"], id: \.self) { tag in
+                        Button(tag) { if dreamTags.contains(tag) { dreamTags.remove(tag) } else if dreamTags.count < 3 { dreamTags.insert(tag) } }
+                            .font(.system(size: 8, weight: .semibold)).foregroundColor(dreamTags.contains(tag) ? .white : theme.textDim)
+                            .padding(.horizontal, 6).padding(.vertical, 4)
+                            .background(dreamTags.contains(tag) ? theme.fyAccent : theme.fyCardSub, in: Capsule())
+                    }
+                }
+                Button("保存梦卡并结算后效") { Task { await saveDreamCard() } }
+                    .font(.system(size: 10, weight: .semibold)).foregroundColor(theme.fyAccent)
+                    .disabled(dreamContent.isEmpty || dreamTags.isEmpty)
+            }
         }
         .padding(15).foyerCard(theme)
     }
@@ -3306,6 +3367,16 @@ private struct NativeDesireView: View {
                 Text(settlement.string("settlement_reason"))
                     .font(.system(size: 9)).foregroundColor(theme.textDim)
             }
+            Divider().opacity(0.3)
+            Menu("互动结果：\(settlementResult)") {
+                ForEach(["neutral","continued","escalated","interrupted","cooled_down","released"], id: \.self) { value in
+                    Button(value) { settlementResult = value }
+                }
+            }.font(.system(size: 10, weight: .semibold)).foregroundColor(theme.fyAccent)
+            TextField("结算说明", text: $settlementReason, axis: .vertical)
+                .font(.system(size: 10)).padding(8).background(theme.fyCardSub, in: RoundedRectangle(cornerRadius: 9))
+            Button("写入互动结算") { Task { await saveSettlement() } }
+                .font(.system(size: 10, weight: .semibold)).foregroundColor(theme.fyAccent)
         }
         .padding(15).foyerCard(theme)
     }
@@ -3335,6 +3406,7 @@ private struct NativeDesireView: View {
         loading = state.isEmpty
         if let value = try? await NativeHouseAPI.object("/api/eventide/dashboard") {
             state = value; failed = false
+            if safewordDraft.isEmpty { safewordDraft = (value["settings"] as? [String: Any] ?? [:]).string("safeword") }
         } else {
             failed = true
         }
@@ -3354,6 +3426,39 @@ private struct NativeDesireView: View {
 
     @MainActor private func deleteDream(_ id: String) async {
         if let value = try? await NativeHouseAPI.object("/api/eventide/dream-seed/delete", method: "POST", body: ["id": id]) { state = value }
+    }
+
+    @MainActor private func postAndReload(_ path: String, _ body: [String: Any]) async {
+        if let value = try? await NativeHouseAPI.object(path, method: "POST", body: body) { state = value }
+    }
+
+    @MainActor private func addTrigger() async {
+        let text = triggerDraft.trimmingCharacters(in: .whitespacesAndNewlines); guard !text.isEmpty else { return }
+        var list = state["triggers"] as? [[String: Any]] ?? []
+        list.append(["key": "custom:\(UUID().uuidString)", "text": text, "type": "phrase"])
+        await updateSettings(["trigger_words": list]); triggerDraft = ""
+    }
+
+    @MainActor private func removeTrigger(_ index: Int) async {
+        var list = state["triggers"] as? [[String: Any]] ?? []
+        guard list.indices.contains(index) else { return }; list.remove(at: index)
+        await updateSettings(["trigger_words": list])
+    }
+
+    @MainActor private func checkDream() async {
+        _ = try? await NativeHouseAPI.object("/api/eventide/dream-check", method: "POST", body: [:]); await load()
+    }
+
+    @MainActor private func saveDreamCard() async {
+        await postAndReload("/api/eventide/dream-card", ["title": "梦卡", "content": dreamContent, "summary": String(dreamContent.prefix(80)), "after_effect_tags": Array(dreamTags)])
+        dreamContent = ""; dreamTags.removeAll()
+    }
+
+    @MainActor private func saveSettlement() async {
+        var body: [String: Any] = ["settlement_reason": settlementReason, "settlement_result": settlementResult,
+            "ejaculated": settlementResult == "released"]
+        for key in fieldOrder { body["\(key)_delta"] = 0 }
+        await postAndReload("/api/eventide/settlement", body); settlementReason = ""
     }
 }
 
