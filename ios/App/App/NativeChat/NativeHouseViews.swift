@@ -3072,6 +3072,7 @@ private struct NativeDesireView: View {
     @State private var cardSummary = ""
     @State private var cardContent = ""
     @State private var cardTags: Set<String> = []
+    @State private var showResetStateAlert = false
     @AppStorage("alcoveTheme") private var themeName = "haven"
     private var theme: AlcoveTheme { .panelNamed(themeName) }
 
@@ -3147,6 +3148,10 @@ private struct NativeDesireView: View {
         .foyerPanel(theme)
         .padding(.horizontal, 12).padding(.top, 8)
         .task { await load() }
+        .alert("重置 Eventide 身体状态？", isPresented: $showResetStateAlert) {
+            Button("取消", role: .cancel) {}
+            Button("重置到平稳期", role: .destructive) { Task { await postAndReload("/api/eventide/state/reset", ["cycle_key":"stable"]) } }
+        } message: { Text("周期、事件和七项数值会重新初始化；历史日志仍保留。") }
     }
 
     private var cycleCard: some View {
@@ -3185,6 +3190,7 @@ private struct NativeDesireView: View {
                         Button(eventChoices[index].1) { Task { await postAndReload("/api/eventide/event", ["event_key": eventChoices[index].0]) } }
                     }
                 }
+                Button("重置状态", role: .destructive) { showResetStateAlert = true }
             }.font(.system(size: 10, weight: .semibold)).foregroundColor(theme.fyAccent)
             HStack {
                 TextField("安全词", text: $safewordDraft).textFieldStyle(.plain).font(.system(size: 10))
@@ -3525,6 +3531,8 @@ private struct NativeDesireView: View {
             }
             Button("写入互动结算") { Task { await saveSettlement() } }
                 .font(.system(size: 10, weight: .semibold)).foregroundColor(theme.fyAccent)
+            Button("仅按上面数值直接校准") { Task { await applyManualDelta() } }
+                .font(.system(size: 10, weight: .semibold)).foregroundColor(theme.fyAccent)
             Button("让陈璟结算最近互动") { Task { await requestClaudeSettlement() } }
                 .font(.system(size: 10, weight: .semibold)).foregroundColor(theme.fyAccent)
             Text("使用陈璟自己的 Claude，在后台读取最近互动并按 Eventide 原始 schema 写回；不会另发聊天消息。")
@@ -3662,6 +3670,11 @@ private struct NativeDesireView: View {
     @MainActor private func requestClaudeSettlement() async {
         _ = try? await NativeHouseAPI.object("/api/eventide/settlement-request", method: "POST", body: ["limit": 20])
         await load()
+    }
+
+    @MainActor private func applyManualDelta() async {
+        await postAndReload("/api/eventide/delta", ["deltas": settlementDeltas])
+        settlementDeltas = [:]
     }
 
     @MainActor private func loadConfig() async {
