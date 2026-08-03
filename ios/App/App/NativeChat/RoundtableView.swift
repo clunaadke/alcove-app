@@ -1050,10 +1050,14 @@ private struct RTGlassCapsule: ViewModifier {
 // token 涨到哪儿。数据来自后端在事件到达那一刻另存的一份，
 // 不是 /tmp/codex-debug.log（那个每行被砍到 200 字符，是残的）。
 private struct RTConsoleLine: Identifiable, Equatable {
-    let id = UUID()
+    let id: String
     let ts: String
     let kind: String
+    let title: String
     let text: String
+    let detail: String
+    let status: String
+    let elapsed: Double
 }
 
 private struct CodexMemoryItem: Identifiable, Equatable {
@@ -1130,6 +1134,9 @@ private final class RTConsoleStore: ObservableObject {
     @Published var threadId = ""
     @Published var handoffAt = ""
     @Published var busy = false
+    @Published var model = ""
+    @Published var cwd = ""
+    @Published var task = ""
     @Published var reforgeError = ""
     private var poller: Task<Void, Never>?
 
@@ -1150,11 +1157,19 @@ private final class RTConsoleStore: ObservableObject {
         if let o = try? await AlcoveAPI.getRaw("/api/roundtable/console") {
             let arr = (o["lines"] as? [[String: Any]]) ?? []
             let new = arr.map {
-                RTConsoleLine(ts: $0["ts"] as? String ?? "",
+                RTConsoleLine(id: $0["id"] as? String ?? UUID().uuidString,
+                              ts: $0["ts"] as? String ?? "",
                               kind: $0["kind"] as? String ?? "",
-                              text: $0["text"] as? String ?? "")
+                              title: $0["title"] as? String ?? "",
+                              text: $0["text"] as? String ?? "",
+                              detail: $0["detail"] as? String ?? "",
+                              status: $0["status"] as? String ?? "done",
+                              elapsed: ($0["elapsed"] as? NSNumber)?.doubleValue ?? 0)
             }
-            if new.map(\.text) != lines.map(\.text) { lines = new }
+            if new != lines { lines = new }
+            model = o["model"] as? String ?? ""
+            cwd = o["cwd"] as? String ?? ""
+            task = o["task"] as? String ?? ""
         }
         if let o = try? await AlcoveAPI.getRaw("/api/roundtable/thread") {
             used = o["used_tokens"] as? Int ?? 0
@@ -1209,6 +1224,17 @@ private struct RTConsoleView: View {
                 ScrollViewReader { p in
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 7) {
+                            if store.lines.isEmpty {
+                                VStack(spacing: 10) {
+                                    Image(systemName: "terminal")
+                                        .font(.system(size: 24, weight: .light))
+                                    Text("还没有运行记录")
+                                        .font(.system(size: 13))
+                                }
+                                .foregroundColor(theme.textDim.opacity(0.55))
+                                .frame(maxWidth: .infinity)
+                                .padding(.top, 60)
+                            }
                             ForEach(store.lines) { l in
                                 row(l)
                             }
@@ -1295,6 +1321,35 @@ private struct RTConsoleView: View {
             }
             .font(.system(size: 10, design: .monospaced))
             .foregroundColor(theme.textDim.opacity(0.7))
+
+            HStack(spacing: 8) {
+                consoleMeta(icon: "cpu", text: store.model.isEmpty ? "Codex" : store.model)
+                consoleMeta(icon: "folder", text: store.cwd.isEmpty ? "~" : store.cwd)
+                Spacer(minLength: 0)
+                HStack(spacing: 5) {
+                    Circle()
+                        .fill(store.busy ? Color.green : theme.textDim.opacity(0.35))
+                        .frame(width: 6, height: 6)
+                    Text(store.busy ? "运行中" : "空闲")
+                }
+                .font(.system(size: 10, weight: .medium))
+                .foregroundColor(store.busy ? .green : theme.textDim)
+            }
+
+            if !store.task.isEmpty {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "arrow.right")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(theme.fyAccent)
+                        .padding(.top, 2)
+                    Text(store.task)
+                        .font(.system(size: 12, weight: .medium))
+                        .lineLimit(3)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding(10)
+                .background(RoundedRectangle(cornerRadius: 10).fill(theme.textDim.opacity(0.08)))
+            }
         }
         .padding(.horizontal, 16)
         .padding(.top, 14)
@@ -1307,32 +1362,93 @@ private struct RTConsoleView: View {
     }
 
     private func row(_ l: RTConsoleLine) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            Text(l.ts)
-                .font(.system(size: 10, design: .monospaced))
-                .foregroundColor(theme.textDim.opacity(0.45))
-                .frame(width: 54, alignment: .leading)
-            Text(l.kind)
-                .font(.system(size: 11))
-                .foregroundColor(tint(l.kind))
-                .frame(width: 16)
-            Text(l.text)
-                .font(.system(size: 12, design: l.kind == "跑" ? .monospaced : .default))
-                .foregroundColor(l.kind == "想" ? theme.textDim.opacity(0.75) : theme.text)
-                .lineSpacing(2)
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
+        HStack(alignment: .top, spacing: 9) {
+            ZStack {
+                Circle().fill(tint(l.kind).opacity(0.13))
+                Image(systemName: icon(l.kind, l.status))
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(tint(l.status == "failed" ? "failed" : l.kind))
+            }
+            .frame(width: 25, height: 25)
+
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 6) {
+                    Text(l.title.isEmpty ? title(l.kind) : l.title)
+                        .font(.system(size: 12, weight: .semibold))
+                    if l.status == "running" {
+                        ProgressView().controlSize(.mini)
+                    }
+                    Spacer(minLength: 0)
+                    Text(l.status == "running" ? String(format: "%.1fs", l.elapsed) : l.ts)
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundColor(theme.textDim.opacity(0.48))
+                }
+                if !l.text.isEmpty {
+                    Text(l.text)
+                        .font(.system(size: 11.5, design: l.kind == "command" ? .monospaced : .default))
+                        .foregroundColor(l.kind == "reasoning" ? theme.textDim.opacity(0.78) : theme.text)
+                        .lineSpacing(2)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                if !l.detail.isEmpty {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        Text(l.detail)
+                            .font(.system(size: 10.5, design: .monospaced))
+                            .foregroundColor(l.status == "failed" ? .red : theme.textDim.opacity(0.82))
+                            .textSelection(.enabled)
+                    }
+                    .padding(8)
+                    .background(RoundedRectangle(cornerRadius: 7).fill(Color.black.opacity(0.16)))
+                }
+            }
         }
+        .padding(9)
+        .background(RoundedRectangle(cornerRadius: 12).fill(theme.textDim.opacity(l.status == "running" ? 0.11 : 0.055)))
     }
 
     private func tint(_ k: String) -> Color {
         switch k {
-        case "说": return theme.fyAccent
-        case "跑": return .orange
-        case "改": return .green
-        case "量": return theme.textDim.opacity(0.5)
+        case "message": return theme.fyAccent
+        case "command", "tool": return .orange
+        case "file": return .green
+        case "reasoning": return .purple
+        case "failed": return .red
         default:   return theme.textDim.opacity(0.4)
         }
+    }
+
+    private func icon(_ kind: String, _ status: String) -> String {
+        if status == "failed" { return "exclamationmark" }
+        switch kind {
+        case "reasoning": return "sparkles"
+        case "command": return "terminal"
+        case "tool": return "wrench.and.screwdriver"
+        case "file": return "doc.badge.gearshape"
+        case "message": return "text.bubble"
+        case "turn": return status == "running" ? "play.fill" : "checkmark"
+        default: return "circle.fill"
+        }
+    }
+
+    private func title(_ kind: String) -> String {
+        switch kind {
+        case "reasoning": return "Thinking"
+        case "command": return "Shell"
+        case "tool": return "Tool"
+        case "file": return "文件改动"
+        case "message": return "回复"
+        default: return "Codex"
+        }
+    }
+
+    private func consoleMeta(icon: String, text: String) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon).font(.system(size: 9))
+            Text(text).lineLimit(1)
+        }
+        .font(.system(size: 10, design: .monospaced))
+        .foregroundColor(theme.textDim.opacity(0.72))
     }
 }
 
