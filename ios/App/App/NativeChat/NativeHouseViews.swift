@@ -3273,6 +3273,13 @@ private struct NativeDesireView: View {
             eventideToggle("向陈璟注入身体感受", key: "inject_body_state_context")
             eventideToggle("允许生成梦境", key: "dream_enabled")
             eventideToggle("允许私人成人梦境", key: "adult_private_mode_enabled")
+            if !settings.bool("body_cycle_enabled") {
+                Label("身体状态已冻结：不推进周期、不抽事件", systemImage: "pause.circle.fill")
+                    .font(.system(size: 9, weight: .semibold)).foregroundColor(theme.textDim)
+            } else if !settings.bool("inject_body_state_context") {
+                Label("身体仍在流动，但不会送进陈璟上下文", systemImage: "eye.slash")
+                    .font(.system(size: 9, weight: .semibold)).foregroundColor(theme.textDim)
+            }
             DisclosureGroup("调度参数", isExpanded: $showAdvanced) {
                 VStack(spacing: 8) {
                     settingField("梦境静默分钟", text: $dreamSilence)
@@ -3307,10 +3314,19 @@ private struct NativeDesireView: View {
                     Text("下一次主动检查  \(scheduler.string("next_body_wakeup_at"))")
                         .font(.system(size: 9)).foregroundColor(theme.textLight).lineLimit(1)
                 }
+                Text("今日梦境尝试 \(scheduler.int("dream_attempts_today"))/3" + (scheduler.int("dream_cooldown_remaining_seconds") > 0 ? " · 冷却还剩 \(remainingText(scheduler["dream_cooldown_remaining_seconds"]))" : ""))
+                    .font(.system(size: 9)).foregroundColor(theme.textLight)
                 let cooldowns = scheduler["event_cooldowns"] as? [String: Any] ?? [:]
                 if !cooldowns.isEmpty {
                     Text("事件冷却记录 \(cooldowns.count) 项")
                         .font(.system(size: 9)).foregroundColor(theme.textLight)
+                }
+                let remaining = scheduler["cooldown_remaining_seconds"] as? [String: Any] ?? [:]
+                ForEach(remaining.keys.sorted(), id: \.self) { key in
+                    if remaining.int(key) > 0 {
+                        Text("\(eventChoices.first(where: { $0.0 == key })?.1 ?? key) 冷却 · \(remainingText(remaining[key]))")
+                            .font(.system(size: 8)).foregroundColor(theme.textLight)
+                    }
                 }
             }
         }
