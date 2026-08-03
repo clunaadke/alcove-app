@@ -3149,6 +3149,7 @@ private struct NativeDesireView: View {
                 Spacer()
                 Text("下一次变化由时间和互动共同推进")
             }
+            .font(.system(size: 9, design: .rounded)).foregroundColor(theme.textLight)
             HStack(spacing: 8) {
                 Menu("切换周期") {
                     ForEach(cycles.indices, id: \.self) { index in
@@ -3183,7 +3184,6 @@ private struct NativeDesireView: View {
                     }
                 } }
             }
-            .font(.system(size: 9, design: .rounded)).foregroundColor(theme.textLight)
         }
         .padding(16).foyerCard(theme)
     }
@@ -3253,6 +3253,7 @@ private struct NativeDesireView: View {
                 .font(.system(size: 13, weight: .semibold))
             eventideToggle("周期继续流动", key: "body_cycle_enabled")
             eventideToggle("向陈璟注入身体感受", key: "inject_body_state_context")
+            eventideToggle("允许生成梦境", key: "dream_enabled")
             eventideToggle("允许私人成人梦境", key: "adult_private_mode_enabled")
             Divider().opacity(0.3)
             HStack {
@@ -3339,6 +3340,8 @@ private struct NativeDesireView: View {
                 Button("保存梦卡并结算后效") { Task { await saveDreamCard() } }
                     .font(.system(size: 10, weight: .semibold)).foregroundColor(theme.fyAccent)
                     .disabled(dreamContent.isEmpty || dreamTags.isEmpty)
+                Button("取消这次待生成梦境", role: .destructive) { Task { await postAndReload("/api/eventide/dream-cancel", [:]) } }
+                    .font(.system(size: 9))
             }
         }
         .padding(15).foyerCard(theme)
