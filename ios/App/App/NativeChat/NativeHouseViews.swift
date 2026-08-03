@@ -3062,6 +3062,7 @@ private struct NativeDesireView: View {
     @State private var settlementDeltas: [String: Int] = [:]
     @State private var triggerType = "phrase"
     @State private var dreamExpiresAt = ""
+    @State private var editingTriggerIndex: Int?
     @AppStorage("alcoveTheme") private var themeName = "haven"
     private var theme: AlcoveTheme { .panelNamed(themeName) }
 
@@ -3185,15 +3186,16 @@ private struct NativeDesireView: View {
             }.pickerStyle(.segmented)
             HStack {
                 TextField("添加称呼触发词", text: $triggerDraft).textFieldStyle(.plain).font(.system(size: 10))
-                Button("添加") { Task { await addTrigger() } }
+                Button(editingTriggerIndex == nil ? "添加" : "保存") { Task { await addTrigger() } }
                     .font(.system(size: 10, weight: .semibold)).foregroundColor(theme.fyAccent)
             }.padding(9).background(theme.fyCardSub, in: RoundedRectangle(cornerRadius: 9))
             let triggerItems = state["triggers"] as? [[String: Any]] ?? []
             if !triggerItems.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) { HStack(spacing: 6) {
                     ForEach(Array(triggerItems.enumerated()), id: \.offset) { index, item in
-                        Button { Task { await removeTrigger(index) } } label: {
-                            HStack(spacing: 3) { Text(item.string("text")); Image(systemName: "xmark").font(.system(size: 7)) }
+                        HStack(spacing: 4) {
+                            Button { triggerDraft = item.string("text"); triggerType = item.string("type"); editingTriggerIndex = index } label: { Text(item.string("text")) }
+                            Button { Task { await removeTrigger(index) } } label: { Image(systemName: "xmark").font(.system(size: 7)) }
                         }
                         .font(.system(size: 9)).foregroundColor(theme.textDim)
                         .padding(.horizontal, 7).padding(.vertical, 4).background(theme.fyCardSub, in: Capsule())
@@ -3301,6 +3303,15 @@ private struct NativeDesireView: View {
                      : "上次事件检查  \(scheduler.string("last_event_check_at"))")
                     .font(.system(size: 9)).foregroundColor(theme.textLight)
                     .lineLimit(1)
+                if !scheduler.string("next_body_wakeup_at").isEmpty {
+                    Text("下一次主动检查  \(scheduler.string("next_body_wakeup_at"))")
+                        .font(.system(size: 9)).foregroundColor(theme.textLight).lineLimit(1)
+                }
+                let cooldowns = scheduler["event_cooldowns"] as? [String: Any] ?? [:]
+                if !cooldowns.isEmpty {
+                    Text("事件冷却记录 \(cooldowns.count) 项")
+                        .font(.system(size: 9)).foregroundColor(theme.textLight)
+                }
             }
         }
         .padding(15).foyerCard(theme)
@@ -3413,6 +3424,9 @@ private struct NativeDesireView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(historyTitle(row)).font(.system(size: 10, weight: .medium))
                         Text(row.string("at")).font(.system(size: 8, design: .monospaced)).foregroundColor(theme.textLight)
+                        if !row.string("reason").isEmpty {
+                            Text("原因：\(row.string("reason"))").font(.system(size: 8)).foregroundColor(theme.textDim)
+                        }
                         if let values = row["values"] as? [String: Any] {
                             Text(fieldOrder.map { "\($0) \(values.int($0))" }.joined(separator: " · "))
                                 .font(.system(size: 7, design: .monospaced)).foregroundColor(theme.textLight)
@@ -3509,14 +3523,19 @@ private struct NativeDesireView: View {
     @MainActor private func addTrigger() async {
         let text = triggerDraft.trimmingCharacters(in: .whitespacesAndNewlines); guard !text.isEmpty else { return }
         var list = state["triggers"] as? [[String: Any]] ?? []
-        list.append(["key": "custom:\(UUID().uuidString)", "text": text, "type": triggerType])
-        await updateSettings(["trigger_words": list]); triggerDraft = ""
+        if let index = editingTriggerIndex, list.indices.contains(index) {
+            var item = list[index]; item["text"] = text; item["type"] = triggerType; list[index] = item
+        } else {
+            list.append(["key": "custom:\(UUID().uuidString)", "text": text, "type": triggerType])
+        }
+        await updateSettings(["trigger_words": list]); triggerDraft = ""; editingTriggerIndex = nil
     }
 
     @MainActor private func removeTrigger(_ index: Int) async {
         var list = state["triggers"] as? [[String: Any]] ?? []
         guard list.indices.contains(index) else { return }; list.remove(at: index)
         await updateSettings(["trigger_words": list])
+        if editingTriggerIndex == index { editingTriggerIndex = nil; triggerDraft = "" }
     }
 
     @MainActor private func checkDream() async {
