@@ -952,6 +952,11 @@ private struct RoundtableRow: View {
                     .clipShape(RoundedRectangle(cornerRadius: 14))
                     .matchedTransitionSource(id: "rt-\(msg.id)", in: photoNamespace)
                     .onTapGesture { onTapImages([AlcoveAPI.attachmentURL(raw)], .constant(0)) }
+                    .contextMenu {
+                        Button {
+                            Task { await PhotoLibrarySaver.save(AlcoveAPI.attachmentURL(raw)) }
+                        } label: { Label("保存到相册", systemImage: "square.and.arrow.down") }
+                    }
                 } else if msg.attachmentType == "audio", let raw = msg.attachmentURL {
                     AudioBubble(url: AlcoveAPI.attachmentURL(raw), isUser: isUser, theme: theme)
                 } else if let raw = msg.attachmentURL {

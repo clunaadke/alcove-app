@@ -1,5 +1,6 @@
 import SwiftUI
 import PhotosUI
+import Photos
 import AVFoundation
 import UniformTypeIdentifiers
 
@@ -1149,6 +1150,11 @@ struct MessageRow: View {
         .clipShape(RoundedRectangle(cornerRadius: 14))
         .matchedTransitionSource(id: "chat-\(msg.id)", in: photoNamespace)
         .onTapGesture { onTapImages([url], .constant(0)) }
+        .contextMenu {
+            Button {
+                Task { await PhotoLibrarySaver.save(url) }
+            } label: { Label("保存到相册", systemImage: "square.and.arrow.down") }
+        }
     }
 
     static let hm: DateFormatter = {
@@ -1626,6 +1632,11 @@ struct PhotoStackMessageView: View {
         }
         .frame(width: cardSize.width, height: cardSize.height)
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .contextMenu {
+            Button {
+                Task { await PhotoLibrarySaver.save(url) }
+            } label: { Label("保存到相册", systemImage: "square.and.arrow.down") }
+        }
     }
 
     private func layerOffset(_ slot: Int) -> CGSize {
@@ -1687,6 +1698,25 @@ struct PhotoStackMessageView: View {
     }
 }
 
+enum PhotoLibrarySaver {
+    static func save(_ url: URL) async {
+        do {
+            let (data, response) = try await URLSession.shared.data(from: url)
+            guard let http = response as? HTTPURLResponse,
+                  (200..<300).contains(http.statusCode),
+                  let image = UIImage(data: data) else { return }
+            let status = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
+            guard status == .authorized || status == .limited else { return }
+            try await PHPhotoLibrary.shared().performChanges {
+                PHAssetChangeRequest.creationRequestForAsset(from: image)
+            }
+        } catch {
+            // Context-menu saving is intentionally non-blocking; a failed
+            // network fetch leaves the existing image bubble untouched.
+        }
+    }
+}
+
 struct PhotoPageViewer: View {
     let selection: PhotoViewerSelection
     let namespace: Namespace.ID
@@ -1732,6 +1762,11 @@ private struct ZoomableRemoteImage: View {
                     .onEnded { _ in withAnimation { scale = 1 } })
         } placeholder: { ProgressView().tint(.white) }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .contextMenu {
+            Button {
+                Task { await PhotoLibrarySaver.save(url) }
+            } label: { Label("保存到相册", systemImage: "square.and.arrow.down") }
+        }
     }
 }
 
