@@ -241,7 +241,13 @@ final class ChatStore: ObservableObject {
             state.active = true
             state.error = nil
         case "thinking_delta":
-            state.thinking += event.delta ?? ""
+            let delta = event.delta ?? ""
+            state.thinking += delta
+            if let i = state.timeline.indices.last, state.timeline[i].kind == "thinking" {
+                state.timeline[i].text += delta
+            } else if !delta.isEmpty {
+                state.timeline.append(.init(id: "thinking-\(event.seq)", kind: "thinking", text: delta))
+            }
         case "native_thinking_delta":
             state.nativeThinking += event.delta ?? ""
         case "text_delta":
@@ -250,12 +256,17 @@ final class ChatStore: ObservableObject {
             let id = event.toolCallID ?? "tool-\(event.seq)"
             if !state.tools.contains(where: { $0.id == id }) {
                 state.tools.append(.init(id: id, name: event.name ?? "执行动作"))
+                state.timeline.append(.init(id: id, kind: "tool", text: event.name ?? "执行动作"))
             }
             state.tool = event.name ?? state.tool
         case "tool_done":
             if let id = event.toolCallID, let i = state.tools.firstIndex(where: { $0.id == id }) {
                 state.tools[i].done = true
                 state.tools[i].ok = event.ok
+            }
+            if let id = event.toolCallID, let i = state.timeline.firstIndex(where: { $0.id == id }) {
+                state.timeline[i].done = true
+                state.timeline[i].ok = event.ok
             }
             state.tool = ""
         case "finish":

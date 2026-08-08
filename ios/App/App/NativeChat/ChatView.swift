@@ -1047,12 +1047,15 @@ struct MessageRow: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    paperTrack(icon: "quote.bubble", title: "Thinking…",
-                               detail: (msg.thinking?.isEmpty == false) ? (msg.thinking ?? "") : cuteThinkingPlaceholder)
-                    ForEach(msg.activity) { item in
-                        paperTrack(icon: item.icon,
-                                   title: item.kind == "tool" ? item.content : (item.kind == "thinking" ? "Thinking…" : "继续说"),
-                                   detail: item.kind == "tool" ? "" : item.content)
+                    if msg.activity.isEmpty {
+                        paperTrack(icon: "quote.bubble", title: "Thinking…",
+                                   detail: (msg.thinking?.isEmpty == false) ? (msg.thinking ?? "") : cuteThinkingPlaceholder)
+                    } else {
+                        ForEach(msg.activity) { item in
+                            paperTrack(icon: item.icon,
+                                       title: item.kind == "tool" ? item.content : (item.kind == "thinking" ? "Thinking…" : "继续说"),
+                                       detail: item.kind == "tool" ? "" : item.content)
+                        }
                     }
                     paperTrack(icon: "checkmark.circle", title: "Done", detail: "")
                 }.padding(.horizontal, 22).padding(.bottom, 30)
@@ -1219,10 +1222,15 @@ struct LiveSayBand: View {
             NavigationStack {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 18) {
-                        liveTrack("quote.bubble", "Thinking…", liveThought, done: !state.active)
-                        ForEach(state.tools) { tool in
-                            liveTrack(tool.done ? (tool.ok == false ? "xmark.circle" : "checkmark.circle") : "play.circle",
-                                      tool.name, tool.done ? "已完成" : "执行中", done: tool.done)
+                        if state.timeline.isEmpty {
+                            liveTrack("quote.bubble", "Thinking…", liveThought, done: !state.active)
+                        } else {
+                            ForEach(state.timeline) { item in
+                                liveTrack(item.icon,
+                                          item.kind == "thinking" ? "Thinking…" : item.text,
+                                          item.kind == "thinking" ? item.text : (item.done ? "已完成" : "执行中"),
+                                          done: item.done)
+                            }
                         }
                         if state.finishing {
                             liveTrack("checkmark.circle", "Done", "", done: true)

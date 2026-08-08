@@ -30,6 +30,7 @@ enum AlcoveAPI {
         var say: String = ""
         var tool: String = ""
         var tools: [LiveTool] = []
+        var timeline: [LiveProcessItem] = []
         var said: Int = 0
         var elapsed: Int = 0
         var error: String?
@@ -46,6 +47,25 @@ enum AlcoveAPI {
         var name: String
         var done: Bool = false
         var ok: Bool?
+    }
+
+    struct LiveProcessItem: Identifiable, Equatable {
+        let id: String
+        var kind: String
+        var text: String
+        var done: Bool = false
+        var ok: Bool?
+
+        var icon: String {
+            guard kind == "tool" else { return "quote.bubble" }
+            if text.contains("记忆") || text.contains("OB") { return "brain.head.profile" }
+            if text.contains("日记") || text.contains("信") { return "book.closed" }
+            if text.contains("网页") || text.contains("搜索") || text.contains("上网") { return "globe" }
+            if text.contains("文件") || text.contains("代码") { return "doc.text" }
+            if text.contains("命令") || text.contains("终端") { return "terminal" }
+            if text.contains("图片") || text.contains("照片") { return "photo" }
+            return done ? (ok == false ? "xmark.circle" : "checkmark.circle") : "play.circle"
+        }
     }
 
     struct LiveEvent: Decodable {
