@@ -732,7 +732,7 @@ struct MessageRow: View {
         HStack(alignment: .bottom, spacing: 0) {
             if isUser { Spacer(minLength: 48) }
             VStack(alignment: isUser ? .trailing : .leading, spacing: 7) {
-                if let think = msg.thinking, !think.isEmpty {
+                if let think = visibleChatThought {
                     thinkingBlock(think)
                 } else if recall != nil {
                     recallBadge // 没有思绪行时角标单独站一行，和 PWA 一致
@@ -816,6 +816,20 @@ struct MessageRow: View {
                 .presentationDragIndicator(.visible)
                 .presentationBackground(theme.fyCardSub)
         }
+    }
+
+    private var visibleChatThought: String? {
+        if let handwritten = msg.thinking?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !handwritten.isEmpty { return handwritten }
+        if theme.isPaper && !isUser,
+           let native = msg.nativeThinking?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !native.isEmpty { return cuteThinkingPlaceholder }
+        return nil
+    }
+
+    private var cuteThinkingPlaceholder: String {
+        let lines = ["在想一些没说出口的事", "脑袋里悄悄转了几圈", "在想一些色色的事", "把念头藏在袖子里"]
+        return lines[abs(msg.ts.hashValue) % lines.count]
     }
 
     // The text stays crisp above a real wallpaper-refraction layer.
@@ -1026,11 +1040,10 @@ struct MessageRow: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    paperTrack(icon: "clock", title: "原生思考", detail: msg.nativeThinking ?? "")
-                    ForEach(msg.activity) { item in
-                        paperTrack(icon: item.kind == "tool" ? item.icon : "text.alignleft",
-                                   title: item.kind == "tool" ? "执行动作" : "继续思考",
-                                   detail: item.content)
+                    paperTrack(icon: "quote.bubble", title: "手写思绪",
+                               detail: (msg.thinking?.isEmpty == false) ? (msg.thinking ?? "") : cuteThinkingPlaceholder)
+                    ForEach(msg.activity.filter { $0.kind == "tool" }) { item in
+                        paperTrack(icon: item.icon, title: item.content, detail: "")
                     }
                     paperTrack(icon: "checkmark.circle", title: "Done", detail: "")
                 }.padding(.horizontal, 22).padding(.bottom, 30)
@@ -1148,11 +1161,11 @@ struct LiveSayBand: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
-            if !state.thinking.isEmpty {
+            if !state.thinking.isEmpty || !state.nativeThinking.isEmpty {
                 Button { showProcess = true } label: {
                     HStack(spacing: 5) {
                         Image(systemName: "clock.arrow.circlepath")
-                        Text(String(state.thinking.prefix(42))).lineLimit(1)
+                        Text(String(liveThought.prefix(42))).lineLimit(1)
                         Image(systemName: "chevron.right").font(.system(size: 8))
                     }
                     .font(.system(size: 11, weight: .medium))
@@ -1197,9 +1210,7 @@ struct LiveSayBand: View {
             NavigationStack {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 18) {
-                        if !state.nativeThinking.isEmpty {
-                            liveTrack("circle.dotted", "原生思考", state.nativeThinking, done: true)
-                        }
+                        liveTrack("quote.bubble", "手写思绪", liveThought, done: !state.active)
                         ForEach(state.tools) { tool in
                             liveTrack(tool.done ? (tool.ok == false ? "xmark.circle" : "checkmark.circle") : "play.circle",
                                       tool.name, tool.done ? "已完成" : "执行中", done: tool.done)
@@ -1218,6 +1229,10 @@ struct LiveSayBand: View {
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
         }
+    }
+
+    private var liveThought: String {
+        state.thinking.isEmpty ? "脑袋里悄悄转了几圈" : state.thinking
     }
 
     private func liveTrack(_ icon: String, _ title: String, _ detail: String, done: Bool) -> some View {

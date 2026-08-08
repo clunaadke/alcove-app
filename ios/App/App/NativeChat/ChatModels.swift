@@ -122,7 +122,14 @@ struct ActivityItem: Identifiable, Equatable {
     var icon: String {
         switch kind {
         case "thinking": return "circle.dotted"
-        case "tool": return "play.fill"
+        case "tool":
+            if content.contains("记忆") || content.contains("OB") { return "brain.head.profile" }
+            if content.contains("日记") || content.contains("信") { return "book.closed" }
+            if content.contains("网页") || content.contains("搜索") || content.contains("上网") { return "globe" }
+            if content.contains("文件") || content.contains("代码") { return "doc.text" }
+            if content.contains("命令") || content.contains("终端") { return "terminal" }
+            if content.contains("图片") || content.contains("照片") { return "photo" }
+            return "play.fill"
         default: return "quote.closing"
         }
     }
