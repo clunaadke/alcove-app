@@ -255,7 +255,7 @@ struct RoundtableView: View {
     }
 
     private var wallpaperDescriptor: ChatWallpaperDescriptor {
-        if let image = cachedRTWallpaper {
+        if !theme.isPaper, let image = cachedRTWallpaper {
             return ChatWallpaperDescriptor(source: .image(image))
         }
         return ChatWallpaperDescriptor(source: .gradient(theme.wallGradient))
@@ -288,6 +288,10 @@ struct RoundtableView: View {
         }
         .onDisappear { store.stop() }
         .onChange(of: rtWallpaper) { _ in refreshRTImageCache() }
+        .onChange(of: themeName) { _ in
+            // 纸页的日夜由主题纸面接管，不能残留上一个模式的自定义暗壁纸。
+            if theme.isPaper { cachedRTWallpaper = nil }
+        }
         .onChange(of: rtAvatarUser) { _ in refreshRTImageCache() }
         .onChange(of: rtAvatarAssistant) { _ in refreshRTImageCache() }
         .onChange(of: rtAvatarGpt) { _ in refreshRTImageCache() }

@@ -38,7 +38,7 @@ final class ChatWallpaperStore: ObservableObject {
             in: .userDomainMask
         )[0].appendingPathComponent(fileName)
 
-        if let image = UIImage(contentsOfFile: url.path) {
+        if theme.usesWallImage, let image = UIImage(contentsOfFile: url.path) {
             image.prepareForDisplay { [weak self] prepared in
                 Task { @MainActor in
                     guard self?.loadedKey == key else { return }

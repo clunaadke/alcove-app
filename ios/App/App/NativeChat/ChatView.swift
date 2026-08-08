@@ -725,6 +725,7 @@ struct MessageRow: View {
 
     private var isUser: Bool { msg.role == "user" }
     private var timestampTextInset: CGFloat {
+        if theme.isPaper && !isUser { return 0 }
         !msg.text.isEmpty && !msg.isSticker ? 12 : 0
     }
 
@@ -757,7 +758,7 @@ struct MessageRow: View {
                     }
                 }
                 if showTime || msg.pending || msg.asleepAtSend || msg.hasActivity {
-                    HStack(spacing: 4) {
+                    HStack(spacing: theme.isPaper && !isUser ? 14 : 4) {
                         if msg.pending {
                             Image(systemName: "clock")
                                 .font(.system(size: 9))
@@ -775,7 +776,7 @@ struct MessageRow: View {
                         }
                         if theme.isPaper && !isUser && !msg.text.isEmpty {
                             Button { UIPasteboard.general.string = msg.text } label: {
-                                Image(systemName: "doc.on.doc")
+                                Image(systemName: "square.on.square")
                                     .font(.system(size: 11, weight: .light))
                                     .foregroundColor(theme.timestamp)
                                     .frame(width: 32, height: 32, alignment: .leading)
@@ -783,7 +784,7 @@ struct MessageRow: View {
                             }.buttonStyle(.plain)
                         }
                         // 0730：这一轮的过程记录，挂在时间戳旁边，点开看他到底干了什么
-                        if msg.hasActivity {
+                        if msg.hasActivity && !theme.isPaper {
                             Button {
                                 withAnimation(.easeInOut(duration: 0.15)) { showActivity.toggle() }
                                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { onContentChange?() }
@@ -808,6 +809,7 @@ struct MessageRow: View {
             }
             if !isUser { Spacer(minLength: 48) }
         }
+        .padding(.leading, theme.isPaper && !isUser ? 12 : 0)
         .padding(.top, 2)
         .padding(.bottom, showTime ? 12 : 5)
         .sheet(isPresented: Binding(get: { theme.isPaper && showThinking }, set: { showThinking = $0 })) {
@@ -854,11 +856,16 @@ struct MessageRow: View {
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
                     .background {
-                        BubbleGlassBackground(
-                            tintColor: isUser ? theme.bubbleUser : theme.bubbleAI,
-                            tintOpacity: theme.isPaper ? 0.34 : (isUser ? 0.14 : 0.09),
-                            style: bubbleGlassStyle
-                        )
+                        if theme.isPaper {
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .fill(isUser ? theme.bubbleUser : theme.bubbleAI)
+                        } else {
+                            BubbleGlassBackground(
+                                tintColor: isUser ? theme.bubbleUser : theme.bubbleAI,
+                                tintOpacity: isUser ? 0.14 : 0.09,
+                                style: bubbleGlassStyle
+                            )
+                        }
                     }
             }
         }
@@ -1040,10 +1047,12 @@ struct MessageRow: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    paperTrack(icon: "quote.bubble", title: "手写思绪",
+                    paperTrack(icon: "quote.bubble", title: "Thinking…",
                                detail: (msg.thinking?.isEmpty == false) ? (msg.thinking ?? "") : cuteThinkingPlaceholder)
-                    ForEach(msg.activity.filter { $0.kind == "tool" }) { item in
-                        paperTrack(icon: item.icon, title: item.content, detail: "")
+                    ForEach(msg.activity) { item in
+                        paperTrack(icon: item.icon,
+                                   title: item.kind == "tool" ? item.content : (item.kind == "thinking" ? "Thinking…" : "继续说"),
+                                   detail: item.kind == "tool" ? "" : item.content)
                     }
                     paperTrack(icon: "checkmark.circle", title: "Done", detail: "")
                 }.padding(.horizontal, 22).padding(.bottom, 30)
@@ -1210,7 +1219,7 @@ struct LiveSayBand: View {
             NavigationStack {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 18) {
-                        liveTrack("quote.bubble", "手写思绪", liveThought, done: !state.active)
+                        liveTrack("quote.bubble", "Thinking…", liveThought, done: !state.active)
                         ForEach(state.tools) { tool in
                             liveTrack(tool.done ? (tool.ok == false ? "xmark.circle" : "checkmark.circle") : "play.circle",
                                       tool.name, tool.done ? "已完成" : "执行中", done: tool.done)

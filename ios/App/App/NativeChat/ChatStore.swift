@@ -223,7 +223,7 @@ final class ChatStore: ObservableObject {
             } catch is CancellationError {
                 return
             } catch {
-                connectionError = true
+                // 流式是增强通道。端点尚未上线或短暂重连时不能冒充主聊天断线。
                 try? await Task.sleep(nanoseconds: retry)
                 retry = min(retry * 2, 8_000_000_000)
             }
@@ -269,7 +269,6 @@ final class ChatStore: ObservableObject {
             break
         }
         live = state
-        connectionError = false
         if event.event == "finish" {
             await pollOnce()
             if live?.finishing == true {

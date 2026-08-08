@@ -246,6 +246,11 @@ struct NativeHouseSheet: View {
     }
 
     private func prepareTextureIfNeeded() {
+        if theme.isPaper {
+            preparedTexture = nil
+            preparedTextureName = ""
+            return
+        }
         let asset = theme.panelTextureAsset
         guard preparedTextureName != asset || preparedTexture == nil else { return }
 
@@ -474,6 +479,9 @@ private struct NativeSidebarView: View {
             .foregroundColor(theme.textDim)
             .frame(maxWidth: .infinity, minHeight: 61)
             .foyerCard(theme)
+            .rotationEffect(theme.isPaper
+                ? .degrees(Double(abs(target.rawValue.hashValue) % 9 - 4) * 0.10)
+                : .zero)
         }
         .buttonStyle(.plain)
     }
@@ -2714,7 +2722,7 @@ private struct FoyerCardGlassBackground: View {
 
 private extension View {
     func foyerShell(_ theme: AlcoveTheme) -> some View {
-        let shape = RoundedRectangle(cornerRadius: 28, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: theme.isPaper ? 0 : 28, style: .continuous)
         return self
             .clipShape(shape)
             .overlay {
@@ -2773,10 +2781,18 @@ private extension View {
 
         if theme.isPaper {
             self
-                .background(theme.fyCard, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .stroke(theme.fyBorder.opacity(0.72), lineWidth: 0.8))
-                .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .background(theme.fyCard, in: JournalCardShape(tl: 4, bl: 10, br: 3, tr: 12))
+                .overlay(JournalCardShape(tl: 4, bl: 10, br: 3, tr: 12)
+                    .stroke(theme.fyBorder.opacity(0.78), lineWidth: 0.8))
+                .overlay(alignment: .topLeading) {
+                    Rectangle().fill(theme.fyAccent.opacity(0.28))
+                        .frame(width: 22, height: 2).offset(x: 10, y: 5)
+                }
+                .overlay(alignment: .bottomTrailing) {
+                    Circle().fill(theme.fyBorder.opacity(0.55))
+                        .frame(width: 3, height: 3).padding(8)
+                }
+                .contentShape(JournalCardShape(tl: 4, bl: 10, br: 3, tr: 12))
                 .shadow(color: theme.fyShadow.opacity(0.65), radius: 1.5, x: 1, y: 2)
         } else if #available(iOS 26.0, *) {
             self
@@ -2809,7 +2825,13 @@ private extension View {
     // Detail pages sit directly on the shared wet-glass wallpaper.
     // Keep their content and spacing intact; remove only the extra dark shell.
     func foyerPanel(_ theme: AlcoveTheme) -> some View {
-        self
+        self.overlay(alignment: .leading) {
+            if theme.isPaper {
+                Rectangle().fill(theme.fyAccent.opacity(0.20))
+                    .frame(width: 1).padding(.vertical, 54).padding(.leading, 7)
+                    .allowsHitTesting(false)
+            }
+        }
     }
 }
 

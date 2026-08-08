@@ -56,7 +56,7 @@ struct RootView: View {
                     .zIndex(10)
             }
         }
-        .blur(radius: housePage == nil ? 0 : 2.2)
+        .blur(radius: housePage == nil || theme.isPaper ? 0 : 2.2)
         .animation(.easeOut(duration: 0.20), value: housePage != nil)
         .onAppear {
             prewarmPanelTexture()

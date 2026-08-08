@@ -242,10 +242,10 @@ struct AlcoveTheme {
     }
 
     private func paperCopy(dark: Bool) -> AlcoveTheme {
-        let paper = dark ? Color(red: 25/255, green: 25/255, blue: 24/255)
-                         : Color(red: 243/255, green: 241/255, blue: 236/255)
+        let paper = dark ? Color(red: 24/255, green: 24/255, blue: 25/255)
+                         : Color(red: 248/255, green: 248/255, blue: 246/255)
         let card = dark ? Color(red: 36/255, green: 35/255, blue: 33/255)
-                        : Color(red: 249/255, green: 247/255, blue: 242/255)
+                        : Color.white
         let ink = dark ? Color(red: 231/255, green: 227/255, blue: 218/255)
                        : Color(red: 37/255, green: 36/255, blue: 34/255)
         let pencil = dark ? Color(red: 166/255, green: 160/255, blue: 151/255)
