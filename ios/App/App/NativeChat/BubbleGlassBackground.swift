@@ -25,10 +25,17 @@ final class ChatWallpaperStore: ObservableObject {
 
     private var loadedKey = ""
 
+    static func fileName(for themeName: String) -> String {
+        switch themeName {
+        case "midnight": return "chatwall_midnight.jpg"
+        case "paper": return "chatwall_paper.jpg"
+        case "paper-dark": return "chatwall_paper_dark.jpg"
+        default: return "chatwall_haven.jpg"
+        }
+    }
+
     func refresh(themeName: String, theme: AlcoveTheme, wallStamp: Double) {
-        let fileName = themeName == "midnight"
-            ? "chatwall_midnight.jpg"
-            : "chatwall_haven.jpg"
+        let fileName = Self.fileName(for: themeName)
         let key = "\(themeName)|\(wallStamp)|\(fileName)"
         guard key != loadedKey else { return }
         loadedKey = key
@@ -38,7 +45,7 @@ final class ChatWallpaperStore: ObservableObject {
             in: .userDomainMask
         )[0].appendingPathComponent(fileName)
 
-        if theme.usesWallImage, let image = UIImage(contentsOfFile: url.path) {
+        if let image = UIImage(contentsOfFile: url.path) {
             image.prepareForDisplay { [weak self] prepared in
                 Task { @MainActor in
                     guard self?.loadedKey == key else { return }

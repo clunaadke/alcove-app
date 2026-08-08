@@ -299,7 +299,8 @@ struct ChatView: View {
                 sticker: message.stickerId.flatMap(store.sticker(for:)),
                 theme: theme,
                 fontSize: chatFontSize,
-                showTime: isGroupTail(cur: store.messages[groupEnd], next: next),
+                showTime: isGroupTail(cur: store.messages[groupEnd], next: next)
+                    || (theme.isPaper && message.role == "assistant" && !message.text.isEmpty),
                 recall: recall,
                 photoURLs: photos,
                 photoNamespace: photoTransition,
@@ -1050,6 +1051,7 @@ struct MessageRow: View {
                     if msg.activity.isEmpty {
                         paperTrack(icon: "quote.bubble", title: "Thinking…",
                                    detail: (msg.thinking?.isEmpty == false) ? (msg.thinking ?? "") : cuteThinkingPlaceholder)
+                        paperTrack(icon: "minus.circle", title: "这轮没动工具", detail: "")
                     } else {
                         ForEach(msg.activity) { item in
                             paperTrack(icon: item.icon,

@@ -804,7 +804,7 @@ private struct NativeSettingsView: View {
             guard let data = try? await item.loadTransferable(type: Data.self),
                   let image = UIImage(data: data),
                   let jpeg = image.jpegData(compressionQuality: 0.9) else { return }
-            let file = themeName == "midnight" ? "chatwall_midnight.jpg" : "chatwall_haven.jpg"
+            let file = ChatWallpaperStore.fileName(for: themeName)
             let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
                 .appendingPathComponent(file)
             try? jpeg.write(to: url, options: .atomic)
@@ -813,7 +813,7 @@ private struct NativeSettingsView: View {
     }
 
     private func resetWallpaper() {
-        let file = themeName == "midnight" ? "chatwall_midnight.jpg" : "chatwall_haven.jpg"
+        let file = ChatWallpaperStore.fileName(for: themeName)
         let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
             .appendingPathComponent(file)
         try? FileManager.default.removeItem(at: url)
