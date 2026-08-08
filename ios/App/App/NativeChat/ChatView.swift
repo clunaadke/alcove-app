@@ -1135,7 +1135,8 @@ struct MessageRow: View {
 
     private func imageBody(_ raw: String) -> some View {
         let url = AlcoveAPI.attachmentURL(raw)
-        return AsyncImage(url: url) { img in
+        let previewURL = AlcoveAPI.attachmentThumbnailURL(raw)
+        return AsyncImage(url: previewURL, transaction: Transaction(animation: nil)) { img in
             img.resizable().scaledToFit()
         } placeholder: {
             ZStack {
@@ -1608,7 +1609,12 @@ struct PhotoStackMessageView: View {
     }
 
     private func photoCard(url: URL) -> some View {
-        AsyncImage(url: url, transaction: Transaction(animation: nil)) { phase in
+        let previewURL: URL = {
+            let path = url.path
+            guard let range = path.range(of: "/attachments/") else { return url }
+            return AlcoveAPI.attachmentThumbnailURL("/attachments/" + String(path[range.upperBound...]))
+        }()
+        return AsyncImage(url: previewURL, transaction: Transaction(animation: nil)) { phase in
             switch phase {
             case .success(let image):
                 image.resizable().scaledToFill()

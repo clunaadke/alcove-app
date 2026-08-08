@@ -99,6 +99,14 @@ enum AlcoveAPI {
         return fullURL(String(p))
     }
 
+    /// Small cached preview for chat timelines. Tapping still opens the
+    /// original attachmentURL, so this only improves first paint and scrolling.
+    static func attachmentThumbnailURL(_ raw: String) -> URL {
+        guard raw.hasPrefix("/attachments/") else { return attachmentURL(raw) }
+        let name = String(raw.dropFirst("/attachments/".count))
+        return fullURL("/api/attachments/thumbs/\(name)")
+    }
+
     // sticker url "/stickers/x.jpg" 直接挂在域名根（18003 静态目录）
     static func stickerURL(_ raw: String) -> URL { fullURL(raw) }
 

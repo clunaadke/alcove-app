@@ -945,7 +945,8 @@ private struct RoundtableRow: View {
                                           onOpen: onTapImages)
                         .matchedTransitionSource(id: "rt-\(msg.id)", in: photoNamespace)
                 } else if msg.attachmentType == "image", let raw = msg.attachmentURL {
-                    AsyncImage(url: AlcoveAPI.attachmentURL(raw)) { image in image.resizable().scaledToFit() }
+                    AsyncImage(url: AlcoveAPI.attachmentThumbnailURL(raw),
+                               transaction: Transaction(animation: nil)) { image in image.resizable().scaledToFit() }
                     placeholder: { ProgressView().frame(width: 180, height: 140) }
                     .frame(maxWidth: msg.attachmentFilename?.hasPrefix("sticker_") == true ? 110 : 220,
                            maxHeight: msg.attachmentFilename?.hasPrefix("sticker_") == true ? 110 : 300)
