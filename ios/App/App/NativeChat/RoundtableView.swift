@@ -232,6 +232,10 @@ struct RoundtableView: View {
     @AppStorage("rtAvatarAssistant") private var rtAvatarAssistant = ""
     @AppStorage("rtAvatarGpt") private var rtAvatarGpt = ""
     @AppStorage("rtWallpaper") private var rtWallpaper = ""
+    @AppStorage("rtWallpaperHaven") private var rtWallpaperHaven = ""
+    @AppStorage("rtWallpaperMidnight") private var rtWallpaperMidnight = ""
+    @AppStorage("rtWallpaperPaper") private var rtWallpaperPaper = ""
+    @AppStorage("rtWallpaperPaperDark") private var rtWallpaperPaperDark = ""
     @AppStorage("rtNameUser") private var rtNameUser = "陈霁"
     @AppStorage("rtNameAssistant") private var rtNameAssistant = "陈璟"
     @AppStorage("rtNameGpt") private var rtNameGpt = "何渡"
@@ -242,6 +246,14 @@ struct RoundtableView: View {
     @AppStorage("bubbleGlassBlur") private var bubbleGlassBlur = 0.10
     @AppStorage("bubbleGlassSize") private var bubbleGlassSize = 174.33
     private var theme: AlcoveTheme { .named(themeName) }
+    private var activeRTWallpaper: String {
+        switch themeName {
+        case "midnight": return rtWallpaperMidnight
+        case "paper": return rtWallpaperPaper
+        case "paper-dark": return rtWallpaperPaperDark
+        default: return rtWallpaperHaven.isEmpty ? rtWallpaper : rtWallpaperHaven
+        }
+    }
 
     private var bubbleGlassStyle: BubbleGlassStyle {
         BubbleGlassStyle(
@@ -255,7 +267,7 @@ struct RoundtableView: View {
     }
 
     private var wallpaperDescriptor: ChatWallpaperDescriptor {
-        if !theme.isPaper, let image = cachedRTWallpaper {
+        if let image = cachedRTWallpaper {
             return ChatWallpaperDescriptor(source: .image(image))
         }
         return ChatWallpaperDescriptor(source: .gradient(theme.wallGradient))
@@ -288,10 +300,11 @@ struct RoundtableView: View {
         }
         .onDisappear { store.stop() }
         .onChange(of: rtWallpaper) { _ in refreshRTImageCache() }
-        .onChange(of: themeName) { _ in
-            // 纸页的日夜由主题纸面接管，不能残留上一个模式的自定义暗壁纸。
-            if theme.isPaper { cachedRTWallpaper = nil }
-        }
+        .onChange(of: rtWallpaperHaven) { _ in refreshRTImageCache() }
+        .onChange(of: rtWallpaperMidnight) { _ in refreshRTImageCache() }
+        .onChange(of: rtWallpaperPaper) { _ in refreshRTImageCache() }
+        .onChange(of: rtWallpaperPaperDark) { _ in refreshRTImageCache() }
+        .onChange(of: themeName) { _ in refreshRTImageCache() }
         .onChange(of: rtAvatarUser) { _ in refreshRTImageCache() }
         .onChange(of: rtAvatarAssistant) { _ in refreshRTImageCache() }
         .onChange(of: rtAvatarGpt) { _ in refreshRTImageCache() }
@@ -447,7 +460,7 @@ struct RoundtableView: View {
     }
 
     private func refreshRTImageCache() {
-        cachedRTWallpaper = decodeStoredImage(rtWallpaper)
+        cachedRTWallpaper = decodeStoredImage(activeRTWallpaper)
         cachedRTAvatarUser = decodeStoredImage(rtAvatarUser)
         cachedRTAvatarAssistant = decodeStoredImage(rtAvatarAssistant)
         cachedRTAvatarGpt = decodeStoredImage(rtAvatarGpt)
@@ -1605,6 +1618,11 @@ private struct RTSettingsView: View {
     @AppStorage("rtNameAssistant") private var nameMe = "陈璟"
     @AppStorage("rtNameGpt") private var nameGpt = "何渡"
     @AppStorage("rtWallpaper") private var wallpaper = ""
+    @AppStorage("rtWallpaperHaven") private var wallpaperHaven = ""
+    @AppStorage("rtWallpaperMidnight") private var wallpaperMidnight = ""
+    @AppStorage("rtWallpaperPaper") private var wallpaperPaper = ""
+    @AppStorage("rtWallpaperPaperDark") private var wallpaperPaperDark = ""
+    @AppStorage("alcoveTheme") private var themeName = "haven"
     // 0731 bug：原来四行共用一个 picking，每行各挂一个 onChange，
     // 她选一次图四个监听全触发，那张壁纸同时被写进三个人的头像。
     // 现在每个位置一个独立的 item，谁变了改谁。
@@ -1653,7 +1671,7 @@ private struct RTSettingsView: View {
                                 .fill(theme.textDim.opacity(0.12))
                                 .frame(width: 54, height: 78)
                                 .overlay {
-                                    if let img = decode(wallpaper) {
+                                    if let img = decode(activeWallpaper) {
                                         Image(uiImage: img).resizable().scaledToFill()
                                             .clipShape(RoundedRectangle(cornerRadius: 10,
                                                                         style: .continuous))
@@ -1668,8 +1686,8 @@ private struct RTSettingsView: View {
                                     label("换一张")
                                 }
                                 .onChange(of: pickWall) { load($0, into: "wall") }
-                                if !wallpaper.isEmpty {
-                                    Button { wallpaper = "" } label: { label("恢复默认") }
+                                if !activeWallpaper.isEmpty {
+                                    Button { clearActiveWallpaper() } label: { label("恢复默认") }
                                         .buttonStyle(.plain)
                                 }
                             }
@@ -1747,6 +1765,28 @@ private struct RTSettingsView: View {
         return Data(base64Encoded: b64).flatMap(UIImage.init(data:))
     }
 
+    private var activeWallpaper: String {
+        switch themeName {
+        case "midnight": return wallpaperMidnight
+        case "paper": return wallpaperPaper
+        case "paper-dark": return wallpaperPaperDark
+        default: return wallpaperHaven.isEmpty ? wallpaper : wallpaperHaven
+        }
+    }
+
+    private func setActiveWallpaper(_ value: String) {
+        switch themeName {
+        case "midnight": wallpaperMidnight = value
+        case "paper": wallpaperPaper = value
+        case "paper-dark": wallpaperPaperDark = value
+        default:
+            wallpaperHaven = value
+            wallpaper = ""
+        }
+    }
+
+    private func clearActiveWallpaper() { setActiveWallpaper("") }
+
     private func load(_ item: PhotosPickerItem?, into target: String) {
         guard let item else { return }
         Task {
@@ -1767,7 +1807,7 @@ private struct RTSettingsView: View {
                 case "user":      avUser = b64
                 case "assistant": avMe = b64
                 case "gpt":       avGpt = b64
-                case "wall":      wallpaper = b64
+                case "wall":      setActiveWallpaper(b64)
                 default: break
                 }
             }

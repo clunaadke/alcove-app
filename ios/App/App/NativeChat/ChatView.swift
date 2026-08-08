@@ -810,7 +810,7 @@ struct MessageRow: View {
                     }
                 }
             }
-            if !isUser { Spacer(minLength: 48) }
+            if !isUser { Spacer(minLength: theme.isPaper ? 14 : 48) }
         }
         .padding(.leading, theme.isPaper && !isUser ? 12 : 0)
         .padding(.top, 2)
