@@ -201,7 +201,7 @@ final class ChatStore: ObservableObject {
     }
 
     private func consumeLiveStream() async {
-        var retry: UInt64 = 600_000_000
+        var retry: UInt64 = 5_000_000_000
         while !Task.isCancelled {
             do {
                 var request = URLRequest(url: AlcoveAPI.fullURL("/stream/live"))
@@ -211,7 +211,7 @@ final class ChatStore: ObservableObject {
                 guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
                     throw URLError(.badServerResponse)
                 }
-                retry = 600_000_000
+                retry = 5_000_000_000
                 for try await line in bytes.lines {
                     guard !Task.isCancelled else { return }
                     guard line.hasPrefix("data:") else { continue }
@@ -225,7 +225,7 @@ final class ChatStore: ObservableObject {
             } catch {
                 // 流式是增强通道。端点尚未上线或短暂重连时不能冒充主聊天断线。
                 try? await Task.sleep(nanoseconds: retry)
-                retry = min(retry * 2, 8_000_000_000)
+                retry = min(retry * 2, 60_000_000_000)
             }
         }
     }
