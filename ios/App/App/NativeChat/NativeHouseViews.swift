@@ -144,7 +144,7 @@ struct NativeHouseSheet: View {
 
     var body: some View {
         GeometryReader { root in
-            FoyerGlassContainer(spacing: 8) {
+            FoyerGlassContainer(spacing: 8, paper: theme.isPaper) {
                 ZStack {
                     Group {
                 switch route {
@@ -316,7 +316,18 @@ private struct HouseBackground: View {
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
-            WetGlassTexture(theme: theme, preparedTexture: preparedTexture)
+            if !theme.isPaper {
+                WetGlassTexture(theme: theme, preparedTexture: preparedTexture)
+            } else {
+                Canvas { context, size in
+                    for y in stride(from: CGFloat(24), through: size.height, by: 28) {
+                        var line = Path()
+                        line.move(to: CGPoint(x: 0, y: y))
+                        line.addLine(to: CGPoint(x: size.width, y: y))
+                        context.stroke(line, with: .color(theme.fyBorder.opacity(0.16)), lineWidth: 0.45)
+                    }
+                }
+            }
         }
         .ignoresSafeArea()
     }
@@ -2664,16 +2675,20 @@ private struct BindingHole: View {
 
 private struct FoyerGlassContainer<Content: View>: View {
     let spacing: CGFloat
+    let paper: Bool
     private let content: Content
 
-    init(spacing: CGFloat, @ViewBuilder content: () -> Content) {
+    init(spacing: CGFloat, paper: Bool = false, @ViewBuilder content: () -> Content) {
         self.spacing = spacing
+        self.paper = paper
         self.content = content()
     }
 
     @ViewBuilder
     var body: some View {
-        if #available(iOS 26.0, *) {
+        if paper {
+            content
+        } else if #available(iOS 26.0, *) {
             GlassEffectContainer(spacing: spacing) {
                 content
             }
@@ -2700,11 +2715,10 @@ private struct FoyerCardGlassBackground: View {
 private extension View {
     func foyerShell(_ theme: AlcoveTheme) -> some View {
         let shape = RoundedRectangle(cornerRadius: 28, style: .continuous)
-
         return self
             .clipShape(shape)
             .overlay {
-                shape
+                if !theme.isPaper { shape
                     .stroke(
                         LinearGradient(
                             stops: [
@@ -2717,10 +2731,10 @@ private extension View {
                         ),
                         lineWidth: 1.25
                     )
-                    .allowsHitTesting(false)
+                    .allowsHitTesting(false) }
             }
             .overlay {
-                shape
+                if !theme.isPaper { shape
                     .inset(by: 1.4)
                     .stroke(
                         LinearGradient(
@@ -2734,11 +2748,11 @@ private extension View {
                         ),
                         lineWidth: 0.75
                     )
-                    .allowsHitTesting(false)
+                    .allowsHitTesting(false) }
             }
             .shadow(
-                color: .black.opacity(theme.isDark ? 0.34 : 0.16),
-                radius: 9,
+                color: .black.opacity(theme.isPaper ? 0 : (theme.isDark ? 0.34 : 0.16)),
+                radius: theme.isPaper ? 0 : 9,
                 x: 0,
                 y: 4
             )
@@ -2757,7 +2771,14 @@ private extension View {
     func foyerCard(_ theme: AlcoveTheme) -> some View {
         let shape = JournalCardShape(tl: 14, bl: 14, br: 18, tr: 18)
 
-        if #available(iOS 26.0, *) {
+        if theme.isPaper {
+            self
+                .background(theme.fyCard, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(theme.fyBorder.opacity(0.72), lineWidth: 0.8))
+                .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .shadow(color: theme.fyShadow.opacity(0.65), radius: 1.5, x: 1, y: 2)
+        } else if #available(iOS 26.0, *) {
             self
                 .glassEffect(
                     .regular.tint(theme.fyCard.opacity(theme.isDark ? 0.16 : 0.11)),

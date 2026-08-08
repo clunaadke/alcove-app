@@ -168,12 +168,12 @@ struct ChatView: View {
                             chatMessageRow(at: idx, message: msg)
                         }
                         // 0730 实时预览：他说完一段就先冒出来，不等整轮工具跑完
-                        if let lv = store.live {
+                        if let lv = store.live, !lv.isEmpty || lv.active {
                             LiveSayBand(state: lv, theme: theme)
                                 .id("liveband")
                                 .transition(.opacity)
                         }
-                        if store.isTyping {
+                        if store.isTyping && store.live?.active != true {
                             TypingIndicator(tool: store.currentTool,
                                             line: store.typingLine,
                                             name: UserDefaults.standard.string(forKey: "assistantName") ?? "陈璟",
@@ -1026,7 +1026,7 @@ struct MessageRow: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    paperTrack(icon: "clock", title: "思考", detail: msg.thinking ?? "")
+                    paperTrack(icon: "clock", title: "原生思考", detail: msg.nativeThinking ?? "")
                     ForEach(msg.activity) { item in
                         paperTrack(icon: item.kind == "tool" ? item.icon : "text.alignleft",
                                    title: item.kind == "tool" ? "执行动作" : "继续思考",
@@ -1136,6 +1136,7 @@ struct TimeDivider: View {
 struct LiveSayBand: View {
     let state: AlcoveAPI.LiveState
     let theme: AlcoveTheme
+    @State private var showProcess = false
 
     private var tagLine: String {
         var bits: [String] = []
@@ -1148,10 +1149,15 @@ struct LiveSayBand: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             if !state.thinking.isEmpty {
-                Text(state.thinking)
-                    .font(.system(size: 11).italic())
-                    .foregroundColor(theme.textDim.opacity(0.62))
-                    .fixedSize(horizontal: false, vertical: true)
+                Button { showProcess = true } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "clock.arrow.circlepath")
+                        Text(String(state.thinking.prefix(42))).lineLimit(1)
+                        Image(systemName: "chevron.right").font(.system(size: 8))
+                    }
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(theme.textDim.opacity(0.72))
+                }.buttonStyle(.plain)
             }
             if !state.say.isEmpty {
                 Text(state.say)
@@ -1165,6 +1171,12 @@ struct LiveSayBand: View {
                     .font(.system(size: 10, design: .serif))
                     .foregroundColor(theme.textDim.opacity(0.45))
                     .padding(.top, 1)
+            }
+            if let error = state.error {
+                Label(error, systemImage: "exclamationmark.circle")
+                    .font(.system(size: 11))
+                    .foregroundColor(.red.opacity(0.8))
+                    .padding(.top, 3)
             }
         }
         .padding(.horizontal, 12)
@@ -1181,6 +1193,48 @@ struct LiveSayBand: View {
         )
         .padding(.horizontal, 14)
         .padding(.top, 2)
+        .sheet(isPresented: $showProcess) {
+            NavigationStack {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 18) {
+                        if !state.nativeThinking.isEmpty {
+                            liveTrack("circle.dotted", "原生思考", state.nativeThinking, done: true)
+                        }
+                        ForEach(state.tools) { tool in
+                            liveTrack(tool.done ? (tool.ok == false ? "xmark.circle" : "checkmark.circle") : "play.circle",
+                                      tool.name, tool.done ? "已完成" : "执行中", done: tool.done)
+                        }
+                        if state.finishing {
+                            liveTrack("checkmark.circle", "Done", "", done: true)
+                        }
+                    }.padding(22)
+                }
+                .background(theme.fyCardSub.ignoresSafeArea())
+                .foregroundColor(theme.text)
+                .navigationTitle("ThoughtProcess")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("关闭") { showProcess = false } } }
+            }
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+        }
+    }
+
+    private func liveTrack(_ icon: String, _ title: String, _ detail: String, done: Bool) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 13, weight: .light))
+                .foregroundColor(theme.fyAccent)
+                .frame(width: 22, height: 22)
+            VStack(alignment: .leading, spacing: 6) {
+                Text(title).font(.system(size: 13, weight: .medium))
+                if !detail.isEmpty {
+                    Text(detail).font(.system(size: 13)).lineSpacing(5).foregroundColor(theme.textDim)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .opacity(done ? 0.82 : 1)
     }
 }
 

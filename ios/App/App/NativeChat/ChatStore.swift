@@ -78,13 +78,9 @@ final class ChatStore: ObservableObject {
                 await self?.pollOnce()
             }
         }
-        // 0730 实时预览单开一条快线：主轮询 2.5 秒对"边想边说"太慢。
-        // 但只在他真的在说话的时候才发请求——不然就是白烧她的流量和电。
+        // v1.1 SSE：只维持一条长连接，不再每秒轮询实时预览。
         liveTask = Task { [weak self] in
-            while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 1_000_000_000)
-                await self?.pollLiveOnce()
-            }
+            await self?.consumeLiveStream()
         }
         Task { [weak self] in
             if let stk = try? await AlcoveAPI.stickers() {
@@ -204,13 +200,83 @@ final class ChatStore: ObservableObject {
         }
     }
 
-    private func pollLiveOnce() async {
-        guard isTyping else {
-            if live != nil { live = nil }
-            return
+    private func consumeLiveStream() async {
+        var retry: UInt64 = 600_000_000
+        while !Task.isCancelled {
+            do {
+                var request = URLRequest(url: AlcoveAPI.fullURL("/stream/live"))
+                request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+                request.timeoutInterval = 60 * 60
+                let (bytes, response) = try await AlcoveAPI.session.bytes(for: request)
+                guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+                    throw URLError(.badServerResponse)
+                }
+                retry = 600_000_000
+                for try await line in bytes.lines {
+                    guard !Task.isCancelled else { return }
+                    guard line.hasPrefix("data:") else { continue }
+                    let payload = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
+                    guard let data = payload.data(using: .utf8),
+                          let event = try? JSONDecoder().decode(AlcoveAPI.LiveEvent.self, from: data) else { continue }
+                    await applyLiveEvent(event)
+                }
+            } catch is CancellationError {
+                return
+            } catch {
+                connectionError = true
+                try? await Task.sleep(nanoseconds: retry)
+                retry = min(retry * 2, 8_000_000_000)
+            }
         }
-        guard let s = try? await AlcoveAPI.liveStream() else { return }
-        live = (s.active && !s.isEmpty) ? s : nil
+    }
+
+    private func applyLiveEvent(_ event: AlcoveAPI.LiveEvent) async {
+        if event.event == "start" || live?.turnID != event.turnID {
+            live = AlcoveAPI.LiveState(active: true, turnID: event.turnID)
+        }
+        guard var state = live, event.seq > state.lastSeq else { return }
+        state.lastSeq = event.seq
+        switch event.event {
+        case "start":
+            state.active = true
+            state.error = nil
+        case "thinking_delta":
+            state.thinking += event.delta ?? ""
+        case "native_thinking_delta":
+            state.nativeThinking += event.delta ?? ""
+        case "text_delta":
+            state.say += event.delta ?? ""
+        case "tool_start":
+            let id = event.toolCallID ?? "tool-\(event.seq)"
+            if !state.tools.contains(where: { $0.id == id }) {
+                state.tools.append(.init(id: id, name: event.name ?? "执行动作"))
+            }
+            state.tool = event.name ?? state.tool
+        case "tool_done":
+            if let id = event.toolCallID, let i = state.tools.firstIndex(where: { $0.id == id }) {
+                state.tools[i].done = true
+                state.tools[i].ok = event.ok
+            }
+            state.tool = ""
+        case "finish":
+            state.active = false
+            state.finishing = true
+            state.messageID = event.messageID
+        case "error":
+            state.active = false
+            state.error = event.reason ?? "实时连接中断"
+        default:
+            break
+        }
+        live = state
+        connectionError = false
+        if event.event == "finish" {
+            await pollOnce()
+            if live?.finishing == true {
+                try? await Task.sleep(nanoseconds: 450_000_000)
+                await pollOnce()
+            }
+        }
     }
 
     private func pollOnce() async {
@@ -234,6 +300,7 @@ final class ChatStore: ObservableObject {
     private func appendNew(_ recs: [ChatMessage]) {
         if recs.contains(where: { $0.role == "assistant" }) {
             Task { await loadRecalls() } // 我开口了，召回记录可能刚落库
+            if live?.finishing == true { live = nil }
         }
         var out = messages
         for rec in recs {

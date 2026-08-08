@@ -23,13 +23,48 @@ enum AlcoveAPI {
     // 数据来自服务器上 stream_watcher 盯 transcript，永不落库（手册K）。
     struct LiveState: Equatable {
         var active: Bool = false
+        var turnID: String = ""
+        var lastSeq: Int = -1
         var thinking: String = ""
+        var nativeThinking: String = ""
         var say: String = ""
         var tool: String = ""
+        var tools: [LiveTool] = []
         var said: Int = 0
         var elapsed: Int = 0
+        var error: String?
+        var finishing: Bool = false
+        var messageID: String?
 
-        var isEmpty: Bool { say.isEmpty && thinking.isEmpty && tool.isEmpty }
+        var isEmpty: Bool {
+            say.isEmpty && thinking.isEmpty && nativeThinking.isEmpty && tools.isEmpty && error == nil
+        }
+    }
+
+    struct LiveTool: Identifiable, Equatable {
+        let id: String
+        var name: String
+        var done: Bool = false
+        var ok: Bool?
+    }
+
+    struct LiveEvent: Decodable {
+        let turnID: String
+        let seq: Int
+        let event: String
+        let delta: String?
+        let ts: String
+        let toolCallID: String?
+        let name: String?
+        let ok: Bool?
+        let messageID: String?
+        let reason: String?
+
+        enum CodingKeys: String, CodingKey {
+            case turnID = "turn_id", seq, event, delta, ts
+            case toolCallID = "tool_call_id", name, ok
+            case messageID = "message_id", reason
+        }
     }
 
     static func fullURL(_ path: String) -> URL {

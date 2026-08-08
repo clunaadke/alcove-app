@@ -8,6 +8,7 @@ struct ChatMessage: Identifiable, Equatable {
     var text: String
     var source: String?
     var thinking: String?
+    var nativeThinking: String?
     var thinkingDuration: Double?
     // 0730：思绪标题（他自己写的一句话总结，替掉"思考了X秒"）
     var thinkTitle: String?
@@ -66,6 +67,7 @@ struct ChatMessage: Identifiable, Equatable {
         self.text = json["text"] as? String ?? ""
         self.source = json["source"] as? String
         self.thinking = json["thinking"] as? String
+        self.nativeThinking = json["native_thinking"] as? String
         if let d = json["thinking_duration"] as? Double { self.thinkingDuration = d }
         else if let i = json["thinking_duration"] as? Int { self.thinkingDuration = Double(i) }
         self.attachmentUrl = json["attachment_url"] as? String
