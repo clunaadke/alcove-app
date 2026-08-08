@@ -938,7 +938,7 @@ private struct RoundtableRow: View {
                 if showAvatar && !isUser {
                     Text(displayName)
                         .font(.system(size: 11))
-                        .foregroundColor(.white)
+                        .foregroundColor(theme.textDim)
                 }
                 if photoURLs.count > 1 {
                     PhotoStackMessageView(urls: photoURLs, messageID: "rt-\(msg.id)",
@@ -964,7 +964,7 @@ private struct RoundtableRow: View {
                 if !msg.hiddenFrom.isEmpty {
                     Text(hiddenLabel)
                         .font(.system(size: 10))
-                        .foregroundColor(.white.opacity(0.7))
+                        .foregroundColor(theme.textDim.opacity(0.72))
                         .padding(.horizontal, 12)
                 }
                 if showTime {
