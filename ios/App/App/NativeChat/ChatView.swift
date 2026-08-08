@@ -1000,8 +1000,9 @@ struct MessageRow: View {
                     .fill(Color.white.opacity(0.72))
                     .frame(width: 0.75)
                     .padding(.vertical, 1)
-            } }
+            }
             .shadow(color: Color.white.opacity(0.28), radius: 1.5)
+            }
         }
     }
 
