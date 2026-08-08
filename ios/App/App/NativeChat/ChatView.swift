@@ -726,7 +726,7 @@ struct MessageRow: View {
     private var isUser: Bool { msg.role == "user" }
     private var timestampTextInset: CGFloat {
         if theme.isPaper && !isUser { return 0 }
-        !msg.text.isEmpty && !msg.isSticker ? 12 : 0
+        return !msg.text.isEmpty && !msg.isSticker ? 12 : 0
     }
 
     var body: some View {
