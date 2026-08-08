@@ -987,7 +987,7 @@ struct MessageRow: View {
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "clock.arrow.circlepath").font(.system(size: 12, weight: .light))
-                    Text(theme.isPaper ? automaticThinkingSummary(think) : thinkingLabel(think))
+                    Text(theme.isPaper ? "ThoughtProcess" : thinkingLabel(think))
                         .font(theme.isPaper ? .system(size: 12, weight: .medium) : .custom("Georgia", size: 12))
                     Image(systemName: theme.isPaper ? "chevron.right" : (showThinking ? "chevron.up" : "chevron.down"))
                         .font(.system(size: 8))
@@ -1177,7 +1177,7 @@ struct LiveSayBand: View {
                 Button { showProcess = true } label: {
                     HStack(spacing: 5) {
                         Image(systemName: "clock.arrow.circlepath")
-                        Text(String(liveThought.prefix(42))).lineLimit(1)
+                        Text(theme.isPaper ? "ThoughtProcess" : String(liveThought.prefix(42))).lineLimit(1)
                         Image(systemName: "chevron.right").font(.system(size: 8))
                     }
                     .font(.system(size: 11, weight: .medium))

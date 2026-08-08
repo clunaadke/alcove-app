@@ -91,20 +91,7 @@ struct RootView: View {
         .sheet(isPresented: $showPermissions) {
             PermissionsView()
         }
-        .sheet(item: Binding(get: { theme.isPaper ? nil : housePage }, set: { housePage = $0 })) { target in
-            NativeHouseSheet(
-                initial: target,
-                preparedTexture: preparedPanelTexture,
-                preparedTextureName: preparedPanelTextureName,
-                showTerminal: { showTerminal = true },
-                showRoundtable: {
-                    markRoundtableRead()
-                    showRoundtable = true
-                },
-                roundtableUnread: roundtableUnread
-            )
-        }
-        .fullScreenCover(item: Binding(get: { theme.isPaper ? housePage : nil }, set: { housePage = $0 })) { target in
+        .fullScreenCover(item: $housePage) { target in
             NativeHouseSheet(
                 initial: target,
                 preparedTexture: preparedPanelTexture,
