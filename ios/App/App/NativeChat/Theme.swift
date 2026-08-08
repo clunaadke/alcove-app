@@ -4,6 +4,7 @@ import SwiftUI
 // 主题名同步自 PWA localStorage 'alcove-theme'，她在设置里切，这边跟着变
 struct AlcoveTheme {
     let isDark: Bool
+    let isPaper: Bool
     let usesWallImage: Bool      // haven 铺 chat-bg.png；midnight 用深色渐变
     let wallGradient: [Color]
     let bubbleUser: Color
@@ -40,6 +41,7 @@ struct AlcoveTheme {
 
     static let haven = AlcoveTheme(
         isDark: false,
+        isPaper: false,
         usesWallImage: true,
         wallGradient: [],
         bubbleUser: Color(red: 247/255, green: 227/255, blue: 234/255).opacity(0.44),
@@ -76,6 +78,7 @@ struct AlcoveTheme {
 
     static let midnight = AlcoveTheme(
         isDark: true,
+        isPaper: false,
         usesWallImage: false,
         wallGradient: [Color(red: 28/255, green: 28/255, blue: 32/255),
                        Color(red: 23/255, green: 23/255, blue: 27/255),
@@ -113,14 +116,24 @@ struct AlcoveTheme {
         fyDash: Color(red: 120/255, green: 105/255, blue: 112/255).opacity(0.4),
         panelTextureAsset: "WetGlassMidnight")
 
+    static let paper = haven.paperCopy(dark: false)
+    static let paperDark = midnight.paperCopy(dark: true)
+
     static func named(_ name: String) -> AlcoveTheme {
-        name == "midnight" ? .midnight : .haven
+        switch name {
+        case "paper": return .paper
+        case "paper-dark": return .paperDark
+        case "midnight": return .midnight
+        default: return .haven
+        }
     }
 
     // 下拉面板拥有独立的湿玻璃配色。rain 的聊天页仍由 named(_:) 返回 haven，
     // 因而新增蓝色选项不会改动聊天气泡、输入框、顶栏或聊天壁纸。
     static func panelNamed(_ name: String) -> AlcoveTheme {
         switch name {
+        case "paper": return paper
+        case "paper-dark": return paperDark
         case "midnight":
             return midnight.panelCopy(
                 splashBg: [
@@ -193,6 +206,7 @@ struct AlcoveTheme {
     ) -> AlcoveTheme {
         AlcoveTheme(
             isDark: isDark,
+            isPaper: isPaper,
             usesWallImage: usesWallImage,
             wallGradient: wallGradient,
             bubbleUser: bubbleUser,
@@ -224,6 +238,38 @@ struct AlcoveTheme {
             fyFold: Color.white.opacity(isDark ? 0.08 : 0.22),
             fyDash: border.opacity(0.72),
             panelTextureAsset: textureAsset
+        )
+    }
+
+    private func paperCopy(dark: Bool) -> AlcoveTheme {
+        let paper = dark ? Color(red: 25/255, green: 25/255, blue: 24/255)
+                         : Color(red: 243/255, green: 241/255, blue: 236/255)
+        let card = dark ? Color(red: 36/255, green: 35/255, blue: 33/255)
+                        : Color(red: 249/255, green: 247/255, blue: 242/255)
+        let ink = dark ? Color(red: 231/255, green: 227/255, blue: 218/255)
+                       : Color(red: 37/255, green: 36/255, blue: 34/255)
+        let pencil = dark ? Color(red: 166/255, green: 160/255, blue: 151/255)
+                          : Color(red: 139/255, green: 136/255, blue: 130/255)
+        let rose = dark ? Color(red: 148/255, green: 91/255, blue: 91/255)
+                        : Color(red: 185/255, green: 120/255, blue: 120/255)
+        return AlcoveTheme(
+            isDark: dark, isPaper: true, usesWallImage: false,
+            wallGradient: [paper, paper],
+            bubbleUser: dark ? Color(red: 54/255, green: 52/255, blue: 57/255) : Color(red: 233/255, green: 232/255, blue: 236/255),
+            bubbleAI: .clear, text: ink, textDim: pencil,
+            textLight: pencil.opacity(0.72), timestamp: pencil,
+            glassTint: card, glassBorder: pencil.opacity(0.16),
+            capsuleTint: card, capsuleBorder: pencil.opacity(0.14),
+            sendTop: dark ? Color(red: 231/255, green: 227/255, blue: 218/255) : Color(red: 37/255, green: 36/255, blue: 34/255),
+            sendBottom: dark ? Color(red: 205/255, green: 200/255, blue: 191/255) : Color(red: 24/255, green: 24/255, blue: 23/255),
+            fade: paper, splashBg: [paper, paper], splashBarTop: rose,
+            splashBarBottom: rose.opacity(0.8), splashGlowA: .clear, splashGlowB: .clear,
+            splashPetal: rose.opacity(0.35), splashTitle: rose,
+            fyAccent: rose, fyAccentSoft: rose.opacity(0.16), fyCard: card,
+            fyCardSub: paper, fyBorder: pencil.opacity(0.17),
+            fyShadow: Color.black.opacity(dark ? 0.22 : 0.05),
+            fyFold: pencil.opacity(0.10), fyDash: pencil.opacity(0.24),
+            panelTextureAsset: dark ? "PaperDark" : "PaperLight"
         )
     }
 }

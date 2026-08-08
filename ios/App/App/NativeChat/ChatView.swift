@@ -773,6 +773,15 @@ struct MessageRow: View {
                                 .font(.system(size: 10, design: .serif))
                                 .foregroundColor(theme.timestamp)
                         }
+                        if theme.isPaper && !isUser && !msg.text.isEmpty {
+                            Button { UIPasteboard.general.string = msg.text } label: {
+                                Image(systemName: "doc.on.doc")
+                                    .font(.system(size: 11, weight: .light))
+                                    .foregroundColor(theme.timestamp)
+                                    .frame(width: 32, height: 32, alignment: .leading)
+                                    .contentShape(Rectangle())
+                            }.buttonStyle(.plain)
+                        }
                         // 0730：这一轮的过程记录，挂在时间戳旁边，点开看他到底干了什么
                         if msg.hasActivity {
                             Button {
@@ -801,6 +810,12 @@ struct MessageRow: View {
         }
         .padding(.top, 2)
         .padding(.bottom, showTime ? 12 : 5)
+        .sheet(isPresented: Binding(get: { theme.isPaper && showThinking }, set: { showThinking = $0 })) {
+            paperThinkingPanel
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(theme.fyCardSub)
+        }
     }
 
     // The text stays crisp above a real wallpaper-refraction layer.
@@ -813,19 +828,26 @@ struct MessageRow: View {
     }
 
     private var bubble: some View {
-        markdownText(msg.text)
+        let text = markdownText(msg.text)
             .font(.system(size: CGFloat(fontSize)))
-            .lineSpacing(5)
+            .lineSpacing(theme.isPaper ? 7 : 5)
             .foregroundColor(msg.asleepAtSend ? theme.textDim : theme.text)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
-            .background {
-                BubbleGlassBackground(
-                    tintColor: isUser ? theme.bubbleUser : theme.bubbleAI,
-                    tintOpacity: isUser ? 0.14 : 0.09,
-                    style: bubbleGlassStyle
-                )
+        return Group {
+            if theme.isPaper && !isUser {
+                text.padding(.horizontal, 0).padding(.vertical, 2)
+            } else {
+                text
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background {
+                        BubbleGlassBackground(
+                            tintColor: isUser ? theme.bubbleUser : theme.bubbleAI,
+                            tintOpacity: theme.isPaper ? 0.34 : (isUser ? 0.14 : 0.09),
+                            style: bubbleGlassStyle
+                        )
+                    }
             }
+        }
             .contentShape(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
             )
@@ -938,14 +960,15 @@ struct MessageRow: View {
     private func thinkingBlock(_ think: String) -> some View {
         VStack(alignment: .leading, spacing: showThinking ? 7 : 0) {
             Button {
-                withAnimation(.easeInOut(duration: 0.15)) { showThinking.toggle() }
+                if theme.isPaper { showThinking = true }
+                else { withAnimation(.easeInOut(duration: 0.15)) { showThinking.toggle() } }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { onContentChange?() }
             } label: {
                 HStack(spacing: 4) {
-                    Text(thinkingLabel(think))
-                        .font(.custom("Georgia", size: 12))
-                        .italic()
-                    Image(systemName: showThinking ? "chevron.up" : "chevron.down")
+                    Image(systemName: "clock.arrow.circlepath").font(.system(size: 12, weight: .light))
+                    Text(theme.isPaper ? automaticThinkingSummary(think) : thinkingLabel(think))
+                        .font(theme.isPaper ? .system(size: 12, weight: .medium) : .custom("Georgia", size: 12))
+                    Image(systemName: theme.isPaper ? "chevron.right" : (showThinking ? "chevron.up" : "chevron.down"))
                         .font(.system(size: 8))
                     if recall != nil {
                         recallBadge.padding(.leading, 6)
@@ -954,7 +977,7 @@ struct MessageRow: View {
                 .font(.system(size: 12))
                 .foregroundColor(.secondary)
             }
-            if showThinking {
+            if showThinking && !theme.isPaper {
                 Text(think)
                     .font(.system(size: max(12, CGFloat(fontSize) - 1)))
                     .italic()
@@ -967,9 +990,9 @@ struct MessageRow: View {
                     }
             }
         }
-        .padding(.leading, 10)
+        .padding(.leading, theme.isPaper ? 0 : 10)
         .overlay(alignment: .leading) {
-            ZStack(alignment: .leading) {
+            if !theme.isPaper { ZStack(alignment: .leading) {
                 Capsule()
                     .fill(theme.textDim.opacity(0.30))
                     .frame(width: 2)
@@ -977,8 +1000,58 @@ struct MessageRow: View {
                     .fill(Color.white.opacity(0.72))
                     .frame(width: 0.75)
                     .padding(.vertical, 1)
-            }
+            } }
             .shadow(color: Color.white.opacity(0.28), radius: 1.5)
+        }
+    }
+
+    private func automaticThinkingSummary(_ think: String) -> String {
+        if let title = msg.thinkTitle?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty {
+            return String(title.prefix(26))
+        }
+        if let tool = msg.activity.first(where: { $0.kind == "tool" }) {
+            let clean = tool.content.replacingOccurrences(of: "\n", with: " ")
+            return String(clean.prefix(26))
+        }
+        let first = think.components(separatedBy: CharacterSet(charactersIn: "。！？\n"))
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty } ?? "Thinking"
+        let prefixes = ["我需要", "我应该", "我要", "现在需要", "我在想"]
+        let clean = prefixes.reduce(first) { value, prefix in value.hasPrefix(prefix) ? String(value.dropFirst(prefix.count)) : value }
+        return clean == "Thinking" ? clean : "思考" + String(clean.prefix(22))
+    }
+
+    private var paperThinkingPanel: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    paperTrack(icon: "clock", title: "思考", detail: msg.thinking ?? "")
+                    ForEach(msg.activity) { item in
+                        paperTrack(icon: item.kind == "tool" ? item.icon : "text.alignleft",
+                                   title: item.kind == "tool" ? "执行动作" : "继续思考",
+                                   detail: item.content)
+                    }
+                    paperTrack(icon: "checkmark.circle", title: "Done", detail: "")
+                }.padding(.horizontal, 22).padding(.bottom, 30)
+            }
+            .background(theme.fyCardSub.ignoresSafeArea())
+            .foregroundColor(theme.text)
+            .navigationTitle("ThoughtProcess")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("关闭") { showThinking = false } } }
+        }
+    }
+
+    private func paperTrack(icon: String, title: String, detail: String) -> some View {
+        HStack(alignment: .top, spacing: 13) {
+            VStack(spacing: 0) {
+                Image(systemName: icon).font(.system(size: 12, weight: .light)).foregroundColor(theme.fyAccent).frame(width: 22, height: 22)
+                Rectangle().fill(theme.fyBorder).frame(width: 1).frame(minHeight: detail.isEmpty ? 18 : 52)
+            }
+            VStack(alignment: .leading, spacing: 8) {
+                Text(title).font(.system(size: 13, weight: .medium))
+                if !detail.isEmpty { Text(detail).font(.system(size: 13)).lineSpacing(5).foregroundColor(theme.textDim).fixedSize(horizontal: false, vertical: true) }
+            }.padding(.bottom, 14)
         }
     }
 

@@ -567,14 +567,18 @@ private struct NativeSettingsView: View {
                 }
                 section("主题") {
                     HStack(spacing: 8) {
-                        themeChoice("Haven", "暖白 · 家", "haven", [.white, .pink.opacity(0.45), .gray])
-                        themeChoice("Rain", "雨蓝 · 雾", "rain", [
-                            Color(red: 117/255, green: 164/255, blue: 224/255),
-                            Color(red: 164/255, green: 202/255, blue: 245/255),
-                            Color(red: 13/255, green: 39/255, blue: 94/255)
+                        familyChoice("玻璃", "光穿过去", false, [.white, .pink.opacity(0.42), .gray])
+                        familyChoice("纸页", "话落下来", true, [
+                            Color(red: 243/255, green: 241/255, blue: 236/255),
+                            Color(red: 185/255, green: 120/255, blue: 120/255),
+                            Color(red: 37/255, green: 36/255, blue: 34/255)
                         ])
-                        themeChoice("Midnight", "深夜 · 黑", "midnight", [.black, .gray.opacity(0.7), .gray])
                     }
+                    Divider().opacity(0.25)
+                    Picker("外观", selection: appearanceBinding) {
+                        Text("白天").tag(false)
+                        Text("黑夜").tag(true)
+                    }.pickerStyle(.segmented)
                 }
                 section("聊天壁纸") {
                     HStack {
@@ -723,6 +727,28 @@ private struct NativeSettingsView: View {
                 .stroke(themeName == value ? theme.fyAccent : theme.fyBorder, lineWidth: 1.4))
         }
         .buttonStyle(.plain)
+    }
+
+    private var isPaperFamily: Bool { themeName == "paper" || themeName == "paper-dark" }
+    private var appearanceBinding: Binding<Bool> {
+        Binding(get: { theme.isDark }, set: { dark in
+            themeName = isPaperFamily ? (dark ? "paper-dark" : "paper")
+                                      : (dark ? "midnight" : "haven")
+        })
+    }
+    private func familyChoice(_ title: String, _ sub: String, _ paper: Bool, _ colors: [Color]) -> some View {
+        Button {
+            themeName = paper ? (theme.isDark ? "paper-dark" : "paper")
+                              : (theme.isDark ? "midnight" : "haven")
+        } label: {
+            VStack(spacing: 7) {
+                HStack(spacing: 4) { ForEach(colors.indices, id: \.self) { Circle().fill(colors[$0]).frame(width: 13, height: 13) } }
+                Text(title).font(.system(size: 13, weight: .medium))
+                Text(sub).font(.system(size: 10)).foregroundColor(theme.textLight)
+            }.frame(maxWidth: .infinity).padding(.vertical, 10)
+                .overlay(RoundedRectangle(cornerRadius: theme.isPaper ? 3 : 12)
+                    .stroke(isPaperFamily == paper ? theme.fyAccent : theme.fyBorder, lineWidth: 1.4))
+        }.buttonStyle(.plain)
     }
 
     private func avatar(dataURL: String, fallback: String) -> some View {
