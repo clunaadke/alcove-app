@@ -5470,6 +5470,12 @@ private struct OBBucket: Identifiable {
 }
 
 private struct NativeOBMemoryView: View {
+    private enum CreationOrder: String, CaseIterable {
+        case oldest = "最早创建"
+        case newest = "最新创建"
+        case combined = "综合创建"
+    }
+
     @StateObject private var model = OBMemoryModel()
     @AppStorage("alcoveTheme") private var themeName = "haven"
     @State private var query = ""
@@ -5479,11 +5485,12 @@ private struct NativeOBMemoryView: View {
     @State private var checked: Set<String> = []
     @State private var showAnchors = false
     @State private var showNetwork = false
+    @State private var creationOrder: CreationOrder = .combined
     private var theme: AlcoveTheme { .panelNamed(themeName) }
     private let filters = ["全部", "钉选", "Feel", "未解决", "已消化", "已遗忘", "归档"]
 
     private var visible: [OBBucket] {
-        model.buckets.filter { item in
+        let filtered = model.buckets.filter { item in
             let matches: Bool
             switch filter {
             case "钉选": matches = item.pinned
@@ -5498,6 +5505,27 @@ private struct NativeOBMemoryView: View {
             let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             return q.isEmpty || ([item.name, item.preview] + item.domains + item.tags)
                 .joined(separator: " ").lowercased().contains(q)
+        }
+        switch creationOrder {
+        case .combined:
+            // The API's score ordering is OB's existing comprehensive order.
+            return filtered
+        case .oldest:
+            return filtered.enumerated().sorted { lhs, rhs in
+                let left = lhs.element.created
+                let right = rhs.element.created
+                if left.isEmpty != right.isEmpty { return !left.isEmpty }
+                if left == right { return lhs.offset < rhs.offset }
+                return left < right
+            }.map { $0.element }
+        case .newest:
+            return filtered.enumerated().sorted { lhs, rhs in
+                let left = lhs.element.created
+                let right = rhs.element.created
+                if left.isEmpty != right.isEmpty { return !left.isEmpty }
+                if left == right { return lhs.offset < rhs.offset }
+                return left > right
+            }.map { $0.element }
         }
     }
 
@@ -5532,6 +5560,12 @@ private struct NativeOBMemoryView: View {
                     }
                 }
             }
+            Picker("创建顺序", selection: $creationOrder) {
+                ForEach(CreationOrder.allCases, id: \.self) { order in
+                    Text(order.rawValue).tag(order)
+                }
+            }
+            .pickerStyle(.segmented)
             if model.loading { Spacer(); ProgressView().tint(theme.fyAccent); Spacer() }
             else {
                 ScrollView(showsIndicators: false) {
