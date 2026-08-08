@@ -7,6 +7,7 @@ struct ChatMessage: Identifiable, Equatable {
     var role: String          // "user" | "assistant"
     var text: String
     var source: String?
+    var turnID: String?
     var thinking: String?
     var nativeThinking: String?
     var thinkingDuration: Double?
@@ -66,6 +67,7 @@ struct ChatMessage: Identifiable, Equatable {
         self.role = role
         self.text = json["text"] as? String ?? ""
         self.source = json["source"] as? String
+        self.turnID = json["turn_id"] as? String
         self.thinking = json["thinking"] as? String
         self.nativeThinking = json["native_thinking"] as? String
         if let d = json["thinking_duration"] as? Double { self.thinkingDuration = d }

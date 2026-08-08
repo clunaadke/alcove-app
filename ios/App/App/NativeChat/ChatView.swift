@@ -299,8 +299,7 @@ struct ChatView: View {
                 sticker: message.stickerId.flatMap(store.sticker(for:)),
                 theme: theme,
                 fontSize: chatFontSize,
-                showTime: isGroupTail(cur: store.messages[groupEnd], next: next)
-                    || (theme.isPaper && message.role == "assistant" && !message.text.isEmpty),
+                showTime: isGroupTail(cur: store.messages[groupEnd], next: next),
                 recall: recall,
                 photoURLs: photos,
                 photoNamespace: photoTransition,
@@ -348,6 +347,9 @@ struct ChatView: View {
     // PWA 同款：一轮的最后一个气泡才落时间（下一条换人或隔了 2 分钟）
     private func isGroupTail(cur: ChatMessage, next: ChatMessage?) -> Bool {
         guard let next else { return true }
+        if let turnID = cur.turnID, !turnID.isEmpty {
+            return next.turnID != turnID
+        }
         if next.role != cur.role { return true }
         return next.date.timeIntervalSince(cur.date) > 120
     }
