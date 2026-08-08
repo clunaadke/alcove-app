@@ -747,7 +747,11 @@ struct MessageRow: View {
                 } else if recall != nil {
                     recallBadge // 没有思绪行时角标单独站一行，和 PWA 一致
                 }
-                if msg.isSticker {
+                if let inside = msg.insideText {
+                    InsideMessageCard(text: inside, date: msg.date, theme: theme)
+                } else if let ghost = msg.ghostCard {
+                    GhostActivityMessageCard(card: ghost, theme: theme)
+                } else if msg.isSticker {
                     stickerBody
                 } else {
                     if photoURLs.count > 1 {
@@ -759,6 +763,13 @@ struct MessageRow: View {
                     }
                     if msg.isAudio, let raw = msg.attachmentUrl {
                         AudioBubble(url: AlcoveAPI.attachmentURL(raw), isUser: isUser, theme: theme)
+                    }
+                    if msg.isDocument, let raw = msg.attachmentUrl {
+                        DocumentAttachmentCard(
+                            url: AlcoveAPI.attachmentURL(raw),
+                            filename: msg.attachmentFilename ?? "文件",
+                            theme: theme
+                        )
                     }
                     if let song = msg.musicCard {
                         MusicMessageCard(song: song, theme: theme) { onPlayMusic?(song) }
@@ -783,7 +794,8 @@ struct MessageRow: View {
                                 .font(.system(size: 10, design: .serif))
                                 .foregroundColor(theme.timestamp)
                         }
-                        if theme.isPaper && !isUser && !msg.text.isEmpty {
+                        if theme.isPaper && !isUser && !msg.text.isEmpty
+                            && msg.insideText == nil && msg.ghostCard == nil {
                             Button { UIPasteboard.general.string = msg.text } label: {
                                 Image(systemName: "square.on.square")
                                     .font(.system(size: 11, weight: .light))
@@ -1143,6 +1155,121 @@ struct MessageRow: View {
         f.dateFormat = "HH:mm"
         return f
     }()
+}
+
+private struct InsideMessageCard: View {
+    let text: String
+    let date: Date
+    let theme: AlcoveTheme
+    @State private var expanded = false
+    private static let time: DateFormatter = {
+        let value = DateFormatter(); value.dateFormat = "HH:mm"; return value
+    }()
+
+    var body: some View {
+        Button { withAnimation(.easeInOut(duration: 0.2)) { expanded.toggle() } } label: {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 7) {
+                    Image(systemName: "quote.opening").font(.system(size: 12))
+                    Text("Inside").font(.system(size: 12, weight: .semibold, design: .serif)).tracking(1)
+                    Spacer()
+                    Image(systemName: expanded ? "chevron.up" : "chevron.down").font(.system(size: 9))
+                }
+                if expanded {
+                    Text(text).font(.system(size: 13, design: .serif)).lineSpacing(5)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text("···· " + Self.time.string(from: date))
+                        .font(.system(size: 10, design: .monospaced)).opacity(0.6)
+                }
+            }
+            .foregroundColor(theme.isDark ? theme.text : Color(red: 0.32, green: 0.29, blue: 0.30))
+            .padding(14)
+            .frame(maxWidth: 290, alignment: .leading)
+            .background(theme.isDark ? theme.fyCard : Color(red: 0.91, green: 0.88, blue: 0.86),
+                        in: RoundedRectangle(cornerRadius: theme.isPaper ? 7 : 15, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: theme.isPaper ? 7 : 15)
+                .stroke(theme.fyBorder, lineWidth: 0.8))
+        }.buttonStyle(.plain)
+    }
+}
+
+private struct GhostActivityMessageCard: View {
+    let card: GhostActivityCard
+    let theme: AlcoveTheme
+    @State private var expanded = true
+
+    private var period: String {
+        let hour = Int(card.wake.split(separator: ":").first ?? "") ?? -1
+        switch hour { case 0..<6: return "凌晨"; case 6..<12: return "早上"; case 12..<18: return "下午"; default: return "晚上" }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Button { withAnimation(.easeInOut(duration: 0.2)) { expanded.toggle() } } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "ellipsis").font(.system(size: 13, weight: .semibold))
+                    Text("\(period) \(card.wake)").font(.system(size: 13, weight: .semibold, design: .serif))
+                    Text("· 醒了\(card.duration)分钟").font(.system(size: 11)).foregroundColor(theme.textDim)
+                    Spacer()
+                    Image(systemName: expanded ? "chevron.up" : "chevron.down").font(.system(size: 9))
+                }
+            }.buttonStyle(.plain)
+            if expanded {
+                VStack(alignment: .leading, spacing: 11) {
+                    ForEach(card.items) { item in
+                        HStack(alignment: .top, spacing: 10) {
+                            Text(item.time).font(.system(size: 10, design: .monospaced))
+                                .foregroundColor(theme.textDim).frame(width: 42, alignment: .leading)
+                            Circle().fill(theme.fyAccent).frame(width: 5, height: 5).padding(.top, 5)
+                            Text(item.desc).font(.system(size: 12, design: .serif)).lineSpacing(3)
+                        }
+                    }
+                    if let summary = card.insideSummary, !summary.isEmpty {
+                        Text("“\(summary)”").font(.system(size: 11, design: .serif)).italic()
+                            .foregroundColor(theme.textDim).padding(.top, 3)
+                    }
+                }
+                .overlay(alignment: .leading) {
+                    Rectangle().fill(theme.fyBorder).frame(width: 1).padding(.leading, 47)
+                }
+            }
+        }
+        .foregroundColor(theme.text)
+        .padding(14)
+        .frame(maxWidth: 310, alignment: .leading)
+        .background(theme.fyCard, in: RoundedRectangle(cornerRadius: theme.isPaper ? 8 : 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: theme.isPaper ? 8 : 16).stroke(theme.fyBorder, lineWidth: 0.8))
+    }
+}
+
+private struct DocumentAttachmentCard: View {
+    let url: URL
+    let filename: String
+    let theme: AlcoveTheme
+    private var ext: String { (filename as NSString).pathExtension.uppercased() }
+
+    var body: some View {
+        Link(destination: url) {
+            HStack(spacing: 12) {
+                Image(systemName: "doc.text")
+                    .font(.system(size: 22, weight: .light)).foregroundColor(theme.fyAccent)
+                    .frame(width: 34, height: 42)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(filename).font(.system(size: 13, weight: .medium)).lineLimit(2)
+                    Text(ext.isEmpty ? "文件" : ext + " 文件")
+                        .font(.system(size: 10, design: .monospaced)).foregroundColor(theme.textDim)
+                }
+                Spacer(minLength: 8)
+                Image(systemName: "arrow.down.circle").font(.system(size: 17, weight: .light))
+                    .foregroundColor(theme.textDim)
+            }
+            .foregroundColor(theme.text)
+            .padding(12)
+            .frame(maxWidth: 280, alignment: .leading)
+            .background(theme.fyCard, in: RoundedRectangle(cornerRadius: theme.isPaper ? 8 : 15, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: theme.isPaper ? 8 : 15).stroke(theme.fyBorder, lineWidth: 0.8))
+        }.buttonStyle(.plain)
+    }
 }
 
 

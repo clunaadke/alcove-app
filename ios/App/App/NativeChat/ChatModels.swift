@@ -44,6 +44,28 @@ struct ChatMessage: Identifiable, Equatable {
         return ["m4a", "mp3", "wav", "ogg", "webm", "aac"]
             .contains((u as NSString).pathExtension.lowercased())
     }
+    var isDocument: Bool {
+        guard let u = attachmentUrl, !u.isEmpty else { return false }
+        return !isImage && !isAudio
+    }
+
+    var insideText: String? {
+        Self.taggedBody(text, tag: "INSIDE")
+    }
+
+    var ghostCard: GhostActivityCard? {
+        guard let raw = Self.taggedBody(text, tag: "GHOST_CARD"),
+              let data = raw.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(GhostActivityCard.self, from: data)
+    }
+
+    private static func taggedBody(_ text: String, tag: String) -> String? {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let open = "[\(tag)]", close = "[/\(tag)]"
+        guard trimmed.hasPrefix(open), trimmed.hasSuffix(close) else { return nil }
+        return String(trimmed.dropFirst(open.count).dropLast(close.count))
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
 
     var photoBatchKey: String? {
         guard isImage, let group = attachmentGroup, !group.isEmpty else { return nil }
@@ -96,6 +118,23 @@ struct ChatMessage: Identifiable, Equatable {
         self.text = localText
         self.asleepAtSend = false
         self.pending = true
+    }
+}
+
+struct GhostActivityCard: Decodable, Equatable {
+    struct Item: Decodable, Equatable, Identifiable {
+        let time: String
+        let desc: String
+        var id: String { time + "|" + desc }
+    }
+    let wake: String
+    let duration: Int
+    let items: [Item]
+    let insideSummary: String?
+
+    enum CodingKeys: String, CodingKey {
+        case wake, duration, items
+        case insideSummary = "inside_summary"
     }
 }
 
