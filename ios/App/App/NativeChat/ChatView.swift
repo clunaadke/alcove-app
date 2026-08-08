@@ -731,6 +731,12 @@ struct MessageRow: View {
         if theme.isPaper && !isUser { return 0 }
         return !msg.text.isEmpty && !msg.isSticker ? 12 : 0
     }
+    private var shouldShowMetaRow: Bool {
+        if msg.pending || msg.asleepAtSend || showTime { return true }
+        // 新消息按 turn_id 分轮：activity 已首尾双挂，非轮尾绝不能被它
+        // 重新撑出一条孤儿操作行；无 turn_id 的旧消息仍保留原行为。
+        return (msg.turnID?.isEmpty ?? true) && msg.hasActivity
+    }
 
     var body: some View {
         HStack(alignment: .bottom, spacing: 0) {
@@ -760,7 +766,7 @@ struct MessageRow: View {
                         bubble
                     }
                 }
-                if showTime || msg.pending || msg.asleepAtSend || msg.hasActivity {
+                if shouldShowMetaRow {
                     HStack(spacing: theme.isPaper && !isUser ? 14 : 4) {
                         if msg.pending {
                             Image(systemName: "clock")
