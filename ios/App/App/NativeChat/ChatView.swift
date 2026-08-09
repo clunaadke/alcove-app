@@ -174,7 +174,9 @@ struct ChatView: View {
                                 .id("liveband")
                                 .transition(.opacity)
                         }
-                        if store.isTyping && store.live?.active != true {
+                        // 7.30 原版是两层同时存在：live-say 在上，正在…气泡在下。
+                        // 不能因为预览框 active 就把 typing status 吞掉。
+                        if store.isTyping {
                             TypingIndicator(tool: store.currentTool,
                                             line: store.typingLine,
                                             name: UserDefaults.standard.string(forKey: "assistantName") ?? "陈璟",
