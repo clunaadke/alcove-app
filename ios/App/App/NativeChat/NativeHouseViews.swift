@@ -876,6 +876,7 @@ private struct NativeSettingsView: View {
     @State private var codexLatency: Int?
     @State private var codexThreadConnected = false
     @State private var servicesLoading = false
+    @State private var showCapabilityLab = false
     @Environment(\.houseOwnsHeader) private var houseOwnsHeader
     private var theme: AlcoveTheme { .panelNamed(themeName) }
 
@@ -963,6 +964,15 @@ private struct NativeSettingsView: View {
                     .buttonStyle(.plain)
                     .disabled(servicesLoading)
                 }
+                section("实验室") {
+                    Button { showCapabilityLab = true } label: {
+                        settingRow("免费签名能力体检", "灵动岛、小组件、通话记录与屏幕共享") {
+                            Image(systemName: "chevron.right")
+                                .foregroundColor(theme.textLight)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
                 section("App") {
                     Button(action: showPermissions) {
                         settingRow("系统权限", "位置、日历、运动、麦克风等权限") {
@@ -975,6 +985,9 @@ private struct NativeSettingsView: View {
             .padding(.horizontal, 16)
             .padding(.bottom, 30)
             .foregroundColor(theme.text)
+        }
+        .sheet(isPresented: $showCapabilityLab) {
+            CapabilityLabView()
         }
         .onChange(of: userPhoto) { item in loadDataURL(item, into: $userAvatar) }
         .onChange(of: aiPhoto) { item in loadDataURL(item, into: $assistantAvatar) }

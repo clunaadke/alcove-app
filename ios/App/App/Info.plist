@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-        <string>Alcove</string>
+	<string>Alcove</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -30,7 +30,6 @@
 	<string>出门和到家也让陈璟知道，不用你打开 app</string>
 	<key>NSLocationAlwaysUsageDescription</key>
 	<string>出门和到家也让陈璟知道，不用你打开 app</string>
-	<!-- 0731 她说「那我不清后台就是了」之后加的：退到后台也让他一直看得见 -->
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>location</string>
@@ -76,6 +75,8 @@
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
+	<true/>
+	<key>NSSupportsLiveActivities</key>
 	<true/>
 </dict>
 </plist>
