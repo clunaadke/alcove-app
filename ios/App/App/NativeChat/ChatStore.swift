@@ -63,12 +63,6 @@ final class ChatStore: ObservableObject {
         optimisticUntil = Date().addingTimeInterval(8)
         isTyping = true
         refreshTypingLine()
-        // 她按下发送就先给 ThoughtProcess 一扇门，不能等 watcher 写出第一个字。
-        if live?.active != true {
-            var pending = AlcoveAPI.LiveState(active: true, turnID: "pending-\(UUID().uuidString)")
-            pending.tool = typingLine
-            live = pending
-        }
     }
 
     private var lastTs: String?

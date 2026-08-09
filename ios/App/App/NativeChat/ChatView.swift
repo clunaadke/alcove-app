@@ -169,7 +169,7 @@ struct ChatView: View {
                             chatMessageRow(at: idx, message: msg)
                         }
                         // 0730 实时预览：他说完一段就先冒出来，不等整轮工具跑完
-                        if let lv = store.live, !lv.isEmpty || lv.active {
+                        if let lv = store.live, !lv.isEmpty {
                             LiveSayBand(state: lv, theme: theme)
                                 .id("liveband")
                                 .transition(.opacity)
@@ -1307,13 +1307,9 @@ struct LiveSayBand: View {
     let state: AlcoveAPI.LiveState
     let theme: AlcoveTheme
     @State private var showProcess = false
-    private var assistantName: String {
-        UserDefaults.standard.string(forKey: "assistantName") ?? "陈璟"
-    }
-
     private var tagLine: String {
         var bits: [String] = []
-        if !state.tool.isEmpty { bits.append("\(assistantName)正在\(state.tool)中…") }
+        if !state.tool.isEmpty { bits.append("正在" + state.tool) }
         if state.said > 1 { bits.append("说了\(state.said)段") }
         if state.elapsed > 3 { bits.append("\(state.elapsed)s") }
         return bits.joined(separator: " · ")
@@ -1321,18 +1317,28 @@ struct LiveSayBand: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
-            Button { showProcess = true } label: {
-                HStack(spacing: 5) {
-                    Image(systemName: "clock.arrow.circlepath")
-                    Text("ThoughtProcess")
-                    if state.active && state.timeline.isEmpty { ProgressView().controlSize(.mini) }
-                    Image(systemName: "chevron.right").font(.system(size: 8))
-                }
-                .font(.system(size: 11, weight: .medium))
-                .foregroundColor(theme.textDim.opacity(0.72))
-                .frame(minHeight: 32)
-                .contentShape(Rectangle())
-            }.buttonStyle(.plain)
+            if !state.thinking.isEmpty {
+                Button { showProcess = true } label: {
+                    HStack(alignment: .firstTextBaseline, spacing: 5) {
+                        Text(state.thinking)
+                            .italic()
+                            .lineLimit(2)
+                        Image(systemName: "chevron.right").font(.system(size: 8))
+                    }
+                    .font(.system(size: 11))
+                    .foregroundColor(theme.textDim.opacity(0.62))
+                    .contentShape(Rectangle())
+                }.buttonStyle(.plain)
+            } else if !state.timeline.isEmpty {
+                Button { showProcess = true } label: {
+                    HStack(spacing: 5) {
+                        Text("ThoughtProcess")
+                        Image(systemName: "chevron.right").font(.system(size: 8))
+                    }
+                    .font(.system(size: 11))
+                    .foregroundColor(theme.textDim.opacity(0.62))
+                }.buttonStyle(.plain)
+            }
             if !state.say.isEmpty {
                 Text(state.say)
                     .font(.system(size: 13))
