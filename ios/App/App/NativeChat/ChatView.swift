@@ -217,6 +217,19 @@ struct ChatView: View {
                     .transition(.opacity)
                 }
 
+                if !showMiniTerminal {
+                    ClawdPet(store: store) {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.84)) {
+                            showMiniTerminal = true
+                        }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                    .padding(.trailing, 12)
+                    .padding(.bottom, inputBarHeight + 8)
+                }
+            }
+            // 真浮层：不参与 ZStack 的布局尺寸，也不让消息 ScrollView 重算位置。
+            .overlay(alignment: .bottom) {
                 if showMiniTerminal {
                     TerminalView(onDismiss: {
                         withAnimation(.spring(response: 0.3, dampingFraction: 0.84)) {
@@ -226,17 +239,7 @@ struct ChatView: View {
                     .frame(height: min(310, UIScreen.main.bounds.height * 0.29))
                     .padding(.horizontal, 16)
                     .padding(.bottom, inputBarHeight + 14)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
                     .transition(.scale(scale: 0.92, anchor: .bottomTrailing).combined(with: .opacity))
-                } else {
-                    ClawdPet(store: store) {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.84)) {
-                            showMiniTerminal = true
-                        }
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-                    .padding(.trailing, 12)
-                    .padding(.bottom, inputBarHeight + 8)
                 }
             }
             .onAppear {

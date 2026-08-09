@@ -196,8 +196,10 @@ struct TerminalView: View {
         Task {
             var comps = URLComponents(url: AlcoveAPI.fullURL("/api/terminal/capture"),
                                       resolvingAgainstBaseURL: false)!
-            comps.queryItems = [URLQueryItem(name: "session", value: session),
-                                URLQueryItem(name: "lines", value: "120")]
+            var query = [URLQueryItem(name: "session", value: session),
+                         URLQueryItem(name: "lines", value: "120")]
+            if mini { query.append(URLQueryItem(name: "clean", value: "1")) }
+            comps.queryItems = query
             guard let (data, _) = try? await AlcoveAPI.session.data(from: comps.url!),
                   let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
                 workState = .disconnected
