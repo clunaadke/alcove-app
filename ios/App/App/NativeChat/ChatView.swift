@@ -1222,13 +1222,6 @@ private struct GhostActivityMessageCard: View {
                     Image(systemName: expanded ? "chevron.up" : "chevron.down").font(.system(size: 9))
                 }
             }.buttonStyle(.plain)
-            if !state.say.isEmpty {
-                Text(state.say)
-                    .font(.system(size: 13))
-                    .foregroundColor(theme.textDim.opacity(0.95))
-                    .lineSpacing(3)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
             if expanded {
                 VStack(alignment: .leading, spacing: 11) {
                     ForEach(card.items) { item in
@@ -1314,10 +1307,13 @@ struct LiveSayBand: View {
     let state: AlcoveAPI.LiveState
     let theme: AlcoveTheme
     @State private var showProcess = false
+    private var assistantName: String {
+        UserDefaults.standard.string(forKey: "assistantName") ?? "陈璟"
+    }
 
     private var tagLine: String {
         var bits: [String] = []
-        if !state.tool.isEmpty { bits.append("正在" + state.tool) }
+        if !state.tool.isEmpty { bits.append("\(assistantName)正在\(state.tool)中…") }
         if state.said > 1 { bits.append("说了\(state.said)段") }
         if state.elapsed > 3 { bits.append("\(state.elapsed)s") }
         return bits.joined(separator: " · ")
@@ -1337,6 +1333,13 @@ struct LiveSayBand: View {
                 .frame(minHeight: 32)
                 .contentShape(Rectangle())
             }.buttonStyle(.plain)
+            if !state.say.isEmpty {
+                Text(state.say)
+                    .font(.system(size: 13))
+                    .foregroundColor(theme.textDim.opacity(0.95))
+                    .lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             if !tagLine.isEmpty {
                 Text(tagLine)
                     .font(.system(size: 10, design: .serif))

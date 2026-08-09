@@ -62,11 +62,13 @@ final class ChatStore: ObservableObject {
     private func optimisticTyping() {
         optimisticUntil = Date().addingTimeInterval(8)
         isTyping = true
+        refreshTypingLine()
         // 她按下发送就先给 ThoughtProcess 一扇门，不能等 watcher 写出第一个字。
         if live?.active != true {
-            live = AlcoveAPI.LiveState(active: true, turnID: "pending-\(UUID().uuidString)")
+            var pending = AlcoveAPI.LiveState(active: true, turnID: "pending-\(UUID().uuidString)")
+            pending.tool = typingLine
+            live = pending
         }
-        refreshTypingLine()
     }
 
     private var lastTs: String?
@@ -258,7 +260,7 @@ final class ChatStore: ObservableObject {
             if items.isEmpty {
                 snapshot.thinking = event.thinking ?? ""
                 snapshot.say = event.say ?? ""
-                snapshot.tool = event.tool ?? ""
+                snapshot.tool = event.tool.map(Self.toolLine) ?? ""
                 snapshot.said = event.said ?? 0
             } else {
                 for (index, item) in items.enumerated() {
@@ -276,9 +278,10 @@ final class ChatStore: ObservableObject {
                                                        kind: "text", text: content, done: true))
                     case "tool":
                         let isCurrent = index == items.count - 1
-                        if isCurrent { snapshot.tool = content }
+                        let display = Self.toolLine(content)
+                        if isCurrent { snapshot.tool = display }
                         snapshot.timeline.append(.init(id: "snapshot-tool-\(index)",
-                                                       kind: "tool", text: content,
+                                                       kind: "tool", text: display,
                                                        done: !isCurrent))
                     default: break
                     }
@@ -325,9 +328,10 @@ final class ChatStore: ObservableObject {
                                         text: content, done: true))
         case "tool_step":
             guard !content.isEmpty else { return }
-            state.tool = content
+            let display = Self.toolLine(content)
+            state.tool = display
             state.timeline.append(.init(id: "tool-\(seq)", kind: "tool",
-                                        text: content, done: true))
+                                        text: display, done: true))
         case "turn_end":
             // 她定的收口：最后一段结束就整条直播立即死亡，正式气泡随后接替。
             live = nil
