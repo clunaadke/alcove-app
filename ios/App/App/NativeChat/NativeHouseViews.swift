@@ -405,7 +405,10 @@ struct NativeHouseDrawer: View {
         GeometryReader { geo in
             ZStack {
                 Image(theme.isDark ? "DrawerDark" : "DrawerLight")
-                    .resizable().scaledToFill()
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: geo.size.width, height: geo.size.height)
+                    .clipped()
                 (theme.isDark ? Color.black : Color.white).opacity(theme.isDark ? 0.10 : 0.08)
 
                 ScrollView(showsIndicators: false) {
