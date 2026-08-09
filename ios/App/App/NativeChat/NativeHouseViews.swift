@@ -4478,9 +4478,37 @@ private struct EmotionPulseChart: View {
 
 // MARK: - Forge
 
+private struct ForgeRoundChoice: Identifiable {
+    let idx: Int
+    let ts: String
+    let head: String
+    let events: Int
+    let tools: Int
+    var id: Int { idx }
+
+    init(_ raw: [String: Any]) {
+        idx = raw.int("idx")
+        ts = raw.string("ts")
+        head = raw.string("head")
+        events = raw.int("events")
+        tools = raw.int("tools")
+    }
+}
+
 private struct NativeForgeView: View {
+    private enum ForgeMode: String, CaseIterable {
+        case latest = "默认保留"
+        case picker = "挑选轮次"
+    }
+
     @State private var retain: Double = 20
     @State private var preview: [String: Any] = [:]
+    @State private var mode: ForgeMode = .latest
+    @State private var rounds: [ForgeRoundChoice] = []
+    @State private var selectedRounds: Set<Int> = []
+    @State private var pickPreview: [String: Any] = [:]
+    @State private var loadingRounds = false
+    @State private var confirmPickedForge = false
     @State private var loading = true
     @State private var forging = false
     @State private var result: String?
@@ -4488,10 +4516,11 @@ private struct NativeForgeView: View {
     @AppStorage("alcoveTheme") private var themeName = "haven"
     private var theme: AlcoveTheme { .panelNamed(themeName) }
 
+    private var activePreview: [String: Any] { mode == .picker ? pickPreview : preview }
     private var totalRounds: Int { (preview["total_rounds"] as? Int) ?? 0 }
-    private var retainedRounds: Int { (preview["retained_rounds"] as? Int) ?? 0 }
-    private var estimatedTokens: Int { (preview["estimated_tokens"] as? Int) ?? 0 }
-    private var valid: Bool { (preview["valid"] as? Bool) ?? false }
+    private var retainedRounds: Int { (activePreview["retained_rounds"] as? Int) ?? 0 }
+    private var estimatedTokens: Int { (activePreview["estimated_tokens"] as? Int) ?? 0 }
+    private var valid: Bool { (activePreview["valid"] as? Bool) ?? false }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -4511,7 +4540,18 @@ private struct NativeForgeView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .foyerCard(theme)
 
-                        VStack(alignment: .leading, spacing: 10) {
+                        Picker("锻造方式", selection: $mode) {
+                            ForEach(ForgeMode.allCases, id: \.self) { value in
+                                Text(value.rawValue).tag(value)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .onChange(of: mode) { value in
+                            if value == .picker && rounds.isEmpty { Task { await loadRounds() } }
+                        }
+
+                        if mode == .latest {
+                            VStack(alignment: .leading, spacing: 10) {
                             HStack {
                                 Text("保留轮次").font(.system(size: 13, weight: .semibold))
                                 Spacer()
@@ -4527,12 +4567,15 @@ private struct NativeForgeView: View {
                             HStack {
                                 infoRow("估算Token", "\(estimatedTokens)")
                                 Spacer()
-                                infoRow("Warm文", "\((preview["warm_texts"] as? Int) ?? 0)")
+                                infoRow("Warm文", "\((activePreview["warm_texts"] as? Int) ?? 0)")
                             }
+                            }
+                            .padding(14).foyerCard(theme)
+                        } else {
+                            pickerPanel
                         }
-                        .padding(14).foyerCard(theme)
 
-                        if let firsts = preview["first_messages"] as? [String], !firsts.isEmpty {
+                        if let firsts = activePreview["first_messages"] as? [String], !firsts.isEmpty {
                             VStack(alignment: .leading, spacing: 6) {
                                 Text("开头").font(.system(size: 12, weight: .semibold))
                                     .foregroundColor(theme.fyAccent)
@@ -4547,7 +4590,7 @@ private struct NativeForgeView: View {
                             .padding(14).foyerCard(theme)
                         }
 
-                        if let lasts = preview["last_messages"] as? [String], !lasts.isEmpty {
+                        if let lasts = activePreview["last_messages"] as? [String], !lasts.isEmpty {
                             VStack(alignment: .leading, spacing: 6) {
                                 Text("结尾").font(.system(size: 12, weight: .semibold))
                                     .foregroundColor(theme.fyAccent)
@@ -4595,7 +4638,8 @@ private struct NativeForgeView: View {
 
                         HStack(spacing: 12) {
                             Button {
-                                Task { await executeForge() }
+                                if mode == .picker { confirmPickedForge = true }
+                                else { Task { await executeForge() } }
                             } label: {
                                 HStack {
                                     if forging {
@@ -4613,7 +4657,7 @@ private struct NativeForgeView: View {
                             .disabled(!valid || forging)
                         }
 
-                        if let sid = preview["source_session"] as? String, !sid.isEmpty {
+                        if let sid = activePreview["source_session"] as? String, !sid.isEmpty {
                             VStack(spacing: 2) {
                                 Text("当前窗口")
                                     .font(.system(size: 10))
@@ -4635,6 +4679,127 @@ private struct NativeForgeView: View {
         .foyerPanel(theme)
         .padding(.horizontal, 12).padding(.top, 8)
         .task { await loadPreview() }
+        .alert("铸造所选的 \(selectedRounds.count) 轮？", isPresented: $confirmPickedForge) {
+            Button("取消", role: .cancel) {}
+            Button("确认铸造", role: .destructive) { Task { await executeForge() } }
+        } message: {
+            Text("只会把亮起的完整轮次搬进新窗口；断口与时间注记由 Forge 自动补齐。")
+        }
+    }
+
+    private var pickerPanel: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("按完整轮次挑选").font(.system(size: 13, weight: .semibold))
+                    Text("已选 \(selectedRounds.count) 轮 · 最近 \(rounds.count) 轮可选")
+                        .font(.system(size: 10)).foregroundColor(theme.textDim)
+                }
+                Spacer()
+                if !selectedRounds.isEmpty {
+                    Button("清空") { selectedRounds.removeAll(); pickPreview = [:] }
+                        .font(.system(size: 11)).buttonStyle(.plain).foregroundColor(theme.fyAccent)
+                }
+            }
+
+            if loadingRounds {
+                ProgressView().frame(maxWidth: .infinity).padding(.vertical, 28)
+            } else {
+                LazyVStack(spacing: 7) {
+                    ForEach(rounds) { round in
+                        Button { toggleRound(round.idx) } label: {
+                            HStack(alignment: .top, spacing: 10) {
+                                Image(systemName: selectedRounds.contains(round.idx)
+                                      ? "checkmark.circle.fill" : "circle")
+                                    .font(.system(size: 17)).foregroundColor(theme.fyAccent)
+                                    .frame(width: 22, height: 22)
+                                VStack(alignment: .leading, spacing: 5) {
+                                    HStack {
+                                        Text("#\(round.idx)")
+                                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                                        Text(round.ts).font(.system(size: 10, design: .monospaced))
+                                            .foregroundColor(theme.textDim)
+                                        Spacer()
+                                        Text("\(round.events) 段 · \(round.tools) 工具")
+                                            .font(.system(size: 9)).foregroundColor(theme.textDim)
+                                    }
+                                    Text(round.head)
+                                        .font(.system(size: 12, design: .serif))
+                                        .lineSpacing(3).lineLimit(3)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                            }
+                            .padding(11)
+                            .background(selectedRounds.contains(round.idx)
+                                        ? theme.fyAccentSoft : theme.fyCard,
+                                        in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .stroke(selectedRounds.contains(round.idx)
+                                        ? theme.fyAccent.opacity(0.55) : theme.fyBorder,
+                                        lineWidth: 0.8))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+
+            Button { Task { await previewPickedRounds() } } label: {
+                HStack {
+                    Image(systemName: "doc.text.magnifyingglass")
+                    Text(pickPreview.isEmpty ? "预览所选轮次" : "重新预览")
+                }
+                .font(.system(size: 13, weight: .semibold))
+                .frame(maxWidth: .infinity).frame(minHeight: 44)
+                .background(selectedRounds.isEmpty ? theme.fyCardSub : theme.fyAccentSoft,
+                            in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+            .buttonStyle(.plain).disabled(selectedRounds.isEmpty || forging)
+
+            if !pickPreview.isEmpty {
+                HStack {
+                    infoRow("所选轮次", "\(retainedRounds)")
+                    Spacer()
+                    infoRow("估算Token", "\(estimatedTokens)")
+                    Spacer()
+                    infoRow("校验", valid ? "通过" : "未通过")
+                }
+                .padding(.top, 2)
+            }
+        }
+        .padding(14).foyerCard(theme)
+    }
+
+    private func toggleRound(_ idx: Int) {
+        if selectedRounds.contains(idx) { selectedRounds.remove(idx) }
+        else { selectedRounds.insert(idx) }
+        pickPreview = [:]
+    }
+
+    private func loadRounds() async {
+        loadingRounds = true
+        defer { loadingRounds = false }
+        do {
+            let object = try await NativeHouseAPI.object("/api/forge/rounds")
+            rounds = (object["rounds"] as? [[String: Any]] ?? [])
+                .map(ForgeRoundChoice.init)
+                .sorted { $0.idx > $1.idx }
+        } catch {
+            result = "轮次货架没有回应"
+        }
+    }
+
+    private func previewPickedRounds() async {
+        forging = true
+        defer { forging = false }
+        do {
+            pickPreview = try await NativeHouseAPI.object(
+                "/api/forge", method: "POST",
+                body: ["pick": selectedRounds.sorted(), "preview": true])
+            result = (pickPreview["valid"] as? Bool) == true
+                ? nil : (pickPreview["validation_message"] as? String ?? "所选轮次未通过校验")
+        } catch {
+            result = "预览失败"
+        }
     }
 
     private func loadPreview() async {
@@ -4652,9 +4817,11 @@ private struct NativeForgeView: View {
         forging = true
         defer { forging = false }
         do {
+            let body: [String: Any] = mode == .picker
+                ? ["pick": selectedRounds.sorted()]
+                : ["retain": Int(retain)]
             let obj = try await NativeHouseAPI.object(
-                "/api/forge", method: "POST",
-                body: ["retain": Int(retain)])
+                "/api/forge", method: "POST", body: body)
             if let sid = obj["new_session_id"] as? String, !sid.isEmpty {
                 newSessionId = sid
                 result = nil
