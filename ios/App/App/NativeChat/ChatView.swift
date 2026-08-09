@@ -54,6 +54,9 @@ struct ChatView: View {
             .compactMap { $0 as? UIWindowScene }
             .first?.windows.first?.safeAreaInsets.bottom ?? 0
     }
+    private var miniTerminalHeight: CGFloat {
+        min(310, UIScreen.main.bounds.height * 0.29)
+    }
 
     var body: some View {
         GeometryReader { root in
@@ -177,7 +180,9 @@ struct ChatView: View {
                                             theme: theme)
                                 .id("typing")
                         }
-                        Color.clear.frame(height: inputBarHeight + (music.nowPlaying == nil ? 8 : 76))
+                        Color.clear.frame(height: inputBarHeight
+                                          + (music.nowPlaying == nil ? 8 : 76)
+                                          + (showMiniTerminal ? miniTerminalHeight + 18 : 0))
                         Color.clear.frame(height: 1).id("tail")
                             .onAppear { atBottom = true }
                             .onDisappear { atBottom = false }
@@ -228,7 +233,7 @@ struct ChatView: View {
                     .padding(.bottom, inputBarHeight + 8)
                 }
             }
-            // 真浮层：不参与 ZStack 的布局尺寸，也不让消息 ScrollView 重算位置。
+            // 终端画在上层；消息流用等高底部占位做出键盘式避让。
             .overlay(alignment: .bottom) {
                 if showMiniTerminal {
                     TerminalView(onDismiss: {
@@ -236,7 +241,7 @@ struct ChatView: View {
                             showMiniTerminal = false
                         }
                     }, mini: true)
-                    .frame(height: min(310, UIScreen.main.bounds.height * 0.29))
+                    .frame(height: miniTerminalHeight)
                     .padding(.horizontal, 16)
                     .padding(.bottom, inputBarHeight + 14)
                     .transition(.scale(scale: 0.92, anchor: .bottomTrailing).combined(with: .opacity))
@@ -271,6 +276,10 @@ struct ChatView: View {
                 if atBottom || inputFocused {
                     scrollToTail(proxy, delays: [0.05, 0.3], animated: true)
                 }
+            }
+            .onChange(of: showMiniTerminal) { _ in
+                // 像键盘避让：占位变化后把最新消息送到终端正上方。
+                scrollToTail(proxy, delays: [0, 0.12, 0.32], animated: true)
             }
             .onChange(of: scrollKick) { _ in
                 if atBottom || inputFocused {
