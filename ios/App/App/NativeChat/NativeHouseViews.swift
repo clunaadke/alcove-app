@@ -6319,13 +6319,25 @@ private struct FictionSpine: View {
 private struct FictionBookView: View {
     let book: FictionBook
     @ObservedObject var model: FictionStudyModel
+    @Environment(\.dismiss) private var dismiss
     @AppStorage("alcoveTheme") private var themeName = "haven"
     @State private var chapterIndex: Int?
     @State private var detail: FictionBookDetail?
     private var theme: AlcoveTheme { .panelNamed(themeName) }
 
     var body: some View {
-        ScrollView {
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                Button { dismiss() } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 15, weight: .semibold))
+                        .frame(width: 28, height: 34)
+                }.buttonStyle(.plain)
+                Text(book.title).font(.system(size: 14, weight: .semibold, design: .serif)).lineLimit(1)
+                Spacer()
+            }.padding(.horizontal, 14).padding(.vertical, 6)
+
+            ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 VStack(spacing: 9) {
                     Text(book.title).font(.system(size: 27, weight: .semibold, design: .serif))
@@ -6360,7 +6372,14 @@ private struct FictionBookView: View {
                 } else { ProgressView().frame(maxWidth: .infinity).padding(30) }
             }.padding(18)
         }
+        }
         .foregroundColor(theme.text)
+        .background {
+            Image(theme.isDark ? "DrawerDark" : "DrawerLight")
+                .resizable().scaledToFill().clipped()
+        }
+        .navigationBarBackButtonHidden(true)
+        .toolbar(.hidden, for: .navigationBar)
         .task { detail = try? await model.detail(bookID: book.id) }
         .navigationDestination(item: $chapterIndex) { index in
             FictionReaderView(book: book, chapterIndex: index, model: model)
@@ -6372,6 +6391,7 @@ private struct FictionReaderView: View {
     let book: FictionBook
     let chapterIndex: Int
     @ObservedObject var model: FictionStudyModel
+    @Environment(\.dismiss) private var dismiss
     @AppStorage("alcoveTheme") private var themeName = "haven"
     @State private var chapter: FictionChapter?
     @State private var annotations: [FictionAnnotation] = []
@@ -6388,6 +6408,11 @@ private struct FictionReaderView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
+                Button { dismiss() } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 15, weight: .semibold))
+                        .frame(width: 28, height: 34)
+                }.buttonStyle(.plain)
                 Text(chapter?.title ?? "正在翻页")
                     .font(.system(size: 14, weight: .semibold, design: .serif))
                     .lineLimit(1)
@@ -6450,6 +6475,8 @@ private struct FictionReaderView: View {
                 .resizable().scaledToFill().clipped()
         }
         .toolbarBackground(.hidden, for: .navigationBar)
+        .navigationBarBackButtonHidden(true)
+        .toolbar(.hidden, for: .navigationBar)
         .task {
             do {
                 chapter = try await model.chapter(bookID: book.id, index: chapterIndex)
