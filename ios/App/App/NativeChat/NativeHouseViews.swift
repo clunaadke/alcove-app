@@ -5645,15 +5645,15 @@ private struct NativeMorningPaperView: View {
 
     private var masthead: some View {
         VStack(spacing: 9) {
-            Text("ALCOVE · MORNING PAPER")
+            Text("MORNING PAPER")
                 .font(.system(size: 10, weight: .semibold, design: .monospaced))
                 .tracking(2.2)
                 .foregroundColor(theme.fyAccent)
-            Text("晨 间 纸 页")
-                .font(.system(size: 28, weight: .semibold, design: .serif))
-                .tracking(5)
+            Text(displayDate(model.paper?.date ?? ""))
+                .font(.system(size: 23, weight: .semibold, design: .serif))
+                .tracking(1.2)
             HStack {
-                Text(displayDate(model.paper?.date ?? ""))
+                Text("刊名等主人题字")
                 Spacer()
                 Text(model.paper?.status == "fixture" ? "样刊" : "今日刊")
             }
