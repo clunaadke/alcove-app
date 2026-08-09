@@ -158,7 +158,7 @@ struct NativeHouseSheet: View {
                     Group {
                 switch route {
                 case .sidebar:
-                    NativeSidebarView(select: select, roundtableUnread: roundtableUnread)
+                    Color.clear
                 case .settings:
                     NativeSettingsView(
                         showPermissions: {
@@ -235,12 +235,14 @@ struct NativeHouseSheet: View {
         .environment(\.bubbleGlassStyle, bubbleGlassStyle)
         // Panel wallpaper may extend under the home indicator, but keyboard safe-area
         // must remain live so editors/composers rise instead of being covered.
-        .ignoresSafeArea(.container, edges: [.horizontal, .bottom])
+        .ignoresSafeArea(.container, edges: .all)
         .overlay(alignment: .topLeading) {
             if route != .sidebar {
                 Button {
-                    withAnimation(.easeInOut(duration: 0.18)) {
-                        route = route == .bubbleAppearance ? .settings : .sidebar
+                    if route == .bubbleAppearance {
+                        withAnimation(.easeInOut(duration: 0.18)) { route = .settings }
+                    } else {
+                        dismiss()
                     }
                 } label: {
                     Image(systemName: "chevron.left")
@@ -252,7 +254,7 @@ struct NativeHouseSheet: View {
                         .shadow(color: theme.fyShadow, radius: 4, y: 2)
                 }
                 .padding(.leading, 14)
-                .padding(.top, 8)
+                .padding(.top, max(root.safeAreaInsets.top, 8) + 6)
             }
         }
         .preferredColorScheme(theme.isDark ? .dark : .light)

@@ -4,6 +4,7 @@ import SwiftUI
 struct RootView: View {
     @State private var housePage: HouseDestination?
     @State private var showHouseDrawer = false
+    @State private var reopenDrawerAfterHouse = false
     @State private var showSplash = true
     @State private var showPermissions = false
     @State private var showTerminal = false
@@ -80,7 +81,7 @@ struct RootView: View {
                     .zIndex(10)
             }
         }
-        .blur(radius: (housePage == nil && !showHouseDrawer) || theme.isPaper ? 0 : 2.2)
+        .blur(radius: housePage == nil || theme.isPaper ? 0 : 2.2)
         .animation(.easeOut(duration: 0.20), value: housePage != nil)
         .onAppear {
             prewarmPanelTexture()
@@ -115,7 +116,16 @@ struct RootView: View {
         .sheet(isPresented: $showPermissions) {
             PermissionsView()
         }
-        .fullScreenCover(item: $housePage) { target in
+        .fullScreenCover(item: $housePage, onDismiss: {
+            if reopenDrawerAfterHouse {
+                reopenDrawerAfterHouse = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+                    withAnimation(.spring(response: 0.34, dampingFraction: 0.88)) {
+                        showHouseDrawer = true
+                    }
+                }
+            }
+        }) { target in
             NativeHouseSheet(
                 initial: target,
                 preparedTexture: preparedPanelTexture,
@@ -317,6 +327,7 @@ struct RootView: View {
         case .terminal: showTerminal = true
         case .roundtable: markRoundtableRead(); showRoundtable = true
         default:
+            reopenDrawerAfterHouse = true
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) { presentHouse(target) }
         }
     }
