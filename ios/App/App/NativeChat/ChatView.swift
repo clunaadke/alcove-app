@@ -169,7 +169,7 @@ struct ChatView: View {
                             chatMessageRow(at: idx, message: msg)
                         }
                         // 0730 实时预览：他说完一段就先冒出来，不等整轮工具跑完
-                        if let lv = store.live, !lv.isEmpty {
+                        if let lv = store.live, lv.shouldShowPreview {
                             LiveSayBand(state: lv, theme: theme)
                                 .id("liveband")
                                 .transition(.opacity)

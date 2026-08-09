@@ -253,9 +253,10 @@ final class ChatStore: ObservableObject {
             let items = event.items ?? []
             if items.isEmpty {
                 snapshot.thinking = event.thinking ?? ""
-                snapshot.say = event.say ?? ""
+                // 聚合快照无法证明这段正文后面还有动作，先按最终段暂扣。
+                snapshot.pendingSay = event.say ?? ""
                 snapshot.tool = event.tool.map(Self.toolLine) ?? ""
-                snapshot.said = event.said ?? 0
+                snapshot.said = 0
             } else {
                 for (index, item) in items.enumerated() {
                     let content = item.content.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -263,11 +264,14 @@ final class ChatStore: ObservableObject {
                     switch item.kind {
                     case "thinking":
                         snapshot.thinking += (snapshot.thinking.isEmpty ? "" : "\n\n") + content
+                        snapshot.thinkingParagraphs += 1
                         snapshot.timeline.append(.init(id: "snapshot-thinking-\(index)",
                                                        kind: "thinking", text: content, done: true))
                     case "text":
-                        snapshot.say += (snapshot.say.isEmpty ? "" : "\n\n") + content
-                        snapshot.said += 1
+                        if !snapshot.pendingSay.isEmpty {
+                            snapshot.pendingSay += "\n\n"
+                        }
+                        snapshot.pendingSay += content
                         snapshot.timeline.append(.init(id: "snapshot-text-\(index)",
                                                        kind: "text", text: content, done: true))
                     case "tool":
@@ -278,6 +282,17 @@ final class ChatStore: ObservableObject {
                                                        kind: "tool", text: display,
                                                        done: !isCurrent))
                     default: break
+                    }
+                }
+                let hasTool = snapshot.timeline.contains { $0.kind == "tool" }
+                if hasTool || snapshot.thinkingParagraphs > 1 {
+                    let textItems = items.enumerated().filter { $0.element.kind == "text" }
+                    if textItems.count > 1 {
+                        let visible = textItems.dropLast().map { $0.element.content.trimmingCharacters(in: .whitespacesAndNewlines) }
+                            .filter { !$0.isEmpty }
+                        snapshot.say = visible.joined(separator: "\n\n")
+                        snapshot.said = visible.count
+                        snapshot.pendingSay = textItems.last?.element.content.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
                     }
                 }
             }
@@ -310,18 +325,33 @@ final class ChatStore: ObservableObject {
         switch kind {
         case "thinking_para":
             guard !content.isEmpty else { return }
+            if !state.pendingSay.isEmpty {
+                state.say += (state.say.isEmpty ? "" : "\n\n") + state.pendingSay
+                state.said += 1
+                state.pendingSay = ""
+            }
             state.thinking += (state.thinking.isEmpty ? "" : "\n\n") + content
+            state.thinkingParagraphs += 1
             state.timeline.append(.init(id: "thinking-\(seq)", kind: "thinking",
                                         text: content, done: true))
         case "text_para":
             guard !content.isEmpty else { return }
-            state.say += (state.say.isEmpty ? "" : "\n\n") + content
-            state.said += 1
+            if state.shouldShowPreview, !state.pendingSay.isEmpty {
+                state.say += (state.say.isEmpty ? "" : "\n\n") + state.pendingSay
+                state.said += 1
+                state.pendingSay = ""
+            }
+            state.pendingSay += (state.pendingSay.isEmpty ? "" : "\n\n") + content
             state.tool = ""
             state.timeline.append(.init(id: "text-\(seq)", kind: "text",
                                         text: content, done: true))
         case "tool_step":
             guard !content.isEmpty else { return }
+            if !state.pendingSay.isEmpty {
+                state.say += (state.say.isEmpty ? "" : "\n\n") + state.pendingSay
+                state.said += 1
+                state.pendingSay = ""
+            }
             let display = Self.toolLine(content)
             state.tool = display
             state.timeline.append(.init(id: "tool-\(seq)", kind: "tool",

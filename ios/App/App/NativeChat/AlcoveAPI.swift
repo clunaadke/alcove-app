@@ -28,10 +28,13 @@ enum AlcoveAPI {
         var thinking: String = ""
         var nativeThinking: String = ""
         var say: String = ""
+        // 最新正文先扣住：后续还有动作时才证明它不是最终答案。
+        var pendingSay: String = ""
         var tool: String = ""
         var tools: [LiveTool] = []
         var timeline: [LiveProcessItem] = []
         var said: Int = 0
+        var thinkingParagraphs: Int = 0
         var elapsed: Int = 0
         var error: String?
         var finishing: Bool = false
@@ -39,6 +42,12 @@ enum AlcoveAPI {
 
         var isEmpty: Bool {
             say.isEmpty && thinking.isEmpty && nativeThinking.isEmpty && tools.isEmpty && error == nil
+        }
+
+        var shouldShowPreview: Bool {
+            let hasTool = !tool.isEmpty || timeline.contains { $0.kind == "tool" }
+            let hasProcess = hasTool || thinkingParagraphs > 1
+            return hasProcess && (!thinking.isEmpty || !say.isEmpty || hasTool)
         }
     }
 
