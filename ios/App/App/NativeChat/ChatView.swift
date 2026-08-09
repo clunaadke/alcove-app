@@ -744,6 +744,7 @@ struct MessageRow: View {
     @State private var showThinking = false
     @State private var showActivity = false   // 0730 过程记录展开
     @State private var showRecall = false
+    @State private var showPulse = false
     @Environment(\.bubbleGlassStyle) private var bubbleGlassStyle
 
     private var isUser: Bool { msg.role == "user" }
@@ -818,14 +819,18 @@ struct MessageRow: View {
                                 .foregroundColor(theme.timestamp)
                         }
                         if showTime, !isUser, let bpm = msg.heartRate {
-                            HStack(spacing: 3) {
-                                Image(systemName: "heart.fill")
-                                    .font(.system(size: 9, weight: .medium))
-                                    .foregroundColor(Color(red: 0.78, green: 0.43, blue: 0.50).opacity(0.82))
-                                Text("\(bpm) bpm")
-                                    .font(.system(size: 10, design: .serif))
-                                    .foregroundColor(theme.timestamp.opacity(0.72))
+                            Button { showPulse = true } label: {
+                                HStack(spacing: 3) {
+                                    Image(systemName: "heart.fill")
+                                        .font(.system(size: 9, weight: .medium))
+                                        .foregroundColor(Color(red: 0.78, green: 0.43, blue: 0.50).opacity(0.82))
+                                    Text("\(bpm) bpm")
+                                        .font(.system(size: 10, design: .serif))
+                                        .foregroundColor(theme.timestamp.opacity(0.72))
+                                }
+                                .contentShape(Rectangle())
                             }
+                            .buttonStyle(.plain)
                         }
                         // 0730：这一轮的过程记录，挂在时间戳旁边，点开看他到底干了什么
                         if msg.hasActivity && !theme.isPaper {
@@ -861,6 +866,19 @@ struct MessageRow: View {
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
                 .presentationBackground(theme.fyCardSub)
+        }
+        .fullScreenCover(isPresented: $showPulse) {
+            ZStack(alignment: .topTrailing) {
+                NativePulseView()
+                Button { showPulse = false } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(theme.text)
+                        .frame(width: 34, height: 34)
+                        .background(.ultraThinMaterial, in: Circle())
+                }
+                .padding(.top, 10).padding(.trailing, 12)
+            }
         }
     }
 

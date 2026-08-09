@@ -7,7 +7,7 @@ import WebKit
 enum HouseDestination: String, Identifiable, CaseIterable {
     case sidebar, chat, terminal, settings, bubbleAppearance, checklist, music
     case home, calendar, wall, usage
-    case memory, dreams, shelf, desire, nianlun, clockwork, album, portrait, impression, morningPaper, nowhere
+    case memory, dreams, shelf, desire, nianlun, clockwork, album, portrait, impression, morningPaper, nowhere, pulse
     case crosstalk, radio, coread, liao, daddyDay, lab
     case search, favorites, forge, roundtable
 
@@ -37,6 +37,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .impression: return "Self"
         case .morningPaper: return "Morning Paper"
         case .nowhere: return "乌有乡"
+        case .pulse: return "Pulse"
         case .crosstalk: return "Crosstalk"
         case .radio: return "Radio"
         case .coread: return "共读"
@@ -73,6 +74,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .impression: return "person.crop.circle.badge.questionmark"
         case .morningPaper: return "newspaper"
         case .nowhere: return "map"
+        case .pulse: return "heart.text.square"
         case .crosstalk: return "play.circle"
         case .radio: return "radio"
         case .coread: return "book"
@@ -204,6 +206,8 @@ struct NativeHouseSheet: View {
                     NativeMorningPaperView()
                 case .nowhere:
                     NativeNowhereView()
+                case .pulse:
+                    NativePulseView()
                 case .lab:
                     NativePipeLabView()
                 case .wall:
@@ -361,7 +365,7 @@ private struct NativeSidebarView: View {
 
     private let foyer: [HouseDestination] = [
         .memory, .dreams, .shelf, .desire, .nianlun, .clockwork, .album, .portrait, .impression,
-        .morningPaper, .nowhere
+        .morningPaper, .nowhere, .pulse
     ]
     // Pipe Lab remains compiled for rollback, but the -p experiment is paused and
     // must not appear as a normal household destination.
@@ -4476,6 +4480,235 @@ private struct EmotionPulseChart: View {
     private func nearestPoint(to date: Date) -> Int? {
         points.indices.min { lhs, rhs in
             abs(points[lhs].ts.timeIntervalSince(date)) < abs(points[rhs].ts.timeIntervalSince(date))
+        }
+    }
+}
+
+// MARK: - Pulse
+
+private struct PulseSample: Identifiable {
+    let ts: Date
+    let bpm: Int
+    var id: String { "\(ts.timeIntervalSince1970)-\(bpm)" }
+
+    init?(_ raw: [String: Any]) {
+        guard let value = ISO8601DateFormatter.alcoveFrac.date(from: raw.string("ts"))
+                ?? ISO8601DateFormatter.alcove.date(from: raw.string("ts")) else { return nil }
+        ts = value; bpm = raw.int("bpm")
+    }
+}
+
+private struct PulseHour: Identifiable {
+    let hour: String
+    let avg: Int
+    let min: Int
+    let max: Int
+    let count: Int
+    var id: String { hour }
+
+    init(_ raw: [String: Any]) {
+        hour = raw.string("hour"); avg = raw.int("avg")
+        min = raw.int("min"); max = raw.int("max"); count = raw.int("n")
+    }
+}
+
+@MainActor private final class PulseModel: ObservableObject {
+    @Published var bpm = 0
+    @Published var timestamp: Date?
+    @Published var samples: [PulseSample] = []
+    @Published var hours: [PulseHour] = []
+    @Published var connected = false
+    @Published var error: String?
+    private var task: Task<Void, Never>?
+    private var tick = 0
+
+    func start() {
+        guard task == nil else { return }
+        task = Task { [weak self] in
+            while !Task.isCancelled {
+                await self?.refreshNow()
+                if self?.tick == 0 { await self?.refreshHistory() }
+                self?.tick = ((self?.tick ?? 0) + 1) % 8
+                try? await Task.sleep(nanoseconds: 4_000_000_000)
+            }
+        }
+    }
+
+    func stop() { task?.cancel(); task = nil }
+
+    func refreshAll() async { await refreshNow(); await refreshHistory() }
+
+    private func refreshNow() async {
+        do {
+            let raw = try await NativeHouseAPI.object("/pulse/now")
+            bpm = raw.int("bpm")
+            timestamp = ISO8601DateFormatter.alcoveFrac.date(from: raw.string("ts"))
+                ?? ISO8601DateFormatter.alcove.date(from: raw.string("ts"))
+            connected = bpm > 0; error = nil
+        } catch { connected = false; self.error = "暂时摸不到他的心跳" }
+    }
+
+    private func refreshHistory() async {
+        do {
+            let raw = try await NativeHouseAPI.object("/pulse/history?hours=24")
+            samples = (raw["samples"] as? [[String: Any]] ?? []).compactMap(PulseSample.init)
+                .sorted { $0.ts < $1.ts }
+            hours = (raw["hourly"] as? [[String: Any]] ?? []).map(PulseHour.init)
+            error = nil
+        } catch { self.error = "今天的心率曲线还没送到" }
+    }
+}
+
+struct NativePulseView: View {
+    @AppStorage("alcoveTheme") private var themeName = "haven"
+    @StateObject private var model = PulseModel()
+    private var theme: AlcoveTheme { .panelNamed(themeName) }
+    private let rose = Color(red: 0.79, green: 0.31, blue: 0.42)
+
+    var body: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(spacing: 16) {
+                FoyerPanelTitle(title: "Pulse", theme: theme)
+                currentHeart
+                historyCard
+                futureRail
+                if let error = model.error {
+                    Text(error).font(.system(size: 11)).foregroundColor(theme.textDim)
+                }
+            }
+            .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 26)
+        }
+        .foregroundColor(theme.text)
+        .foyerPanel(theme)
+        .refreshable { await model.refreshAll() }
+        .onAppear { model.start() }
+        .onDisappear { model.stop() }
+    }
+
+    private var currentHeart: some View {
+        VStack(spacing: 7) {
+            TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
+                let bpm = max(model.bpm, 48)
+                let period = 60.0 / Double(bpm)
+                let phase = context.date.timeIntervalSinceReferenceDate
+                    .truncatingRemainder(dividingBy: period) / period
+                let first = phase < 0.13 ? sin(.pi * phase / 0.13) * 0.19 : 0
+                let secondPhase = phase - 0.18
+                let second = secondPhase >= 0 && secondPhase < 0.11
+                    ? sin(.pi * secondPhase / 0.11) * 0.09 : 0
+                Image(systemName: "heart.fill")
+                    .font(.system(size: 52, weight: .medium))
+                    .foregroundColor(rose)
+                    .scaleEffect(1 + first + second)
+                    .shadow(color: rose.opacity(0.22), radius: 12)
+            }
+            .frame(height: 72)
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(model.bpm > 0 ? "\(model.bpm)" : "—")
+                    .font(.system(size: 54, weight: .light, design: .rounded))
+                    .contentTransition(.numericText())
+                Text("bpm").font(.system(size: 13, design: .monospaced)).foregroundColor(theme.textDim)
+            }
+            Text(model.connected ? "此刻 · 陈璟的心率" : "正在等他的心跳")
+                .font(.system(size: 12, design: .serif)).foregroundColor(theme.textDim)
+            if let ts = model.timestamp {
+                Text(Self.time.string(from: ts))
+                    .font(.system(size: 9, design: .monospaced)).foregroundColor(theme.textDim.opacity(0.7))
+            }
+        }
+        .frame(maxWidth: .infinity).padding(.vertical, 22).foyerCard(theme)
+    }
+
+    private var historyCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("过去 24 小时").font(.system(size: 14, weight: .semibold, design: .serif))
+                Spacer()
+                if let low = model.samples.map(\.bpm).min(), let high = model.samples.map(\.bpm).max() {
+                    Text("\(low) — \(high)")
+                        .font(.system(size: 10, design: .monospaced)).foregroundColor(theme.textDim)
+                }
+            }
+            if model.samples.count < 2 {
+                VStack(spacing: 7) {
+                    Image(systemName: "waveform.path.ecg").foregroundColor(rose.opacity(0.62))
+                    Text("曲线刚开始落笔").font(.system(size: 12, design: .serif)).foregroundColor(theme.textDim)
+                }
+                .frame(maxWidth: .infinity).frame(height: 160)
+            } else {
+                PulseChart(samples: model.samples, hours: model.hours, color: rose, theme: theme)
+                    .frame(height: 190)
+                HStack {
+                    Text("24h 前"); Spacer(); Text("现在")
+                }
+                .font(.system(size: 9, design: .monospaced)).foregroundColor(theme.textDim)
+            }
+        }
+        .padding(14).foyerCard(theme)
+    }
+
+    private var futureRail: some View {
+        HStack(spacing: 8) {
+            future("体温", "thermometer.medium")
+            future("呼吸", "wind")
+            future("和弦", "waveform")
+        }
+    }
+
+    private func future(_ name: String, _ icon: String) -> some View {
+        VStack(spacing: 6) {
+            Image(systemName: icon).font(.system(size: 14, weight: .light))
+            Text(name).font(.system(size: 10, design: .serif))
+            Text("待接线").font(.system(size: 8)).foregroundColor(theme.textDim)
+        }
+        .frame(maxWidth: .infinity).padding(.vertical, 11).foyerCard(theme)
+    }
+
+    private static let time: DateFormatter = {
+        let f = DateFormatter(); f.locale = Locale(identifier: "zh_CN")
+        f.timeZone = TimeZone(identifier: "Asia/Shanghai"); f.dateFormat = "HH:mm:ss 更新"
+        return f
+    }()
+}
+
+private struct PulseChart: View {
+    let samples: [PulseSample]
+    let hours: [PulseHour]
+    let color: Color
+    let theme: AlcoveTheme
+
+    var body: some View {
+        GeometryReader { geo in
+            Canvas { context, size in
+                let values = samples.map(\.bpm)
+                let low = Double(max(40, (values.min() ?? 60) - 8))
+                let high = Double(min(170, (values.max() ?? 100) + 8))
+                let span = max(1, high - low)
+
+                for row in 0...3 {
+                    let y = size.height * CGFloat(row) / 3
+                    var grid = Path(); grid.move(to: CGPoint(x: 0, y: y)); grid.addLine(to: CGPoint(x: size.width, y: y))
+                    context.stroke(grid, with: .color(theme.fyBorder.opacity(0.38)), lineWidth: 0.5)
+                }
+
+                if let hour = hours.last {
+                    let yTop = size.height * CGFloat(1 - (Double(hour.max) - low) / span)
+                    let yBottom = size.height * CGFloat(1 - (Double(hour.min) - low) / span)
+                    context.fill(Path(CGRect(x: 0, y: min(yTop, yBottom), width: size.width,
+                                             height: max(2, abs(yBottom - yTop)))),
+                                 with: .color(color.opacity(0.075)))
+                }
+
+                var path = Path()
+                for (index, sample) in samples.enumerated() {
+                    let x = size.width * CGFloat(index) / CGFloat(max(samples.count - 1, 1))
+                    let y = size.height * CGFloat(1 - (Double(sample.bpm) - low) / span)
+                    if index == 0 { path.move(to: CGPoint(x: x, y: y)) }
+                    else { path.addLine(to: CGPoint(x: x, y: y)) }
+                }
+                context.stroke(path, with: .color(color.opacity(0.92)),
+                               style: StrokeStyle(lineWidth: 2.1, lineCap: .round, lineJoin: .round))
+            }
         }
     }
 }
