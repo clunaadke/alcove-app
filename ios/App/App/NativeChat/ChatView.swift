@@ -1322,8 +1322,7 @@ struct LiveSayBand: View {
                     .font(.system(size: 11))
                     .italic()
                     .foregroundColor(theme.textDim.opacity(0.62))
-                    .lineLimit(2)
-                    .truncationMode(.tail)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             if !state.say.isEmpty {
                 Text(state.say)
