@@ -4753,7 +4753,7 @@ private struct NativeNowhereView: View {
                                           body: ["content": content])
             replying = nil
             await load()
-        } catch { error = "回信没有寄出去，请稍后再试" }
+        } catch { self.error = "回信没有寄出去，请稍后再试" }
     }
 
     private func nowhereImageURL(_ raw: String) -> URL? {
