@@ -3,6 +3,7 @@ import PhotosUI
 import AVFoundation
 import MediaPlayer
 import WebKit
+import MapKit
 
 enum HouseDestination: String, Identifiable, CaseIterable {
     case sidebar, chat, terminal, settings, bubbleAppearance, checklist, music
@@ -4763,6 +4764,8 @@ private struct NowherePostcard: Identifiable {
     let weather: String
     let temperature: Double?
     let surface: String
+    let latitude: Double?
+    let longitude: Double?
     let frontImage: String?
     let replies: [String]
 
@@ -4777,6 +4780,8 @@ private struct NowherePostcard: Identifiable {
         if let value = stamp["temp_c"] as? NSNumber { temperature = value.doubleValue }
         else { temperature = nil }
         surface = stamp.string("surface")
+        latitude = (stamp["lat"] as? NSNumber)?.doubleValue
+        longitude = (stamp["lon"] as? NSNumber)?.doubleValue
         frontImage = (raw["front_img"] as? String).flatMap { $0.isEmpty ? nil : $0 }
         replies = raw["replies"] as? [String] ?? []
     }
@@ -4787,6 +4792,8 @@ private struct NowhereLanding: Identifiable {
     let count: Int
     let last: String
     let surface: String
+    let latitude: Double
+    let longitude: Double
     var id: String { place + "|" + last }
 
     init(_ raw: [String: Any]) {
@@ -4794,7 +4801,18 @@ private struct NowhereLanding: Identifiable {
         count = raw.int("count")
         last = raw.string("last")
         surface = raw.string("surface")
+        latitude = (raw["lat"] as? NSNumber)?.doubleValue ?? 0
+        longitude = (raw["lon"] as? NSNumber)?.doubleValue ?? 0
     }
+}
+
+private struct NowhereMapPoint: Identifiable {
+    enum Kind: Equatable { case landing, postcard }
+    let id: String
+    let coordinate: CLLocationCoordinate2D
+    let title: String
+    let subtitle: String
+    let kind: Kind
 }
 
 private struct NativeNowhereView: View {
@@ -4813,6 +4831,9 @@ private struct NativeNowhereView: View {
     @State private var replying: NowherePostcard?
     @State private var replyText = ""
     @State private var sendingReply = false
+    @State private var mapRegion = MKCoordinateRegion(
+        center: CLLocationCoordinate2D(latitude: 30.6176, longitude: 114.2777),
+        span: MKCoordinateSpan(latitudeDelta: 0.10, longitudeDelta: 0.10))
     private var theme: AlcoveTheme { .panelNamed(themeName) }
 
     var body: some View {
@@ -4938,6 +4959,7 @@ private struct NativeNowhereView: View {
     private var footsteps: some View {
         LazyVStack(spacing: 10) {
             if landings.isEmpty { emptyState("他的脚印还没有落下来", icon: "figure.walk") }
+            if !mapPoints.isEmpty { nowhereMap }
             ForEach(landings) { stop in
                 HStack(spacing: 12) {
                     ZStack {
@@ -4955,6 +4977,52 @@ private struct NativeNowhereView: View {
                 }
                 .padding(13).foyerCard(theme)
             }
+        }
+    }
+
+    private var mapPoints: [NowhereMapPoint] {
+        let stops = landings.filter { $0.latitude != 0 && $0.longitude != 0 }.map {
+            NowhereMapPoint(id: "landing-\($0.id)",
+                            coordinate: .init(latitude: $0.latitude, longitude: $0.longitude),
+                            title: $0.place, subtitle: "来过 \($0.count) 次", kind: .landing)
+        }
+        let cards = postcards.compactMap { card -> NowhereMapPoint? in
+            guard let lat = card.latitude, let lon = card.longitude else { return nil }
+            return NowhereMapPoint(id: "postcard-\(card.id)",
+                                   coordinate: .init(latitude: lat, longitude: lon),
+                                   title: card.place, subtitle: "明信片 NO. \(card.id)", kind: .postcard)
+        }
+        return stops + cards
+    }
+
+    private var nowhereMap: some View {
+        Map(coordinateRegion: $mapRegion, annotationItems: mapPoints) { point in
+            MapAnnotation(coordinate: point.coordinate) {
+                VStack(spacing: 3) {
+                    ZStack {
+                        Circle().fill(point.kind == .postcard ? Color(red: 0.18, green: 0.34, blue: 0.72)
+                                                              : theme.fyAccent)
+                            .frame(width: 30, height: 30)
+                            .shadow(color: .black.opacity(0.18), radius: 4, y: 2)
+                        Image(systemName: point.kind == .postcard ? "envelope.fill" : "figure.walk")
+                            .font(.system(size: 11, weight: .semibold)).foregroundColor(.white)
+                    }
+                    Text(point.title)
+                        .font(.system(size: 8, weight: .semibold, design: .serif))
+                        .padding(.horizontal, 5).padding(.vertical, 2)
+                        .background(.ultraThinMaterial, in: Capsule()).lineLimit(1)
+                }
+            }
+        }
+        .frame(height: 265)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(theme.fyBorder, lineWidth: 0.8))
+        .overlay(alignment: .topLeading) {
+            Text("真实足迹 · \(mapPoints.count) 个坐标")
+                .font(.system(size: 9, weight: .medium, design: .monospaced))
+                .padding(.horizontal, 8).padding(.vertical, 5)
+                .background(.ultraThinMaterial, in: Capsule())
+                .padding(9)
         }
     }
 
@@ -5010,8 +5078,21 @@ private struct NativeNowhereView: View {
                 currentPlace = pos.string("place")
                 if currentPlace?.isEmpty == true { currentPlace = nil }
             } else { currentPlace = nil }
+            fitMap()
             error = nil
         } catch { self.error = "乌有乡的路暂时没有回应" }
+    }
+
+    private func fitMap() {
+        let points = mapPoints.map(\.coordinate)
+        guard !points.isEmpty else { return }
+        let lats = points.map(\.latitude), lons = points.map(\.longitude)
+        let minLat = lats.min() ?? 30.6176, maxLat = lats.max() ?? minLat
+        let minLon = lons.min() ?? 114.2777, maxLon = lons.max() ?? minLon
+        mapRegion = MKCoordinateRegion(
+            center: .init(latitude: (minLat + maxLat) / 2, longitude: (minLon + maxLon) / 2),
+            span: .init(latitudeDelta: max(0.055, (maxLat - minLat) * 1.7),
+                        longitudeDelta: max(0.055, (maxLon - minLon) * 1.7)))
     }
 
     private func sendReply(_ card: NowherePostcard) async {
