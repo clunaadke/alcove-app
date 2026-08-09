@@ -90,6 +90,12 @@ enum AlcoveAPI {
     // 主聊天段落流。snapshot 与增量共用一条 SSE，所以字段刻意保持可选；
     // snapshot 没有 seq/event/ts，事件名取 SSE 的 event: 行。
     struct ParagraphLiveEvent: Decodable {
+        struct Item: Decodable {
+            let kind: String
+            let content: String
+            let ts: Double?
+        }
+
         let seq: Int?
         let event: String?
         let turnID: String?
@@ -100,9 +106,11 @@ enum AlcoveAPI {
         let tool: String?
         let said: Int?
         let elapsed: Int?
+        let done: Bool?
+        let items: [Item]?
 
         enum CodingKeys: String, CodingKey {
-            case seq, event, content, active, thinking, say, tool, said, elapsed
+            case seq, event, content, active, thinking, say, tool, said, elapsed, done, items
             case turnID = "turn_id"
         }
     }

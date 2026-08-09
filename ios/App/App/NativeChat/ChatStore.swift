@@ -246,27 +246,57 @@ final class ChatStore: ObservableObject {
     ) async {
         let kind = event.event ?? sseEvent
         if kind == "snapshot" {
-            guard event.active == true, let turnID = event.turnID, !turnID.isEmpty else {
+            let snapshotActive = event.active == true || event.done == false
+            guard snapshotActive, let turnID = event.turnID, !turnID.isEmpty else {
                 if live?.turnID.hasPrefix("pending-") != true { live = nil }
                 return
             }
             var snapshot = AlcoveAPI.LiveState(active: true, turnID: turnID)
-            snapshot.thinking = event.thinking ?? ""
-            snapshot.say = event.say ?? ""
-            snapshot.tool = event.tool ?? ""
-            snapshot.said = event.said ?? 0
+            snapshot.lastSeq = event.seq ?? -1
             snapshot.elapsed = event.elapsed ?? 0
-            if !snapshot.thinking.isEmpty {
-                snapshot.timeline.append(.init(id: "snapshot-thinking", kind: "thinking",
-                                               text: snapshot.thinking, done: true))
+            let items = event.items ?? []
+            if items.isEmpty {
+                snapshot.thinking = event.thinking ?? ""
+                snapshot.say = event.say ?? ""
+                snapshot.tool = event.tool ?? ""
+                snapshot.said = event.said ?? 0
+            } else {
+                for (index, item) in items.enumerated() {
+                    let content = item.content.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !content.isEmpty else { continue }
+                    switch item.kind {
+                    case "thinking":
+                        snapshot.thinking += (snapshot.thinking.isEmpty ? "" : "\n\n") + content
+                        snapshot.timeline.append(.init(id: "snapshot-thinking-\(index)",
+                                                       kind: "thinking", text: content, done: true))
+                    case "text":
+                        snapshot.say += (snapshot.say.isEmpty ? "" : "\n\n") + content
+                        snapshot.said += 1
+                        snapshot.timeline.append(.init(id: "snapshot-text-\(index)",
+                                                       kind: "text", text: content, done: true))
+                    case "tool":
+                        let isCurrent = index == items.count - 1
+                        if isCurrent { snapshot.tool = content }
+                        snapshot.timeline.append(.init(id: "snapshot-tool-\(index)",
+                                                       kind: "tool", text: content,
+                                                       done: !isCurrent))
+                    default: break
+                    }
+                }
             }
-            if !snapshot.tool.isEmpty {
-                snapshot.timeline.append(.init(id: "snapshot-tool", kind: "tool",
-                                               text: snapshot.tool, done: false))
-            }
-            if !snapshot.say.isEmpty {
-                snapshot.timeline.append(.init(id: "snapshot-text", kind: "text",
-                                               text: snapshot.say, done: true))
+            if snapshot.timeline.isEmpty {
+                if !snapshot.thinking.isEmpty {
+                    snapshot.timeline.append(.init(id: "snapshot-thinking", kind: "thinking",
+                                                   text: snapshot.thinking, done: true))
+                }
+                if !snapshot.tool.isEmpty {
+                    snapshot.timeline.append(.init(id: "snapshot-tool", kind: "tool",
+                                                   text: snapshot.tool, done: false))
+                }
+                if !snapshot.say.isEmpty {
+                    snapshot.timeline.append(.init(id: "snapshot-text", kind: "text",
+                                                   text: snapshot.say, done: true))
+                }
             }
             live = snapshot
             return
