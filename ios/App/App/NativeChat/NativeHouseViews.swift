@@ -7,7 +7,7 @@ import WebKit
 enum HouseDestination: String, Identifiable, CaseIterable {
     case sidebar, chat, terminal, settings, bubbleAppearance, checklist, music
     case home, calendar, wall, usage
-    case memory, dreams, shelf, desire, nianlun, clockwork, album, portrait, impression
+    case memory, dreams, shelf, desire, nianlun, clockwork, album, portrait, impression, morningPaper
     case crosstalk, radio, coread, liao, daddyDay
     case search, favorites, forge, roundtable
 
@@ -35,6 +35,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .album: return "相册"
         case .portrait: return "Letters"
         case .impression: return "Self"
+        case .morningPaper: return "Morning Paper"
         case .crosstalk: return "Crosstalk"
         case .radio: return "Radio"
         case .coread: return "共读"
@@ -68,6 +69,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .album: return "photo.on.rectangle"
         case .portrait: return "envelope"
         case .impression: return "person.crop.circle.badge.questionmark"
+        case .morningPaper: return "newspaper"
         case .crosstalk: return "play.circle"
         case .radio: return "radio"
         case .coread: return "book"
@@ -194,6 +196,8 @@ struct NativeHouseSheet: View {
                     NativeOBSelfView()
                 case .dreams:
                     NativeDreamsView()
+                case .morningPaper:
+                    NativeMorningPaperView()
                 case .wall:
                     NativeWallView()
                 default:
@@ -346,7 +350,8 @@ private struct NativeSidebarView: View {
     private var theme: AlcoveTheme { .panelNamed(themeName) }
 
     private let foyer: [HouseDestination] = [
-        .memory, .dreams, .shelf, .desire, .nianlun, .clockwork, .album, .portrait, .impression
+        .memory, .dreams, .shelf, .desire, .nianlun, .clockwork, .album, .portrait, .impression,
+        .morningPaper
     ]
     private let play: [HouseDestination] = [.crosstalk, .coread, .liao]
 
@@ -5520,6 +5525,236 @@ private struct OBBucket: Identifiable {
         anchor = row.bool("anchor")
         created = row.string("created")
         lastActive = row.string("last_active")
+    }
+}
+
+private struct MorningPaperSource: Identifiable {
+    let id = UUID()
+    let name: String
+    let url: String
+}
+
+private struct MorningPaperItem: Identifiable {
+    let id: String
+    let title: String
+    let summary: String
+    let source: String
+    let url: String
+    let publishedAt: String
+    let sources: [MorningPaperSource]
+}
+
+private struct MorningPaperDocument {
+    let date: String
+    let generatedAt: String
+    let status: String
+    let sections: [String: [MorningPaperItem]]
+}
+
+@MainActor private final class MorningPaperModel: ObservableObject {
+    @Published var paper: MorningPaperDocument?
+    @Published var loading = false
+    @Published var error: String?
+
+    func load() async {
+        loading = true
+        defer { loading = false }
+        do {
+            let root = try await NativeHouseAPI.object("/paper/today")
+            guard let raw = root["paper"] as? [String: Any],
+                  let sections = raw["sections"] as? [String: Any] else {
+                throw URLError(.cannotParseResponse)
+            }
+            var decoded: [String: [MorningPaperItem]] = [:]
+            for (key, value) in sections {
+                let rows = value as? [[String: Any]] ?? []
+                decoded[key] = rows.map { row in
+                    let secondary = (row["sources"] as? [[String: Any]] ?? []).map {
+                        MorningPaperSource(name: $0["source"] as? String ?? "来源",
+                                           url: $0["url"] as? String ?? "")
+                    }
+                    return MorningPaperItem(
+                        id: row["id"] as? String ?? UUID().uuidString,
+                        title: row["title"] as? String ?? "",
+                        summary: row["summary"] as? String ?? "",
+                        source: row["source"] as? String ?? "",
+                        url: row["url"] as? String ?? "",
+                        publishedAt: row["published_at"] as? String ?? "",
+                        sources: secondary
+                    )
+                }
+            }
+            paper = MorningPaperDocument(
+                date: raw["date"] as? String ?? root["date"] as? String ?? "",
+                generatedAt: raw["generated_at"] as? String ?? root["created_at"] as? String ?? "",
+                status: raw["status"] as? String ?? "published",
+                sections: decoded
+            )
+            error = nil
+        } catch {
+            self.error = "晨报还没有送到"
+        }
+    }
+}
+
+private struct NativeMorningPaperView: View {
+    @AppStorage("alcoveTheme") private var themeName = "haven"
+    @StateObject private var model = MorningPaperModel()
+    private var theme: AlcoveTheme { .panelNamed(themeName) }
+
+    private let order: [(String, String, String)] = [
+        ("today_first", "今天先知道", "01"),
+        ("wuhan_window", "武汉窗外", "02"),
+        ("ai_grew", "AI 又长了什么", "03"),
+        ("about_her", "可能和你有关", "04"),
+        ("chenjing_pick", "陈璟私心想递给你", "05")
+    ]
+
+    var body: some View {
+        ScrollView(showsIndicators: false) {
+            LazyVStack(alignment: .leading, spacing: 0) {
+                masthead
+                if model.loading && model.paper == nil {
+                    ProgressView("正在取今天的晨报")
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 70)
+                } else if let paper = model.paper {
+                    ForEach(order, id: \.0) { entry in
+                        paperSection(number: entry.2, title: entry.1,
+                                     items: paper.sections[entry.0] ?? [])
+                    }
+                    Text("END OF MORNING EDITION")
+                        .font(.system(size: 9, weight: .medium, design: .monospaced))
+                        .tracking(2)
+                        .foregroundColor(theme.textDim)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 30)
+                } else {
+                    ContentUnavailableView(model.error ?? "今日无刊",
+                                           systemImage: "newspaper",
+                                           description: Text("等陈璟把今天看到的世界带回来"))
+                        .padding(.vertical, 54)
+                }
+            }
+            .padding(.horizontal, 18)
+            .padding(.bottom, 28)
+        }
+        .refreshable { await model.load() }
+        .task { await model.load() }
+    }
+
+    private var masthead: some View {
+        VStack(spacing: 9) {
+            Text("ALCOVE · MORNING PAPER")
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .tracking(2.2)
+                .foregroundColor(theme.fyAccent)
+            Text("晨 间 纸 页")
+                .font(.system(size: 28, weight: .semibold, design: .serif))
+                .tracking(5)
+            HStack {
+                Text(displayDate(model.paper?.date ?? ""))
+                Spacer()
+                Text(model.paper?.status == "fixture" ? "样刊" : "今日刊")
+            }
+            .font(.system(size: 10, design: .monospaced))
+            .foregroundColor(theme.textDim)
+            Rectangle().fill(theme.text.opacity(0.72)).frame(height: 1.5)
+            Rectangle().fill(theme.text.opacity(0.26)).frame(height: 0.5)
+        }
+        .foregroundColor(theme.text)
+        .padding(.top, 14)
+        .padding(.bottom, 18)
+    }
+
+    private func paperSection(number: String, title: String, items: [MorningPaperItem]) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text(number)
+                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .foregroundColor(theme.fyAccent)
+                Text(title)
+                    .font(.system(size: 20, weight: .semibold, design: .serif))
+                Spacer(minLength: 0)
+            }
+            .padding(.bottom, 9)
+
+            if items.isEmpty {
+                Text("今天这一栏暂时留白")
+                    .font(.system(size: 13, design: .serif))
+                    .foregroundColor(theme.textDim)
+                    .padding(.vertical, 12)
+            } else {
+                ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                    article(item)
+                    if index != items.count - 1 {
+                        Rectangle().fill(theme.fyBorder.opacity(0.55)).frame(height: 0.5)
+                    }
+                }
+            }
+        }
+        .padding(.vertical, 18)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(theme.text.opacity(0.34)).frame(height: 0.7)
+        }
+    }
+
+    private func article(_ item: MorningPaperItem) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let url = URL(string: item.url), !item.url.isEmpty {
+                Link(destination: url) { articleTitle(item.title, linked: true) }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("在浏览器打开原文")
+            } else {
+                articleTitle(item.title, linked: false)
+            }
+            Text(item.summary)
+                .font(.system(size: 15, design: .serif))
+                .lineSpacing(5)
+                .foregroundColor(theme.text.opacity(0.88))
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 7) {
+                Text(item.source.uppercased())
+                if !item.publishedAt.isEmpty {
+                    Text("·")
+                    Text(displayTime(item.publishedAt))
+                }
+                if !item.sources.isEmpty {
+                    Text("· 已交叉核验 \(item.sources.count + 1) 个来源")
+                }
+            }
+            .font(.system(size: 9, weight: .medium, design: .monospaced))
+            .foregroundColor(theme.textDim)
+        }
+        .padding(.vertical, 13)
+    }
+
+    private func articleTitle(_ text: String, linked: Bool) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text(text)
+                .font(.system(size: 17, weight: .semibold, design: .serif))
+                .multilineTextAlignment(.leading)
+            if linked {
+                Image(systemName: "arrow.up.right")
+                    .font(.system(size: 9, weight: .semibold))
+                    .accessibilityHidden(true)
+            }
+        }
+        .foregroundColor(theme.text)
+    }
+
+    private func displayDate(_ raw: String) -> String {
+        guard let date = ISO8601DateFormatter().date(from: raw + "T00:00:00+08:00") else { return raw }
+        let f = DateFormatter(); f.locale = Locale(identifier: "zh_CN"); f.timeZone = TimeZone(identifier: "Asia/Shanghai")
+        f.dateFormat = "yyyy年M月d日 · EEEE"
+        return f.string(from: date)
+    }
+
+    private func displayTime(_ raw: String) -> String {
+        let f = ISO8601DateFormatter()
+        guard let date = f.date(from: raw) else { return raw }
+        let out = DateFormatter(); out.timeZone = TimeZone(identifier: "Asia/Shanghai"); out.dateFormat = "HH:mm"
+        return out.string(from: date)
     }
 }
 
