@@ -6378,19 +6378,55 @@ private struct FictionReaderView: View {
     @State private var selectedQuote = ""
     @State private var review = ""
     @State private var showReview = false
+    @State private var showReadingSettings = false
     @State private var error: String?
+    @AppStorage("fictionFontSize") private var fontSize = 17.0
+    @AppStorage("fictionLetterSpacing") private var letterSpacing = 0.4
+    @AppStorage("fictionReadingMode") private var readingMode = "vertical"
     private var theme: AlcoveTheme { .panelNamed(themeName) }
 
     var body: some View {
-        Group {
+        VStack(spacing: 0) {
+            HStack(spacing: 12) {
+                Text(chapter?.title ?? "正在翻页")
+                    .font(.system(size: 14, weight: .semibold, design: .serif))
+                    .lineLimit(1)
+                Spacer()
+                Button { showReadingSettings = true } label: {
+                    Label("阅读设置", systemImage: "textformat.size")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(theme.textDim)
+                        .padding(.horizontal, 10).padding(.vertical, 7)
+                        .background(.ultraThinMaterial, in: Capsule())
+                }.buttonStyle(.plain)
+            }
+            .padding(.horizontal, 18).padding(.vertical, 9)
+
+            Group {
             if let chapter {
-                ScrollView {
+                if readingMode == "horizontal" {
+                    TabView {
+                        ForEach(Array(readingPages(chapter.content).enumerated()), id: \.offset) { _, page in
+                            ScrollView {
+                                FictionSelectableText(text: page, fontSize: fontSize,
+                                                      letterSpacing: letterSpacing) { quote in
+                                    selectedQuote = quote; review = ""; showReview = true
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 22).padding(.vertical, 18)
+                            }
+                        }
+                    }
+                    .tabViewStyle(.page(indexDisplayMode: .automatic))
+                } else {
+                    ScrollView {
                     VStack(alignment: .leading, spacing: 18) {
                         Text(chapter.title).font(.system(size: 25, weight: .semibold, design: .serif))
-                        FictionSelectableText(text: chapter.content) { quote in
+                        FictionSelectableText(text: chapter.content, fontSize: fontSize,
+                                              letterSpacing: letterSpacing) { quote in
                             selectedQuote = quote; review = ""; showReview = true
                         }
-                        .frame(minHeight: 360)
+                        .frame(maxWidth: .infinity, minHeight: 360, alignment: .leading)
                         if !annotations.isEmpty {
                             Text("你的划线").font(.system(size: 14, weight: .semibold, design: .serif))
                             ForEach(annotations) { item in
@@ -6402,11 +6438,18 @@ private struct FictionReaderView: View {
                         }
                     }.padding(20)
                 }
+                }
             } else if let error {
                 ContentUnavailableView("这一章还没递过来", systemImage: "book.closed", description: Text(error))
             } else { ProgressView() }
+            }
         }
         .foregroundColor(theme.text)
+        .background {
+            Image(theme.isDark ? "DrawerDark" : "DrawerLight")
+                .resizable().scaledToFill().clipped()
+        }
+        .toolbarBackground(.hidden, for: .navigationBar)
         .task {
             do {
                 chapter = try await model.chapter(bookID: book.id, index: chapterIndex)
@@ -6436,6 +6479,56 @@ private struct FictionReaderView: View {
                 }
             }
         }
+        .sheet(isPresented: $showReadingSettings) {
+            ReadingSettingsSheet(fontSize: $fontSize, letterSpacing: $letterSpacing,
+                                 readingMode: $readingMode, theme: theme)
+                .presentationDetents([.height(310)])
+                .presentationDragIndicator(.visible)
+        }
+    }
+
+    private func readingPages(_ content: String) -> [String] {
+        let paragraphs = content.components(separatedBy: "\n\n").filter { !$0.isEmpty }
+        var pages: [String] = [], current = ""
+        for paragraph in paragraphs {
+            if current.count + paragraph.count > 900, !current.isEmpty {
+                pages.append(current); current = paragraph
+            } else {
+                current += (current.isEmpty ? "" : "\n\n") + paragraph
+            }
+        }
+        if !current.isEmpty { pages.append(current) }
+        return pages.isEmpty ? [content] : pages
+    }
+}
+
+private struct ReadingSettingsSheet: View {
+    @Binding var fontSize: Double
+    @Binding var letterSpacing: Double
+    @Binding var readingMode: String
+    let theme: AlcoveTheme
+    var body: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            Text("reading room").font(.custom("Snell Roundhand", size: 24))
+            HStack {
+                Text("字号").font(.system(size: 13, weight: .medium))
+                Slider(value: $fontSize, in: 14...24, step: 1)
+                Text("\(Int(fontSize))").font(.system(size: 11, design: .monospaced)).frame(width: 24)
+            }
+            HStack {
+                Text("字距").font(.system(size: 13, weight: .medium))
+                Slider(value: $letterSpacing, in: 0...3, step: 0.25)
+                Text(String(format: "%.1f", letterSpacing)).font(.system(size: 11, design: .monospaced)).frame(width: 28)
+            }
+            Picker("翻页方式", selection: $readingMode) {
+                Label("上下滑动", systemImage: "arrow.up.and.down").tag("vertical")
+                Label("左右翻页", systemImage: "arrow.left.and.right").tag("horizontal")
+            }.pickerStyle(.segmented)
+            Text("长按正文仍可精确选字、划线并写书评")
+                .font(.system(size: 10)).foregroundColor(theme.textDim)
+        }
+        .padding(22)
+        .foregroundColor(theme.text)
     }
 }
 
@@ -6488,6 +6581,8 @@ private struct FictionQuoteRow: Identifiable {
 
 private struct FictionSelectableText: UIViewRepresentable {
     let text: String
+    let fontSize: Double
+    let letterSpacing: Double
     let onReview: (String) -> Void
     func makeUIView(context: Context) -> FictionTextView {
         let view = FictionTextView()
@@ -6496,13 +6591,33 @@ private struct FictionSelectableText: UIViewRepresentable {
         view.backgroundColor = .clear
         view.textContainerInset = .zero
         view.textContainer.lineFragmentPadding = 0
-        view.font = .systemFont(ofSize: 16)
+        view.textContainer.widthTracksTextView = true
+        view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        view.setContentHuggingPriority(.defaultLow, for: .horizontal)
         view.textColor = .label
         view.onReview = onReview
         return view
     }
     func updateUIView(_ view: FictionTextView, context: Context) {
-        view.text = text; view.onReview = onReview
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineSpacing = max(3, fontSize * 0.55)
+        paragraph.paragraphSpacing = max(8, fontSize * 0.75)
+        view.attributedText = NSAttributedString(string: text, attributes: [
+            .font: UIFont.systemFont(ofSize: fontSize),
+            .foregroundColor: UIColor.label,
+            .kern: letterSpacing,
+            .paragraphStyle: paragraph
+        ])
+        view.onReview = onReview
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: FictionTextView,
+                      context: Context) -> CGSize? {
+        guard let width = proposal.width, width > 0 else { return nil }
+        let measured = uiView.sizeThatFits(
+            CGSize(width: width, height: .greatestFiniteMagnitude)
+        )
+        return CGSize(width: width, height: measured.height)
     }
 }
 
