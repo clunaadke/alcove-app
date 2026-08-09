@@ -65,6 +65,21 @@ struct ChatMessage: Identifiable, Equatable {
         Self.taggedBody(text, tag: "MORNING_PAPER")
     }
 
+    // 选字询问：原文跟着消息送给陈璟，App 只把协议壳藏起来。
+    var quotedSelection: String? {
+        guard text.hasPrefix("[QUOTE]"),
+              let end = text.range(of: "[/QUOTE]") else { return nil }
+        return String(text[text.index(text.startIndex, offsetBy: 7)..<end.lowerBound])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var displayText: String {
+        guard text.hasPrefix("[QUOTE]"),
+              let end = text.range(of: "[/QUOTE]") else { return text }
+        return String(text[end.upperBound...])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     private static func taggedBody(_ text: String, tag: String) -> String? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let open = "[\(tag)]", close = "[/\(tag)]"

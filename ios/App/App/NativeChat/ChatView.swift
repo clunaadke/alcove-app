@@ -8,6 +8,7 @@ struct ChatView: View {
     @StateObject private var store = ChatStore()
     @StateObject private var wallpaperStore = ChatWallpaperStore()
     @State private var draft = ""
+    @State private var selectedQuote: String?
     @State private var showStickers = false
     @State private var photoItems: [PhotosPickerItem] = []
     @State private var pendingImages: [(thumb: UIImage, jpeg: Data)] = []
@@ -332,7 +333,10 @@ struct ChatView: View {
                 },
                 onDelete: { store.deleteMessage(message) },
                 onFavorite: { store.favoriteMessage(message) },
-                onQuote: { text in draft = "「\(text.prefix(60))」\n" },
+                onQuote: { text in
+                    selectedQuote = text
+                    inputFocused = true
+                },
                 onResend: { text in store.sendText(text) },
                 onPlayMusic: { song in Task { await music.play(song) } },
                 onContentChange: { scrollKick += 1 }
@@ -440,6 +444,30 @@ struct ChatView: View {
                     .background(.ultraThinMaterial, in: Capsule())
             }
             VStack(spacing: 0) {
+                if let quote = selectedQuote {
+                    HStack(alignment: .center, spacing: 8) {
+                        Image(systemName: "arrow.turn.down.right")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(theme.textDim)
+                        Text(quote)
+                            .font(.system(size: 12))
+                            .foregroundColor(theme.textDim)
+                            .lineLimit(2)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Button { selectedQuote = nil } label: {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundColor(theme.textDim)
+                                .frame(width: 28, height: 28)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.leading, 14)
+                    .padding(.trailing, 8)
+                    .padding(.top, 9)
+                    .padding(.bottom, 5)
+                    Divider().opacity(0.35).padding(.horizontal, 12)
+                }
                 // PWA .chat-preview 同款：待发图片叠加条，可单张删除
                 if !pendingImages.isEmpty {
                     ScrollView(.horizontal, showsIndicators: false) {
@@ -586,7 +614,7 @@ struct ChatView: View {
                                 pendingImages = []
                                 store.sendImages(imgs, caption: t)
                             } else {
-                                store.sendText(t)
+                                store.sendText(outgoingText(t))
                             }
                         }
                     } label: {
@@ -626,6 +654,13 @@ struct ChatView: View {
             Color.clear.preference(key: InputBarHeightKey.self, value: geo.size.height)
         })
         .onPreferenceChange(InputBarHeightKey.self) { inputBarHeight = $0 }
+    }
+
+    private func outgoingText(_ body: String) -> String {
+        guard let quote = selectedQuote?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !quote.isEmpty else { return body }
+        selectedQuote = nil
+        return "[QUOTE]\(quote)[/QUOTE]\n\(body)"
     }
 
     private struct ClaudeModelOption: Identifiable {
@@ -725,6 +760,72 @@ struct ChatView: View {
 
 // MARK: - 单条消息
 
+private final class AskSelectableTextView: UITextView {
+    var onAsk: ((String) -> Void)?
+
+    override func buildMenu(with builder: UIMenuBuilder) {
+        super.buildMenu(with: builder)
+        guard selectedRange.length > 0 else { return }
+        let ask = UIAction(title: "询问", image: UIImage(systemName: "quote.bubble")) { [weak self] _ in
+            guard let self,
+                  self.selectedRange.location != NSNotFound,
+                  self.selectedRange.length > 0 else { return }
+            let selected = (self.text as NSString).substring(with: self.selectedRange)
+            self.onAsk?(selected)
+        }
+        builder.insertChild(UIMenu(options: .displayInline, children: [ask]),
+                            atStartOfMenu: .standardEdit)
+    }
+}
+
+private struct SelectableMessageText: UIViewRepresentable {
+    let text: String
+    let fontSize: CGFloat
+    let lineSpacing: CGFloat
+    let color: UIColor
+    let onAsk: (String) -> Void
+
+    func makeUIView(context: Context) -> AskSelectableTextView {
+        let view = AskSelectableTextView()
+        view.isEditable = false
+        view.isSelectable = true
+        view.isScrollEnabled = false
+        view.backgroundColor = .clear
+        view.textContainerInset = .zero
+        view.textContainer.lineFragmentPadding = 0
+        view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        return view
+    }
+
+    func updateUIView(_ view: AskSelectableTextView, context: Context) {
+        view.onAsk = onAsk
+        let source = (try? AttributedString(markdown: text,
+            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(text)
+        let rendered = NSMutableAttributedString(attributedString: NSAttributedString(source))
+        let all = NSRange(location: 0, length: rendered.length)
+        rendered.addAttribute(.foregroundColor, value: color, range: all)
+        rendered.enumerateAttribute(.font, in: all) { value, range, _ in
+            let old = value as? UIFont
+            var traits = old?.fontDescriptor.symbolicTraits ?? []
+            let descriptor = UIFont.systemFont(ofSize: fontSize).fontDescriptor.withSymbolicTraits(traits)
+            rendered.addAttribute(.font, value: UIFont(descriptor: descriptor ?? UIFont.systemFont(ofSize: fontSize).fontDescriptor,
+                                                       size: fontSize), range: range)
+        }
+        if rendered.length > 0 && rendered.attribute(.font, at: 0, effectiveRange: nil) == nil {
+            rendered.addAttribute(.font, value: UIFont.systemFont(ofSize: fontSize), range: all)
+        }
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineSpacing = lineSpacing
+        rendered.addAttribute(.paragraphStyle, value: paragraph, range: all)
+        if view.attributedText != rendered { view.attributedText = rendered }
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: AskSelectableTextView, context: Context) -> CGSize? {
+        guard let width = proposal.width else { return nil }
+        return uiView.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
+    }
+}
+
 struct MessageRow: View {
     let msg: ChatMessage
     let sticker: Sticker?
@@ -797,7 +898,7 @@ struct MessageRow: View {
                     }
                     if let song = msg.musicCard {
                         MusicMessageCard(song: song, theme: theme) { onPlayMusic?(song) }
-                    } else if !msg.text.isEmpty && !(msg.isSticker) {
+                    } else if !msg.displayText.isEmpty && !(msg.isSticker) {
                         bubble
                     }
                 }
@@ -908,15 +1009,11 @@ struct MessageRow: View {
     }
 
     private var bubble: some View {
-        let text = markdownText(msg.text)
-            .font(.system(size: CGFloat(fontSize)))
-            .lineSpacing(theme.isPaper ? 7 : 5)
-            .foregroundColor(msg.asleepAtSend ? theme.textDim : theme.text)
         return Group {
             if theme.isPaper && !isUser {
-                text.padding(.horizontal, 0).padding(.vertical, 2)
+                bubbleContents.padding(.horizontal, 0).padding(.vertical, 2)
             } else {
-                text
+                bubbleContents
                     .padding(.horizontal, 14)
                     .padding(.vertical, theme.isPaper && isUser ? 11 : 10)
                     .background {
@@ -936,33 +1033,27 @@ struct MessageRow: View {
             .contentShape(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
             )
-            .contextMenu {
-                Button {
-                    UIPasteboard.general.string = msg.text
-                } label: { Label("拷贝", systemImage: "doc.on.doc") }
-                if let onQuote {
-                    Button {
-                        onQuote(msg.text)
-                    } label: { Label("引用", systemImage: "quote.bubble") }
+    }
+
+    private var bubbleContents: some View {
+        VStack(alignment: isUser ? .trailing : .leading, spacing: 6) {
+            if let quote = msg.quotedSelection, !quote.isEmpty {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Image(systemName: "arrow.turn.down.right")
+                        .font(.system(size: 10, weight: .semibold))
+                    Text(quote).lineLimit(2)
                 }
-                if let onFavorite {
-                    Button {
-                        onFavorite()
-                    } label: { Label("收藏", systemImage: "bookmark") }
-                }
-                if isUser, let onResend {
-                    Button {
-                        onResend(msg.text)
-                    } label: { Label("重发", systemImage: "arrow.clockwise") }
-                }
-                if let onDelete {
-                    Divider()
-                    Button(role: .destructive) {
-                        onDelete()
-                    } label: { Label("删除", systemImage: "trash") }
-                }
+                .font(.system(size: 12))
+                .foregroundColor(theme.textDim.opacity(0.78))
             }
-            .textSelection(.enabled)
+            SelectableMessageText(
+                text: msg.displayText,
+                fontSize: CGFloat(fontSize),
+                lineSpacing: theme.isPaper ? 7 : 5,
+                color: UIColor(msg.asleepAtSend ? theme.textDim : theme.text),
+                onAsk: { onQuote?($0) }
+            )
+        }
     }
 
     // 思绪标签：从内容嗅出这一段在干什么，动词跟着变（她的主意）
