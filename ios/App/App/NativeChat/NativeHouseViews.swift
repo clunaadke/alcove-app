@@ -235,14 +235,6 @@ struct NativeHouseSheet: View {
                 }
             }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background {
-            Image(theme.isDark ? "DrawerDark" : "DrawerLight")
-                .resizable()
-                .scaledToFill()
-                .frame(width: root.size.width, height: root.size.height)
-                .clipped()
-                .ignoresSafeArea()
-        }
         .coordinateSpace(name: "alcoveChatRoot")
         .environment(\.chatWallpaperDescriptor, panelWallpaperDescriptor)
         .environment(\.chatWallpaperViewportSize, root.size)
@@ -252,10 +244,14 @@ struct NativeHouseSheet: View {
         .ignoresSafeArea(.container, edges: .all)
         .preferredColorScheme(theme.isDark ? .dark : .light)
         .presentationBackground {
-            Image(theme.isDark ? "DrawerDark" : "DrawerLight")
-                .resizable()
-                .scaledToFill()
-                .ignoresSafeArea()
+            GeometryReader { backgroundGeo in
+                Image(theme.isDark ? "DrawerDark" : "DrawerLight")
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: backgroundGeo.size.width, height: backgroundGeo.size.height)
+                    .clipped()
+                    .ignoresSafeArea()
+            }
         }
         .onAppear { prepareTextureIfNeeded() }
         .onChange(of: themeName) { _ in prepareTextureIfNeeded() }
@@ -3129,9 +3125,13 @@ private extension View {
                 .shadow(color: theme.fyShadow.opacity(0.65), radius: 1.5, x: 1, y: 2)
         } else {
             self
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .background {
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(.ultraThinMaterial)
+                        .opacity(theme.isDark ? 0.30 : 0.42)
+                }
                 .background(
-                    theme.fyCard.opacity(theme.isDark ? 0.055 : 0.075),
+                    theme.fyCard.opacity(theme.isDark ? 0.018 : 0.035),
                     in: RoundedRectangle(cornerRadius: 16, style: .continuous)
                 )
                 .overlay(
