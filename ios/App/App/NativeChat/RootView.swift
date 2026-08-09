@@ -59,9 +59,9 @@ struct RootView: View {
             if showHouseDrawer {
                 ZStack {
                     Rectangle()
-                        .fill(.ultraThinMaterial)
-                        .opacity(theme.isDark ? 0.44 : 0.34)
-                    Color.black.opacity(theme.isDark ? 0.20 : 0.08)
+                        .fill(.regularMaterial)
+                        .opacity(theme.isDark ? 0.88 : 0.78)
+                    Color.black.opacity(theme.isDark ? 0.24 : 0.10)
                 }
                     .ignoresSafeArea()
                     .contentShape(Rectangle())
