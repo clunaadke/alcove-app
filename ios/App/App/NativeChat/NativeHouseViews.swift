@@ -6496,9 +6496,30 @@ struct NativeMorningPaperView: View {
                 ProgressView("正在取今天的晨报")
                     .frame(maxWidth: .infinity).padding(.vertical, 54)
             } else if let document = model.paper {
-                ForEach(order, id: \.0) { entry in
-                    paperSection(number: entry.2, title: entry.1,
-                                 items: document.sections[entry.0] ?? [])
+                if embedded {
+                    HStack(alignment: .top, spacing: 8) {
+                        VStack(spacing: 0) {
+                            ForEach(Array(order.prefix(3)), id: \.0) { entry in
+                                paperSection(number: entry.2, title: entry.1,
+                                             items: document.sections[entry.0] ?? [])
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                        Rectangle().fill(ink.opacity(0.22)).frame(width: 0.8)
+                            .shadow(color: .black.opacity(0.10), radius: 2, x: 1)
+                        VStack(spacing: 0) {
+                            ForEach(Array(order.suffix(2)), id: \.0) { entry in
+                                paperSection(number: entry.2, title: entry.1,
+                                             items: document.sections[entry.0] ?? [])
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                    }
+                } else {
+                    ForEach(order, id: \.0) { entry in
+                        paperSection(number: entry.2, title: entry.1,
+                                     items: document.sections[entry.0] ?? [])
+                    }
                 }
                 Text("end of morning edition · 收好，明天见")
                     .font(.system(size: 8, weight: .medium, design: .monospaced))
@@ -6516,14 +6537,14 @@ struct NativeMorningPaperView: View {
     private var masthead: some View {
         VStack(spacing: 9) {
             Text("MORNING PAPER")
-                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .font(.system(size: embedded ? 8 : 10, weight: .semibold, design: .monospaced))
                 .tracking(2.2)
                 .foregroundColor(cobalt)
             Text("雨 霁 报")
-                .font(.system(size: 29, weight: .semibold, design: .serif))
+                .font(.system(size: embedded ? 22 : 29, weight: .semibold, design: .serif))
                 .tracking(5)
             Text("今早替你看过世界了")
-                .font(.custom("HanziPenSC-W3", size: 13))
+                .font(.custom("HanziPenSC-W3", size: embedded ? 11 : 13))
                 .foregroundColor(cobalt.opacity(0.82))
                 .rotationEffect(.degrees(-2.2))
                 .offset(x: 52)
@@ -6538,15 +6559,15 @@ struct NativeMorningPaperView: View {
             Rectangle().fill(ink.opacity(0.26)).frame(height: 0.5)
         }
         .foregroundColor(ink)
-        .padding(.top, 14)
-        .padding(.bottom, 18)
+        .padding(.top, embedded ? 10 : 14)
+        .padding(.bottom, embedded ? 11 : 18)
     }
 
     private func paperSection(number: String, title: String, items: [MorningPaperItem]) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 Text(number)
-                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .font(.system(size: embedded ? 7 : 10, weight: .bold, design: .monospaced))
                     .foregroundColor(.white)
                     .padding(.horizontal, 7).padding(.vertical, 3)
                     .background(cobalt, in: UnevenRoundedRectangle(
@@ -6555,8 +6576,8 @@ struct NativeMorningPaperView: View {
                     .rotationEffect(.degrees(number == "05" ? 2 : -1))
                 Text(title)
                     .font(number == "05"
-                          ? .custom("HanziPenSC-W3", size: 20)
-                          : .system(size: 20, weight: .semibold, design: .serif))
+                          ? .custom("HanziPenSC-W3", size: embedded ? 13 : 20)
+                          : .system(size: embedded ? 13 : 20, weight: .semibold, design: .serif))
                 Spacer(minLength: 0)
             }
             .padding(.bottom, 9)
@@ -6566,6 +6587,8 @@ struct NativeMorningPaperView: View {
                     .font(.system(size: 13, design: .serif))
                     .foregroundColor(fadedInk)
                     .padding(.vertical, 12)
+            } else if embedded {
+                ForEach(items) { item in article(item) }
             } else {
                 LazyVGrid(columns: [GridItem(.flexible(), spacing: 12, alignment: .top),
                                     GridItem(.flexible(), spacing: 12, alignment: .top)],
@@ -6580,7 +6603,7 @@ struct NativeMorningPaperView: View {
                 }
             }
         }
-        .padding(.vertical, 18)
+        .padding(.vertical, embedded ? 9 : 18)
         .overlay(alignment: .bottom) {
             Rectangle().fill(ink.opacity(0.34)).frame(height: 0.7)
         }
@@ -6596,8 +6619,8 @@ struct NativeMorningPaperView: View {
                 articleTitle(item.title, linked: false)
             }
             Text(item.summary)
-                .font(.system(size: embedded ? 12 : 13, design: .serif))
-                .lineSpacing(embedded ? 3 : 4)
+                .font(.system(size: embedded ? 10.5 : 13, design: .serif))
+                .lineSpacing(embedded ? 2 : 4)
                 .foregroundColor(ink.opacity(0.88))
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 7) {
@@ -6610,16 +6633,16 @@ struct NativeMorningPaperView: View {
                     Text("· 已交叉核验 \(item.sources.count + 1) 个来源")
                 }
             }
-            .font(.system(size: embedded ? 7.5 : 8.5, weight: .medium, design: .monospaced))
+            .font(.system(size: embedded ? 6.5 : 8.5, weight: .medium, design: .monospaced))
             .foregroundColor(fadedInk)
         }
-        .padding(.vertical, 13)
+        .padding(.vertical, embedded ? 7 : 13)
     }
 
     private func articleTitle(_ text: String, linked: Bool) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             Text(text)
-                .font(.system(size: embedded ? 14 : 15, weight: .semibold, design: .serif))
+                .font(.system(size: embedded ? 12 : 15, weight: .semibold, design: .serif))
                 .multilineTextAlignment(.leading)
             if linked {
                 Image(systemName: "arrow.up.right")

@@ -1123,7 +1123,9 @@ struct MessageRow: View {
                         }
                     }
                     paperTrack(icon: "checkmark.circle", title: "Done", detail: "")
-                }.padding(.horizontal, 22).padding(.bottom, 30)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 22).padding(.bottom, 30)
             }
             .background(theme.fyCardSub.ignoresSafeArea())
             .foregroundColor(theme.text)
@@ -1144,6 +1146,7 @@ struct MessageRow: View {
                 if !detail.isEmpty { Text(detail).font(.system(size: 13)).lineSpacing(5).foregroundColor(theme.textDim).fixedSize(horizontal: false, vertical: true) }
             }.padding(.bottom, 14)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var recallBadge: some View {
