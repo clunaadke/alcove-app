@@ -88,6 +88,7 @@ struct GifView: UIViewRepresentable {
 // 小螃蟹本蟹：跟着我的状态换动作，能拖，拖起来会生气挣扎
 struct ClawdPet: View {
     @ObservedObject var store: ChatStore
+    var onTap: (() -> Void)? = nil
     @State private var mood = "idle"
     @State private var lastActivity = Date()
     @State private var dragOffset: CGSize = .zero
@@ -129,6 +130,7 @@ struct ClawdPet: View {
                         mood = "idle"
                     }
             )
+            .simultaneousGesture(TapGesture().onEnded { onTap?() })
             .animation(.spring(response: 0.3, dampingFraction: 0.6), value: dragOffset == .zero)
             .onChange(of: store.isTyping) { typing in
                 guard mood != "drag" else { return } // 被拎着的时候只管挣扎

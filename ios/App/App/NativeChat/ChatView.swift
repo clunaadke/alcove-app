@@ -25,6 +25,7 @@ struct ChatView: View {
     @State private var showModelPicker = false
     @State private var switchingModel = false
     @State private var modelSwitchError = ""
+    @State private var showMiniTerminal = false
     @ObservedObject private var music = MusicModel.shared
     @FocusState private var inputFocused: Bool
     @Environment(\.scenePhase) private var scenePhase
@@ -168,14 +169,7 @@ struct ChatView: View {
                         ForEach(Array(store.messages.enumerated()), id: \.element.id) { idx, msg in
                             chatMessageRow(at: idx, message: msg)
                         }
-                        // 0730 实时预览：他说完一段就先冒出来，不等整轮工具跑完
-                        if let lv = store.live, lv.shouldShowPreview {
-                            LiveSayBand(state: lv, theme: theme)
-                                .id("liveband")
-                                .transition(.opacity)
-                        }
-                        // 7.30 原版是两层同时存在：live-say 在上，正在…气泡在下。
-                        // 不能因为预览框 active 就把 typing status 吞掉。
+                        // 实时预览框已退休；陈璟正在…是独立状态，一根毛不动。
                         if store.isTyping {
                             TypingIndicator(tool: store.currentTool,
                                             line: store.typingLine,
@@ -223,10 +217,27 @@ struct ChatView: View {
                     .transition(.opacity)
                 }
 
-                ClawdPet(store: store)
+                if showMiniTerminal {
+                    TerminalView(onDismiss: {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.84)) {
+                            showMiniTerminal = false
+                        }
+                    }, mini: true)
+                    .frame(height: min(310, UIScreen.main.bounds.height * 0.29))
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, inputBarHeight + 14)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                    .transition(.scale(scale: 0.92, anchor: .bottomTrailing).combined(with: .opacity))
+                } else {
+                    ClawdPet(store: store) {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.84)) {
+                            showMiniTerminal = true
+                        }
+                    }
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                     .padding(.trailing, 12)
                     .padding(.bottom, inputBarHeight + 8)
+                }
             }
             .onAppear {
                 atBottom = true
@@ -256,12 +267,6 @@ struct ChatView: View {
             .onChange(of: inputBarHeight) { _ in
                 if atBottom || inputFocused {
                     scrollToTail(proxy, delays: [0.05, 0.3], animated: true)
-                }
-            }
-            // 0731 实时预览带自己在长，外层也得跟着滚，不然她卡在框刚冒出来那一屏
-            .onChange(of: store.live) { _ in
-                if atBottom || inputFocused {
-                    scrollToTail(proxy, delays: [0, 0.15], animated: true)
                 }
             }
             .onChange(of: scrollKick) { _ in

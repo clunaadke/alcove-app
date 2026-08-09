@@ -11,6 +11,7 @@ private enum CCWorkState: Equatable {
 struct TerminalView: View {
     @Environment(\.dismiss) private var dismiss
     var onDismiss: (() -> Void)? = nil
+    var mini = false
     @State private var session = "main"
     @State private var output = ""
     @State private var cmd = ""
@@ -39,10 +40,20 @@ struct TerminalView: View {
                     proxy.scrollTo("out", anchor: .bottom)
                 }
             }
-            toolbar
-            inputBar
+            if !mini {
+                toolbar
+                inputBar
+            }
         }
         .background(Color(red: 0.1, green: 0.1, blue: 0.12))
+        .clipShape(RoundedRectangle(cornerRadius: mini ? 24 : 0, style: .continuous))
+        .overlay {
+            if mini {
+                RoundedRectangle(cornerRadius: 24, style: .continuous)
+                    .stroke(Color.white.opacity(0.13), lineWidth: 1)
+            }
+        }
+        .shadow(color: mini ? .black.opacity(0.2) : .clear, radius: 16, y: 6)
         .preferredColorScheme(.dark)
         .onAppear { startPoll() }
         .onDisappear { pollTask?.cancel() }
@@ -50,13 +61,15 @@ struct TerminalView: View {
 
     private var tabBar: some View {
         HStack(spacing: 8) {
-            Button {
-                if let onDismiss { onDismiss() } else { dismiss() }
-            } label: {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 15, weight: .medium))
-                    .foregroundColor(.gray)
-                    .frame(width: 30, height: 30)
+            if !mini {
+                Button {
+                    if let onDismiss { onDismiss() } else { dismiss() }
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundColor(.gray)
+                        .frame(width: 30, height: 30)
+                }
             }
             HStack(spacing: 5) {
                 Circle().fill(lampColor(.disconnected))
@@ -87,9 +100,20 @@ struct TerminalView: View {
                 }
             }
             Spacer()
+            if mini {
+                Button { onDismiss?() } label: {
+                    Image(systemName: "arrow.down.right.and.arrow.up.left")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(.gray)
+                        .frame(width: 28, height: 28)
+                        .background(Color.white.opacity(0.07), in: Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("收起终端")
+            }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
+        .padding(.horizontal, mini ? 12 : 10)
+        .padding(.vertical, mini ? 8 : 6)
     }
 
     // 三盏灯互斥：红=断线，黄=CC 正在思考/干活，绿=在线休息。
