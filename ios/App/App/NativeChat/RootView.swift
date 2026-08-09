@@ -57,8 +57,28 @@ struct RootView: View {
                 .zIndex(21)
             }
             if showHouseDrawer {
-                Color.black.opacity(theme.isDark ? 0.34 : 0.12)
+                ZStack {
+                    Rectangle()
+                        .fill(.ultraThinMaterial)
+                        .mask(
+                            LinearGradient(
+                                colors: [.white.opacity(0.28), .white.opacity(0.72), .white],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
+                        )
+                    LinearGradient(
+                        colors: [
+                            .black.opacity(theme.isDark ? 0.10 : 0.025),
+                            .black.opacity(theme.isDark ? 0.25 : 0.09),
+                            .black.opacity(theme.isDark ? 0.42 : 0.16)
+                        ],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                }
                     .ignoresSafeArea()
+                    .contentShape(Rectangle())
                     .onTapGesture { withAnimation(.easeOut(duration: 0.22)) { showHouseDrawer = false } }
                     .transition(.opacity)
                     .zIndex(18)
