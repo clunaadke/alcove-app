@@ -4484,6 +4484,7 @@ private struct ForgeRoundChoice: Identifiable {
     let head: String
     let events: Int
     let tools: Int
+    let kind: String
     var id: Int { idx }
 
     init(_ raw: [String: Any]) {
@@ -4492,6 +4493,7 @@ private struct ForgeRoundChoice: Identifiable {
         head = raw.string("head")
         events = raw.int("events")
         tools = raw.int("tools")
+        kind = raw.string("kind")
     }
 }
 
@@ -4507,6 +4509,7 @@ private struct NativeForgeView: View {
     @State private var rounds: [ForgeRoundChoice] = []
     @State private var selectedRounds: Set<Int> = []
     @State private var pickPreview: [String: Any] = [:]
+    @State private var showSystemRounds = false
     @State private var loadingRounds = false
     @State private var confirmPickedForge = false
     @State private var loading = true
@@ -4521,6 +4524,10 @@ private struct NativeForgeView: View {
     private var retainedRounds: Int { (activePreview["retained_rounds"] as? Int) ?? 0 }
     private var estimatedTokens: Int { (activePreview["estimated_tokens"] as? Int) ?? 0 }
     private var valid: Bool { (activePreview["valid"] as? Bool) ?? false }
+    private var visibleRounds: [ForgeRoundChoice] {
+        showSystemRounds ? rounds : rounds.filter { $0.kind == "user" }
+    }
+    private var systemRoundCount: Int { rounds.filter { $0.kind == "system" }.count }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -4692,7 +4699,7 @@ private struct NativeForgeView: View {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("按完整轮次挑选").font(.system(size: 13, weight: .semibold))
-                    Text("已选 \(selectedRounds.count) 轮 · 最近 \(rounds.count) 轮可选")
+                    Text("已选 \(selectedRounds.count) 轮 · 显示 \(visibleRounds.count) 轮")
                         .font(.system(size: 10)).foregroundColor(theme.textDim)
                 }
                 Spacer()
@@ -4702,11 +4709,22 @@ private struct NativeForgeView: View {
                 }
             }
 
+            Toggle(isOn: $showSystemRounds) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("显示系统轮")
+                        .font(.system(size: 12, weight: .medium))
+                    Text("keepalive、追问与圆桌注入等 \(systemRoundCount) 轮")
+                        .font(.system(size: 9))
+                        .foregroundColor(theme.textDim)
+                }
+            }
+            .tint(theme.fyAccent)
+
             if loadingRounds {
                 ProgressView().frame(maxWidth: .infinity).padding(.vertical, 28)
             } else {
                 LazyVStack(spacing: 7) {
-                    ForEach(rounds) { round in
+                    ForEach(visibleRounds) { round in
                         Button { toggleRound(round.idx) } label: {
                             HStack(alignment: .top, spacing: 10) {
                                 Image(systemName: selectedRounds.contains(round.idx)
