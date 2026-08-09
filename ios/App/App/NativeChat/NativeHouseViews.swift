@@ -236,12 +236,12 @@ struct NativeHouseSheet: View {
             }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background {
-            HouseBackground(
-                theme: theme,
-                preparedTexture: preparedTextureName == theme.panelTextureAsset
-                    ? preparedTexture
-                    : nil
-            )
+            Image(theme.isDark ? "DrawerDark" : "DrawerLight")
+                .resizable()
+                .scaledToFill()
+                .frame(width: root.size.width, height: root.size.height)
+                .clipped()
+                .ignoresSafeArea()
         }
         .coordinateSpace(name: "alcoveChatRoot")
         .environment(\.chatWallpaperDescriptor, panelWallpaperDescriptor)
@@ -5824,6 +5824,7 @@ private struct MonthCalendarGrid: View {
     let theme: AlcoveTheme
     let dotDates: Set<String>
     let periodDates: [String: String]
+    var counts: [String: Int] = [:]
     let selectedDate: String?
     let onSelect: (String) -> Void
     let onPrev: () -> Void
@@ -5886,27 +5887,31 @@ private struct MonthCalendarGrid: View {
                         let isSelected = dateStr == selectedDate
                         let hasDot = dotDates.contains(dateStr)
                         let isPeriod = periodDates[dateStr] != nil
+                        let count = counts[dateStr] ?? 0
 
                         Button { onSelect(dateStr) } label: {
-                            VStack(spacing: 2) {
+                            VStack(spacing: 1) {
                                 Text("\(day)")
-                                    .font(.system(size: 14, weight: isToday ? .bold : .regular))
-                                    .foregroundColor(isToday ? .white : theme.text)
-                                    .frame(width: 32, height: 32)
-                                    .background(
-                                        Group {
-                                            if isToday {
-                                                Circle().fill(theme.fyAccent)
-                                            } else if isSelected {
-                                                Circle().stroke(theme.fyAccent, lineWidth: 1.5)
-                                            } else if isPeriod {
-                                                Circle().fill(theme.fyAccent.opacity(0.12))
-                                            }
-                                        }
-                                    )
-                                Circle()
-                                    .fill(hasDot ? theme.fyAccent : .clear)
-                                    .frame(width: 5, height: 5)
+                                    .font(.system(size: 13, weight: isToday ? .bold : .medium, design: .serif))
+                                Text(count > 0 ? "\(count)篇" : " ")
+                                    .font(.system(size: 7.5, weight: .medium, design: .monospaced))
+                                    .foregroundColor(theme.textDim)
+                            }
+                            .foregroundColor(isToday ? .white : theme.text)
+                            .frame(maxWidth: .infinity, minHeight: 39)
+                            .background(
+                                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                    .fill(isToday
+                                          ? theme.fyAccent
+                                          : theme.fyAccent.opacity(count > 0 ? min(0.08 + Double(count) * 0.035, 0.24) : (isPeriod ? 0.08 : 0.015)))
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                    .stroke(isSelected ? theme.fyAccent : .clear, lineWidth: 1.5)
+                            )
+                            .overlay(alignment: .topTrailing) {
+                                Circle().fill(hasDot ? theme.fyAccent : .clear)
+                                    .frame(width: 4, height: 4).padding(4)
                             }
                         }
                     } else {
@@ -6051,6 +6056,7 @@ private struct NativeCalendarView: View {
     @State private var loading = true
     @State private var expandedIdx: Int?
     @State private var diaryContents: [String: String] = [:]
+    @State private var displayMode = 0
     @AppStorage("alcoveTheme") private var themeName = "haven"
     private var theme: AlcoveTheme { .panelNamed(themeName) }
 
@@ -6061,6 +6067,12 @@ private struct NativeCalendarView: View {
     private var selectedEvents: [[String: Any]] {
         guard let sel = selectedDate else { return [] }
         return events[sel] ?? []
+    }
+
+    private var monthEntries: [(date: String, event: [String: Any])] {
+        events.keys.sorted(by: >).flatMap { date in
+            (events[date] ?? []).map { (date: date, event: $0) }
+        }
     }
 
     private var selectedDateLabel: String {
@@ -6085,31 +6097,51 @@ private struct NativeCalendarView: View {
             } else {
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 12) {
-                        MonthCalendarGrid(
-                            year: year, month: month, theme: theme,
-                            dotDates: dotDates, periodDates: periodDates,
-                            selectedDate: selectedDate,
-                            onSelect: { selectedDate = $0 },
-                            onPrev: { shiftMonth(-1) },
-                            onNext: { shiftMonth(1) })
-
-                        if periodDates.values.contains(where: { _ in true }) {
-                            HStack(spacing: 16) {
-                                HStack(spacing: 4) {
-                                    Circle().fill(theme.fyAccent.opacity(0.12)).frame(width: 10, height: 10)
-                                    Text("姨妈期").font(.system(size: 10)).foregroundColor(theme.textDim)
-                                }
-                                Spacer()
-                            }.padding(.horizontal, 4)
+                        HStack(alignment: .firstTextBaseline) {
+                            Text("diary & moments")
+                                .font(.custom("Snell Roundhand", size: 20))
+                                .italic()
+                            Spacer()
+                            Text("\(monthEntries.count) entries")
+                                .font(.system(size: 9, weight: .medium, design: .monospaced))
+                                .foregroundColor(theme.textDim)
                         }
+                        .padding(.horizontal, 4)
 
-                        if !selectedEvents.isEmpty {
-                            Text(selectedDateLabel)
-                                .font(.system(size: 14, weight: .bold))
-                                .frame(maxWidth: .infinity, alignment: .leading)
+                        Picker("日记视图", selection: $displayMode) {
+                            Text("日历").tag(0)
+                            Text("本月条目").tag(1)
+                        }
+                        .pickerStyle(.segmented)
+
+                        if displayMode == 0 {
+                            MonthCalendarGrid(
+                                year: year, month: month, theme: theme,
+                                dotDates: dotDates, periodDates: periodDates,
+                                counts: events.mapValues { $0.count },
+                                selectedDate: selectedDate,
+                                onSelect: { selectedDate = $0 },
+                                onPrev: { shiftMonth(-1) },
+                                onNext: { shiftMonth(1) })
+
+                            if periodDates.values.contains(where: { _ in true }) {
+                                HStack(spacing: 16) {
+                                    HStack(spacing: 4) {
+                                        Circle().fill(theme.fyAccent.opacity(0.12)).frame(width: 10, height: 10)
+                                        Text("姨妈期").font(.system(size: 10)).foregroundColor(theme.textDim)
+                                    }
+                                    Spacer()
+                                }
                                 .padding(.horizontal, 4)
+                            }
 
-                            ForEach(Array(selectedEvents.enumerated()), id: \.offset) { idx, evt in
+                            if !selectedEvents.isEmpty {
+                                Text(selectedDateLabel)
+                                    .font(.system(size: 14, weight: .semibold, design: .serif))
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.horizontal, 4)
+
+                                ForEach(Array(selectedEvents.enumerated()), id: \.offset) { idx, evt in
                                 let key = "\(selectedDate ?? "")_\(evt.string("time"))"
                                 let isExpanded = expandedIdx == idx
                                 Button {
@@ -6124,7 +6156,9 @@ private struct NativeCalendarView: View {
                                 } label: {
                                     VStack(alignment: .leading, spacing: 0) {
                                         HStack {
-                                            Text("📝").font(.system(size: 20))
+                                            Image(systemName: "pencil.and.scribble")
+                                                .font(.system(size: 15, weight: .light))
+                                                .foregroundColor(theme.textDim)
                                             Text(evt.string("title"))
                                                 .font(.system(size: 13, weight: .medium))
                                             Spacer()
@@ -6153,11 +6187,42 @@ private struct NativeCalendarView: View {
                                     .padding(12).foyerCard(theme)
                                 }
                                 .buttonStyle(.plain)
+                                }
+                            } else if selectedDate != nil {
+                                Text("这天没有记录")
+                                    .font(.system(size: 12)).foregroundColor(theme.textDim)
+                                    .padding(20)
                             }
-                        } else if selectedDate != nil {
-                            Text("这天没有记录")
-                                .font(.system(size: 12)).foregroundColor(theme.textDim)
-                                .padding(20)
+                        } else {
+                            VStack(spacing: 8) {
+                                ForEach(Array(monthEntries.enumerated()), id: \.offset) { _, item in
+                                    Button {
+                                        selectedDate = item.date
+                                        displayMode = 0
+                                    } label: {
+                                        HStack(spacing: 12) {
+                                            VStack(alignment: .leading, spacing: 3) {
+                                                Text(item.date)
+                                                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                                                Text(item.event.string("title"))
+                                                    .font(.system(size: 12, design: .serif))
+                                                    .lineLimit(1)
+                                            }
+                                            Spacer()
+                                            Text(item.event.string("time"))
+                                                .font(.system(size: 10, design: .monospaced))
+                                                .foregroundColor(theme.textDim)
+                                            Image(systemName: "chevron.right")
+                                                .font(.system(size: 9, weight: .semibold))
+                                                .foregroundColor(theme.textDim)
+                                        }
+                                        .padding(12)
+                                        .frame(maxWidth: .infinity)
+                                        .foyerCard(theme)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
                         }
                     }
                     .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 18)
