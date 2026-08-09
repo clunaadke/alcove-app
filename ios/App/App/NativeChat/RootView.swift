@@ -3,6 +3,7 @@ import SwiftUI
 // App 根视图：原生聊天页 + 原生小屋页面。
 struct RootView: View {
     @State private var housePage: HouseDestination?
+    @State private var showHouseDrawer = false
     @State private var showSplash = true
     @State private var showPermissions = false
     @State private var showTerminal = false
@@ -55,13 +56,31 @@ struct RootView: View {
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
                 .zIndex(21)
             }
+            if showHouseDrawer {
+                Color.black.opacity(theme.isDark ? 0.34 : 0.12)
+                    .ignoresSafeArea()
+                    .onTapGesture { withAnimation(.easeOut(duration: 0.22)) { showHouseDrawer = false } }
+                    .transition(.opacity)
+                    .zIndex(29)
+                HStack(spacing: 0) {
+                    Spacer(minLength: UIScreen.main.bounds.width * 0.16)
+                    NativeHouseDrawer(
+                        onClose: { withAnimation(.easeOut(duration: 0.22)) { showHouseDrawer = false } },
+                        select: openFromDrawer,
+                        roundtableUnread: roundtableUnread
+                    )
+                    .frame(width: UIScreen.main.bounds.width * 0.84)
+                }
+                .transition(.move(edge: .trailing))
+                .zIndex(30)
+            }
             if showSplash {
                 SplashView()
                     .transition(.opacity)
                     .zIndex(10)
             }
         }
-        .blur(radius: housePage == nil || theme.isPaper ? 0 : 2.2)
+        .blur(radius: (housePage == nil && !showHouseDrawer) || theme.isPaper ? 0 : 2.2)
         .animation(.easeOut(duration: 0.20), value: housePage != nil)
         .onAppear {
             prewarmPanelTexture()
@@ -291,7 +310,22 @@ struct RootView: View {
         .buttonStyle(.plain)
     }
 
+    private func openFromDrawer(_ target: HouseDestination) {
+        withAnimation(.easeOut(duration: 0.2)) { showHouseDrawer = false }
+        switch target {
+        case .chat: break
+        case .terminal: showTerminal = true
+        case .roundtable: markRoundtableRead(); showRoundtable = true
+        default:
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) { presentHouse(target) }
+        }
+    }
+
     private func presentHouse(_ target: HouseDestination) {
+        if target == .sidebar {
+            withAnimation(.spring(response: 0.34, dampingFraction: 0.88)) { showHouseDrawer = true }
+            return
+        }
         let asset = AlcoveTheme.panelNamed(themeName).panelTextureAsset
 
         if preparedPanelTextureName == asset, preparedPanelTexture != nil {

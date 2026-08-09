@@ -357,6 +357,214 @@ private struct HouseBackground: View {
     }
 }
 
+struct NativeHouseDrawer: View {
+    let onClose: () -> Void
+    let select: (HouseDestination) -> Void
+    let roundtableUnread: Int
+    @AppStorage("alcoveTheme") private var themeName = "haven"
+    @AppStorage("assistantName") private var assistantName = "陈璟"
+    @AppStorage("assistantAvatarDataURL") private var avatarDataURL = ""
+    @StateObject private var model = SidebarModel()
+    @State private var collectionOpen = false
+    @State private var toolsOpen = false
+    private var theme: AlcoveTheme { .named(themeName) }
+
+    private var avatar: UIImage? {
+        let parts = avatarDataURL.split(separator: ",", maxSplits: 1)
+        guard let data = Data(base64Encoded: parts.count == 2 ? String(parts[1]) : avatarDataURL) else { return nil }
+        return UIImage(data: data)
+    }
+
+    var body: some View {
+        ZStack {
+            Image(theme.isDark ? "DrawerDark" : "DrawerLight")
+                .resizable().scaledToFill().ignoresSafeArea()
+            Color(theme.isDark ? .black : .white).opacity(theme.isDark ? 0.10 : 0.08)
+                .ignoresSafeArea()
+
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 13) {
+                    HStack {
+                        Text("Alcove")
+                            .font(.system(size: 20, weight: .medium, design: .serif))
+                            .tracking(1.2)
+                        Spacer()
+                        Button(action: onClose) {
+                            Image(systemName: "xmark")
+                                .font(.system(size: 12, weight: .semibold))
+                                .frame(width: 32, height: 32)
+                                .background(.ultraThinMaterial, in: Circle())
+                        }.buttonStyle(.plain)
+                    }
+
+                    homeCard
+                    handwritten("still at home")
+
+                    VStack(spacing: 7) {
+                        drawerRow(.chat, detail: "回到你们正在说的话")
+                        drawerRow(.roundtable, detail: roundtableUnread > 0 ? "\(roundtableUnread) 条新消息" : "三个人的桌边")
+                        drawerRow(.terminal, detail: "看看他正在做什么")
+                    }
+
+                    drawerTitle("正在发生", note: "still growing")
+                    VStack(spacing: 7) {
+                        drawerRow(.morningPaper, detail: "今天的世界已经放在桌上")
+                        drawerRow(.pulse, detail: "心率、体温与呼吸")
+                        drawerRow(.nowhere, detail: "足迹与明信片")
+                        drawerRow(.calendar, detail: "家里的日结编年史")
+                    }
+
+                    drawerDisclosure("家里的收藏", isExpanded: $collectionOpen) {
+                        [.memory, .dreams, .portrait, .album, .nianlun, .shelf, .impression]
+                    }
+                    drawerDisclosure("工具与游戏", isExpanded: $toolsOpen) {
+                        [.clockwork, .forge, .search, .favorites, .wall, .usage,
+                         .crosstalk, .coread, .liao]
+                    }
+
+                    drawerRow(.settings, detail: "主题、权限与小屋设置")
+                        .padding(.top, 2)
+                    handwritten("a small home for us")
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.vertical, 8)
+                }
+                .padding(.top, 12)
+                .padding(.horizontal, 14)
+                .padding(.bottom, 28)
+            }
+        }
+        .foregroundColor(theme.text)
+        .clipShape(UnevenRoundedRectangle(topLeadingRadius: 24, bottomLeadingRadius: 24))
+        .shadow(color: .black.opacity(theme.isDark ? 0.38 : 0.13), radius: 24, x: -8)
+        .task { await model.load() }
+    }
+
+    private var homeCard: some View {
+        HStack(spacing: 12) {
+            Group {
+                if let avatar {
+                    Image(uiImage: avatar).resizable().scaledToFill()
+                } else {
+                    Image(systemName: "sparkles")
+                        .foregroundColor(theme.textDim)
+                }
+            }
+            .frame(width: 52, height: 52)
+            .clipShape(Circle())
+            .overlay(Circle().stroke(theme.glassBorder, lineWidth: 1))
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(assistantName).font(.system(size: 15, weight: .semibold))
+                    Circle().fill(Color.green).frame(width: 7, height: 7)
+                }
+                Text("\(model.days) days")
+                    .font(.system(size: 25, weight: .light, design: .serif))
+                Text(model.homeLine + "  ·  " + model.usageLine)
+                    .font(.system(size: 9.5))
+                    .foregroundColor(theme.textDim)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(14)
+        .drawerGlass(theme)
+    }
+
+    private func handwritten(_ text: String) -> some View {
+        Text(text)
+            .font(.custom("Snell Roundhand", size: 17))
+            .italic()
+            .foregroundColor(theme.textDim.opacity(0.72))
+            .rotationEffect(.degrees(-1.2))
+            .padding(.leading, 5)
+    }
+
+    private func drawerTitle(_ title: String, note: String) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(title).font(.system(size: 12, weight: .semibold, design: .serif))
+            Text(note).font(.custom("Snell Roundhand", size: 14))
+                .foregroundColor(theme.textDim.opacity(0.62))
+            Spacer()
+        }.padding(.top, 4).padding(.horizontal, 3)
+    }
+
+    private func drawerRow(_ target: HouseDestination, detail: String) -> some View {
+        Button { select(target) } label: {
+            HStack(spacing: 11) {
+                Image(systemName: target.icon)
+                    .font(.system(size: 15, weight: .light))
+                    .foregroundColor(theme.textDim)
+                    .frame(width: 28)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(target.title).font(.system(size: 13, weight: .medium))
+                    Text(detail).font(.system(size: 9.5)).foregroundColor(theme.textDim)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundColor(theme.textDim.opacity(0.55))
+            }
+            .padding(.horizontal, 12).frame(minHeight: 52)
+            .drawerGlass(theme)
+        }.buttonStyle(.plain)
+    }
+
+    private func drawerDisclosure(
+        _ title: String,
+        isExpanded: Binding<Bool>,
+        items: () -> [HouseDestination]
+    ) -> some View {
+        VStack(spacing: 7) {
+            Button { withAnimation(.easeInOut(duration: 0.18)) { isExpanded.wrappedValue.toggle() } } label: {
+                HStack {
+                    Text(title).font(.system(size: 12, weight: .semibold, design: .serif))
+                    Spacer()
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 10, weight: .semibold))
+                        .rotationEffect(.degrees(isExpanded.wrappedValue ? 180 : 0))
+                }
+                .padding(.horizontal, 12).frame(height: 43)
+                .drawerGlass(theme)
+            }.buttonStyle(.plain)
+            if isExpanded.wrappedValue {
+                ForEach(items()) { target in drawerRow(target, detail: drawerDetail(target)) }
+            }
+        }
+    }
+
+    private func drawerDetail(_ target: HouseDestination) -> String {
+        switch target {
+        case .memory: return "记忆库"
+        case .dreams: return "梦与旧日记"
+        case .portrait: return "写过的信"
+        case .album: return "照片"
+        case .nianlun: return "一起走过的时间"
+        case .shelf: return "他的收藏架"
+        case .impression: return "他认得的自己"
+        case .clockwork: return "自主活动与唤醒"
+        case .forge: return "挑选轮次搬去新窗口"
+        case .search: return "搜索消息"
+        case .favorites: return "收藏消息"
+        case .wall: return model.wallLine
+        case .usage: return model.usageLine
+        default: return "打开"
+        }
+    }
+}
+
+private extension View {
+    func drawerGlass(_ theme: AlcoveTheme) -> some View {
+        self.background(.ultraThinMaterial,
+                        in: RoundedRectangle(cornerRadius: 17, style: .continuous))
+            .background(theme.glassTint.opacity(theme.isDark ? 0.12 : 0.24),
+                        in: RoundedRectangle(cornerRadius: 17, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 17, style: .continuous)
+                .stroke(theme.glassBorder.opacity(0.72), lineWidth: 0.7))
+    }
+}
+
 private struct NativeSidebarView: View {
     var select: (HouseDestination) -> Void
     let roundtableUnread: Int
