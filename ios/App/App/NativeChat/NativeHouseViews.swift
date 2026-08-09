@@ -6363,10 +6363,11 @@ private struct MorningPaperDocument {
 
 struct NativeMorningPaperView: View {
     var requestedDate: String? = nil
+    var embedded = false
     @AppStorage("alcoveTheme") private var themeName = "haven"
     @StateObject private var model = MorningPaperModel()
     private var theme: AlcoveTheme { .panelNamed(themeName) }
-    private let paper = Color(red: 0.93, green: 0.90, blue: 0.82)
+    private let paper = Color(red: 0.968, green: 0.958, blue: 0.932)
     private let ink = Color(red: 0.19, green: 0.18, blue: 0.16)
     private let fadedInk = Color(red: 0.34, green: 0.32, blue: 0.29)
     private let cobalt = Color(red: 0.10, green: 0.28, blue: 0.82)
@@ -6380,33 +6381,15 @@ struct NativeMorningPaperView: View {
     ]
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            LazyVStack(alignment: .leading, spacing: 0) {
-                masthead
-                if model.loading && model.paper == nil {
-                    ProgressView("正在取今天的晨报")
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 70)
-                } else if let paper = model.paper {
-                    ForEach(order, id: \.0) { entry in
-                        paperSection(number: entry.2, title: entry.1,
-                                     items: paper.sections[entry.0] ?? [])
-                    }
-                    Text("end of morning edition · 收好，明天见")
-                        .font(.system(size: 9, weight: .medium, design: .monospaced))
-                        .tracking(2)
-                        .foregroundColor(fadedInk)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 30)
-                } else {
-                    ContentUnavailableView(model.error ?? "今日无刊",
-                                           systemImage: "newspaper",
-                                           description: Text("等陈璟把今天看到的世界带回来"))
-                        .padding(.vertical, 54)
+        Group {
+            if embedded {
+                paperContent.padding(.horizontal, 12)
+            } else {
+                ScrollView(showsIndicators: false) {
+                    paperContent.padding(.horizontal, 18)
                 }
+                .refreshable { await model.load(date: requestedDate) }
             }
-            .padding(.horizontal, 18)
-            .padding(.bottom, 28)
         }
         .foregroundColor(ink)
         .background {
@@ -6422,8 +6405,31 @@ struct NativeMorningPaperView: View {
                 }
             }.ignoresSafeArea()
         }
-        .refreshable { await model.load(date: requestedDate) }
         .task(id: requestedDate) { await model.load(date: requestedDate) }
+    }
+
+    private var paperContent: some View {
+        LazyVStack(alignment: .leading, spacing: 0) {
+            masthead
+            if model.loading && model.paper == nil {
+                ProgressView("正在取今天的晨报")
+                    .frame(maxWidth: .infinity).padding(.vertical, 54)
+            } else if let document = model.paper {
+                ForEach(order, id: \.0) { entry in
+                    paperSection(number: entry.2, title: entry.1,
+                                 items: document.sections[entry.0] ?? [])
+                }
+                Text("end of morning edition · 收好，明天见")
+                    .font(.system(size: 8, weight: .medium, design: .monospaced))
+                    .tracking(1.5).foregroundColor(fadedInk)
+                    .frame(maxWidth: .infinity).padding(.vertical, 24)
+            } else {
+                ContentUnavailableView(model.error ?? "今日无刊", systemImage: "newspaper",
+                                       description: Text("等陈璟把今天看到的世界带回来"))
+                    .padding(.vertical, 42)
+            }
+        }
+        .padding(.bottom, embedded ? 8 : 28)
     }
 
     private var masthead: some View {
@@ -6480,10 +6486,15 @@ struct NativeMorningPaperView: View {
                     .foregroundColor(fadedInk)
                     .padding(.vertical, 12)
             } else {
-                ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                    article(item)
-                    if index != items.count - 1 {
-                        Rectangle().fill(ink.opacity(0.15)).frame(height: 0.5)
+                LazyVGrid(columns: [GridItem(.flexible(), spacing: 12, alignment: .top),
+                                    GridItem(.flexible(), spacing: 12, alignment: .top)],
+                          alignment: .leading, spacing: 6) {
+                    ForEach(items) { item in
+                        article(item)
+                            .overlay(alignment: .trailing) {
+                                Rectangle().fill(ink.opacity(0.11)).frame(width: 0.5)
+                                    .offset(x: 6)
+                            }
                     }
                 }
             }
@@ -6504,8 +6515,8 @@ struct NativeMorningPaperView: View {
                 articleTitle(item.title, linked: false)
             }
             Text(item.summary)
-                .font(.system(size: 15, design: .serif))
-                .lineSpacing(5)
+                .font(.system(size: embedded ? 12 : 13, design: .serif))
+                .lineSpacing(embedded ? 3 : 4)
                 .foregroundColor(ink.opacity(0.88))
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 7) {
@@ -6518,7 +6529,7 @@ struct NativeMorningPaperView: View {
                     Text("· 已交叉核验 \(item.sources.count + 1) 个来源")
                 }
             }
-            .font(.system(size: 9, weight: .medium, design: .monospaced))
+            .font(.system(size: embedded ? 7.5 : 8.5, weight: .medium, design: .monospaced))
             .foregroundColor(fadedInk)
         }
         .padding(.vertical, 13)
@@ -6527,7 +6538,7 @@ struct NativeMorningPaperView: View {
     private func articleTitle(_ text: String, linked: Bool) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             Text(text)
-                .font(.system(size: 17, weight: .semibold, design: .serif))
+                .font(.system(size: embedded ? 14 : 15, weight: .semibold, design: .serif))
                 .multilineTextAlignment(.leading)
             if linked {
                 Image(systemName: "arrow.up.right")

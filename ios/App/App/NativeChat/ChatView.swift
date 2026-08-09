@@ -856,9 +856,11 @@ struct MessageRow: View {
                     }
                 }
             }
-            if !isUser { Spacer(minLength: theme.isPaper ? 15 : 48) }
+            if !isUser {
+                Spacer(minLength: msg.morningPaperDate != nil ? 0 : (theme.isPaper ? 15 : 48))
+            }
         }
-        .padding(.leading, theme.isPaper && !isUser ? 12 : 0)
+        .padding(.leading, theme.isPaper && !isUser && msg.morningPaperDate == nil ? 12 : 0)
         .padding(.top, 2)
         .padding(.bottom, showTime ? 12 : 5)
         .sheet(isPresented: Binding(get: { theme.isPaper && showThinking }, set: { showThinking = $0 })) {
@@ -1243,7 +1245,7 @@ private struct InsideMessageCard: View {
 private struct MorningPaperMessageCard: View {
     let date: String
     let theme: AlcoveTheme
-    @State private var showPaper = false
+    @State private var expanded = false
 
     private var dateLine: String {
         let input = DateFormatter(); input.locale = Locale(identifier: "en_US_POSIX")
@@ -1255,47 +1257,38 @@ private struct MorningPaperMessageCard: View {
     }
 
     var body: some View {
-        Button { showPaper = true } label: {
-            HStack(spacing: 9) {
-                Image(systemName: "newspaper")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(Color(red: 0.12, green: 0.30, blue: 0.78))
-                Text("雨霁报")
-                    .font(.system(size: 13, weight: .semibold, design: .serif))
-                    .tracking(1.5)
-                Text("· \(dateLine)")
-                    .font(.system(size: 11, design: .monospaced)).opacity(0.62)
-                Spacer(minLength: 16)
-                Text("展开")
-                    .font(.custom("HanziPenSC-W3", size: 11)).opacity(0.64)
-                Image(systemName: "arrow.up.left.and.arrow.down.right")
-                    .font(.system(size: 9, weight: .medium)).opacity(0.55)
-            }
-            .foregroundColor(Color(red: 0.22, green: 0.20, blue: 0.18))
-            .padding(.horizontal, 14).padding(.vertical, 12)
-            .frame(maxWidth: 310, alignment: .leading)
-            .background(Color(red: 0.93, green: 0.90, blue: 0.82),
-                        in: RoundedRectangle(cornerRadius: theme.isPaper ? 6 : 14,
-                                             style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: theme.isPaper ? 6 : 14)
-                .stroke(Color.black.opacity(0.14), style: StrokeStyle(lineWidth: 0.8, dash: [5, 3])))
-            .rotationEffect(.degrees(-0.35))
-        }
-        .buttonStyle(.plain)
-        .fullScreenCover(isPresented: $showPaper) {
-            ZStack(alignment: .topTrailing) {
-                NativeMorningPaperView(requestedDate: date)
-                Button { showPaper = false } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(Color.black.opacity(0.62))
-                        .frame(width: 34, height: 34)
-                        .background(Color.white.opacity(0.55), in: Circle())
+        VStack(spacing: 0) {
+            Button { withAnimation(.easeInOut(duration: 0.24)) { expanded.toggle() } } label: {
+                HStack(spacing: 9) {
+                    Image(systemName: "newspaper")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(Color(red: 0.18, green: 0.34, blue: 0.72))
+                    Text("雨霁报")
+                        .font(.system(size: 13, weight: .semibold, design: .serif))
+                        .tracking(1.5)
+                    Text("· \(dateLine)")
+                        .font(.system(size: 11, design: .monospaced)).opacity(0.62)
+                    Spacer(minLength: 16)
+                    Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 9, weight: .medium)).opacity(0.55)
                 }
-                .padding(.top, 10).padding(.trailing, 12)
+                .padding(.horizontal, 14).padding(.vertical, 12)
             }
-            .background(Color(red: 0.93, green: 0.90, blue: 0.82).ignoresSafeArea())
+            .buttonStyle(.plain)
+            if expanded {
+                Rectangle().fill(Color.black.opacity(0.22)).frame(height: 0.7)
+                    .padding(.horizontal, 12)
+                NativeMorningPaperView(requestedDate: date, embedded: true)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
         }
+        .foregroundColor(Color(red: 0.22, green: 0.20, blue: 0.18))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(red: 0.968, green: 0.958, blue: 0.932),
+                    in: RoundedRectangle(cornerRadius: theme.isPaper ? 5 : 12,
+                                         style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: theme.isPaper ? 5 : 12)
+            .stroke(Color.black.opacity(0.13), lineWidth: 0.8))
     }
 }
 
