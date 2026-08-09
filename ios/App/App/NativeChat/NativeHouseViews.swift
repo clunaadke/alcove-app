@@ -15,7 +15,7 @@ private extension EnvironmentValues {
 
 enum HouseDestination: String, Identifiable, CaseIterable {
     case sidebar, chat, terminal, settings, bubbleAppearance, checklist, music
-    case home, calendar, wall, usage
+    case home, calendar, digest, wall, usage
     case memory, dreams, shelf, desire, nianlun, clockwork, album, portrait, impression, morningPaper, nowhere, pulse
     case crosstalk, radio, coread, liao, daddyDay, lab
     case search, favorites, forge, roundtable
@@ -33,6 +33,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .checklist: return "Checklist"
         case .music: return "Music"
         case .calendar: return "Calendar"
+        case .digest: return "日结编年史"
         case .wall: return "小黑屋"
         case .usage: return "Usage"
         case .memory: return "Memory"
@@ -70,6 +71,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .checklist: return "checklist"
         case .music: return "music.note"
         case .calendar: return "calendar"
+        case .digest: return "calendar.badge.clock"
         case .wall: return "lock.rectangle.stack"
         case .desire: return "water.waves"
         case .usage: return "chart.bar"
@@ -208,6 +210,8 @@ struct NativeHouseSheet: View {
                     NativeForgeView()
                 case .calendar:
                     NativeCalendarView()
+                case .digest:
+                    NativeDigestPlaceholderView()
                 case .impression:
                     NativeOBSelfView()
                 case .dreams:
@@ -386,8 +390,6 @@ struct NativeHouseDrawer: View {
     @AppStorage("assistantName") private var assistantName = "陈璟"
     @AppStorage("assistantAvatarDataURL") private var avatarDataURL = ""
     @StateObject private var model = SidebarModel()
-    @State private var collectionOpen = false
-    @State private var toolsOpen = false
     private var theme: AlcoveTheme { .named(themeName) }
 
     private var screenSafeInsets: UIEdgeInsets {
@@ -414,26 +416,15 @@ struct NativeHouseDrawer: View {
                 ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 13) {
                     HStack {
-                        Text("Alcove")
-                            .font(.system(size: 20, weight: .medium, design: .serif))
-                            .tracking(1.2)
                         Spacer()
-                        Button { select(.settings) } label: {
-                            Image(systemName: "gearshape")
-                                .font(.system(size: 13, weight: .medium))
-                                .frame(width: 32, height: 32)
-                                .background(.ultraThinMaterial, in: Circle())
-                        }.buttonStyle(.plain)
-                        Button(action: onClose) {
-                            Image(systemName: "xmark")
-                                .font(.system(size: 12, weight: .semibold))
-                                .frame(width: 32, height: 32)
-                                .background(.ultraThinMaterial, in: Circle())
-                        }.buttonStyle(.plain)
+                        Text("Alcove")
+                            .font(.custom("Snell Roundhand", size: 28))
+                            .italic()
+                        Spacer()
                     }
                     .frame(maxWidth: .infinity)
 
-                    homeCard
+                    homeCards
                     handwritten("still at home")
 
                     VStack(spacing: 7) {
@@ -444,18 +435,25 @@ struct NativeHouseDrawer: View {
 
                     drawerTitle("正在发生", note: "still growing")
                     VStack(spacing: 7) {
-                        drawerRow(.morningPaper, detail: "今天的世界已经放在桌上")
                         drawerRow(.pulse, detail: "心率、体温与呼吸")
                         drawerRow(.nowhere, detail: "足迹与明信片")
-                        drawerRow(.calendar, detail: "家里的日结编年史")
+                        drawerRow(.digest, detail: "日结、周结与月结")
+                        drawerRow(.memory, detail: "正在生长的记忆")
                     }
 
-                    drawerDisclosure("家里的收藏", isExpanded: $collectionOpen) {
-                        [.memory, .dreams, .portrait, .album, .nianlun, .shelf, .impression]
+                    drawerTitle("家里的收藏", note: "kept close")
+                    VStack(spacing: 7) {
+                        ForEach([HouseDestination.dreams, .portrait, .album, .nianlun, .shelf, .impression]) { target in
+                            drawerRow(target, detail: drawerDetail(target))
+                        }
                     }
-                    drawerDisclosure("工具与游戏", isExpanded: $toolsOpen) {
-                        [.clockwork, .forge, .search, .favorites, .wall, .usage,
-                         .crosstalk, .coread, .liao]
+
+                    drawerTitle("工具与游戏", note: "little things")
+                    VStack(spacing: 7) {
+                        ForEach([HouseDestination.clockwork, .forge, .search, .favorites, .wall,
+                                 .crosstalk, .coread, .liao]) { target in
+                            drawerRow(target, detail: drawerDetail(target))
+                        }
                     }
 
                     drawerRow(.settings, detail: "主题、权限与小屋设置")
@@ -498,8 +496,10 @@ struct NativeHouseDrawer: View {
         .task { await model.load() }
     }
 
-    private var homeCard: some View {
-        HStack(spacing: 12) {
+    private var homeCards: some View {
+        HStack(spacing: 8) {
+            Button { select(.calendar) } label: {
+                HStack(spacing: 9) {
             Group {
                 if let avatar {
                     Image(uiImage: avatar).resizable().scaledToFill()
@@ -508,7 +508,7 @@ struct NativeHouseDrawer: View {
                         .foregroundColor(theme.textDim)
                 }
             }
-            .frame(width: 52, height: 52)
+            .frame(width: 44, height: 44)
             .clipShape(Circle())
             .overlay(Circle().stroke(theme.glassBorder, lineWidth: 1))
 
@@ -519,17 +519,35 @@ struct NativeHouseDrawer: View {
                 }
                 Text("\(model.days) days")
                     .font(.system(size: 25, weight: .light, design: .serif))
-                Text(model.homeLine + "  ·  " + model.usageLine)
+                Text(model.coinsLine)
                     .font(.system(size: 9.5))
                     .foregroundColor(theme.textDim)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
             }
             Spacer(minLength: 0)
+                }
+                .padding(12)
+                .frame(maxWidth: .infinity, minHeight: 88)
+                .drawerGlass(theme)
+            }
+            .buttonStyle(.plain)
+
+            Button { select(.usage) } label: {
+                VStack(spacing: 7) {
+                    Text(model.fiveHourLine)
+                    Divider().overlay(theme.glassBorder)
+                    Text(model.sevenDayLine)
+                }
+                .font(.system(size: 11, weight: .medium, design: .rounded))
+                .foregroundColor(theme.textDim)
+                .frame(width: 68)
+                .frame(minHeight: 88)
+                .drawerGlass(theme)
+            }
+            .buttonStyle(.plain)
         }
-        .padding(14)
         .frame(maxWidth: .infinity)
-        .drawerGlass(theme)
     }
 
     private func handwritten(_ text: String) -> some View {
@@ -613,6 +631,7 @@ struct NativeHouseDrawer: View {
         case .favorites: return "收藏消息"
         case .wall: return model.wallLine
         case .usage: return model.usageLine
+        case .digest: return "日结页面还在整理"
         default: return "打开"
         }
     }
@@ -785,12 +804,18 @@ private struct NativeSidebarView: View {
 private final class SidebarModel: ObservableObject {
     private struct Snapshot {
         var homeLine = "亲密度 --"
+        var coins = 0
+        var fiveHour = 0
+        var sevenDay = 0
         var wallLine = "--"
         var usageLine = "--"
     }
 
     @Published private var snapshot = Snapshot()
     var homeLine: String { snapshot.homeLine }
+    var coinsLine: String { "金币 \(snapshot.coins)" }
+    var fiveHourLine: String { "5h \(snapshot.fiveHour)%" }
+    var sevenDayLine: String { "7d \(snapshot.sevenDay)%" }
     var wallLine: String { snapshot.wallLine }
     var usageLine: String { snapshot.usageLine }
 
@@ -808,6 +833,7 @@ private final class SidebarModel: ObservableObject {
 
         if let d = dollResult {
             next.homeLine = "亲密度 \(d.int("intimacy")) · 金币 \(d.int("coins"))"
+            next.coins = d.int("coins")
         }
         if let w = wallResult {
             let locked = w.int("locked")
@@ -818,6 +844,8 @@ private final class SidebarModel: ObservableObject {
             let five = u.object("rate_limits").object("five_hour").int("used_percent")
             let seven = u.object("rate_limits").object("seven_day").int("used_percent")
             next.usageLine = "5h \(five)% · 7d \(seven)%"
+            next.fiveHour = five
+            next.sevenDay = seven
         }
 
         snapshot = next
@@ -5992,6 +6020,28 @@ private struct NativeImpressionView: View {
 }
 
 // MARK: - Calendar (纪念日+日记)
+
+private struct NativeDigestPlaceholderView: View {
+    @AppStorage("alcoveTheme") private var themeName = "haven"
+    private var theme: AlcoveTheme { .panelNamed(themeName) }
+
+    var body: some View {
+        VStack(spacing: 14) {
+            Spacer()
+            Image(systemName: "calendar.badge.clock")
+                .font(.system(size: 30, weight: .light))
+                .foregroundColor(theme.textDim)
+            Text("日结编年史还在整理")
+                .font(.system(size: 15, weight: .semibold, design: .serif))
+            Text("日结、周结和月结会从这里翻开")
+                .font(.system(size: 11))
+                .foregroundColor(theme.textDim)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .foregroundColor(theme.text)
+    }
+}
 
 private struct NativeCalendarView: View {
     @State private var year = Calendar.current.component(.year, from: Date())

@@ -60,8 +60,7 @@ struct RootView: View {
                 ZStack {
                     Rectangle()
                         .fill(.regularMaterial)
-                        .opacity(theme.isDark ? 0.88 : 0.78)
-                    Color.black.opacity(theme.isDark ? 0.24 : 0.10)
+                        .opacity(0.92)
                 }
                     .ignoresSafeArea()
                     .contentShape(Rectangle())
@@ -69,14 +68,18 @@ struct RootView: View {
                     .transition(.opacity)
                     .zIndex(18)
                 GeometryReader { drawerGeo in
+                    let drawerWidth = drawerGeo.size.width * 0.80
                     NativeHouseDrawer(
-                        drawerWidth: drawerGeo.size.width * 0.80,
+                        drawerWidth: drawerWidth,
                         onClose: { withAnimation(.easeOut(duration: 0.22)) { showHouseDrawer = false } },
                         select: openFromDrawer,
                         roundtableUnread: roundtableUnread
                     )
-                    .frame(width: drawerGeo.size.width * 0.80)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+                    .frame(width: drawerWidth, height: drawerGeo.size.height)
+                    .position(
+                        x: drawerGeo.size.width - drawerWidth / 2,
+                        y: drawerGeo.size.height / 2
+                    )
                 }
                 .ignoresSafeArea(.container, edges: .all)
                 .transition(.move(edge: .trailing))
