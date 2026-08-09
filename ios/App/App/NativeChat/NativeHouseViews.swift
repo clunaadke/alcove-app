@@ -6130,7 +6130,7 @@ private final class FictionStudyModel: ObservableObject {
         loading = true
         defer { loading = false }
         do {
-            let (data, response) = try await AlcoveAPI.session.data(from: AlcoveAPI.fullURL("/fiction/books"))
+            let (data, response) = try await AlcoveAPI.session.data(from: AlcoveAPI.fullURL("/api/fiction/books"))
             guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw URLError(.badServerResponse) }
             if let wrapped = try? JSONDecoder().decode(FictionBooksEnvelope.self, from: data) {
                 books = wrapped.books
@@ -6145,7 +6145,7 @@ private final class FictionStudyModel: ObservableObject {
     }
 
     func detail(bookID: String) async throws -> FictionBookDetail {
-        var components = URLComponents(url: AlcoveAPI.fullURL("/fiction/book"), resolvingAgainstBaseURL: false)!
+        var components = URLComponents(url: AlcoveAPI.fullURL("/api/fiction/book"), resolvingAgainstBaseURL: false)!
         components.queryItems = [URLQueryItem(name: "id", value: bookID)]
         let (data, response) = try await AlcoveAPI.session.data(from: components.url!)
         guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw URLError(.badServerResponse) }
@@ -6153,7 +6153,7 @@ private final class FictionStudyModel: ObservableObject {
     }
 
     func chapter(bookID: String, index: Int) async throws -> FictionChapter {
-        var components = URLComponents(url: AlcoveAPI.fullURL("/fiction/chapter"), resolvingAgainstBaseURL: false)!
+        var components = URLComponents(url: AlcoveAPI.fullURL("/api/fiction/chapter"), resolvingAgainstBaseURL: false)!
         components.queryItems = [URLQueryItem(name: "id", value: bookID), URLQueryItem(name: "n", value: "\(index)")]
         let (data, response) = try await AlcoveAPI.session.data(
             from: components.url!
@@ -6163,7 +6163,7 @@ private final class FictionStudyModel: ObservableObject {
     }
 
     func annotations(bookID: String, chapter: Int? = nil) async -> [FictionAnnotation] {
-        var components = URLComponents(url: AlcoveAPI.fullURL("/fiction/annotations"), resolvingAgainstBaseURL: false)!
+        var components = URLComponents(url: AlcoveAPI.fullURL("/api/fiction/annotations"), resolvingAgainstBaseURL: false)!
         components.queryItems = [URLQueryItem(name: "id", value: bookID)]
         guard let (data, response) = try? await AlcoveAPI.session.data(
             from: components.url!
@@ -6173,7 +6173,7 @@ private final class FictionStudyModel: ObservableObject {
     }
 
     func saveProgress(bookID: String, chapter: Int) async {
-        var request = URLRequest(url: AlcoveAPI.fullURL("/fiction/progress"))
+        var request = URLRequest(url: AlcoveAPI.fullURL("/api/fiction/progress"))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try? JSONSerialization.data(withJSONObject: ["book_id": bookID, "chapter": chapter, "offset": 0])
@@ -6181,7 +6181,7 @@ private final class FictionStudyModel: ObservableObject {
     }
 
     func annotate(bookID: String, chapter: Int, text: String, note: String) async throws {
-        var request = URLRequest(url: AlcoveAPI.fullURL("/fiction/annotation"))
+        var request = URLRequest(url: AlcoveAPI.fullURL("/api/fiction/annotation"))
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: [
