@@ -38,9 +38,14 @@ struct RootView: View {
             ChatView()
             topBar
             if showTerminal {
-                TerminalView(onDismiss: { withAnimation(.easeOut(duration: 0.15)) { showTerminal = false } })
-                    .transition(.opacity.combined(with: .move(edge: .bottom)))
-                    .zIndex(20)
+                ZStack {
+                    Color(red: 0.1, green: 0.1, blue: 0.12).ignoresSafeArea()
+                    TerminalView(onDismiss: {
+                        withAnimation(.easeOut(duration: 0.15)) { showTerminal = false }
+                    })
+                }
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
+                .zIndex(20)
             }
             if showRoundtable {
                 RoundtableView(onDismiss: {
