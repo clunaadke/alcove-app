@@ -735,7 +735,7 @@ struct MessageRow: View {
         return !msg.text.isEmpty && !msg.isSticker ? 12 : 0
     }
     private var shouldShowMetaRow: Bool {
-        if msg.pending || msg.asleepAtSend || showTime { return true }
+        if msg.pending || msg.asleepAtSend || showTime || (!isUser && msg.heartRate != nil) { return true }
         // 新消息按 turn_id 分轮：activity 已首尾双挂，非轮尾绝不能被它
         // 重新撑出一条孤儿操作行；无 turn_id 的旧消息仍保留原行为。
         return (msg.turnID?.isEmpty ?? true) && msg.hasActivity
@@ -798,15 +798,15 @@ struct MessageRow: View {
                                 .font(.system(size: 10, design: .serif))
                                 .foregroundColor(theme.timestamp)
                         }
-                        if theme.isPaper && !isUser && !msg.text.isEmpty
-                            && msg.insideText == nil && msg.ghostCard == nil {
-                            Button { UIPasteboard.general.string = msg.text } label: {
-                                Image(systemName: "square.on.square")
-                                    .font(.system(size: 11, weight: .light))
-                                    .foregroundColor(theme.timestamp)
-                                    .frame(width: 32, height: 32, alignment: .leading)
-                                    .contentShape(Rectangle())
-                            }.buttonStyle(.plain)
+                        if !isUser, let bpm = msg.heartRate {
+                            HStack(spacing: 3) {
+                                Image(systemName: "heart.fill")
+                                    .font(.system(size: 9, weight: .medium))
+                                    .foregroundColor(Color(red: 0.78, green: 0.43, blue: 0.50).opacity(0.82))
+                                Text("\(bpm) bpm")
+                                    .font(.system(size: 10, design: .serif))
+                                    .foregroundColor(theme.timestamp.opacity(0.72))
+                            }
                         }
                         // 0730：这一轮的过程记录，挂在时间戳旁边，点开看他到底干了什么
                         if msg.hasActivity && !theme.isPaper {

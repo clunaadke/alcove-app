@@ -11,6 +11,7 @@ struct ChatMessage: Identifiable, Equatable {
     var thinking: String?
     var nativeThinking: String?
     var thinkingDuration: Double?
+    var heartRate: Int?
     // 0730：思绪标题（他自己写的一句话总结，替掉"思考了X秒"）
     var thinkTitle: String?
     // 0730：这一轮的过程记录（思绪/中间说的话/调过的工具），挂在时间戳旁边点开看
@@ -94,6 +95,8 @@ struct ChatMessage: Identifiable, Equatable {
         self.nativeThinking = json["native_thinking"] as? String
         if let d = json["thinking_duration"] as? Double { self.thinkingDuration = d }
         else if let i = json["thinking_duration"] as? Int { self.thinkingDuration = Double(i) }
+        if let bpm = json["heart_rate"] as? Int { self.heartRate = bpm }
+        else if let bpm = json["heart_rate"] as? Double { self.heartRate = Int(bpm) }
         self.attachmentUrl = json["attachment_url"] as? String
         self.attachmentType = json["attachment_type"] as? String
         self.attachmentFilename = json["attachment_filename"] as? String
