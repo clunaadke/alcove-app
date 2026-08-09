@@ -16,7 +16,7 @@ private extension EnvironmentValues {
 enum HouseDestination: String, Identifiable, CaseIterable {
     case sidebar, chat, terminal, settings, bubbleAppearance, checklist, music
     case home, calendar, digest, wall, usage
-    case memory, dreams, shelf, desire, nianlun, clockwork, album, portrait, impression, morningPaper, nowhere, pulse
+    case memory, dreams, shelf, fiction, desire, nianlun, clockwork, album, portrait, impression, morningPaper, nowhere, pulse
     case crosstalk, radio, coread, liao, daddyDay, lab
     case search, favorites, forge, roundtable
 
@@ -39,6 +39,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .memory: return "Memory"
         case .dreams: return "Dreams"
         case .shelf: return "渡鸦的架子"
+        case .fiction: return "书房"
         case .desire: return "Eventide"
         case .nianlun: return "年轮"
         case .clockwork: return "发条"
@@ -78,6 +79,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .memory: return "brain.head.profile"
         case .dreams: return "moon.stars"
         case .shelf: return "bird"
+        case .fiction: return "books.vertical"
         case .nianlun: return "circle.hexagongrid"
         case .clockwork: return "clock.arrow.circlepath"
         case .album: return "photo.on.rectangle"
@@ -212,6 +214,8 @@ struct NativeHouseSheet: View {
                     NativeCalendarView()
                 case .digest:
                     NativeDigestPlaceholderView()
+                case .fiction:
+                    NativeFictionStudyView()
                 case .impression:
                     NativeOBSelfView()
                 case .dreams:
@@ -439,6 +443,7 @@ struct NativeHouseDrawer: View {
                     VStack(spacing: 7) {
                         drawerRow(.pulse, detail: "心率、体温与呼吸")
                         drawerRow(.nowhere, detail: "足迹与明信片")
+                        drawerRow(.fiction, detail: "陈璟写给你的小说")
                         drawerRow(.digest, detail: "日结、周结与月结")
                         drawerRow(.memory, detail: "正在生长的记忆")
                     }
@@ -2795,7 +2800,7 @@ private struct NativeFavoritesView: View {
                                                 .foregroundColor(theme.textLight)
                                         }
                                     }
-                                    Text(item.text).font(.system(size: 12)).lineSpacing(3)
+                                    Text(item.quote).font(.system(size: 12)).lineSpacing(3)
                                         .textSelection(.enabled)
                                 }
                                 .padding(.vertical, 11)
@@ -3504,7 +3509,8 @@ private struct NativeDesireView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
+        NavigationStack {
+            VStack(spacing: 0) {
             FoyerPanelTitle(title: "身体潮汐", theme: theme)
             if loading {
                 Spacer(); ProgressView().tint(theme.fyAccent); Spacer()
@@ -6045,6 +6051,475 @@ private struct NativeDigestPlaceholderView: View {
     }
 }
 
+// MARK: - 私人书房
+
+private struct FictionBook: Identifiable, Decodable, Hashable {
+    let id: String
+    let title: String
+    let author: String
+    let status: String
+    let updatedAt: String?
+    let tagline: String?
+    let chapterCount: Int
+    let progress: FictionProgress?
+    let createdAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, title, author, status, tagline
+        case updatedAt = "updated_at"
+        case chapterCount = "chapter_count"
+        case progress
+        case createdAt = "created_at"
+    }
+}
+
+private struct FictionProgress: Decodable, Hashable {
+    let chapter: Int
+    let offset: Int
+    let updatedAt: String?
+    enum CodingKeys: String, CodingKey { case chapter, offset; case updatedAt = "updated_at" }
+}
+
+private struct FictionTOCItem: Decodable, Hashable {
+    let n: Int
+    let title: String
+    let chars: Int
+    let ts: String?
+}
+
+private struct FictionBookDetail: Decodable {
+    let id: String
+    let title: String
+    let author: String
+    let tagline: String?
+    let status: String
+    let createdAt: String?
+    let updatedAt: String?
+    let toc: [FictionTOCItem]
+    let progress: FictionProgress?
+    enum CodingKeys: String, CodingKey {
+        case id, title, author, tagline, status, toc, progress
+        case createdAt = "created_at"; case updatedAt = "updated_at"
+    }
+}
+
+private struct FictionChapter: Decodable {
+    let n: Int
+    let title: String
+    let content: String
+}
+
+private struct FictionAnnotation: Identifiable, Decodable {
+    let id: String
+    let chapter: Int
+    let quote: String
+    let note: String
+    let ts: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, chapter, quote, note, ts
+    }
+}
+
+@MainActor
+private final class FictionStudyModel: ObservableObject {
+    @Published var books: [FictionBook] = []
+    @Published var loading = false
+    @Published var error: String?
+
+    func load() async {
+        loading = true
+        defer { loading = false }
+        do {
+            let (data, response) = try await AlcoveAPI.session.data(from: AlcoveAPI.fullURL("/fiction/books"))
+            guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw URLError(.badServerResponse) }
+            if let wrapped = try? JSONDecoder().decode(FictionBooksEnvelope.self, from: data) {
+                books = wrapped.books
+            } else {
+                books = try JSONDecoder().decode([FictionBook].self, from: data)
+            }
+            error = nil
+        } catch {
+            books = []
+            self.error = "书房后端还在铺木地板"
+        }
+    }
+
+    func detail(bookID: String) async throws -> FictionBookDetail {
+        var components = URLComponents(url: AlcoveAPI.fullURL("/fiction/book"), resolvingAgainstBaseURL: false)!
+        components.queryItems = [URLQueryItem(name: "id", value: bookID)]
+        let (data, response) = try await AlcoveAPI.session.data(from: components.url!)
+        guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw URLError(.badServerResponse) }
+        return try JSONDecoder().decode(FictionBookEnvelope.self, from: data).book
+    }
+
+    func chapter(bookID: String, index: Int) async throws -> FictionChapter {
+        var components = URLComponents(url: AlcoveAPI.fullURL("/fiction/chapter"), resolvingAgainstBaseURL: false)!
+        components.queryItems = [URLQueryItem(name: "id", value: bookID), URLQueryItem(name: "n", value: "\(index)")]
+        let (data, response) = try await AlcoveAPI.session.data(
+            from: components.url!
+        )
+        guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw URLError(.badServerResponse) }
+        return try JSONDecoder().decode(FictionChapterEnvelope.self, from: data).chapter
+    }
+
+    func annotations(bookID: String, chapter: Int? = nil) async -> [FictionAnnotation] {
+        var components = URLComponents(url: AlcoveAPI.fullURL("/fiction/annotations"), resolvingAgainstBaseURL: false)!
+        components.queryItems = [URLQueryItem(name: "id", value: bookID)]
+        guard let (data, response) = try? await AlcoveAPI.session.data(
+            from: components.url!
+        ), (response as? HTTPURLResponse)?.statusCode == 200 else { return [] }
+        let all = (try? JSONDecoder().decode(FictionAnnotationsEnvelope.self, from: data).annotations) ?? []
+        return chapter.map { value in all.filter { $0.chapter == value } } ?? all
+    }
+
+    func saveProgress(bookID: String, chapter: Int) async {
+        var request = URLRequest(url: AlcoveAPI.fullURL("/fiction/progress"))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: ["book_id": bookID, "chapter": chapter, "offset": 0])
+        _ = try? await AlcoveAPI.session.data(for: request)
+    }
+
+    func annotate(bookID: String, chapter: Int, text: String, note: String) async throws {
+        var request = URLRequest(url: AlcoveAPI.fullURL("/fiction/annotation"))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
+            "book_id": bookID, "chapter": chapter, "quote": text, "note": note
+        ])
+        let (_, response) = try await AlcoveAPI.session.data(for: request)
+        guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw URLError(.badServerResponse) }
+    }
+
+    private struct FictionBooksEnvelope: Decodable { let books: [FictionBook] }
+    private struct FictionBookEnvelope: Decodable { let book: FictionBookDetail }
+    private struct FictionChapterEnvelope: Decodable { let chapter: FictionChapter }
+    private struct FictionAnnotationsEnvelope: Decodable { let annotations: [FictionAnnotation] }
+}
+
+private struct NativeFictionStudyView: View {
+    @StateObject private var model = FictionStudyModel()
+    @AppStorage("alcoveTheme") private var themeName = "haven"
+    @State private var section = "serializing"
+    @State private var selectedBook: FictionBook?
+    private var theme: AlcoveTheme { .panelNamed(themeName) }
+
+    private var visibleBooks: [FictionBook] {
+        model.books.filter { $0.status == section }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                segment("连载中", value: "serializing")
+                segment("已完结", value: "completed")
+                Spacer()
+                NavigationLink {
+                    FictionQuotesView(model: model, books: model.books)
+                } label: {
+                    Label("摘句册", systemImage: "quote.opening")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(theme.textDim)
+                }
+            }
+            .padding(.horizontal, 18)
+            .padding(.top, 12)
+
+            if model.loading {
+                Spacer(); ProgressView(); Spacer()
+            } else if visibleBooks.isEmpty {
+                emptyShelf
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text(section == "serializing" ? "still being written" : "kept on the shelf")
+                            .font(.custom("Snell Roundhand", size: 20))
+                            .foregroundColor(theme.textDim)
+                            .padding(.leading, 4)
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 92), spacing: 14)], spacing: 20) {
+                            ForEach(Array(visibleBooks.enumerated()), id: \.element.id) { offset, book in
+                                Button { selectedBook = book } label: {
+                                    FictionSpine(book: book, offset: offset, theme: theme)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        Rectangle().fill(theme.fyAccent.opacity(0.42)).frame(height: 5)
+                            .shadow(color: .black.opacity(0.22), radius: 4, y: 3)
+                    }
+                    .padding(18)
+                }
+            }
+            }
+            .foregroundColor(theme.text)
+            .navigationDestination(item: $selectedBook) { book in
+                FictionBookView(book: book, model: model)
+            }
+        }
+        .task { await model.load() }
+    }
+
+    private func segment(_ title: String, value: String) -> some View {
+        Button { withAnimation(.easeInOut(duration: 0.18)) { section = value } } label: {
+            Text(title)
+                .font(.system(size: 13, weight: section == value ? .semibold : .regular))
+                .padding(.horizontal, 14).padding(.vertical, 7)
+                .background(section == value ? theme.fyAccent.opacity(0.20) : Color.clear, in: Capsule())
+        }.buttonStyle(.plain)
+    }
+
+    private var emptyShelf: some View {
+        VStack(spacing: 14) {
+            Spacer()
+            Image(systemName: "books.vertical")
+                .font(.system(size: 42, weight: .ultraLight))
+                .foregroundColor(theme.textDim)
+            Text(section == "serializing" ? "书架还空着" : "还没有写完的书")
+                .font(.system(size: 20, weight: .medium, design: .serif))
+            Text(model.error ?? "陈璟写下第一章后，它会从这里长出来")
+                .font(.system(size: 12)).foregroundColor(theme.textDim)
+            Spacer()
+            Rectangle().fill(theme.fyAccent.opacity(0.36)).frame(height: 5).padding(.horizontal, 38)
+        }.padding(.bottom, 40)
+    }
+}
+
+private struct FictionSpine: View {
+    let book: FictionBook
+    let offset: Int
+    let theme: AlcoveTheme
+    var body: some View {
+        VStack(spacing: 8) {
+            Text(book.title)
+                .font(.system(size: 15, weight: .medium, design: .serif))
+                .multilineTextAlignment(.center)
+                .lineLimit(5)
+                .frame(maxHeight: .infinity)
+                .padding(.horizontal, 8)
+            Text(book.status == "completed" ? "完" : "至 \(book.chapterCount) 章")
+                .font(.system(size: 9)).foregroundColor(theme.textDim)
+                .padding(.bottom, 10)
+        }
+        .frame(height: CGFloat(160 + (offset % 3) * 18))
+        .frame(maxWidth: .infinity)
+        .background(
+            LinearGradient(colors: [theme.fyCard.opacity(0.72), theme.fyAccent.opacity(0.16)],
+                           startPoint: .topLeading, endPoint: .bottomTrailing),
+            in: UnevenRoundedRectangle(topLeadingRadius: 5, bottomLeadingRadius: 1,
+                                       bottomTrailingRadius: 1, topTrailingRadius: 5)
+        )
+        .overlay(alignment: .leading) { Rectangle().fill(theme.fyAccent.opacity(0.28)).frame(width: 3) }
+        .overlay(RoundedRectangle(cornerRadius: 5).stroke(theme.fyBorder.opacity(0.7), lineWidth: 0.7))
+        .shadow(color: .black.opacity(0.18), radius: 4, x: 2, y: 3)
+    }
+}
+
+private struct FictionBookView: View {
+    let book: FictionBook
+    @ObservedObject var model: FictionStudyModel
+    @AppStorage("alcoveTheme") private var themeName = "haven"
+    @State private var chapterIndex: Int?
+    @State private var detail: FictionBookDetail?
+    private var theme: AlcoveTheme { .panelNamed(themeName) }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                VStack(spacing: 9) {
+                    Text(book.title).font(.system(size: 27, weight: .semibold, design: .serif))
+                    Text(book.author).font(.system(size: 12)).foregroundColor(theme.textDim)
+                    if let tagline = book.tagline, !tagline.isEmpty {
+                        Text(tagline).font(.custom("Snell Roundhand", size: 19))
+                            .foregroundColor(theme.textDim).multilineTextAlignment(.center)
+                    }
+                    Text(book.status == "completed" ? "已完结" : "连载中 · \(book.chapterCount) 章")
+                        .font(.system(size: 10, weight: .medium)).padding(.horizontal, 10).padding(.vertical, 5)
+                        .background(theme.fyAccent.opacity(0.16), in: Capsule())
+                }
+                .frame(maxWidth: .infinity).padding(22).foyerCard(theme)
+
+                Text("chapters").font(.custom("Snell Roundhand", size: 22)).foregroundColor(theme.textDim)
+                if let detail {
+                    ForEach(detail.toc, id: \.n) { item in
+                    Button { chapterIndex = item.n } label: {
+                        HStack {
+                            Text(String(format: "%02d", item.n)).font(.system(size: 11, design: .monospaced))
+                                .foregroundColor(theme.textDim)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(item.title).font(.system(size: 15, design: .serif)).lineLimit(2)
+                                Text("\(item.chars) 字").font(.system(size: 9)).foregroundColor(theme.textDim)
+                            }
+                            Spacer()
+                            if item.n > (detail.progress?.chapter ?? 0) { Circle().fill(theme.fyAccent).frame(width: 5, height: 5) }
+                            Image(systemName: "chevron.right").font(.system(size: 10)).foregroundColor(theme.textDim)
+                        }.padding(14).foyerCard(theme)
+                    }.buttonStyle(.plain)
+                }
+                } else { ProgressView().frame(maxWidth: .infinity).padding(30) }
+            }.padding(18)
+        }
+        .foregroundColor(theme.text)
+        .task { detail = try? await model.detail(bookID: book.id) }
+        .navigationDestination(item: $chapterIndex) { index in
+            FictionReaderView(book: book, chapterIndex: index, model: model)
+        }
+    }
+}
+
+private struct FictionReaderView: View {
+    let book: FictionBook
+    let chapterIndex: Int
+    @ObservedObject var model: FictionStudyModel
+    @AppStorage("alcoveTheme") private var themeName = "haven"
+    @State private var chapter: FictionChapter?
+    @State private var annotations: [FictionAnnotation] = []
+    @State private var selectedQuote = ""
+    @State private var review = ""
+    @State private var showReview = false
+    @State private var error: String?
+    private var theme: AlcoveTheme { .panelNamed(themeName) }
+
+    var body: some View {
+        Group {
+            if let chapter {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 18) {
+                        Text(chapter.title).font(.system(size: 25, weight: .semibold, design: .serif))
+                        FictionSelectableText(text: chapter.content) { quote in
+                            selectedQuote = quote; review = ""; showReview = true
+                        }
+                        .frame(minHeight: 360)
+                        if !annotations.isEmpty {
+                            Text("你的划线").font(.system(size: 14, weight: .semibold, design: .serif))
+                            ForEach(annotations) { item in
+                                VStack(alignment: .leading, spacing: 7) {
+                                    Text("“\(item.quote)”").font(.system(size: 13, design: .serif)).foregroundColor(theme.textDim)
+                                    Text(item.note).font(.system(size: 13))
+                                }.padding(13).foyerCard(theme)
+                            }
+                        }
+                    }.padding(20)
+                }
+            } else if let error {
+                ContentUnavailableView("这一章还没递过来", systemImage: "book.closed", description: Text(error))
+            } else { ProgressView() }
+        }
+        .foregroundColor(theme.text)
+        .task {
+            do {
+                chapter = try await model.chapter(bookID: book.id, index: chapterIndex)
+                annotations = await model.annotations(bookID: book.id, chapter: chapterIndex)
+                await model.saveProgress(bookID: book.id, chapter: chapterIndex)
+            } catch { self.error = "等独立书房接口接通后就能读" }
+        }
+        .sheet(isPresented: $showReview) {
+            NavigationStack {
+                Form {
+                    Section("划线") { Text(selectedQuote).font(.system(size: 14, design: .serif)) }
+                    Section("写给这句话") { TextEditor(text: $review).frame(minHeight: 120) }
+                }
+                .navigationTitle("书评")
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) { Button("取消") { showReview = false } }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("存下") {
+                            Task {
+                                try? await model.annotate(bookID: book.id, chapter: chapterIndex,
+                                                          text: selectedQuote, note: review)
+                                annotations = await model.annotations(bookID: book.id, chapter: chapterIndex)
+                                showReview = false
+                            }
+                        }.disabled(review.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                }
+            }
+        }
+    }
+}
+
+private struct FictionQuotesView: View {
+    @ObservedObject var model: FictionStudyModel
+    let books: [FictionBook]
+    @AppStorage("alcoveTheme") private var themeName = "haven"
+    @State private var rows: [FictionQuoteRow] = []
+    private var theme: AlcoveTheme { .panelNamed(themeName) }
+    var body: some View {
+        Group {
+            if rows.isEmpty {
+                ContentUnavailableView("摘句册还是空的", systemImage: "quote.opening",
+                                       description: Text("你划下第一句话后，会连着书评一起收在这里"))
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 12) {
+                        ForEach(rows) { row in
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("“\(row.annotation.quote)”")
+                                    .font(.system(size: 14, design: .serif))
+                                Text(row.annotation.note).font(.system(size: 13))
+                                Text("《\(row.book.title)》 · 第 \(row.annotation.chapter) 章")
+                                    .font(.system(size: 10)).foregroundColor(theme.textDim)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(14).foyerCard(theme)
+                        }
+                    }.padding(18)
+                }
+            }
+        }
+        .foregroundColor(theme.text)
+        .task {
+            var gathered: [FictionQuoteRow] = []
+            for book in books {
+                let notes = await model.annotations(bookID: book.id)
+                gathered.append(contentsOf: notes.map { FictionQuoteRow(book: book, annotation: $0) })
+            }
+            rows = gathered.sorted { ($0.annotation.ts ?? "") > ($1.annotation.ts ?? "") }
+        }
+    }
+}
+
+private struct FictionQuoteRow: Identifiable {
+    let book: FictionBook
+    let annotation: FictionAnnotation
+    var id: String { "\(book.id)-\(annotation.id)" }
+}
+
+private struct FictionSelectableText: UIViewRepresentable {
+    let text: String
+    let onReview: (String) -> Void
+    func makeUIView(context: Context) -> FictionTextView {
+        let view = FictionTextView()
+        view.isEditable = false
+        view.isScrollEnabled = false
+        view.backgroundColor = .clear
+        view.textContainerInset = .zero
+        view.textContainer.lineFragmentPadding = 0
+        view.font = .systemFont(ofSize: 16)
+        view.textColor = .label
+        view.onReview = onReview
+        return view
+    }
+    func updateUIView(_ view: FictionTextView, context: Context) {
+        view.text = text; view.onReview = onReview
+    }
+}
+
+private final class FictionTextView: UITextView {
+    var onReview: ((String) -> Void)?
+    override func buildMenu(with builder: UIMenuBuilder) {
+        super.buildMenu(with: builder)
+        guard builder.system == .context else { return }
+        let action = UIAction(title: "划线并写书评", image: UIImage(systemName: "highlighter")) { [weak self] _ in
+            guard let self, let range = selectedTextRange,
+                  let quote = text(in: range)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !quote.isEmpty else { return }
+            onReview?(quote)
+        }
+        builder.insertChild(UIMenu(options: .displayInline, children: [action]), atStartOfMenu: .standardEdit)
+    }
+}
+
 private struct NativeCalendarView: View {
     @State private var year = Calendar.current.component(.year, from: Date())
     @State private var month = Calendar.current.component(.month, from: Date())
@@ -7287,7 +7762,7 @@ private struct NativePipeLabView: View {
                     HStack(alignment: .top, spacing: 9) {
                         Image(systemName: item.icon)
                             .font(.system(size: 11)).frame(width: 16).foregroundColor(theme.fyAccent)
-                        Text(item.text)
+                        Text(item.quote)
                             .font(item.kind == "thinking" ? .system(size: 12).italic() : .system(size: 12, weight: .medium))
                             .foregroundColor(theme.textDim)
                             .fixedSize(horizontal: false, vertical: true)
