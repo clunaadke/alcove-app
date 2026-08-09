@@ -389,6 +389,11 @@ struct NativeHouseDrawer: View {
     @State private var toolsOpen = false
     private var theme: AlcoveTheme { .named(themeName) }
 
+    private var screenSafeInsets: UIEdgeInsets {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        return scenes.flatMap(\.windows).first(where: { $0.isKeyWindow })?.safeAreaInsets ?? .zero
+    }
+
     private var avatar: UIImage? {
         let parts = avatarDataURL.split(separator: ",", maxSplits: 1)
         guard let data = Data(base64Encoded: parts.count == 2 ? String(parts[1]) : avatarDataURL) else { return nil }
@@ -454,9 +459,13 @@ struct NativeHouseDrawer: View {
                         .frame(maxWidth: .infinity, alignment: .center)
                         .padding(.vertical, 8)
                 }
-                .padding(.top, geo.safeAreaInsets.top + 12)
+                // This drawer itself is full-bleed, so its GeometryReader reports
+                // zero safe-area insets on device. Read the window insets above,
+                // while pinning content to the drawer's actual (narrower) width.
+                .frame(width: max(0, geo.size.width - 28), alignment: .leading)
+                .padding(.top, screenSafeInsets.top + 12)
                 .padding(.horizontal, 14)
-                .padding(.bottom, geo.safeAreaInsets.bottom + 28)
+                .padding(.bottom, screenSafeInsets.bottom + 28)
                 }
             }
         }
