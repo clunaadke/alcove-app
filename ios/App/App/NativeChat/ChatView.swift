@@ -1306,7 +1306,7 @@ struct TimeDivider: View {
 struct LiveSayBand: View {
     let state: AlcoveAPI.LiveState
     let theme: AlcoveTheme
-    @State private var showProcess = false
+
     private var tagLine: String {
         var bits: [String] = []
         if !state.tool.isEmpty { bits.append("正在" + state.tool) }
@@ -1318,26 +1318,12 @@ struct LiveSayBand: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             if !state.thinking.isEmpty {
-                Button { showProcess = true } label: {
-                    HStack(alignment: .firstTextBaseline, spacing: 5) {
-                        Text(state.thinking)
-                            .italic()
-                            .lineLimit(2)
-                        Image(systemName: "chevron.right").font(.system(size: 8))
-                    }
+                Text(state.thinking)
                     .font(.system(size: 11))
+                    .italic()
                     .foregroundColor(theme.textDim.opacity(0.62))
-                    .contentShape(Rectangle())
-                }.buttonStyle(.plain)
-            } else if !state.timeline.isEmpty {
-                Button { showProcess = true } label: {
-                    HStack(spacing: 5) {
-                        Text("ThoughtProcess")
-                        Image(systemName: "chevron.right").font(.system(size: 8))
-                    }
-                    .font(.system(size: 11))
-                    .foregroundColor(theme.textDim.opacity(0.62))
-                }.buttonStyle(.plain)
+                    .lineLimit(2)
+                    .truncationMode(.tail)
             }
             if !state.say.isEmpty {
                 Text(state.say)
@@ -1348,15 +1334,10 @@ struct LiveSayBand: View {
             }
             if !tagLine.isEmpty {
                 Text(tagLine)
-                    .font(.system(size: 10, design: .serif))
+                    .font(.system(size: 10))
+                    .tracking(0.4)
                     .foregroundColor(theme.textDim.opacity(0.45))
                     .padding(.top, 1)
-            }
-            if let error = state.error {
-                Label(error, systemImage: "exclamationmark.circle")
-                    .font(.system(size: 11))
-                    .foregroundColor(.red.opacity(0.8))
-                    .padding(.top, 3)
             }
         }
         .padding(.horizontal, 12)
@@ -1371,72 +1352,15 @@ struct LiveSayBand: View {
                 .strokeBorder(theme.textDim.opacity(0.22),
                               style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
         )
-        .padding(.horizontal, 14)
-        .padding(.top, 2)
-        .sheet(isPresented: $showProcess) {
-            NavigationStack {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 18) {
-                        if state.timeline.isEmpty {
-                            liveTrack("quote.bubble", "Thinking…", liveThought, done: !state.active)
-                        } else {
-                            ForEach(state.timeline) { item in
-                                liveTrack(item.icon,
-                                          trackTitle(item),
-                                          trackDetail(item),
-                                          done: item.done)
-                            }
-                        }
-                        if state.finishing {
-                            liveTrack("checkmark.circle", "Done", "", done: true)
-                        }
-                    }.padding(22)
-                }
-                .background(theme.fyCardSub.ignoresSafeArea())
-                .foregroundColor(theme.text)
-                .navigationTitle("ThoughtProcess")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("关闭") { showProcess = false } } }
-            }
-            .presentationDetents([.medium, .large])
-            .presentationDragIndicator(.visible)
-        }
-    }
-
-    private var liveThought: String {
-        state.thinking.isEmpty ? "脑袋里悄悄转了几圈" : state.thinking
-    }
-
-    private func trackTitle(_ item: AlcoveAPI.LiveProcessItem) -> String {
-        switch item.kind {
-        case "thinking": return "思绪"
-        case "text": return "正文"
-        default: return item.text
-        }
-    }
-
-    private func trackDetail(_ item: AlcoveAPI.LiveProcessItem) -> String {
-        switch item.kind {
-        case "thinking", "text": return item.text
-        default: return item.done ? "已发生" : "进行中"
-        }
-    }
-
-    private func liveTrack(_ icon: String, _ title: String, _ detail: String, done: Bool) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: icon)
-                .font(.system(size: 13, weight: .light))
-                .foregroundColor(theme.fyAccent)
-                .frame(width: 22, height: 22)
-            VStack(alignment: .leading, spacing: 6) {
-                Text(title).font(.system(size: 13, weight: .medium))
-                if !detail.isEmpty {
-                    Text(detail).font(.system(size: 13)).lineSpacing(5).foregroundColor(theme.textDim)
-                }
-            }
-            Spacer(minLength: 0)
-        }
-        .opacity(done ? 0.82 : 1)
+        .clipShape(UnevenRoundedRectangle(
+            topLeadingRadius: 14, bottomLeadingRadius: 4,
+            bottomTrailingRadius: 14, topTrailingRadius: 14,
+            style: .continuous
+        ))
+        .padding(.horizontal, 16)
+        .padding(.top, 4)
+        .padding(.bottom, 6)
+        .accessibilityElement(children: .combine)
     }
 }
 
