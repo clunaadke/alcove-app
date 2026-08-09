@@ -53,23 +53,13 @@ private struct AlcoveHomeWidget: Widget {
 private struct AlcoveLabLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: AlcoveLabAttributes.self) { context in
-            HStack(spacing: 10) {
-                Image(systemName: "wave.3.right.circle.fill")
-                VStack(alignment: .leading) {
-                    Text(context.attributes.name)
-                        .font(.headline)
-                    Text(context.state.message)
-                        .font(.caption)
-                }
-                Spacer()
-            }
-            .padding()
-            .activityBackgroundTint(Color.black.opacity(0.86))
-            .activitySystemActionForegroundColor(.white)
+            Text("\(context.attributes.name) · \(context.state.message)")
+                .font(.headline)
+                .padding()
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    Image(systemName: "wave.3.right")
+                    Text("Alcove")
                 }
                 DynamicIslandExpandedRegion(.center) {
                     Text(context.attributes.name)
@@ -78,11 +68,11 @@ private struct AlcoveLabLiveActivity: Widget {
                     Text(context.state.message).font(.caption)
                 }
             } compactLeading: {
-                Image(systemName: "wave.3.right")
+                Text("A")
             } compactTrailing: {
-                Text("在")
+                Text("渡")
             } minimal: {
-                Image(systemName: "wave.3.right")
+                Text("A")
             }
         }
     }

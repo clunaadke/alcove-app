@@ -9,6 +9,7 @@ struct CapabilityLabView: View {
     @StateObject private var calls = CallKitSmokeTester.shared
     @State private var liveMessage = "尚未测试"
     @State private var installedExtensions = InstalledExtensionReport.read()
+    @State private var activityWatcher: Task<Void, Never>?
 
     var body: some View {
         NavigationStack {
@@ -93,22 +94,50 @@ struct CapabilityLabView: View {
                 await activity.end(nil, dismissalPolicy: .immediate)
             }
             let state = AlcoveLabAttributes.ContentState(message: "我在这里", startedAt: .now)
-            _ = try Activity.request(
+            let activity = try Activity.request(
                 attributes: AlcoveLabAttributes(name: "陈璟"),
                 content: ActivityContent(state: state, staleDate: nil),
                 pushType: nil
             )
-            liveMessage = "系统已接受请求；请锁屏或看灵动岛。"
+            liveMessage = "已创建：\(shortState(activity.activityState))\nID：\(activity.id.prefix(8))"
+            activityWatcher?.cancel()
+            activityWatcher = Task {
+                for await state in activity.activityStateUpdates {
+                    guard !Task.isCancelled else { return }
+                    await MainActor.run {
+                        liveMessage = "状态变化：\(shortState(state))\nID：\(activity.id.prefix(8))"
+                    }
+                }
+            }
+
+            // 一闪即退时不用靠肉眼猜：两秒后主动读取系统仍保留了几条活动。
+            try? await Task.sleep(for: .seconds(2))
+            let stillAlive = Activity<AlcoveLabAttributes>.activities.first { $0.id == activity.id }
+            liveMessage += stillAlive == nil
+                ? "\n2 秒复查：系统已移除"
+                : "\n2 秒复查：仍在 \(shortState(stillAlive!.activityState))"
         } catch {
             liveMessage = "启动失败：\(error.localizedDescription)"
         }
     }
 
     private func stopLiveActivities() async {
+        activityWatcher?.cancel()
+        activityWatcher = nil
         for activity in Activity<AlcoveLabAttributes>.activities {
             await activity.end(nil, dismissalPolicy: .immediate)
         }
         liveMessage = "已结束。"
+    }
+
+    private func shortState(_ state: ActivityState) -> String {
+        switch state {
+        case .active: "active（活动中）"
+        case .stale: "stale（已过期）"
+        case .ended: "ended（已结束）"
+        case .dismissed: "dismissed（被系统移除）"
+        @unknown default: "未知状态"
+        }
     }
 }
 
