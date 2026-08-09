@@ -8,7 +8,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
     case sidebar, chat, terminal, settings, bubbleAppearance, checklist, music
     case home, calendar, wall, usage
     case memory, dreams, shelf, desire, nianlun, clockwork, album, portrait, impression, morningPaper
-    case crosstalk, radio, coread, liao, daddyDay
+    case crosstalk, radio, coread, liao, daddyDay, lab
     case search, favorites, forge, roundtable
 
     var id: String { rawValue }
@@ -41,6 +41,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .coread: return "共读"
         case .liao: return "燎"
         case .daddyDay: return "Daddy的一天"
+        case .lab: return "Lab"
         case .search: return "Search"
         case .favorites: return "Favorites"
         case .forge: return "Forge"
@@ -75,6 +76,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .coread: return "book"
         case .liao: return "flame"
         case .daddyDay: return "clock"
+        case .lab: return "waveform.path.ecg.rectangle"
         case .search: return "magnifyingglass"
         case .favorites: return "bookmark"
         case .forge: return "hammer"
@@ -198,6 +200,8 @@ struct NativeHouseSheet: View {
                     NativeDreamsView()
                 case .morningPaper:
                     NativeMorningPaperView()
+                case .lab:
+                    NativePipeLabView()
                 case .wall:
                     NativeWallView()
                 default:
@@ -353,7 +357,7 @@ private struct NativeSidebarView: View {
         .memory, .dreams, .shelf, .desire, .nianlun, .clockwork, .album, .portrait, .impression,
         .morningPaper
     ]
-    private let play: [HouseDestination] = [.crosstalk, .coread, .liao]
+    private let play: [HouseDestination] = [.crosstalk, .coread, .liao, .lab]
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -5755,6 +5759,279 @@ private struct NativeMorningPaperView: View {
         guard let date = f.date(from: raw) else { return raw }
         let out = DateFormatter(); out.timeZone = TimeZone(identifier: "Asia/Shanghai"); out.dateFormat = "HH:mm"
         return out.string(from: date)
+    }
+}
+
+private struct PipeLabEvent: Decodable {
+    let eventID: Int
+    let seq: Int
+    let event: String
+    let turnID: String
+    let delta: String?
+    let toolCallID: String?
+    let name: String?
+    let ok: Bool?
+    let labMessageID: String?
+    let reason: String?
+
+    enum CodingKeys: String, CodingKey {
+        case eventID = "event_id", seq, event, delta, name, ok, reason
+        case turnID = "turn_id", toolCallID = "tool_call_id"
+        case labMessageID = "lab_message_id"
+    }
+}
+
+@MainActor private final class PipeLabModel: ObservableObject {
+    @Published var state = AlcoveAPI.LiveState()
+    @Published var connected = false
+    @Published var sending = false
+    @Published var notice: String?
+    private var streamTask: Task<Void, Never>?
+    private var lastEventID = -1
+
+    func connect() {
+        guard streamTask == nil else { return }
+        streamTask = Task { [weak self] in await self?.consume() }
+    }
+
+    func disconnect() {
+        streamTask?.cancel()
+        streamTask = nil
+        connected = false
+    }
+
+    func send(_ text: String) async -> Bool {
+        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty, !sending, !state.active else { return false }
+        sending = true
+        defer { sending = false }
+        do {
+            let result = try await AlcoveAPI.postRaw("/lab/send", body: ["text": clean])
+            guard result["ok"] as? Bool != false else { throw URLError(.badServerResponse) }
+            notice = nil
+            return true
+        } catch {
+            notice = "实验管道没有接住这句话"
+            return false
+        }
+    }
+
+    private func consume() async {
+        var retry: UInt64 = 1_000_000_000
+        while !Task.isCancelled {
+            do {
+                var request = URLRequest(url: AlcoveAPI.fullURL("/stream/lab"))
+                request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
+                if lastEventID >= 0 {
+                    request.setValue(String(lastEventID), forHTTPHeaderField: "Last-Event-ID")
+                }
+                request.timeoutInterval = 60 * 60
+                let (bytes, response) = try await AlcoveAPI.session.bytes(for: request)
+                guard let http = response as? HTTPURLResponse,
+                      (200..<300).contains(http.statusCode) else { throw URLError(.badServerResponse) }
+                connected = true
+                notice = nil
+                retry = 1_000_000_000
+                for try await line in bytes.lines {
+                    guard !Task.isCancelled else { return }
+                    guard line.hasPrefix("data:") else { continue }
+                    let payload = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
+                    guard let data = payload.data(using: .utf8),
+                          let event = try? JSONDecoder().decode(PipeLabEvent.self, from: data),
+                          event.eventID > lastEventID else { continue }
+                    lastEventID = event.eventID
+                    apply(event)
+                }
+            } catch is CancellationError {
+                return
+            } catch {
+                connected = false
+                notice = "实验流正在重连"
+                try? await Task.sleep(nanoseconds: retry)
+                retry = min(retry * 2, 20_000_000_000)
+            }
+        }
+    }
+
+    private func apply(_ event: PipeLabEvent) {
+        if event.event == "start" || state.turnID != event.turnID {
+            state = AlcoveAPI.LiveState(active: true, turnID: event.turnID)
+        }
+        guard event.seq > state.lastSeq else { return }
+        state.lastSeq = event.seq
+        switch event.event {
+        case "start":
+            state.active = true
+            state.finishing = false
+            state.error = nil
+        case "thinking_delta":
+            let delta = event.delta ?? ""
+            state.thinking += delta
+            if let i = state.timeline.indices.last, state.timeline[i].kind == "thinking" {
+                state.timeline[i].text += delta
+            } else if !delta.isEmpty {
+                state.timeline.append(.init(id: "lab-thinking-\(event.eventID)",
+                                            kind: "thinking", text: delta))
+            }
+        case "native_thinking_delta":
+            // v1.2: archive channel only. The lab deliberately never renders it.
+            state.nativeThinking += event.delta ?? ""
+        case "text_delta":
+            state.say += event.delta ?? ""
+        case "tool_start":
+            let id = event.toolCallID ?? "lab-tool-\(event.eventID)"
+            if !state.tools.contains(where: { $0.id == id }) {
+                let name = event.name ?? "执行动作"
+                state.tools.append(.init(id: id, name: name))
+                state.timeline.append(.init(id: id, kind: "tool", text: name))
+            }
+        case "tool_done":
+            if let id = event.toolCallID, let i = state.tools.firstIndex(where: { $0.id == id }) {
+                state.tools[i].done = true; state.tools[i].ok = event.ok
+            }
+            if let id = event.toolCallID, let i = state.timeline.firstIndex(where: { $0.id == id }) {
+                state.timeline[i].done = true; state.timeline[i].ok = event.ok
+            }
+        case "finish":
+            state.active = false
+            state.finishing = false
+            state.messageID = event.labMessageID
+        case "error":
+            state.active = false
+            state.error = event.reason ?? "实验轮中断"
+        default:
+            break
+        }
+    }
+}
+
+private struct NativePipeLabView: View {
+    @AppStorage("alcoveTheme") private var themeName = "haven"
+    @StateObject private var model = PipeLabModel()
+    @State private var draft = ""
+    @State private var showProcess = true
+    @FocusState private var focused: Bool
+    private var theme: AlcoveTheme { .panelNamed(themeName) }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            header
+            ScrollViewReader { proxy in
+                ScrollView(showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 14) {
+                        if model.state.turnID.isEmpty {
+                            ContentUnavailableView("常驻管道实验室", systemImage: "waveform.path.ecg.rectangle",
+                                description: Text("这里与正式聊天完全隔离。发一句话，观察思绪、工具与正文怎样实时经过管道。"))
+                                .padding(.top, 48)
+                        } else {
+                            processPanel
+                            if !model.state.say.isEmpty {
+                                Text(model.state.say)
+                                    .font(.system(size: 16))
+                                    .lineSpacing(6)
+                                    .foregroundColor(theme.text)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .padding(16)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .foyerCard(theme)
+                            }
+                            if let error = model.state.error {
+                                Label(error, systemImage: "exclamationmark.triangle")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.orange)
+                            }
+                        }
+                        Color.clear.frame(height: 1).id("lab-tail")
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 14)
+                }
+                .onChange(of: model.state.say) { _ in scrollTail(proxy) }
+                .onChange(of: model.state.thinking) { _ in scrollTail(proxy) }
+            }
+            composer
+        }
+        .task { model.connect() }
+        .onDisappear { model.disconnect() }
+    }
+
+    private var header: some View {
+        HStack(spacing: 9) {
+            Circle().fill(model.connected ? Color.green : Color.orange).frame(width: 7, height: 7)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Pipe Lab").font(.system(size: 18, weight: .semibold, design: .serif))
+                Text(model.state.active ? "常驻进程正在回应" : (model.connected ? "实验流已连接" : "正在连接"))
+                    .font(.system(size: 10, design: .monospaced)).foregroundColor(theme.textDim)
+            }
+            Spacer()
+            Text("ISOLATED")
+                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                .tracking(1.4).foregroundColor(theme.fyAccent)
+        }
+        .padding(.horizontal, 18).padding(.vertical, 12)
+        .overlay(alignment: .bottom) { Rectangle().fill(theme.fyBorder).frame(height: 0.5) }
+    }
+
+    private var processPanel: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Button { withAnimation(.easeInOut(duration: 0.18)) { showProcess.toggle() } } label: {
+                HStack {
+                    Text("ThoughtProcess").font(.system(size: 12, weight: .medium))
+                    Spacer()
+                    Image(systemName: showProcess ? "chevron.up" : "chevron.down").font(.system(size: 9))
+                }
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
+            }.buttonStyle(.plain)
+            if showProcess {
+                ForEach(model.state.timeline) { item in
+                    HStack(alignment: .top, spacing: 9) {
+                        Image(systemName: item.icon)
+                            .font(.system(size: 11)).frame(width: 16).foregroundColor(theme.fyAccent)
+                        Text(item.text)
+                            .font(item.kind == "thinking" ? .system(size: 12).italic() : .system(size: 12, weight: .medium))
+                            .foregroundColor(theme.textDim)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 0)
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 14)
+        .foyerCard(theme)
+    }
+
+    private var composer: some View {
+        HStack(alignment: .bottom, spacing: 10) {
+            TextField("给实验管道一句话", text: $draft, axis: .vertical)
+                .lineLimit(1...5).focused($focused)
+                .padding(.horizontal, 13).padding(.vertical, 10)
+                .background(theme.fyCard, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            Button {
+                let text = draft
+                Task { if await model.send(text) { draft = "" } }
+            } label: {
+                Group {
+                    if model.sending { ProgressView().controlSize(.small) }
+                    else { Image(systemName: "arrow.up") }
+                }
+                .font(.system(size: 15, weight: .semibold))
+                .frame(width: 44, height: 44)
+                .background(theme.fyAccent, in: Circle())
+                .foregroundColor(theme.fyCard)
+            }
+            .buttonStyle(.plain)
+            .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.sending || model.state.active)
+            .opacity(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.state.active ? 0.45 : 1)
+            .accessibilityLabel("发送到实验管道")
+        }
+        .padding(.horizontal, 14).padding(.top, 10).padding(.bottom, 12)
+        .background(theme.fyCardSub.opacity(0.94))
+        .overlay(alignment: .top) { Rectangle().fill(theme.fyBorder).frame(height: 0.5) }
+    }
+
+    private func scrollTail(_ proxy: ScrollViewProxy) {
+        withAnimation(.easeOut(duration: 0.18)) { proxy.scrollTo("lab-tail", anchor: .bottom) }
     }
 }
 
