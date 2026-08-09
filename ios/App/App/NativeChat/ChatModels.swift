@@ -60,6 +60,11 @@ struct ChatMessage: Identifiable, Equatable {
         return try? JSONDecoder().decode(GhostActivityCard.self, from: data)
     }
 
+    // 陈璟每天只需投递这一枚日期标记；正文由归档接口按日期读取。
+    var morningPaperDate: String? {
+        Self.taggedBody(text, tag: "MORNING_PAPER")
+    }
+
     private static func taggedBody(_ text: String, tag: String) -> String? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let open = "[\(tag)]", close = "[/\(tag)]"

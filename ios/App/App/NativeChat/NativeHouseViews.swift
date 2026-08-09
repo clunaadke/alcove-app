@@ -6047,11 +6047,12 @@ private struct MorningPaperDocument {
     @Published var loading = false
     @Published var error: String?
 
-    func load() async {
+    func load(date: String? = nil) async {
         loading = true
         defer { loading = false }
         do {
-            let root = try await NativeHouseAPI.object("/paper/today")
+            let path = date.flatMap { $0.isEmpty ? nil : $0 }.map { "/paper/\($0)" } ?? "/paper/today"
+            let root = try await NativeHouseAPI.object(path)
             guard let raw = root["paper"] as? [String: Any],
                   let sections = raw["sections"] as? [String: Any] else {
                 throw URLError(.cannotParseResponse)
@@ -6088,10 +6089,15 @@ private struct MorningPaperDocument {
     }
 }
 
-private struct NativeMorningPaperView: View {
+struct NativeMorningPaperView: View {
+    var requestedDate: String? = nil
     @AppStorage("alcoveTheme") private var themeName = "haven"
     @StateObject private var model = MorningPaperModel()
     private var theme: AlcoveTheme { .panelNamed(themeName) }
+    private let paper = Color(red: 0.93, green: 0.90, blue: 0.82)
+    private let ink = Color(red: 0.19, green: 0.18, blue: 0.16)
+    private let fadedInk = Color(red: 0.34, green: 0.32, blue: 0.29)
+    private let cobalt = Color(red: 0.10, green: 0.28, blue: 0.82)
 
     private let order: [(String, String, String)] = [
         ("today_first", "今天先知道", "01"),
@@ -6114,10 +6120,10 @@ private struct NativeMorningPaperView: View {
                         paperSection(number: entry.2, title: entry.1,
                                      items: paper.sections[entry.0] ?? [])
                     }
-                    Text("END OF MORNING EDITION")
+                    Text("end of morning edition · 收好，明天见")
                         .font(.system(size: 9, weight: .medium, design: .monospaced))
                         .tracking(2)
-                        .foregroundColor(theme.textDim)
+                        .foregroundColor(fadedInk)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 30)
                 } else {
@@ -6130,8 +6136,22 @@ private struct NativeMorningPaperView: View {
             .padding(.horizontal, 18)
             .padding(.bottom, 28)
         }
-        .refreshable { await model.load() }
-        .task { await model.load() }
+        .foregroundColor(ink)
+        .background {
+            ZStack {
+                paper
+                Canvas { context, size in
+                    for y in stride(from: CGFloat(7), through: size.height, by: 17) {
+                        var line = Path()
+                        line.move(to: CGPoint(x: 0, y: y))
+                        line.addLine(to: CGPoint(x: size.width, y: y + 0.8))
+                        context.stroke(line, with: .color(Color.black.opacity(0.018)), lineWidth: 0.45)
+                    }
+                }
+            }.ignoresSafeArea()
+        }
+        .refreshable { await model.load(date: requestedDate) }
+        .task(id: requestedDate) { await model.load(date: requestedDate) }
     }
 
     private var masthead: some View {
@@ -6139,21 +6159,26 @@ private struct NativeMorningPaperView: View {
             Text("MORNING PAPER")
                 .font(.system(size: 10, weight: .semibold, design: .monospaced))
                 .tracking(2.2)
-                .foregroundColor(theme.fyAccent)
+                .foregroundColor(cobalt)
             Text("雨 霁 报")
                 .font(.system(size: 29, weight: .semibold, design: .serif))
                 .tracking(5)
+            Text("今早替你看过世界了")
+                .font(.custom("HanziPenSC-W3", size: 13))
+                .foregroundColor(cobalt.opacity(0.82))
+                .rotationEffect(.degrees(-2.2))
+                .offset(x: 52)
             HStack {
                 Text(displayDate(model.paper?.date ?? ""))
                 Spacer()
                 Text(model.paper?.status == "fixture" ? "样刊" : "今日刊")
             }
             .font(.system(size: 10, design: .monospaced))
-            .foregroundColor(theme.textDim)
-            Rectangle().fill(theme.text.opacity(0.72)).frame(height: 1.5)
-            Rectangle().fill(theme.text.opacity(0.26)).frame(height: 0.5)
+            .foregroundColor(fadedInk)
+            Rectangle().fill(ink.opacity(0.72)).frame(height: 1.5)
+            Rectangle().fill(ink.opacity(0.26)).frame(height: 0.5)
         }
-        .foregroundColor(theme.text)
+        .foregroundColor(ink)
         .padding(.top, 14)
         .padding(.bottom, 18)
     }
@@ -6163,9 +6188,16 @@ private struct NativeMorningPaperView: View {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 Text(number)
                     .font(.system(size: 10, weight: .bold, design: .monospaced))
-                    .foregroundColor(theme.fyAccent)
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 7).padding(.vertical, 3)
+                    .background(cobalt, in: UnevenRoundedRectangle(
+                        topLeadingRadius: 2, bottomLeadingRadius: 7,
+                        bottomTrailingRadius: 2, topTrailingRadius: 6))
+                    .rotationEffect(.degrees(number == "05" ? 2 : -1))
                 Text(title)
-                    .font(.system(size: 20, weight: .semibold, design: .serif))
+                    .font(number == "05"
+                          ? .custom("HanziPenSC-W3", size: 20)
+                          : .system(size: 20, weight: .semibold, design: .serif))
                 Spacer(minLength: 0)
             }
             .padding(.bottom, 9)
@@ -6173,20 +6205,20 @@ private struct NativeMorningPaperView: View {
             if items.isEmpty {
                 Text("今天这一栏暂时留白")
                     .font(.system(size: 13, design: .serif))
-                    .foregroundColor(theme.textDim)
+                    .foregroundColor(fadedInk)
                     .padding(.vertical, 12)
             } else {
                 ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                     article(item)
                     if index != items.count - 1 {
-                        Rectangle().fill(theme.fyBorder.opacity(0.55)).frame(height: 0.5)
+                        Rectangle().fill(ink.opacity(0.15)).frame(height: 0.5)
                     }
                 }
             }
         }
         .padding(.vertical, 18)
         .overlay(alignment: .bottom) {
-            Rectangle().fill(theme.text.opacity(0.34)).frame(height: 0.7)
+            Rectangle().fill(ink.opacity(0.34)).frame(height: 0.7)
         }
     }
 
@@ -6202,7 +6234,7 @@ private struct NativeMorningPaperView: View {
             Text(item.summary)
                 .font(.system(size: 15, design: .serif))
                 .lineSpacing(5)
-                .foregroundColor(theme.text.opacity(0.88))
+                .foregroundColor(ink.opacity(0.88))
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 7) {
                 Text(item.source.uppercased())
@@ -6215,7 +6247,7 @@ private struct NativeMorningPaperView: View {
                 }
             }
             .font(.system(size: 9, weight: .medium, design: .monospaced))
-            .foregroundColor(theme.textDim)
+            .foregroundColor(fadedInk)
         }
         .padding(.vertical, 13)
     }
@@ -6231,7 +6263,7 @@ private struct NativeMorningPaperView: View {
                     .accessibilityHidden(true)
             }
         }
-        .foregroundColor(theme.text)
+        .foregroundColor(ink)
     }
 
     private func displayDate(_ raw: String) -> String {

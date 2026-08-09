@@ -768,7 +768,9 @@ struct MessageRow: View {
                 } else if recall != nil {
                     recallBadge // 没有思绪行时角标单独站一行，和 PWA 一致
                 }
-                if let inside = msg.insideText {
+                if let paperDate = msg.morningPaperDate {
+                    MorningPaperMessageCard(date: paperDate, theme: theme)
+                } else if let inside = msg.insideText {
                     InsideMessageCard(text: inside, date: msg.date, theme: theme)
                 } else if let ghost = msg.ghostCard {
                     GhostActivityMessageCard(card: ghost, theme: theme)
@@ -1217,6 +1219,65 @@ private struct InsideMessageCard: View {
             .overlay(RoundedRectangle(cornerRadius: theme.isPaper ? 7 : 15)
                 .stroke(theme.fyBorder, lineWidth: 0.8))
         }.buttonStyle(.plain)
+    }
+}
+
+private struct MorningPaperMessageCard: View {
+    let date: String
+    let theme: AlcoveTheme
+    @State private var showPaper = false
+
+    private var dateLine: String {
+        let input = DateFormatter(); input.locale = Locale(identifier: "en_US_POSIX")
+        input.dateFormat = "yyyy-MM-dd"
+        guard let value = input.date(from: date) else { return date }
+        let output = DateFormatter(); output.locale = Locale(identifier: "zh_CN")
+        output.dateFormat = "M月d日"
+        return output.string(from: value)
+    }
+
+    var body: some View {
+        Button { showPaper = true } label: {
+            HStack(spacing: 9) {
+                Image(systemName: "newspaper")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(Color(red: 0.12, green: 0.30, blue: 0.78))
+                Text("雨霁报")
+                    .font(.system(size: 13, weight: .semibold, design: .serif))
+                    .tracking(1.5)
+                Text("· \(dateLine)")
+                    .font(.system(size: 11, design: .monospaced)).opacity(0.62)
+                Spacer(minLength: 16)
+                Text("展开")
+                    .font(.custom("HanziPenSC-W3", size: 11)).opacity(0.64)
+                Image(systemName: "arrow.up.left.and.arrow.down.right")
+                    .font(.system(size: 9, weight: .medium)).opacity(0.55)
+            }
+            .foregroundColor(Color(red: 0.22, green: 0.20, blue: 0.18))
+            .padding(.horizontal, 14).padding(.vertical, 12)
+            .frame(maxWidth: 310, alignment: .leading)
+            .background(Color(red: 0.93, green: 0.90, blue: 0.82),
+                        in: RoundedRectangle(cornerRadius: theme.isPaper ? 6 : 14,
+                                             style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: theme.isPaper ? 6 : 14)
+                .stroke(Color.black.opacity(0.14), style: StrokeStyle(lineWidth: 0.8, dash: [5, 3])))
+            .rotationEffect(.degrees(-0.35))
+        }
+        .buttonStyle(.plain)
+        .fullScreenCover(isPresented: $showPaper) {
+            ZStack(alignment: .topTrailing) {
+                NativeMorningPaperView(requestedDate: date)
+                Button { showPaper = false } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(Color.black.opacity(0.62))
+                        .frame(width: 34, height: 34)
+                        .background(Color.white.opacity(0.55), in: Circle())
+                }
+                .padding(.top, 10).padding(.trailing, 12)
+            }
+            .background(Color(red: 0.93, green: 0.90, blue: 0.82).ignoresSafeArea())
+        }
     }
 }
 
