@@ -735,7 +735,7 @@ struct MessageRow: View {
         return !msg.text.isEmpty && !msg.isSticker ? 12 : 0
     }
     private var shouldShowMetaRow: Bool {
-        if msg.pending || msg.asleepAtSend || showTime || (!isUser && msg.heartRate != nil) { return true }
+        if msg.pending || msg.asleepAtSend || showTime { return true }
         // 新消息按 turn_id 分轮：activity 已首尾双挂，非轮尾绝不能被它
         // 重新撑出一条孤儿操作行；无 turn_id 的旧消息仍保留原行为。
         return (msg.turnID?.isEmpty ?? true) && msg.hasActivity
@@ -798,7 +798,7 @@ struct MessageRow: View {
                                 .font(.system(size: 10, design: .serif))
                                 .foregroundColor(theme.timestamp)
                         }
-                        if !isUser, let bpm = msg.heartRate {
+                        if showTime, !isUser, let bpm = msg.heartRate {
                             HStack(spacing: 3) {
                                 Image(systemName: "heart.fill")
                                     .font(.system(size: 9, weight: .medium))
