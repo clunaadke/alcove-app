@@ -431,6 +431,7 @@ struct NativeHouseDrawer: View {
                         drawerRow(.chat, detail: "回到你们正在说的话")
                         drawerRow(.roundtable, detail: roundtableUnread > 0 ? "\(roundtableUnread) 条新消息" : "三个人的桌边")
                         drawerRow(.terminal, detail: "看看他正在做什么")
+                        drawerRow(.settings, detail: "主题、权限与小屋设置")
                     }
 
                     drawerTitle("正在发生", note: "still growing")
@@ -456,8 +457,6 @@ struct NativeHouseDrawer: View {
                         }
                     }
 
-                    drawerRow(.settings, detail: "主题、权限与小屋设置")
-                        .padding(.top, 2)
                     handwritten("a small home for us")
                         .frame(maxWidth: .infinity, alignment: .center)
                         .padding(.vertical, 8)

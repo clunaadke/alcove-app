@@ -1,4 +1,13 @@
 import SwiftUI
+import UIKit
+
+private struct DrawerBackdropBlur: UIViewRepresentable {
+    func makeUIView(context: Context) -> UIVisualEffectView {
+        UIVisualEffectView(effect: UIBlurEffect(style: .systemMaterialLight))
+    }
+
+    func updateUIView(_ uiView: UIVisualEffectView, context: Context) {}
+}
 
 // App 根视图：原生聊天页 + 原生小屋页面。
 struct RootView: View {
@@ -58,8 +67,7 @@ struct RootView: View {
             }
             if showHouseDrawer {
                 ZStack {
-                    Rectangle()
-                        .fill(.regularMaterial)
+                    DrawerBackdropBlur()
                         .opacity(0.92)
                 }
                     .ignoresSafeArea()
@@ -69,17 +77,21 @@ struct RootView: View {
                     .zIndex(18)
                 GeometryReader { drawerGeo in
                     let drawerWidth = drawerGeo.size.width * 0.80
-                    NativeHouseDrawer(
-                        drawerWidth: drawerWidth,
-                        onClose: { withAnimation(.easeOut(duration: 0.22)) { showHouseDrawer = false } },
-                        select: openFromDrawer,
-                        roundtableUnread: roundtableUnread
-                    )
-                    .frame(width: drawerWidth, height: drawerGeo.size.height)
-                    .position(
-                        x: drawerGeo.size.width - drawerWidth / 2,
-                        y: drawerGeo.size.height / 2
-                    )
+                    HStack(spacing: 0) {
+                        Color.clear
+                            .frame(width: drawerGeo.size.width - drawerWidth)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                withAnimation(.easeOut(duration: 0.22)) { showHouseDrawer = false }
+                            }
+                        NativeHouseDrawer(
+                            drawerWidth: drawerWidth,
+                            onClose: { withAnimation(.easeOut(duration: 0.22)) { showHouseDrawer = false } },
+                            select: openFromDrawer,
+                            roundtableUnread: roundtableUnread
+                        )
+                        .frame(width: drawerWidth, height: drawerGeo.size.height)
+                    }
                 }
                 .ignoresSafeArea(.container, edges: .all)
                 .transition(.move(edge: .trailing))
