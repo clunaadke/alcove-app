@@ -1276,12 +1276,18 @@ private struct MorningPaperMessageCard: View {
                         .font(.system(size: 9, weight: .medium)).opacity(0.55)
                 }
                 .padding(.horizontal, 14).padding(.vertical, 12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             if expanded {
                 Rectangle().fill(Color.black.opacity(0.22)).frame(height: 0.7)
                     .padding(.horizontal, 12)
                 NativeMorningPaperView(requestedDate: date, embedded: true)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        withAnimation(.easeInOut(duration: 0.24)) { expanded = false }
+                    }
                     .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
