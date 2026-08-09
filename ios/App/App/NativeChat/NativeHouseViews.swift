@@ -7,7 +7,7 @@ import WebKit
 enum HouseDestination: String, Identifiable, CaseIterable {
     case sidebar, chat, terminal, settings, bubbleAppearance, checklist, music
     case home, calendar, wall, usage
-    case memory, dreams, shelf, desire, nianlun, clockwork, album, portrait, impression, morningPaper
+    case memory, dreams, shelf, desire, nianlun, clockwork, album, portrait, impression, morningPaper, nowhere
     case crosstalk, radio, coread, liao, daddyDay, lab
     case search, favorites, forge, roundtable
 
@@ -36,6 +36,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .portrait: return "Letters"
         case .impression: return "Self"
         case .morningPaper: return "Morning Paper"
+        case .nowhere: return "乌有乡"
         case .crosstalk: return "Crosstalk"
         case .radio: return "Radio"
         case .coread: return "共读"
@@ -71,6 +72,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .portrait: return "envelope"
         case .impression: return "person.crop.circle.badge.questionmark"
         case .morningPaper: return "newspaper"
+        case .nowhere: return "map"
         case .crosstalk: return "play.circle"
         case .radio: return "radio"
         case .coread: return "book"
@@ -200,6 +202,8 @@ struct NativeHouseSheet: View {
                     NativeDreamsView()
                 case .morningPaper:
                     NativeMorningPaperView()
+                case .nowhere:
+                    NativeNowhereView()
                 case .lab:
                     NativePipeLabView()
                 case .wall:
@@ -357,7 +361,7 @@ private struct NativeSidebarView: View {
 
     private let foyer: [HouseDestination] = [
         .memory, .dreams, .shelf, .desire, .nianlun, .clockwork, .album, .portrait, .impression,
-        .morningPaper
+        .morningPaper, .nowhere
     ]
     // Pipe Lab remains compiled for rollback, but the -p experiment is paused and
     // must not appear as a normal household destination.
@@ -4473,6 +4477,300 @@ private struct EmotionPulseChart: View {
         points.indices.min { lhs, rhs in
             abs(points[lhs].ts.timeIntervalSince(date)) < abs(points[rhs].ts.timeIntervalSince(date))
         }
+    }
+}
+
+// MARK: - 乌有乡
+
+private struct NowherePostcard: Identifiable {
+    let id: Int
+    let text: String
+    let place: String
+    let localTime: String
+    let timezone: String
+    let weather: String
+    let temperature: Double?
+    let surface: String
+    let frontImage: String?
+    let replies: [String]
+
+    init(_ raw: [String: Any]) {
+        id = raw.int("id")
+        text = raw.string("text")
+        let stamp = raw["stamp"] as? [String: Any] ?? [:]
+        place = stamp.string("place")
+        localTime = stamp.string("local_time")
+        timezone = stamp.string("tz")
+        weather = stamp.string("weather")
+        if let value = stamp["temp_c"] as? NSNumber { temperature = value.doubleValue }
+        else { temperature = nil }
+        surface = stamp.string("surface")
+        frontImage = (raw["front_img"] as? String).flatMap { $0.isEmpty ? nil : $0 }
+        replies = raw["replies"] as? [String] ?? []
+    }
+}
+
+private struct NowhereLanding: Identifiable {
+    let place: String
+    let count: Int
+    let last: String
+    let surface: String
+    var id: String { place + "|" + last }
+
+    init(_ raw: [String: Any]) {
+        place = raw.string("place")
+        count = raw.int("count")
+        last = raw.string("last")
+        surface = raw.string("surface")
+    }
+}
+
+private struct NativeNowhereView: View {
+    private enum Tab: String, CaseIterable {
+        case postcards = "明信片墙"
+        case footsteps = "他的足迹"
+    }
+
+    @AppStorage("alcoveTheme") private var themeName = "haven"
+    @State private var tab: Tab = .postcards
+    @State private var postcards: [NowherePostcard] = []
+    @State private var landings: [NowhereLanding] = []
+    @State private var currentPlace: String?
+    @State private var loading = true
+    @State private var error: String?
+    @State private var replying: NowherePostcard?
+    @State private var replyText = ""
+    @State private var sendingReply = false
+    private var theme: AlcoveTheme { .panelNamed(themeName) }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            FoyerPanelTitle(title: "乌有乡", theme: theme)
+            if loading {
+                Spacer(); ProgressView().tint(theme.fyAccent); Spacer()
+            } else {
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: 13) {
+                        presenceStrip
+                        Picker("乌有乡", selection: $tab) {
+                            ForEach(Tab.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                        }
+                        .pickerStyle(.segmented)
+
+                        if let error {
+                            Text(error).font(.system(size: 11)).foregroundColor(.red)
+                                .padding(12).frame(maxWidth: .infinity).foyerCard(theme)
+                        }
+                        if tab == .postcards { postcardWall } else { footsteps }
+                    }
+                    .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 24)
+                }
+                .refreshable { await load() }
+            }
+        }
+        .foregroundColor(theme.text)
+        .foyerPanel(theme)
+        .padding(.horizontal, 12).padding(.top, 8)
+        .task { await load() }
+        .sheet(item: $replying) { card in replySheet(card) }
+    }
+
+    private var presenceStrip: some View {
+        HStack(spacing: 9) {
+            Circle().fill(currentPlace == nil ? theme.textDim.opacity(0.35) : Color.green.opacity(0.72))
+                .frame(width: 7, height: 7)
+            Text(currentPlace.map { "陈璟此刻在 \($0)" } ?? "陈璟此刻没有在乌有乡行走")
+                .font(.system(size: 11, design: .serif)).foregroundColor(theme.textDim)
+            Spacer()
+        }
+        .padding(.horizontal, 13).padding(.vertical, 10).foyerCard(theme)
+    }
+
+    private var postcardWall: some View {
+        LazyVStack(spacing: 14) {
+            if postcards.isEmpty {
+                emptyState("还没有寄回家的明信片", icon: "envelope.open")
+            }
+            ForEach(postcards) { card in postcard(card) }
+        }
+    }
+
+    private func postcard(_ card: NowherePostcard) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if let raw = card.frontImage, let url = nowhereImageURL(raw) {
+                AsyncImage(url: url) { phase in
+                    if let image = phase.image { image.resizable().scaledToFill() }
+                    else { stampCover(card) }
+                }
+                .frame(maxWidth: .infinity).frame(height: 176).clipped()
+            } else {
+                stampCover(card)
+            }
+
+            Text(card.text)
+                .font(.system(size: 13, design: .serif)).lineSpacing(5)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if !card.replies.isEmpty {
+                VStack(alignment: .leading, spacing: 7) {
+                    Text("回 信").font(.system(size: 9, weight: .semibold)).tracking(2)
+                        .foregroundColor(theme.fyAccent)
+                    ForEach(Array(card.replies.enumerated()), id: \.offset) { _, reply in
+                        Text(reply).font(.system(size: 11, design: .serif)).italic()
+                            .foregroundColor(theme.textDim).lineSpacing(3)
+                    }
+                }
+                .padding(10).frame(maxWidth: .infinity, alignment: .leading)
+                .background(theme.fyCardSub, in: RoundedRectangle(cornerRadius: 9))
+            }
+
+            HStack {
+                Text("NO. \(card.id)").font(.system(size: 9, design: .monospaced))
+                    .foregroundColor(theme.textDim)
+                Spacer()
+                Button {
+                    replyText = ""; replying = card
+                } label: {
+                    Label("写回信", systemImage: "pencil.line")
+                        .font(.system(size: 11, weight: .medium)).foregroundColor(theme.fyAccent)
+                }.buttonStyle(.plain)
+            }
+        }
+        .padding(14).foyerCard(theme)
+    }
+
+    private func stampCover(_ card: NowherePostcard) -> some View {
+        ZStack {
+            theme.fyCardSub
+            VStack(spacing: 7) {
+                Image(systemName: "seal").font(.system(size: 24, weight: .light))
+                    .foregroundColor(theme.fyAccent)
+                Text(card.place.isEmpty ? "未知邮戳" : card.place)
+                    .font(.system(size: 16, weight: .semibold, design: .serif))
+                Text(card.localTime).font(.system(size: 10, design: .monospaced))
+                    .foregroundColor(theme.textDim)
+                HStack(spacing: 8) {
+                    if !card.weather.isEmpty { Text(card.weather) }
+                    if let temp = card.temperature { Text(String(format: "%.0f°C", temp)) }
+                    if !card.timezone.isEmpty { Text(card.timezone) }
+                }
+                .font(.system(size: 9)).foregroundColor(theme.textDim)
+            }
+            .padding(16)
+        }
+        .frame(maxWidth: .infinity).frame(height: 150)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(theme.fyBorder, lineWidth: 0.8))
+    }
+
+    private var footsteps: some View {
+        LazyVStack(spacing: 10) {
+            if landings.isEmpty { emptyState("他的脚印还没有落下来", icon: "figure.walk") }
+            ForEach(landings) { stop in
+                HStack(spacing: 12) {
+                    ZStack {
+                        Circle().fill(theme.fyAccentSoft).frame(width: 38, height: 38)
+                        Image(systemName: "mappin.and.ellipse").foregroundColor(theme.fyAccent)
+                    }
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(stop.place).font(.system(size: 13, weight: .semibold, design: .serif))
+                        Text("来过 \(stop.count) 次" + (stop.surface.isEmpty ? "" : " · \(surfaceName(stop.surface))"))
+                            .font(.system(size: 10)).foregroundColor(theme.textDim)
+                    }
+                    Spacer()
+                    Text(shortDate(stop.last)).font(.system(size: 9, design: .monospaced))
+                        .foregroundColor(theme.textDim)
+                }
+                .padding(13).foyerCard(theme)
+            }
+        }
+    }
+
+    private func replySheet(_ card: NowherePostcard) -> some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("写给在 \(card.place) 的陈璟")
+                    .font(.system(size: 13, design: .serif)).foregroundColor(theme.textDim)
+                TextEditor(text: $replyText)
+                    .font(.system(size: 14, design: .serif)).padding(8)
+                    .scrollContentBackground(.hidden)
+                    .background(theme.fyCardSub, in: RoundedRectangle(cornerRadius: 12))
+                Button { Task { await sendReply(card) } } label: {
+                    HStack {
+                        if sendingReply { ProgressView().scaleEffect(0.8).tint(.white) }
+                        Text(sendingReply ? "正在寄出…" : "寄出回信")
+                    }
+                    .frame(maxWidth: .infinity).frame(height: 46)
+                    .background(replyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                                ? theme.fyCardSub : theme.fyAccent,
+                                in: RoundedRectangle(cornerRadius: 13))
+                    .foregroundColor(.white)
+                }
+                .buttonStyle(.plain)
+                .disabled(sendingReply || replyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+            .padding(16).background(theme.fyCard.ignoresSafeArea())
+            .navigationTitle("回一封信").navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("取消") { replying = nil } } }
+        }
+    }
+
+    private func emptyState(_ text: String, icon: String) -> some View {
+        VStack(spacing: 8) {
+            Image(systemName: icon).font(.system(size: 23, weight: .light)).foregroundColor(theme.fyAccent)
+            Text(text).font(.system(size: 12, design: .serif)).foregroundColor(theme.textDim)
+        }
+        .frame(maxWidth: .infinity).padding(.vertical, 34).foyerCard(theme)
+    }
+
+    private func load() async {
+        loading = postcards.isEmpty && landings.isEmpty
+        defer { loading = false }
+        do {
+            async let cardsRaw = NativeHouseAPI.array("/api/nowhere/postcards")
+            async let historyRaw = NativeHouseAPI.object("/api/nowhere/history")
+            async let stateRaw = NativeHouseAPI.object("/api/nowhere/state")
+            let (cards, history, state) = try await (cardsRaw, historyRaw, stateRaw)
+            postcards = cards.map(NowherePostcard.init).sorted { $0.localTime > $1.localTime }
+            landings = (history["landings"] as? [[String: Any]] ?? []).map(NowhereLanding.init)
+                .sorted { $0.last > $1.last }
+            if let pos = state["pos"] as? [String: Any] {
+                currentPlace = pos.string("place")
+                if currentPlace?.isEmpty == true { currentPlace = nil }
+            } else { currentPlace = nil }
+            error = nil
+        } catch { self.error = "乌有乡的路暂时没有回应" }
+    }
+
+    private func sendReply(_ card: NowherePostcard) async {
+        let content = replyText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !content.isEmpty else { return }
+        sendingReply = true
+        defer { sendingReply = false }
+        do {
+            // 真实服务的写入口是单数 postcard；postcards 仅用于读取墙面。
+            try await NativeHouseAPI.post("/api/nowhere/postcard/\(card.id)/reply",
+                                          body: ["content": content])
+            replying = nil
+            await load()
+        } catch { error = "回信没有寄出去，请稍后再试" }
+    }
+
+    private func nowhereImageURL(_ raw: String) -> URL? {
+        if raw.hasPrefix("http://") || raw.hasPrefix("https://") { return URL(string: raw) }
+        let path = raw.hasPrefix("/") ? raw : "/" + raw
+        return AlcoveAPI.fullURL("/api/nowhere" + path)
+    }
+
+    private func surfaceName(_ raw: String) -> String {
+        ["forest": "林地", "city": "城市", "coast": "海岸", "mountain": "山地"][raw] ?? raw
+    }
+
+    private func shortDate(_ raw: String) -> String {
+        guard let date = ISO8601DateFormatter.alcoveFrac.date(from: raw)
+                ?? ISO8601DateFormatter.alcove.date(from: raw) else { return raw }
+        let f = DateFormatter(); f.locale = Locale(identifier: "zh_CN"); f.dateFormat = "M月d日"
+        return f.string(from: date)
     }
 }
 
