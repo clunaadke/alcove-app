@@ -1,13 +1,4 @@
 import SwiftUI
-import UIKit
-
-private struct DrawerBackdropBlur: UIViewRepresentable {
-    func makeUIView(context: Context) -> UIVisualEffectView {
-        UIVisualEffectView(effect: UIBlurEffect(style: .systemMaterialLight))
-    }
-
-    func updateUIView(_ uiView: UIVisualEffectView, context: Context) {}
-}
 
 // App 根视图：原生聊天页 + 原生小屋页面。
 struct RootView: View {
@@ -46,7 +37,11 @@ struct RootView: View {
     var body: some View {
         ZStack(alignment: .top) {
             ChatView()
+                .blur(radius: showHouseDrawer ? 8.5 : 0)
+                .animation(.easeOut(duration: 0.22), value: showHouseDrawer)
             topBar
+                .blur(radius: showHouseDrawer ? 8.5 : 0)
+                .animation(.easeOut(duration: 0.22), value: showHouseDrawer)
             if showTerminal {
                 ZStack {
                     Color(red: 0.1, green: 0.1, blue: 0.12).ignoresSafeArea()
@@ -66,10 +61,7 @@ struct RootView: View {
                 .zIndex(21)
             }
             if showHouseDrawer {
-                ZStack {
-                    DrawerBackdropBlur()
-                        .opacity(0.92)
-                }
+                Color.black.opacity(theme.isDark ? 0.045 : 0.025)
                     .ignoresSafeArea()
                     .contentShape(Rectangle())
                     .onTapGesture { withAnimation(.easeOut(duration: 0.22)) { showHouseDrawer = false } }
