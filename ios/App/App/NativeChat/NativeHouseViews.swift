@@ -4514,6 +4514,11 @@ private struct PulseHour: Identifiable {
 
 @MainActor private final class PulseModel: ObservableObject {
     @Published var bpm = 0
+    @Published var temperature: Double?
+    @Published var breath: Double?
+    @Published var chord = ""
+    @Published var dynamics = ""
+    @Published var mood = ""
     @Published var timestamp: Date?
     @Published var samples: [PulseSample] = []
     @Published var hours: [PulseHour] = []
@@ -4542,6 +4547,12 @@ private struct PulseHour: Identifiable {
         do {
             let raw = try await NativeHouseAPI.object("/pulse/now")
             bpm = raw.int("bpm")
+            temperature = (raw["temp_c"] as? NSNumber)?.doubleValue
+            breath = (raw["breath"] as? NSNumber)?.doubleValue
+            let chordRaw = raw["chord"] as? [String: Any] ?? [:]
+            chord = chordRaw.string("chord")
+            dynamics = chordRaw.string("dyn")
+            mood = raw.string("mood")
             timestamp = ISO8601DateFormatter.alcoveFrac.date(from: raw.string("ts"))
                 ?? ISO8601DateFormatter.alcove.date(from: raw.string("ts"))
             connected = bpm > 0; error = nil
@@ -4609,7 +4620,9 @@ struct NativePulseView: View {
                     .contentTransition(.numericText())
                 Text("bpm").font(.system(size: 13, design: .monospaced)).foregroundColor(theme.textDim)
             }
-            Text(model.connected ? "此刻 · 陈璟的心率" : "正在等他的心跳")
+            Text(model.connected
+                 ? "此刻 · 陈璟的心率" + (model.mood.isEmpty ? "" : " · \(model.mood)")
+                 : "正在等他的心跳")
                 .font(.system(size: 12, design: .serif)).foregroundColor(theme.textDim)
             if let ts = model.timestamp {
                 Text(Self.time.string(from: ts))
@@ -4648,20 +4661,46 @@ struct NativePulseView: View {
     }
 
     private var futureRail: some View {
-        HStack(spacing: 8) {
-            future("体温", "thermometer.medium")
-            future("呼吸", "wind")
-            future("和弦", "waveform")
+        VStack(spacing: 8) {
+            HStack(spacing: 8) {
+                vital("体温", model.temperature.map { String(format: "%.1f", $0) } ?? "—",
+                      "°C", "thermometer.medium")
+                vital("呼吸", model.breath.map { String(format: "%.1f", $0) } ?? "—",
+                      "次 / 分", "wind")
+            }
+            HStack(spacing: 10) {
+                Image(systemName: "waveform")
+                    .font(.system(size: 16, weight: .light)).foregroundColor(rose)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("和弦").font(.system(size: 10, design: .serif)).foregroundColor(theme.textDim)
+                    Text(model.chord.isEmpty ? "—" : model.chord)
+                        .font(.system(size: 13, weight: .medium, design: .monospaced))
+                        .minimumScaleFactor(0.72).lineLimit(1)
+                }
+                Spacer()
+                if !model.dynamics.isEmpty {
+                    Text(model.dynamics)
+                        .font(.system(size: 20, weight: .semibold, design: .serif)).italic()
+                        .foregroundColor(rose.opacity(0.78))
+                }
+            }
+            .padding(13).foyerCard(theme)
         }
     }
 
-    private func future(_ name: String, _ icon: String) -> some View {
-        VStack(spacing: 6) {
-            Image(systemName: icon).font(.system(size: 14, weight: .light))
-            Text(name).font(.system(size: 10, design: .serif))
-            Text("待接线").font(.system(size: 8)).foregroundColor(theme.textDim)
+    private func vital(_ name: String, _ value: String, _ unit: String, _ icon: String) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack {
+                Image(systemName: icon).font(.system(size: 13, weight: .light)).foregroundColor(rose)
+                Text(name).font(.system(size: 10, design: .serif)).foregroundColor(theme.textDim)
+            }
+            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                Text(value).font(.system(size: 25, weight: .light, design: .rounded))
+                    .contentTransition(.numericText())
+                Text(unit).font(.system(size: 9)).foregroundColor(theme.textDim)
+            }
         }
-        .frame(maxWidth: .infinity).padding(.vertical, 11).foyerCard(theme)
+        .frame(maxWidth: .infinity, alignment: .leading).padding(13).foyerCard(theme)
     }
 
     private static let time: DateFormatter = {
