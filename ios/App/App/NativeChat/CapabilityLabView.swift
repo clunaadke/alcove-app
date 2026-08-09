@@ -88,6 +88,10 @@ struct CapabilityLabView: View {
             return
         }
         do {
+            // 体检按钮可以反复点，但手机上只保留一条，避免无界堆积实时活动。
+            for activity in Activity<AlcoveLabAttributes>.activities {
+                await activity.end(nil, dismissalPolicy: .immediate)
+            }
             let state = AlcoveLabAttributes.ContentState(message: "我在这里", startedAt: .now)
             _ = try Activity.request(
                 attributes: AlcoveLabAttributes(name: "陈璟"),
@@ -111,7 +115,8 @@ struct CapabilityLabView: View {
 private struct BroadcastPicker: UIViewRepresentable {
     func makeUIView(context: Context) -> RPSystemBroadcastPickerView {
         let picker = RPSystemBroadcastPickerView()
-        picker.preferredExtension = "com.luna.alcove.BroadcastUpload"
+        // 有些免费重签工具会改写子扩展 Bundle ID，不能写死构建时的地址。
+        picker.preferredExtension = InstalledExtensionReport.broadcastBundleIdentifier
         picker.showsMicrophoneButton = false
         return picker
     }
@@ -122,17 +127,27 @@ private struct BroadcastPicker: UIViewRepresentable {
 private struct InstalledExtensionReport {
     let summary: String
 
+    static var broadcastBundleIdentifier: String? {
+        installedExtensionURLs
+            .first { $0.deletingPathExtension().lastPathComponent == "BroadcastUpload" }
+            .flatMap { Bundle(url: $0)?.bundleIdentifier }
+    }
+
+    private static var installedExtensionURLs: [URL] {
+        guard let directory = Bundle.main.builtInPlugInsURL else { return [] }
+        return ((try? FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        )) ?? []).filter { $0.pathExtension == "appex" }
+    }
+
     static func read() -> Self {
         guard let directory = Bundle.main.builtInPlugInsURL else {
             return .init(summary: "PlugIns 目录：不存在\n结论：安装包没有嵌入任何扩展")
         }
 
-        let urls = (try? FileManager.default.contentsOfDirectory(
-            at: directory,
-            includingPropertiesForKeys: nil,
-            options: [.skipsHiddenFiles]
-        )) ?? []
-        let appex = urls.filter { $0.pathExtension == "appex" }.sorted { $0.lastPathComponent < $1.lastPathComponent }
+        let appex = installedExtensionURLs.sorted { $0.lastPathComponent < $1.lastPathComponent }
         guard !appex.isEmpty else {
             return .init(summary: "PlugIns 目录：存在\n.appex：0 个\n结论：重签或安装时扩展被剥掉")
         }
