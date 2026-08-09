@@ -6209,7 +6209,8 @@ private struct NativeFictionStudyView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
+        NavigationStack {
+            VStack(spacing: 0) {
             HStack(spacing: 8) {
                 segment("连载中", value: "serializing")
                 segment("已完结", value: "completed")
