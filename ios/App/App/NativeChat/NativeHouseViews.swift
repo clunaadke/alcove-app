@@ -7762,7 +7762,7 @@ private struct NativePipeLabView: View {
                     HStack(alignment: .top, spacing: 9) {
                         Image(systemName: item.icon)
                             .font(.system(size: 11)).frame(width: 16).foregroundColor(theme.fyAccent)
-                        Text(item.quote)
+                        Text(item.text)
                             .font(item.kind == "thinking" ? .system(size: 12).italic() : .system(size: 12, weight: .medium))
                             .foregroundColor(theme.textDim)
                             .fixedSize(horizontal: false, vertical: true)
