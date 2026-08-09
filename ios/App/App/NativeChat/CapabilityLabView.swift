@@ -8,10 +8,23 @@ struct CapabilityLabView: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var calls = CallKitSmokeTester.shared
     @State private var liveMessage = "尚未测试"
+    @State private var installedExtensions = InstalledExtensionReport.read()
 
     var body: some View {
         NavigationStack {
             List {
+                Section("安装包 · 扩展签名") {
+                    Text(installedExtensions.summary)
+                        .font(.footnote.monospaced())
+                        .textSelection(.enabled)
+                    Button("重新读取安装包") {
+                        installedExtensions = .read()
+                    }
+                    Text("这里读的是手机上已经安装的 App，不是构建服务器里的工程文件。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
                 Section("CallKit · 系统通话记录") {
                     Text(calls.status)
                         .font(.footnote)
@@ -47,8 +60,13 @@ struct CapabilityLabView: View {
                 }
 
                 Section("ReplayKit · 屏幕共享") {
-                    BroadcastPicker()
-                        .frame(height: 48)
+                    ZStack {
+                        Label("打开系统屏幕共享面板", systemImage: "rectangle.on.rectangle")
+                            .foregroundStyle(.pink)
+                            .frame(maxWidth: .infinity, minHeight: 48)
+                        BroadcastPicker()
+                            .opacity(0.02)
+                    }
                     Text("请亲手点系统按钮开始。第一版只验证广播扩展能否被免费签名安装和拉起，不上传屏幕。")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -95,16 +113,37 @@ private struct BroadcastPicker: UIViewRepresentable {
         let picker = RPSystemBroadcastPickerView()
         picker.preferredExtension = "com.luna.alcove.BroadcastUpload"
         picker.showsMicrophoneButton = false
-        for view in picker.subviews {
-            guard let button = view as? UIButton else { continue }
-            button.setTitle(" 开始屏幕共享体检", for: .normal)
-            button.setTitleColor(.label, for: .normal)
-            button.tintColor = .label
-        }
         return picker
     }
 
     func updateUIView(_ uiView: RPSystemBroadcastPickerView, context: Context) {}
+}
+
+private struct InstalledExtensionReport {
+    let summary: String
+
+    static func read() -> Self {
+        guard let directory = Bundle.main.builtInPlugInsURL else {
+            return .init(summary: "PlugIns 目录：不存在\n结论：安装包没有嵌入任何扩展")
+        }
+
+        let urls = (try? FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles]
+        )) ?? []
+        let appex = urls.filter { $0.pathExtension == "appex" }.sorted { $0.lastPathComponent < $1.lastPathComponent }
+        guard !appex.isEmpty else {
+            return .init(summary: "PlugIns 目录：存在\n.appex：0 个\n结论：重签或安装时扩展被剥掉")
+        }
+
+        let lines = appex.map { url -> String in
+            let bundleID = Bundle(url: url)?.bundleIdentifier ?? "无 Bundle ID"
+            let profile = FileManager.default.fileExists(atPath: url.appendingPathComponent("embedded.mobileprovision").path)
+            return "• \(url.deletingPathExtension().lastPathComponent)\n  \(bundleID)\n  描述文件：\(profile ? "有" : "无")"
+        }
+        return .init(summary: "发现 \(appex.count) 个扩展：\n" + lines.joined(separator: "\n"))
+    }
 }
 
 @MainActor
