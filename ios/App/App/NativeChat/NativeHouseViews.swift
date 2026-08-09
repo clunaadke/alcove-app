@@ -6203,6 +6203,8 @@ private struct NativeFictionStudyView: View {
     @AppStorage("alcoveTheme") private var themeName = "haven"
     @State private var section = "serializing"
     @State private var selectedBook: FictionBook?
+    @State private var selectedChapter: Int?
+    @State private var showQuotes = false
     private var theme: AlcoveTheme { .panelNamed(themeName) }
 
     private var visibleBooks: [FictionBook] {
@@ -6210,15 +6212,31 @@ private struct NativeFictionStudyView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
+        Group {
+            if showQuotes {
+                FictionQuotesView(model: model, books: model.books) { showQuotes = false }
+            } else if let book = selectedBook, let chapter = selectedChapter {
+                FictionReaderView(book: book, chapterIndex: chapter, model: model) {
+                    selectedChapter = nil
+                }
+            } else if let book = selectedBook {
+                FictionBookView(book: book, model: model, onBack: {
+                    selectedBook = nil
+                }, onChapter: { selectedChapter = $0 })
+            } else {
+                shelf
+            }
+        }
+        .task { await model.load() }
+    }
+
+    private var shelf: some View {
+        VStack(spacing: 0) {
             HStack(spacing: 8) {
                 segment("连载中", value: "serializing")
                 segment("已完结", value: "completed")
                 Spacer()
-                NavigationLink {
-                    FictionQuotesView(model: model, books: model.books)
-                } label: {
+                Button { showQuotes = true } label: {
                     Label("摘句册", systemImage: "quote.opening")
                         .font(.system(size: 12, weight: .medium))
                         .foregroundColor(theme.textDim)
@@ -6252,13 +6270,8 @@ private struct NativeFictionStudyView: View {
                     .padding(18)
                 }
             }
-            }
-            .foregroundColor(theme.text)
-            .navigationDestination(item: $selectedBook) { book in
-                FictionBookView(book: book, model: model)
-            }
         }
-        .task { await model.load() }
+        .foregroundColor(theme.text)
     }
 
     private func segment(_ title: String, value: String) -> some View {
@@ -6319,16 +6332,16 @@ private struct FictionSpine: View {
 private struct FictionBookView: View {
     let book: FictionBook
     @ObservedObject var model: FictionStudyModel
-    @Environment(\.dismiss) private var dismiss
+    let onBack: () -> Void
+    let onChapter: (Int) -> Void
     @AppStorage("alcoveTheme") private var themeName = "haven"
-    @State private var chapterIndex: Int?
     @State private var detail: FictionBookDetail?
     private var theme: AlcoveTheme { .panelNamed(themeName) }
 
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
-                Button { dismiss() } label: {
+                Button(action: onBack) {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 15, weight: .semibold))
                         .frame(width: 28, height: 34)
@@ -6355,7 +6368,7 @@ private struct FictionBookView: View {
                 Text("chapters").font(.custom("Snell Roundhand", size: 22)).foregroundColor(theme.textDim)
                 if let detail {
                     ForEach(detail.toc, id: \.n) { item in
-                    Button { chapterIndex = item.n } label: {
+                    Button { onChapter(item.n) } label: {
                         HStack {
                             Text(String(format: "%02d", item.n)).font(.system(size: 11, design: .monospaced))
                                 .foregroundColor(theme.textDim)
@@ -6374,16 +6387,7 @@ private struct FictionBookView: View {
         }
         }
         .foregroundColor(theme.text)
-        .background {
-            Image(theme.isDark ? "DrawerDark" : "DrawerLight")
-                .resizable().scaledToFill().clipped()
-        }
-        .navigationBarBackButtonHidden(true)
-        .toolbar(.hidden, for: .navigationBar)
         .task { detail = try? await model.detail(bookID: book.id) }
-        .navigationDestination(item: $chapterIndex) { index in
-            FictionReaderView(book: book, chapterIndex: index, model: model)
-        }
     }
 }
 
@@ -6391,7 +6395,7 @@ private struct FictionReaderView: View {
     let book: FictionBook
     let chapterIndex: Int
     @ObservedObject var model: FictionStudyModel
-    @Environment(\.dismiss) private var dismiss
+    let onBack: () -> Void
     @AppStorage("alcoveTheme") private var themeName = "haven"
     @State private var chapter: FictionChapter?
     @State private var annotations: [FictionAnnotation] = []
@@ -6408,7 +6412,7 @@ private struct FictionReaderView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
-                Button { dismiss() } label: {
+                Button(action: onBack) {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 15, weight: .semibold))
                         .frame(width: 28, height: 34)
@@ -6470,13 +6474,6 @@ private struct FictionReaderView: View {
             }
         }
         .foregroundColor(theme.text)
-        .background {
-            Image(theme.isDark ? "DrawerDark" : "DrawerLight")
-                .resizable().scaledToFill().clipped()
-        }
-        .toolbarBackground(.hidden, for: .navigationBar)
-        .navigationBarBackButtonHidden(true)
-        .toolbar(.hidden, for: .navigationBar)
         .task {
             do {
                 chapter = try await model.chapter(bookID: book.id, index: chapterIndex)
@@ -6562,11 +6559,21 @@ private struct ReadingSettingsSheet: View {
 private struct FictionQuotesView: View {
     @ObservedObject var model: FictionStudyModel
     let books: [FictionBook]
+    let onBack: () -> Void
     @AppStorage("alcoveTheme") private var themeName = "haven"
     @State private var rows: [FictionQuoteRow] = []
     private var theme: AlcoveTheme { .panelNamed(themeName) }
     var body: some View {
-        Group {
+        VStack(spacing: 0) {
+            HStack(spacing: 10) {
+                Button(action: onBack) {
+                    Image(systemName: "chevron.left").font(.system(size: 15, weight: .semibold))
+                        .frame(width: 28, height: 34)
+                }.buttonStyle(.plain)
+                Text("摘句册").font(.system(size: 14, weight: .semibold, design: .serif))
+                Spacer()
+            }.padding(.horizontal, 14).padding(.vertical, 6)
+            Group {
             if rows.isEmpty {
                 ContentUnavailableView("摘句册还是空的", systemImage: "quote.opening",
                                        description: Text("你划下第一句话后，会连着书评一起收在这里"))
@@ -6586,6 +6593,7 @@ private struct FictionQuotesView: View {
                         }
                     }.padding(18)
                 }
+            }
             }
         }
         .foregroundColor(theme.text)
