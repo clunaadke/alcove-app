@@ -37,10 +37,10 @@ struct RootView: View {
     var body: some View {
         ZStack(alignment: .top) {
             ChatView()
-                .blur(radius: showHouseDrawer ? 8.5 : 0)
+                .blur(radius: showHouseDrawer ? 5.0 : 0)
                 .animation(.easeOut(duration: 0.22), value: showHouseDrawer)
             topBar
-                .blur(radius: showHouseDrawer ? 8.5 : 0)
+                .blur(radius: showHouseDrawer ? 5.0 : 0)
                 .animation(.easeOut(duration: 0.22), value: showHouseDrawer)
             if showTerminal {
                 ZStack {
