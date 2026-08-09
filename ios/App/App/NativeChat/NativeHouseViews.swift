@@ -5,6 +5,14 @@ import MediaPlayer
 import WebKit
 import MapKit
 
+private struct HouseOwnsHeaderKey: EnvironmentKey { static let defaultValue = false }
+private extension EnvironmentValues {
+    var houseOwnsHeader: Bool {
+        get { self[HouseOwnsHeaderKey.self] }
+        set { self[HouseOwnsHeaderKey.self] = newValue }
+    }
+}
+
 enum HouseDestination: String, Identifiable, CaseIterable {
     case sidebar, chat, terminal, settings, bubbleAppearance, checklist, music
     case home, calendar, wall, usage
@@ -154,7 +162,8 @@ struct NativeHouseSheet: View {
     var body: some View {
         GeometryReader { root in
             FoyerGlassContainer(spacing: 8, paper: theme.isPaper) {
-                ZStack {
+                VStack(spacing: 0) {
+                    houseHeader(safeTop: root.safeAreaInsets.top)
                     Group {
                 switch route {
                 case .sidebar:
@@ -217,6 +226,8 @@ struct NativeHouseSheet: View {
                     NativeDataPanel(destination: route)
                 }
                     }
+                    .environment(\.houseOwnsHeader, true)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -228,7 +239,6 @@ struct NativeHouseSheet: View {
                     : nil
             )
         }
-        .foyerShell(theme)
         .coordinateSpace(name: "alcoveChatRoot")
         .environment(\.chatWallpaperDescriptor, panelWallpaperDescriptor)
         .environment(\.chatWallpaperViewportSize, root.size)
@@ -236,8 +246,19 @@ struct NativeHouseSheet: View {
         // Panel wallpaper may extend under the home indicator, but keyboard safe-area
         // must remain live so editors/composers rise instead of being covered.
         .ignoresSafeArea(.container, edges: .all)
-        .overlay(alignment: .topLeading) {
-            if route != .sidebar {
+        .preferredColorScheme(theme.isDark ? .dark : .light)
+        .presentationBackground(.clear)
+        .onAppear { prepareTextureIfNeeded() }
+        .onChange(of: themeName) { _ in prepareTextureIfNeeded() }
+        }
+    }
+
+    private func houseHeader(safeTop: CGFloat) -> some View {
+        ZStack {
+            Text(route.title)
+                .font(.system(size: 17, weight: .semibold, design: .serif))
+                .tracking(0.4)
+            HStack {
                 Button {
                     if route == .bubbleAppearance {
                         withAnimation(.easeInOut(duration: 0.18)) { route = .settings }
@@ -246,24 +267,21 @@ struct NativeHouseSheet: View {
                     }
                 } label: {
                     Image(systemName: "chevron.left")
-                        .font(.system(size: 15, weight: .medium))
-                        .foregroundColor(theme.fyAccent)
-                        .frame(width: 34, height: 34)
-                        .background(theme.fyCard, in: Circle())
-                        .overlay(Circle().stroke(theme.fyBorder, lineWidth: 1))
-                        .shadow(color: theme.fyShadow, radius: 4, y: 2)
-                }
-                .padding(.leading, 14)
-                .padding(.top, max(root.safeAreaInsets.top, 8) + 6)
+                        .font(.system(size: 17, weight: .medium))
+                        .foregroundColor(theme.textDim)
+                        .frame(width: 36, height: 40)
+                        .contentShape(Rectangle())
+                }.buttonStyle(.plain)
+                Spacer()
             }
         }
-        .preferredColorScheme(theme.isDark ? .dark : .light)
-        .presentationDetents([.fraction(0.86)])
-        .presentationDragIndicator(.visible)
-        .presentationBackground(.clear)
-        .onAppear { prepareTextureIfNeeded() }
-        .onChange(of: themeName) { _ in prepareTextureIfNeeded() }
-        }
+        .frame(height: 46)
+        .padding(.top, safeTop)
+        .padding(.horizontal, 12)
+        .background(
+            LinearGradient(colors: [theme.fyCardSub.opacity(0.46), .clear],
+                           startPoint: .top, endPoint: .bottom)
+        )
     }
 
     private func prepareTextureIfNeeded() {
@@ -378,13 +396,13 @@ struct NativeHouseDrawer: View {
     }
 
     var body: some View {
-        ZStack {
-            Image(theme.isDark ? "DrawerDark" : "DrawerLight")
-                .resizable().scaledToFill().ignoresSafeArea()
-            Color(theme.isDark ? .black : .white).opacity(theme.isDark ? 0.10 : 0.08)
-                .ignoresSafeArea()
+        GeometryReader { geo in
+            ZStack {
+                Image(theme.isDark ? "DrawerDark" : "DrawerLight")
+                    .resizable().scaledToFill()
+                (theme.isDark ? Color.black : Color.white).opacity(theme.isDark ? 0.10 : 0.08)
 
-            ScrollView(showsIndicators: false) {
+                ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 13) {
                     HStack {
                         Text("Alcove")
@@ -436,14 +454,24 @@ struct NativeHouseDrawer: View {
                         .frame(maxWidth: .infinity, alignment: .center)
                         .padding(.vertical, 8)
                 }
-                .padding(.top, 12)
+                .padding(.top, geo.safeAreaInsets.top + 12)
                 .padding(.horizontal, 14)
-                .padding(.bottom, 28)
+                .padding(.bottom, geo.safeAreaInsets.bottom + 28)
+                }
             }
         }
+        .ignoresSafeArea(.container, edges: .vertical)
         .foregroundColor(theme.text)
         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         .shadow(color: .black.opacity(theme.isDark ? 0.38 : 0.13), radius: 24, x: -8)
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 18)
+                .onEnded { value in
+                    guard value.translation.width > 70,
+                          abs(value.translation.width) > abs(value.translation.height) * 1.35 else { return }
+                    onClose()
+                }
+        )
         .task { await model.load() }
     }
 
@@ -786,6 +814,7 @@ private struct NativeSettingsView: View {
     @State private var codexLatency: Int?
     @State private var codexThreadConnected = false
     @State private var servicesLoading = false
+    @Environment(\.houseOwnsHeader) private var houseOwnsHeader
     private var theme: AlcoveTheme { .panelNamed(themeName) }
 
     var body: some View {
@@ -891,8 +920,10 @@ private struct NativeSettingsView: View {
         .task { await loadServices() }
     }
 
-    private func panelTitle(_ text: String) -> some View {
-        Text(text).font(.system(size: 17, weight: .semibold)).padding(.top, 11)
+    @ViewBuilder private func panelTitle(_ text: String) -> some View {
+        if !houseOwnsHeader {
+            Text(text).font(.system(size: 17, weight: .semibold)).padding(.top, 11)
+        }
     }
 
     @ViewBuilder private func section<Content: View>(
@@ -2892,14 +2923,18 @@ private struct FoyerFoldCorner: View {
 private struct FoyerPanelTitle: View {
     let title: String
     let theme: AlcoveTheme
+    @Environment(\.houseOwnsHeader) private var houseOwnsHeader
+    @ViewBuilder
     var body: some View {
-        VStack(spacing: 6) {
-            Text(title)
-                .font(.system(size: 17, weight: .semibold, design: .serif))
-                .tracking(0.5)
-            FoyerSash(theme: theme)
+        if !houseOwnsHeader {
+            VStack(spacing: 6) {
+                Text(title)
+                    .font(.system(size: 17, weight: .semibold, design: .serif))
+                    .tracking(0.5)
+                FoyerSash(theme: theme)
+            }
+            .padding(.top, 12)
         }
-        .padding(.top, 12)
     }
 }
 
