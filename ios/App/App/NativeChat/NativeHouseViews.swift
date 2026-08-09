@@ -5649,11 +5649,11 @@ private struct NativeMorningPaperView: View {
                 .font(.system(size: 10, weight: .semibold, design: .monospaced))
                 .tracking(2.2)
                 .foregroundColor(theme.fyAccent)
-            Text(displayDate(model.paper?.date ?? ""))
-                .font(.system(size: 23, weight: .semibold, design: .serif))
-                .tracking(1.2)
+            Text("雨 霁 报")
+                .font(.system(size: 29, weight: .semibold, design: .serif))
+                .tracking(5)
             HStack {
-                Text("刊名等主人题字")
+                Text(displayDate(model.paper?.date ?? ""))
                 Spacer()
                 Text(model.paper?.status == "fixture" ? "样刊" : "今日刊")
             }
