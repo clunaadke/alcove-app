@@ -55,25 +55,37 @@ private struct AlcoveLabLiveActivity: Widget {
         ActivityConfiguration(for: AlcoveLabAttributes.self) { context in
             Text("\(context.attributes.name) · \(context.state.message)")
                 .font(.headline)
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding()
+                .activityBackgroundTint(.black)
+                .activitySystemActionForegroundColor(.white)
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
                     Text("Alcove")
+                        .foregroundStyle(.pink)
                 }
                 DynamicIslandExpandedRegion(.center) {
                     Text(context.attributes.name)
+                        .foregroundStyle(.white)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    Text(context.state.message).font(.caption)
+                    Text(context.state.message)
+                        .font(.caption)
+                        .foregroundStyle(.white)
                 }
             } compactLeading: {
                 Text("A")
+                    .foregroundStyle(.pink)
             } compactTrailing: {
                 Text("渡")
+                    .foregroundStyle(.white)
             } minimal: {
                 Text("A")
+                    .foregroundStyle(.pink)
             }
+            .keylineTint(.pink)
         }
     }
 }
