@@ -70,7 +70,7 @@ struct RootView: View {
                 GeometryReader { drawerGeo in
                     let drawerWidth = drawerGeo.size.width * 0.80
                     HStack(spacing: 0) {
-                        Color.clear
+                        Color.black.opacity(0.001)
                             .frame(width: drawerGeo.size.width - drawerWidth)
                             .contentShape(Rectangle())
                             .onTapGesture {
