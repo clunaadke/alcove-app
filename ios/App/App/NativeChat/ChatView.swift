@@ -1222,6 +1222,13 @@ private struct GhostActivityMessageCard: View {
                     Image(systemName: expanded ? "chevron.up" : "chevron.down").font(.system(size: 9))
                 }
             }.buttonStyle(.plain)
+            if !state.say.isEmpty {
+                Text(state.say)
+                    .font(.system(size: 13))
+                    .foregroundColor(theme.textDim.opacity(0.95))
+                    .lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             if expanded {
                 VStack(alignment: .leading, spacing: 11) {
                     ForEach(card.items) { item in
@@ -1394,13 +1401,14 @@ struct LiveSayBand: View {
     private func trackTitle(_ item: AlcoveAPI.LiveProcessItem) -> String {
         switch item.kind {
         case "thinking": return "思绪"
+        case "text": return "正文"
         default: return item.text
         }
     }
 
     private func trackDetail(_ item: AlcoveAPI.LiveProcessItem) -> String {
         switch item.kind {
-        case "thinking": return item.text
+        case "thinking", "text": return item.text
         default: return item.done ? "已发生" : "进行中"
         }
     }
