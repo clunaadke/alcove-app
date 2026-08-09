@@ -70,8 +70,8 @@ struct RootView: View {
                     )
                     .frame(width: drawerGeo.size.width * 0.80)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
-                    .padding(.trailing, 10)
                 }
+                .ignoresSafeArea(.container, edges: .all)
                 .transition(.move(edge: .trailing))
                 .zIndex(19)
             }

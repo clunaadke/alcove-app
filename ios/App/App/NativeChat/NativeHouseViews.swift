@@ -462,7 +462,15 @@ struct NativeHouseDrawer: View {
         }
         .ignoresSafeArea(.container, edges: .vertical)
         .foregroundColor(theme.text)
-        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .clipShape(
+            UnevenRoundedRectangle(
+                topLeadingRadius: 24,
+                bottomLeadingRadius: 24,
+                bottomTrailingRadius: 0,
+                topTrailingRadius: 0,
+                style: .continuous
+            )
+        )
         .shadow(color: .black.opacity(theme.isDark ? 0.38 : 0.13), radius: 24, x: -8)
         .simultaneousGesture(
             DragGesture(minimumDistance: 18)
