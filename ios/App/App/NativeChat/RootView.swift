@@ -60,22 +60,8 @@ struct RootView: View {
                 ZStack {
                     Rectangle()
                         .fill(.ultraThinMaterial)
-                        .mask(
-                            LinearGradient(
-                                colors: [.white.opacity(0.28), .white.opacity(0.72), .white],
-                                startPoint: .leading,
-                                endPoint: .trailing
-                            )
-                        )
-                    LinearGradient(
-                        colors: [
-                            .black.opacity(theme.isDark ? 0.10 : 0.025),
-                            .black.opacity(theme.isDark ? 0.25 : 0.09),
-                            .black.opacity(theme.isDark ? 0.42 : 0.16)
-                        ],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
+                        .opacity(theme.isDark ? 0.44 : 0.34)
+                    Color.black.opacity(theme.isDark ? 0.20 : 0.08)
                 }
                     .ignoresSafeArea()
                     .contentShape(Rectangle())
