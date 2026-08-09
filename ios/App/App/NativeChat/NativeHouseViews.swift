@@ -2800,7 +2800,7 @@ private struct NativeFavoritesView: View {
                                                 .foregroundColor(theme.textLight)
                                         }
                                     }
-                                    Text(item.quote).font(.system(size: 12)).lineSpacing(3)
+                                    Text(item.text).font(.system(size: 12)).lineSpacing(3)
                                         .textSelection(.enabled)
                                 }
                                 .padding(.vertical, 11)
@@ -3509,8 +3509,7 @@ private struct NativeDesireView: View {
     }
 
     var body: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
+        VStack(spacing: 0) {
             FoyerPanelTitle(title: "身体潮汐", theme: theme)
             if loading {
                 Spacer(); ProgressView().tint(theme.fyAccent); Spacer()
