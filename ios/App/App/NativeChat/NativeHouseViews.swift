@@ -428,6 +428,7 @@ struct NativeHouseDrawer: View {
                                 .background(.ultraThinMaterial, in: Circle())
                         }.buttonStyle(.plain)
                     }
+                    .frame(maxWidth: .infinity)
 
                     homeCard
                     handwritten("still at home")
@@ -522,6 +523,7 @@ struct NativeHouseDrawer: View {
             Spacer(minLength: 0)
         }
         .padding(14)
+        .frame(maxWidth: .infinity)
         .drawerGlass(theme)
     }
 
@@ -540,7 +542,9 @@ struct NativeHouseDrawer: View {
             Text(note).font(.custom("Snell Roundhand", size: 14))
                 .foregroundColor(theme.textDim.opacity(0.62))
             Spacer()
-        }.padding(.top, 4).padding(.horizontal, 3)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 4).padding(.horizontal, 3)
     }
 
     private func drawerRow(_ target: HouseDestination, detail: String) -> some View {
@@ -559,7 +563,8 @@ struct NativeHouseDrawer: View {
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundColor(theme.textDim.opacity(0.55))
             }
-            .padding(.horizontal, 12).frame(minHeight: 52)
+            .padding(.horizontal, 12)
+            .frame(maxWidth: .infinity, minHeight: 52)
             .drawerGlass(theme)
         }.buttonStyle(.plain)
     }
@@ -578,7 +583,8 @@ struct NativeHouseDrawer: View {
                         .font(.system(size: 10, weight: .semibold))
                         .rotationEffect(.degrees(isExpanded.wrappedValue ? 180 : 0))
                 }
-                .padding(.horizontal, 12).frame(height: 43)
+                .padding(.horizontal, 12)
+                .frame(maxWidth: .infinity, minHeight: 43)
                 .drawerGlass(theme)
             }.buttonStyle(.plain)
             if isExpanded.wrappedValue {
