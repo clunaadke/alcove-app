@@ -251,7 +251,12 @@ struct NativeHouseSheet: View {
         // must remain live so editors/composers rise instead of being covered.
         .ignoresSafeArea(.container, edges: .all)
         .preferredColorScheme(theme.isDark ? .dark : .light)
-        .presentationBackground(.clear)
+        .presentationBackground {
+            Image(theme.isDark ? "DrawerDark" : "DrawerLight")
+                .resizable()
+                .scaledToFill()
+                .ignoresSafeArea()
+        }
         .onAppear { prepareTextureIfNeeded() }
         .onChange(of: themeName) { _ in prepareTextureIfNeeded() }
         }
@@ -3122,30 +3127,23 @@ private extension View {
                 }
                 .contentShape(JournalCardShape(tl: 4, bl: 10, br: 3, tr: 12))
                 .shadow(color: theme.fyShadow.opacity(0.65), radius: 1.5, x: 1, y: 2)
-        } else if #available(iOS 26.0, *) {
-            self
-                .glassEffect(
-                    .regular.tint(theme.fyCard.opacity(theme.isDark ? 0.16 : 0.11)),
-                    in: RoundedRectangle(cornerRadius: 16, style: .continuous)
-                )
-                .contentShape(shape)
-                .shadow(
-                    color: .black.opacity(theme.isDark ? 0.28 : 0.12),
-                    radius: 5,
-                    x: 1,
-                    y: 3
-                )
         } else {
             self
-                .background {
-                    FoyerCardGlassBackground(theme: theme)
-                }
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .background(
+                    theme.fyCard.opacity(theme.isDark ? 0.055 : 0.075),
+                    in: RoundedRectangle(cornerRadius: 16, style: .continuous)
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(theme.glassBorder.opacity(0.58), lineWidth: 0.65)
+                )
                 .contentShape(shape)
                 .shadow(
-                    color: .black.opacity(theme.isDark ? 0.28 : 0.12),
-                    radius: 5,
+                    color: .black.opacity(theme.isDark ? 0.18 : 0.08),
+                    radius: 4,
                     x: 1,
-                    y: 3
+                    y: 2
                 )
         }
     }
