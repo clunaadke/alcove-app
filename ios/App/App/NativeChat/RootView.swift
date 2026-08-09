@@ -70,12 +70,8 @@ struct RootView: View {
                 GeometryReader { drawerGeo in
                     let drawerWidth = drawerGeo.size.width * 0.80
                     HStack(spacing: 0) {
-                        Color.black.opacity(0.001)
+                        Color.clear
                             .frame(width: drawerGeo.size.width - drawerWidth)
-                            .contentShape(Rectangle())
-                            .onTapGesture {
-                                withAnimation(.easeOut(duration: 0.22)) { showHouseDrawer = false }
-                            }
                         NativeHouseDrawer(
                             drawerWidth: drawerWidth,
                             onClose: { withAnimation(.easeOut(duration: 0.22)) { showHouseDrawer = false } },
@@ -84,6 +80,13 @@ struct RootView: View {
                         )
                         .frame(width: drawerWidth, height: drawerGeo.size.height)
                     }
+                    .contentShape(Rectangle())
+                    .simultaneousGesture(
+                        SpatialTapGesture().onEnded { value in
+                            guard value.location.x < drawerGeo.size.width - drawerWidth else { return }
+                            withAnimation(.easeOut(duration: 0.22)) { showHouseDrawer = false }
+                        }
+                    )
                 }
                 .ignoresSafeArea(.container, edges: .all)
                 .transition(.move(edge: .trailing))
