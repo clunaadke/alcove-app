@@ -742,7 +742,8 @@ struct MessageRow: View {
     var body: some View {
         HStack(alignment: .bottom, spacing: 0) {
             if isUser { Spacer(minLength: 48) }
-            VStack(alignment: isUser ? .trailing : .leading, spacing: 7) {
+            VStack(alignment: isUser ? .trailing : .leading,
+                   spacing: theme.isPaper && !isUser ? 10 : 7) {
                 if let think = visibleChatThought {
                     thinkingBlock(think)
                 } else if recall != nil {
@@ -829,7 +830,7 @@ struct MessageRow: View {
                     }
                 }
             }
-            if !isUser { Spacer(minLength: theme.isPaper ? 14 : 48) }
+            if !isUser { Spacer(minLength: theme.isPaper ? 15 : 48) }
         }
         .padding(.leading, theme.isPaper && !isUser ? 12 : 0)
         .padding(.top, 2)
@@ -876,7 +877,7 @@ struct MessageRow: View {
             } else {
                 text
                     .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
+                    .padding(.vertical, theme.isPaper && isUser ? 11 : 10)
                     .background {
                         if theme.isPaper {
                             RoundedRectangle(cornerRadius: 18, style: .continuous)
@@ -1010,7 +1011,7 @@ struct MessageRow: View {
                 HStack(spacing: 4) {
                     Image(systemName: "clock.arrow.circlepath").font(.system(size: 12, weight: .light))
                     Text(theme.isPaper ? "ThoughtProcess" : thinkingLabel(think))
-                        .font(theme.isPaper ? .system(size: 12, weight: .medium) : .custom("Georgia", size: 12))
+                        .font(theme.isPaper ? .system(size: 13, weight: .medium) : .custom("Georgia", size: 12))
                     Image(systemName: theme.isPaper ? "chevron.right" : (showThinking ? "chevron.up" : "chevron.down"))
                         .font(.system(size: 8))
                     if recall != nil {
