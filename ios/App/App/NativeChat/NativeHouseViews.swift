@@ -391,6 +391,12 @@ struct NativeHouseDrawer: View {
                             .font(.system(size: 20, weight: .medium, design: .serif))
                             .tracking(1.2)
                         Spacer()
+                        Button { select(.settings) } label: {
+                            Image(systemName: "gearshape")
+                                .font(.system(size: 13, weight: .medium))
+                                .frame(width: 32, height: 32)
+                                .background(.ultraThinMaterial, in: Circle())
+                        }.buttonStyle(.plain)
                         Button(action: onClose) {
                             Image(systemName: "xmark")
                                 .font(.system(size: 12, weight: .semibold))
@@ -436,7 +442,7 @@ struct NativeHouseDrawer: View {
             }
         }
         .foregroundColor(theme.text)
-        .clipShape(UnevenRoundedRectangle(topLeadingRadius: 24, bottomLeadingRadius: 24))
+        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
         .shadow(color: .black.opacity(theme.isDark ? 0.38 : 0.13), radius: 24, x: -8)
         .task { await model.load() }
     }

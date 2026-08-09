@@ -4,7 +4,6 @@ import SwiftUI
 struct RootView: View {
     @State private var housePage: HouseDestination?
     @State private var showHouseDrawer = false
-    @State private var reopenDrawerAfterHouse = false
     @State private var showSplash = true
     @State private var showPermissions = false
     @State private var showTerminal = false
@@ -62,18 +61,19 @@ struct RootView: View {
                     .ignoresSafeArea()
                     .onTapGesture { withAnimation(.easeOut(duration: 0.22)) { showHouseDrawer = false } }
                     .transition(.opacity)
-                    .zIndex(29)
-                HStack(spacing: 0) {
-                    Spacer(minLength: UIScreen.main.bounds.width * 0.16)
+                    .zIndex(18)
+                GeometryReader { drawerGeo in
                     NativeHouseDrawer(
                         onClose: { withAnimation(.easeOut(duration: 0.22)) { showHouseDrawer = false } },
                         select: openFromDrawer,
                         roundtableUnread: roundtableUnread
                     )
-                    .frame(width: UIScreen.main.bounds.width * 0.84)
+                    .frame(width: drawerGeo.size.width * 0.80)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+                    .padding(.trailing, 10)
                 }
                 .transition(.move(edge: .trailing))
-                .zIndex(30)
+                .zIndex(19)
             }
             if showSplash {
                 SplashView()
@@ -116,16 +116,7 @@ struct RootView: View {
         .sheet(isPresented: $showPermissions) {
             PermissionsView()
         }
-        .fullScreenCover(item: $housePage, onDismiss: {
-            if reopenDrawerAfterHouse {
-                reopenDrawerAfterHouse = false
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
-                    withAnimation(.spring(response: 0.34, dampingFraction: 0.88)) {
-                        showHouseDrawer = true
-                    }
-                }
-            }
-        }) { target in
+        .fullScreenCover(item: $housePage) { target in
             NativeHouseSheet(
                 initial: target,
                 preparedTexture: preparedPanelTexture,
@@ -321,14 +312,13 @@ struct RootView: View {
     }
 
     private func openFromDrawer(_ target: HouseDestination) {
-        withAnimation(.easeOut(duration: 0.2)) { showHouseDrawer = false }
         switch target {
-        case .chat: break
+        case .chat:
+            withAnimation(.easeOut(duration: 0.2)) { showHouseDrawer = false }
         case .terminal: showTerminal = true
         case .roundtable: markRoundtableRead(); showRoundtable = true
         default:
-            reopenDrawerAfterHouse = true
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) { presentHouse(target) }
+            presentHouse(target)
         }
     }
 
