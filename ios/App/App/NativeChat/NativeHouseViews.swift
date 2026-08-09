@@ -469,6 +469,8 @@ struct NativeHouseDrawer: View {
                 .padding(.horizontal, 14)
                 .padding(.bottom, screenSafeInsets.bottom + 28)
                 }
+                .frame(width: drawerWidth)
+                .frame(maxHeight: .infinity, alignment: .top)
             }
         }
         .foregroundColor(theme.text)
