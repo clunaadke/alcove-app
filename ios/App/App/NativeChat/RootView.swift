@@ -64,6 +64,7 @@ struct RootView: View {
                     .zIndex(18)
                 GeometryReader { drawerGeo in
                     NativeHouseDrawer(
+                        drawerWidth: drawerGeo.size.width * 0.80,
                         onClose: { withAnimation(.easeOut(duration: 0.22)) { showHouseDrawer = false } },
                         select: openFromDrawer,
                         roundtableUnread: roundtableUnread

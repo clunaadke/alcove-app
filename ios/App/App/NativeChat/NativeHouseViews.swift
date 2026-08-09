@@ -378,6 +378,7 @@ private struct HouseBackground: View {
 }
 
 struct NativeHouseDrawer: View {
+    let drawerWidth: CGFloat
     let onClose: () -> Void
     let select: (HouseDestination) -> Void
     let roundtableUnread: Int
@@ -462,14 +463,13 @@ struct NativeHouseDrawer: View {
                 // This drawer itself is full-bleed, so its GeometryReader reports
                 // zero safe-area insets on device. Read the window insets above,
                 // while pinning content to the drawer's actual (narrower) width.
-                .frame(width: max(0, geo.size.width - 28), alignment: .leading)
+                .frame(width: max(0, drawerWidth - 28), alignment: .leading)
                 .padding(.top, screenSafeInsets.top + 12)
                 .padding(.horizontal, 14)
                 .padding(.bottom, screenSafeInsets.bottom + 28)
                 }
             }
         }
-        .ignoresSafeArea(.container, edges: .vertical)
         .foregroundColor(theme.text)
         .clipShape(
             UnevenRoundedRectangle(
