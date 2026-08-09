@@ -1318,17 +1318,18 @@ struct LiveSayBand: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
-            if !state.thinking.isEmpty || !state.nativeThinking.isEmpty {
-                Button { showProcess = true } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: "clock.arrow.circlepath")
-                        Text(theme.isPaper ? "ThoughtProcess" : String(liveThought.prefix(42))).lineLimit(1)
-                        Image(systemName: "chevron.right").font(.system(size: 8))
-                    }
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(theme.textDim.opacity(0.72))
-                }.buttonStyle(.plain)
-            }
+            Button { showProcess = true } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: "clock.arrow.circlepath")
+                    Text("ThoughtProcess")
+                    if state.active && state.timeline.isEmpty { ProgressView().controlSize(.mini) }
+                    Image(systemName: "chevron.right").font(.system(size: 8))
+                }
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(theme.textDim.opacity(0.72))
+                .frame(minHeight: 32)
+                .contentShape(Rectangle())
+            }.buttonStyle(.plain)
             if !state.say.isEmpty {
                 Text(state.say)
                     .font(.system(size: 13))
@@ -1372,8 +1373,8 @@ struct LiveSayBand: View {
                         } else {
                             ForEach(state.timeline) { item in
                                 liveTrack(item.icon,
-                                          item.kind == "thinking" ? "Thinking…" : item.text,
-                                          item.kind == "thinking" ? item.text : (item.done ? "已完成" : "执行中"),
+                                          trackTitle(item),
+                                          trackDetail(item),
                                           done: item.done)
                             }
                         }
@@ -1395,6 +1396,21 @@ struct LiveSayBand: View {
 
     private var liveThought: String {
         state.thinking.isEmpty ? "脑袋里悄悄转了几圈" : state.thinking
+    }
+
+    private func trackTitle(_ item: AlcoveAPI.LiveProcessItem) -> String {
+        switch item.kind {
+        case "thinking": return "思绪"
+        case "text": return "正文"
+        default: return item.text
+        }
+    }
+
+    private func trackDetail(_ item: AlcoveAPI.LiveProcessItem) -> String {
+        switch item.kind {
+        case "thinking", "text": return item.text
+        default: return item.done ? "已发生" : "进行中"
+        }
     }
 
     private func liveTrack(_ icon: String, _ title: String, _ detail: String, done: Bool) -> some View {

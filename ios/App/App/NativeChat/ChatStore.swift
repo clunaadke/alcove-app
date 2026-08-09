@@ -62,6 +62,10 @@ final class ChatStore: ObservableObject {
     private func optimisticTyping() {
         optimisticUntil = Date().addingTimeInterval(8)
         isTyping = true
+        // 她按下发送就先给 ThoughtProcess 一扇门，不能等 watcher 写出第一个字。
+        if live?.active != true {
+            live = AlcoveAPI.LiveState(active: true, turnID: "pending-\(UUID().uuidString)")
+        }
         refreshTypingLine()
     }
 
@@ -212,13 +216,19 @@ final class ChatStore: ObservableObject {
                     throw URLError(.badServerResponse)
                 }
                 retry = 5_000_000_000
+                var sseEvent = ""
                 for try await line in bytes.lines {
                     guard !Task.isCancelled else { return }
+                    if line.hasPrefix("event:") {
+                        sseEvent = line.dropFirst(6).trimmingCharacters(in: .whitespaces)
+                        continue
+                    }
                     guard line.hasPrefix("data:") else { continue }
                     let payload = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
                     guard let data = payload.data(using: .utf8),
-                          let event = try? JSONDecoder().decode(AlcoveAPI.LiveEvent.self, from: data) else { continue }
-                    await applyLiveEvent(event)
+                          let event = try? JSONDecoder().decode(AlcoveAPI.ParagraphLiveEvent.self, from: data) else { continue }
+                    await applyParagraphLiveEvent(event, sseEvent: sseEvent)
+                    sseEvent = ""
                 }
             } catch is CancellationError {
                 return
@@ -226,6 +236,80 @@ final class ChatStore: ObservableObject {
                 // 流式是增强通道。端点尚未上线或短暂重连时不能冒充主聊天断线。
                 try? await Task.sleep(nanoseconds: retry)
                 retry = min(retry * 2, 60_000_000_000)
+            }
+        }
+    }
+
+    private func applyParagraphLiveEvent(
+        _ event: AlcoveAPI.ParagraphLiveEvent,
+        sseEvent: String
+    ) async {
+        let kind = event.event ?? sseEvent
+        if kind == "snapshot" {
+            guard event.active == true, let turnID = event.turnID, !turnID.isEmpty else {
+                if live?.turnID.hasPrefix("pending-") != true { live = nil }
+                return
+            }
+            var snapshot = AlcoveAPI.LiveState(active: true, turnID: turnID)
+            snapshot.thinking = event.thinking ?? ""
+            snapshot.say = event.say ?? ""
+            snapshot.tool = event.tool ?? ""
+            snapshot.said = event.said ?? 0
+            snapshot.elapsed = event.elapsed ?? 0
+            if !snapshot.thinking.isEmpty {
+                snapshot.timeline.append(.init(id: "snapshot-thinking", kind: "thinking",
+                                               text: snapshot.thinking, done: true))
+            }
+            if !snapshot.tool.isEmpty {
+                snapshot.timeline.append(.init(id: "snapshot-tool", kind: "tool",
+                                               text: snapshot.tool, done: false))
+            }
+            if !snapshot.say.isEmpty {
+                snapshot.timeline.append(.init(id: "snapshot-text", kind: "text",
+                                               text: snapshot.say, done: true))
+            }
+            live = snapshot
+            return
+        }
+
+        guard let turnID = event.turnID, !turnID.isEmpty,
+              let seq = event.seq else { return }
+        if live?.turnID != turnID {
+            live = AlcoveAPI.LiveState(active: true, turnID: turnID)
+        }
+        guard var state = live, seq > state.lastSeq else { return }
+        state.lastSeq = seq
+        let content = event.content?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        switch kind {
+        case "thinking_para":
+            guard !content.isEmpty else { return }
+            state.thinking += (state.thinking.isEmpty ? "" : "\n\n") + content
+            state.timeline.append(.init(id: "thinking-\(seq)", kind: "thinking",
+                                        text: content, done: true))
+        case "text_para":
+            guard !content.isEmpty else { return }
+            state.say += (state.say.isEmpty ? "" : "\n\n") + content
+            state.said += 1
+            state.tool = ""
+            state.timeline.append(.init(id: "text-\(seq)", kind: "text",
+                                        text: content, done: true))
+        case "tool_step":
+            guard !content.isEmpty else { return }
+            state.tool = content
+            state.timeline.append(.init(id: "tool-\(seq)", kind: "tool",
+                                        text: content, done: true))
+        case "turn_end":
+            state.active = false
+            state.finishing = true
+        default:
+            return
+        }
+        live = state
+        if kind == "turn_end" {
+            await pollOnce()
+            if live?.finishing == true {
+                try? await Task.sleep(nanoseconds: 450_000_000)
+                await pollOnce()
             }
         }
     }
