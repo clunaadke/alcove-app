@@ -359,7 +359,9 @@ private struct NativeSidebarView: View {
         .memory, .dreams, .shelf, .desire, .nianlun, .clockwork, .album, .portrait, .impression,
         .morningPaper
     ]
-    private let play: [HouseDestination] = [.crosstalk, .coread, .liao, .lab]
+    // Pipe Lab remains compiled for rollback, but the -p experiment is paused and
+    // must not appear as a normal household destination.
+    private let play: [HouseDestination] = [.crosstalk, .coread, .liao]
 
     var body: some View {
         ScrollView(showsIndicators: false) {

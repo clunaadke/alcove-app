@@ -1330,13 +1330,6 @@ struct LiveSayBand: View {
                 .frame(minHeight: 32)
                 .contentShape(Rectangle())
             }.buttonStyle(.plain)
-            if !state.say.isEmpty {
-                Text(state.say)
-                    .font(.system(size: 13))
-                    .foregroundColor(theme.textDim.opacity(0.95))
-                    .lineSpacing(3)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
             if !tagLine.isEmpty {
                 Text(tagLine)
                     .font(.system(size: 10, design: .serif))
@@ -1401,14 +1394,13 @@ struct LiveSayBand: View {
     private func trackTitle(_ item: AlcoveAPI.LiveProcessItem) -> String {
         switch item.kind {
         case "thinking": return "思绪"
-        case "text": return "正文"
         default: return item.text
         }
     }
 
     private func trackDetail(_ item: AlcoveAPI.LiveProcessItem) -> String {
         switch item.kind {
-        case "thinking", "text": return item.text
+        case "thinking": return item.text
         default: return item.done ? "已发生" : "进行中"
         }
     }
