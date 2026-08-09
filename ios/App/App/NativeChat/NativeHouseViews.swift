@@ -442,6 +442,7 @@ struct NativeHouseDrawer: View {
                     drawerTitle("正在发生", note: "still growing")
                     VStack(spacing: 7) {
                         drawerRow(.pulse, detail: "心率、体温与呼吸")
+                        drawerRow(.desire, detail: "身体潮汐与情绪")
                         drawerRow(.nowhere, detail: "足迹与明信片")
                         drawerRow(.fiction, detail: "陈璟写给你的小说")
                         drawerRow(.digest, detail: "日结、周结与月结")
