@@ -224,7 +224,9 @@ struct NativeHouseSheet: View {
         .environment(\.chatWallpaperDescriptor, panelWallpaperDescriptor)
         .environment(\.chatWallpaperViewportSize, root.size)
         .environment(\.bubbleGlassStyle, bubbleGlassStyle)
-        .ignoresSafeArea(edges: [.horizontal, .bottom])
+        // Panel wallpaper may extend under the home indicator, but keyboard safe-area
+        // must remain live so editors/composers rise instead of being covered.
+        .ignoresSafeArea(.container, edges: [.horizontal, .bottom])
         .overlay(alignment: .topLeading) {
             if route != .sidebar {
                 Button {
@@ -5946,6 +5948,8 @@ private struct NativePipeLabView: View {
                     .padding(.horizontal, 16)
                     .padding(.vertical, 14)
                 }
+                .scrollDismissesKeyboard(.interactively)
+                .onTapGesture { focused = false }
                 .onChange(of: model.state.say) { _ in scrollTail(proxy) }
                 .onChange(of: model.state.thinking) { _ in scrollTail(proxy) }
             }
