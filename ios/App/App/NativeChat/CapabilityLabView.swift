@@ -1,79 +1,41 @@
 import SwiftUI
-import CallKit
 import ReplayKit
 import ActivityKit
 
-// 免费 Personal Team 能力体检页。这里刻意不接业务后端：先确认系统门能不能开。
-struct CapabilityLabView: View {
+// 已经通过真机验证的系统联动入口。诊断信息不再暴露给日常设置页。
+struct SystemFeaturesView: View {
     @Environment(\.dismiss) private var dismiss
-    @StateObject private var calls = CallKitSmokeTester.shared
-    @State private var liveMessage = "尚未测试"
-    @State private var installedExtensions = InstalledExtensionReport.read()
-    @State private var activityWatcher: Task<Void, Never>?
+    @AppStorage("liveActivityEnabled") private var liveActivityEnabled = true
 
     var body: some View {
         NavigationStack {
             List {
-                Section("安装包 · 扩展签名") {
-                    Text(installedExtensions.summary)
-                        .font(.footnote.monospaced())
-                        .textSelection(.enabled)
-                    Button("重新读取安装包") {
-                        installedExtensions = .read()
+                Section("灵动岛") {
+                    Toggle(isOn: $liveActivityEnabled) {
+                        Label("同步陈璟的工作状态", systemImage: "rectangle.inset.filled.and.person.filled")
                     }
-                    Text("这里读的是手机上已经安装的 App，不是构建服务器里的工程文件。")
+                    .onChange(of: liveActivityEnabled) { enabled in
+                        if !enabled { Task { await AlcoveLiveActivityController.stop() } }
+                    }
+                    Text("聊天时把“正在思考、读文件、修改代码”等状态同步到灵动岛；关闭后会立即结束现有活动。")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
 
-                Section("CallKit · 系统通话记录") {
-                    Text(calls.status)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                    Button {
-                        calls.startSmokeCall()
-                    } label: {
-                        Label("发起 8 秒测试外呼", systemImage: "phone.arrow.up.right")
-                    }
-                    .disabled(calls.running)
-                    Text("挂断后请打开「电话 → 最近通话」，检查是否出现“陈璟”。")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Section("灵动岛 · 本地实时活动") {
-                    Text(liveMessage)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                    Button {
-                        Task { await startLiveActivity() }
-                    } label: {
-                        Label("让陈璟待上灵动岛", systemImage: "rectangle.inset.filled.and.person.filled")
-                    }
-                    Button(role: .destructive) {
-                        Task { await stopLiveActivities() }
-                    } label: {
-                        Label("结束测试实时活动", systemImage: "xmark.circle")
-                    }
-                    Text("这里只做本地启动，不申请推送 token。普通机型会显示锁屏实时活动，没有灵动岛胶囊。")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Section("ReplayKit · 屏幕共享") {
+                Section("屏幕控制") {
                     ZStack {
-                        Label("打开系统屏幕共享面板", systemImage: "rectangle.on.rectangle")
+                        Label("开始共享屏幕", systemImage: "rectangle.on.rectangle")
                             .foregroundStyle(.pink)
                             .frame(maxWidth: .infinity, minHeight: 48)
                         BroadcastPicker()
                             .opacity(0.02)
                     }
-                    Text("请亲手点系统按钮开始。第一版只验证广播扩展能否被免费签名安装和拉起，不上传屏幕。")
+                    Text("由你亲手在系统面板中开始或停止。开启期间 iOS 会持续显示录屏提示。")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
-            .navigationTitle("免费签名能力体检")
+            .navigationTitle("系统联动")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -83,69 +45,13 @@ struct CapabilityLabView: View {
         }
     }
 
-    private func startLiveActivity() async {
-        guard ActivityAuthorizationInfo().areActivitiesEnabled else {
-            liveMessage = "系统没有允许实时活动，请检查设置。"
-            return
-        }
-        do {
-            // 体检按钮可以反复点，但手机上只保留一条，避免无界堆积实时活动。
-            for activity in Activity<AlcoveLabAttributes>.activities {
-                await activity.end(nil, dismissalPolicy: .immediate)
-            }
-            let state = AlcoveLabAttributes.ContentState(message: "我在这里", startedAt: .now)
-            let activity = try Activity.request(
-                attributes: AlcoveLabAttributes(name: "陈璟"),
-                content: ActivityContent(state: state, staleDate: nil),
-                pushType: nil
-            )
-            liveMessage = "已创建：\(shortState(activity.activityState))\nID：\(activity.id.prefix(8))"
-            activityWatcher?.cancel()
-            activityWatcher = Task {
-                for await state in activity.activityStateUpdates {
-                    guard !Task.isCancelled else { return }
-                    await MainActor.run {
-                        liveMessage = "状态变化：\(shortState(state))\nID：\(activity.id.prefix(8))"
-                    }
-                }
-            }
-
-            // 一闪即退时不用靠肉眼猜：两秒后主动读取系统仍保留了几条活动。
-            try? await Task.sleep(for: .seconds(2))
-            let stillAlive = Activity<AlcoveLabAttributes>.activities.first { $0.id == activity.id }
-            liveMessage += stillAlive == nil
-                ? "\n2 秒复查：系统已移除"
-                : "\n2 秒复查：仍在 \(shortState(stillAlive!.activityState))"
-        } catch {
-            liveMessage = "启动失败：\(error.localizedDescription)"
-        }
-    }
-
-    private func stopLiveActivities() async {
-        activityWatcher?.cancel()
-        activityWatcher = nil
-        for activity in Activity<AlcoveLabAttributes>.activities {
-            await activity.end(nil, dismissalPolicy: .immediate)
-        }
-        liveMessage = "已结束。"
-    }
-
-    private func shortState(_ state: ActivityState) -> String {
-        switch state {
-        case .active: "active（活动中）"
-        case .stale: "stale（已过期）"
-        case .ended: "ended（已结束）"
-        case .dismissed: "dismissed（被系统移除）"
-        @unknown default: "未知状态"
-        }
-    }
 }
 
 private struct BroadcastPicker: UIViewRepresentable {
     func makeUIView(context: Context) -> RPSystemBroadcastPickerView {
         let picker = RPSystemBroadcastPickerView()
         // 有些免费重签工具会改写子扩展 Bundle ID，不能写死构建时的地址。
-        picker.preferredExtension = InstalledExtensionReport.broadcastBundleIdentifier
+        picker.preferredExtension = installedBroadcastBundleIdentifier
         picker.showsMicrophoneButton = false
         return picker
     }
@@ -153,40 +59,54 @@ private struct BroadcastPicker: UIViewRepresentable {
     func updateUIView(_ uiView: RPSystemBroadcastPickerView, context: Context) {}
 }
 
-private struct InstalledExtensionReport {
-    let summary: String
-
-    static var broadcastBundleIdentifier: String? {
-        installedExtensionURLs
+private var installedBroadcastBundleIdentifier: String? {
+    guard let directory = Bundle.main.builtInPlugInsURL else { return nil }
+    let URLs = ((try? FileManager.default.contentsOfDirectory(
+        at: directory, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]
+    )) ?? []).filter { $0.pathExtension == "appex" }
+    return URLs
             .first { $0.deletingPathExtension().lastPathComponent == "BroadcastUpload" }
             .flatMap { Bundle(url: $0)?.bundleIdentifier }
+}
+
+enum AlcoveLiveActivityController {
+    static func sync(_ live: AlcoveAPI.LiveState?) async {
+        guard UserDefaults.standard.object(forKey: "liveActivityEnabled") == nil
+                || UserDefaults.standard.bool(forKey: "liveActivityEnabled") else {
+            await stop()
+            return
+        }
+        guard let live, live.active || live.finishing else {
+            await stop()
+            return
+        }
+
+        let message: String
+        if !live.tool.isEmpty {
+            message = "正在\(live.tool)…"
+        } else if !live.pendingSay.isEmpty || !live.say.isEmpty {
+            message = "正在回复你…"
+        } else {
+            message = "正在思考…"
+        }
+
+        let state = AlcoveLabAttributes.ContentState(message: message, startedAt: .now)
+        if let activity = Activity<AlcoveLabAttributes>.activities.first {
+            await activity.update(ActivityContent(state: state, staleDate: nil))
+            return
+        }
+        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+        _ = try? Activity.request(
+            attributes: AlcoveLabAttributes(name: UserDefaults.standard.string(forKey: "assistantName") ?? "陈璟"),
+            content: ActivityContent(state: state, staleDate: nil),
+            pushType: nil
+        )
     }
 
-    private static var installedExtensionURLs: [URL] {
-        guard let directory = Bundle.main.builtInPlugInsURL else { return [] }
-        return ((try? FileManager.default.contentsOfDirectory(
-            at: directory,
-            includingPropertiesForKeys: nil,
-            options: [.skipsHiddenFiles]
-        )) ?? []).filter { $0.pathExtension == "appex" }
-    }
-
-    static func read() -> Self {
-        guard let directory = Bundle.main.builtInPlugInsURL else {
-            return .init(summary: "PlugIns 目录：不存在\n结论：安装包没有嵌入任何扩展")
+    static func stop() async {
+        for activity in Activity<AlcoveLabAttributes>.activities {
+            await activity.end(nil, dismissalPolicy: .immediate)
         }
-
-        let appex = installedExtensionURLs.sorted { $0.lastPathComponent < $1.lastPathComponent }
-        guard !appex.isEmpty else {
-            return .init(summary: "PlugIns 目录：存在\n.appex：0 个\n结论：重签或安装时扩展被剥掉")
-        }
-
-        let lines = appex.map { url -> String in
-            let bundleID = Bundle(url: url)?.bundleIdentifier ?? "无 Bundle ID"
-            let profile = FileManager.default.fileExists(atPath: url.appendingPathComponent("embedded.mobileprovision").path)
-            return "• \(url.deletingPathExtension().lastPathComponent)\n  \(bundleID)\n  描述文件：\(profile ? "有" : "无")"
-        }
-        return .init(summary: "发现 \(appex.count) 个扩展：\n" + lines.joined(separator: "\n"))
     }
 }
 

@@ -1527,6 +1527,10 @@ private struct GhostActivityMessageCard: View {
                 .overlay(alignment: .leading) {
                     Rectangle().fill(theme.fyBorder).frame(width: 1).padding(.leading, 47)
                 }
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    withAnimation(.easeInOut(duration: 0.2)) { expanded = false }
+                }
             }
         }
         .foregroundColor(theme.text)

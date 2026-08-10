@@ -14,7 +14,12 @@ final class ChatStore: ObservableObject {
     @Published var recallMap: [String: RecallItem] = [:] // norm(prompt) -> 最新召回
     @Published var typingLine = "思考" // "陈璟正在X中…" 的 X
     // 0730 实时预览：他说完一段就先给她看，不等整轮工具跑完
-    @Published var live: AlcoveAPI.LiveState?
+    @Published var live: AlcoveAPI.LiveState? {
+        didSet {
+            let snapshot = live
+            Task { await AlcoveLiveActivityController.sync(snapshot) }
+        }
+    }
 
     private var heldGen = 0
     private var optimisticUntil = Date.distantPast // 发出去立刻亮气泡的乐观窗口

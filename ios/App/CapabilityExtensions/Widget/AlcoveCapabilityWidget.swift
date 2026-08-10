@@ -29,8 +29,8 @@ private struct AlcoveHomeWidget: Widget {
         StaticConfiguration(kind: "AlcoveCapabilityWidget", provider: LabProvider()) { entry in
             AlcoveWidgetView(entry: entry)
         }
-        .configurationDisplayName("Alcove 体检")
-        .description("验证 Personal Team 能否安装并运行小组件。")
+        .configurationDisplayName("Alcove")
+        .description("看看家里此刻正在发生什么。")
         .supportedFamilies([
             .systemSmall,
             .accessoryCircular,
@@ -82,11 +82,11 @@ private struct AlcoveWidgetView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Alcove")
                         .font(.system(.title3, design: .serif, weight: .semibold))
-                    Text("免费签名体检")
+                    Text("家里正在发生")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     Spacer()
-                    Label("小组件已运行", systemImage: "checkmark.circle.fill")
+                    Label("我在这里", systemImage: "checkmark.circle.fill")
                         .font(.caption2)
                 }
                 .foregroundStyle(.white)
