@@ -6,6 +6,7 @@ import ActivityKit
 struct SystemFeaturesView: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage("liveActivityEnabled") private var liveActivityEnabled = true
+    @State private var liveActivityStatus: String?
 
     var body: some View {
         NavigationStack {
@@ -15,11 +16,23 @@ struct SystemFeaturesView: View {
                         Label("同步陈璟的工作状态", systemImage: "rectangle.inset.filled.and.person.filled")
                     }
                     .onChange(of: liveActivityEnabled) { enabled in
-                        if !enabled { Task { await AlcoveLiveActivityController.stop() } }
+                        Task {
+                            if enabled {
+                                liveActivityStatus = await AlcoveLiveActivityController.start()
+                            } else {
+                                await AlcoveLiveActivityController.stop()
+                                liveActivityStatus = "灵动岛已关闭。"
+                            }
+                        }
                     }
                     Text("聊天时把“正在思考、读文件、修改代码”等状态同步到灵动岛；关闭后会立即结束现有活动。")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                    if let liveActivityStatus {
+                        Text(liveActivityStatus)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
 
                 Section("屏幕控制") {
@@ -40,6 +53,11 @@ struct SystemFeaturesView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("完成") { dismiss() }
+                }
+            }
+            .task {
+                if liveActivityEnabled {
+                    liveActivityStatus = await AlcoveLiveActivityController.start()
                 }
             }
         }
@@ -70,6 +88,31 @@ private var installedBroadcastBundleIdentifier: String? {
 }
 
 enum AlcoveLiveActivityController {
+    static func start() async -> String {
+        guard ActivityAuthorizationInfo().areActivitiesEnabled else {
+            return "系统未允许实时活动，请在 iPhone 设置中开启。"
+        }
+
+        let state = AlcoveLabAttributes.ContentState(message: "等待任务", startedAt: .now)
+        if let activity = Activity<AlcoveLabAttributes>.activities.first {
+            await activity.update(ActivityContent(state: state, staleDate: nil))
+            return "灵动岛已开启。"
+        }
+
+        do {
+            _ = try Activity.request(
+                attributes: AlcoveLabAttributes(
+                    name: UserDefaults.standard.string(forKey: "assistantName") ?? "陈璟"
+                ),
+                content: ActivityContent(state: state, staleDate: nil),
+                pushType: nil
+            )
+            return "灵动岛已开启。"
+        } catch {
+            return "灵动岛启动失败：\(error.localizedDescription)"
+        }
+    }
+
     static func sync(_ live: AlcoveAPI.LiveState?) async {
         guard UserDefaults.standard.object(forKey: "liveActivityEnabled") == nil
                 || UserDefaults.standard.bool(forKey: "liveActivityEnabled") else {
