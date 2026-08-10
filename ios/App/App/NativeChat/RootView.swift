@@ -18,7 +18,6 @@ struct RootView: View {
     @State private var preparedPanelTexture: UIImage?
     @State private var preparedPanelTextureName = ""
     @Environment(\.scenePhase) private var scenePhase
-    @AppStorage("assistantName") private var assistantName = "陈璟"
     @AppStorage("assistantAvatarDataURL") private var avatarDataURL = ""
     @AppStorage("alcoveTheme") private var themeName = "haven"
     private var theme: AlcoveTheme { .named(themeName) }
@@ -36,7 +35,12 @@ struct RootView: View {
 
     var body: some View {
         ZStack(alignment: .top) {
-            ChatView()
+            ChatView(
+                thinkingEnabled: $thinkingEnabled,
+                thinkingKnown: thinkingKnown,
+                switchingThinking: switchingThinking,
+                onToggleThinking: toggleThinking
+            )
                 .blur(radius: showHouseDrawer ? 5.0 : 0)
                 .animation(.easeOut(duration: 0.22), value: showHouseDrawer)
             topBar
@@ -173,48 +177,9 @@ struct RootView: View {
         roundtableUnread = 0
     }
 
-    // 左头像｜中间纯文字｜右侧三枚按钮共用一块清透玻璃胶囊
+    // 左头像｜中间留空｜右侧三枚按钮共用一块清透玻璃胶囊
     private var topBar: some View {
-        ZStack {
-            VStack(spacing: -1) {
-                Text(assistantName)
-                    .font(.system(size: 15, weight: .semibold))
-                    .tracking(1.5)
-                    .foregroundColor(theme.text)
-                Button { toggleThinking() } label: {
-                    HStack(spacing: 4) {
-                        Text("thinking quietly")
-                            .font(.system(size: 13))
-                            .foregroundColor(theme.textDim)
-                        if switchingThinking {
-                            ProgressView().controlSize(.mini).scaleEffect(0.72)
-                                .frame(width: 24, height: 18)
-                        } else {
-                            Capsule()
-                                .fill(thinkingEnabled ? theme.text.opacity(theme.isDark ? 0.78 : 0.58)
-                                                      : textDim.opacity(0.22))
-                                .frame(width: 24, height: 14)
-                                .overlay(alignment: thinkingEnabled ? .trailing : .leading) {
-                                    Circle().fill(.white).frame(width: 10, height: 10).padding(2)
-                                }
-                                .opacity(thinkingKnown ? 1 : 0.45)
-                                .animation(.spring(response: 0.24, dampingFraction: 0.8),
-                                           value: thinkingEnabled)
-                        }
-                    }
-                    .frame(minHeight: 25)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .disabled(switchingThinking || !thinkingKnown)
-            }
-            .frame(height: 44, alignment: .center)
-            // The full-width left/right control row is drawn after this view.
-            // Keep the center button above its transparent Spacer so taps
-            // reach the thinking switch instead of being swallowed.
-            .zIndex(2)
-
-            HStack(alignment: .center, spacing: 0) {
+        HStack(alignment: .center, spacing: 0) {
                 Button { showTerminal = true } label: {
                     glassCircle(size: 40) {
                         if let img = avatarImage {
@@ -254,10 +219,10 @@ struct RootView: View {
                 ))
                 .shadow(color: .black.opacity(0.05), radius: 14, x: 0, y: 2)
                 .frame(height: 44)
-            }
         }
         .frame(height: 44)
-        .padding(.horizontal, 12)
+        .padding(.leading, 15)
+        .padding(.trailing, 12)
     }
 
     private func refreshThinkingState() async {

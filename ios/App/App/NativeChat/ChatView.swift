@@ -5,6 +5,11 @@ import AVFoundation
 import UniformTypeIdentifiers
 
 struct ChatView: View {
+    @Binding var thinkingEnabled: Bool
+    let thinkingKnown: Bool
+    let switchingThinking: Bool
+    let onToggleThinking: () -> Void
+
     @StateObject private var store = ChatStore()
     @StateObject private var wallpaperStore = ChatWallpaperStore()
     @State private var draft = ""
@@ -24,6 +29,7 @@ struct ChatView: View {
     @State private var scrollKick = 0
     @State private var showMusicPlayer = false
     @State private var showModelPicker = false
+    @State private var showMoreModels = false
     @State private var switchingModel = false
     @State private var modelSwitchError = ""
     @State private var showMiniTerminal = false
@@ -83,6 +89,12 @@ struct ChatView: View {
         .sheet(isPresented: $showMusicPlayer) {
             MusicPlayerSheet(model: music)
                 .presentationDetents([.fraction(0.72)])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(.ultraThinMaterial)
+        }
+        .sheet(isPresented: $showModelPicker, onDismiss: { showMoreModels = false }) {
+            modelPickerSheet
+                .presentationDetents([.fraction(0.72), .large])
                 .presentationDragIndicator(.visible)
                 .presentationBackground(.ultraThinMaterial)
         }
@@ -583,10 +595,6 @@ struct ChatView: View {
                             }
                             .buttonStyle(.plain)
                             .disabled(switchingModel)
-                            .popover(isPresented: $showModelPicker, arrowEdge: .bottom) {
-                                modelPickerCard
-                                    .presentationCompactAdaptation(.popover)
-                            }
                         }
                         Spacer()
                         // 攒气泡：空行入库不触发回复（她的 hold 功能）
@@ -680,35 +688,123 @@ struct ChatView: View {
         .init(id: "claude-sonnet-4-6", label: "Sonnet 4.6", note: "")
     ]}
 
-    private var modelPickerCard: some View {
+    private var modelPickerSheet: some View {
+        VStack(spacing: 18) {
+            HStack {
+                Button {
+                    if showMoreModels {
+                        withAnimation(.easeInOut(duration: 0.18)) { showMoreModels = false }
+                    } else {
+                        showModelPicker = false
+                    }
+                } label: {
+                    Image(systemName: showMoreModels ? "chevron.left" : "xmark")
+                        .font(.system(size: 18, weight: .light))
+                        .foregroundColor(theme.text)
+                        .frame(width: 44, height: 44)
+                        .background(theme.glassTint.opacity(0.52), in: Circle())
+                        .overlay(Circle().stroke(theme.glassBorder, lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+
+                Spacer()
+                Text(showMoreModels ? "More models" : "Select model")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(theme.text)
+                Spacer()
+                Color.clear.frame(width: 44, height: 44)
+            }
+
+            if showMoreModels {
+                modelRows(Array(claudeModels.dropFirst(4)))
+            } else {
+                modelRows(Array(claudeModels.prefix(4)))
+
+                Button {
+                    withAnimation(.easeInOut(duration: 0.18)) { showMoreModels = true }
+                } label: {
+                    HStack {
+                        Text("More models")
+                            .font(.system(size: 16, weight: .medium))
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(theme.textDim)
+                    }
+                    .foregroundColor(theme.text)
+                    .padding(.horizontal, 18)
+                    .frame(height: 58)
+                    .background(theme.fyCard.opacity(0.72), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                }
+                .buttonStyle(.plain)
+
+                Button(action: onToggleThinking) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("thinking quietly")
+                                .font(.system(size: 16, weight: .medium))
+                            Text("让陈璟把思考留在心里")
+                                .font(.system(size: 11))
+                                .foregroundColor(theme.textDim)
+                        }
+                        Spacer()
+                        if switchingThinking {
+                            ProgressView().controlSize(.small)
+                                .frame(width: 42)
+                        } else {
+                            Capsule()
+                                .fill(thinkingEnabled ? theme.sendTop : theme.textDim.opacity(0.22))
+                                .frame(width: 42, height: 24)
+                                .overlay(alignment: thinkingEnabled ? .trailing : .leading) {
+                                    Circle().fill(.white).frame(width: 20, height: 20).padding(2)
+                                }
+                                .opacity(thinkingKnown ? 1 : 0.45)
+                                .animation(.spring(response: 0.24, dampingFraction: 0.8), value: thinkingEnabled)
+                        }
+                    }
+                    .foregroundColor(theme.text)
+                    .padding(.horizontal, 18)
+                    .frame(height: 66)
+                    .background(theme.fyCard.opacity(0.72), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .disabled(switchingThinking || !thinkingKnown)
+            }
+
+            if !modelSwitchError.isEmpty {
+                Text(modelSwitchError)
+                    .font(.system(size: 11))
+                    .foregroundColor(.red)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 18)
+        .padding(.top, 8)
+        .foregroundColor(theme.text)
+    }
+
+    private func modelRows(_ options: [ClaudeModelOption]) -> some View {
         VStack(spacing: 0) {
-            ForEach(Array(claudeModels.enumerated()), id: \.element.id) { index, option in
+            ForEach(Array(options.enumerated()), id: \.element.id) { index, option in
                 Button { switchClaudeModel(option) } label: {
                     HStack(spacing: 10) {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(option.label).font(.system(size: 13, weight: .medium))
+                            Text(option.label).font(.system(size: 16, weight: .medium))
                             if !option.note.isEmpty {
-                                Text(option.note).font(.system(size: 9)).foregroundColor(theme.textDim)
+                                Text(option.note).font(.system(size: 11)).foregroundColor(theme.textDim)
                             }
                         }
                         Spacer()
                         if store.modelLabel == option.label {
-                            Image(systemName: "checkmark").font(.system(size: 12, weight: .semibold))
+                            Image(systemName: "checkmark").font(.system(size: 14, weight: .semibold))
                                 .foregroundColor(theme.sendTop)
                         }
-                    }.padding(.horizontal, 13).frame(minHeight: option.note.isEmpty ? 38 : 46)
+                    }.padding(.horizontal, 18).frame(minHeight: option.note.isEmpty ? 56 : 66)
                 }.buttonStyle(.plain)
-                if index < claudeModels.count - 1 { Divider().opacity(0.45).padding(.horizontal, 10) }
-            }
-            if !modelSwitchError.isEmpty {
-                Text(modelSwitchError).font(.system(size: 10)).foregroundColor(.red)
-                    .padding(.horizontal, 12).padding(.vertical, 8)
+                if index < options.count - 1 { Divider().opacity(0.45).padding(.horizontal, 18) }
             }
         }
-        .foregroundColor(theme.text)
-        .frame(width: 238)
-        .padding(.vertical, 6)
-        .background(theme.isDark ? Color.black.opacity(0.48) : Color.white.opacity(0.58))
+        .background(theme.fyCard.opacity(0.72), in: RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
 
     private func switchClaudeModel(_ option: ClaudeModelOption) {
