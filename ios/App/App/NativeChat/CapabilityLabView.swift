@@ -178,12 +178,21 @@ struct RemoteScreenSharePrompt: View {
 }
 
 enum AlcoveLiveActivityController {
+    private static func currentBPM() async -> Int {
+        guard let raw = try? await AlcoveAPI.getRaw("/pulse/now") else { return 0 }
+        if let value = raw["bpm"] as? Int { return value }
+        if let value = raw["bpm"] as? NSNumber { return value.intValue }
+        return 0
+    }
+
     static func start() async -> String {
         guard ActivityAuthorizationInfo().areActivitiesEnabled else {
             return "系统未允许实时活动，请在 iPhone 设置中开启。"
         }
 
-        let state = AlcoveLabAttributes.ContentState(message: "等待任务", startedAt: .now)
+        let state = AlcoveLabAttributes.ContentState(
+            message: "等待任务", startedAt: .now, bpm: await currentBPM()
+        )
         if let activity = Activity<AlcoveLabAttributes>.activities.first {
             await activity.update(ActivityContent(state: state, staleDate: nil))
             return "灵动岛已开启。"
@@ -223,7 +232,9 @@ enum AlcoveLiveActivityController {
             message = "正在思考…"
         }
 
-        let state = AlcoveLabAttributes.ContentState(message: message, startedAt: .now)
+        let state = AlcoveLabAttributes.ContentState(
+            message: message, startedAt: .now, bpm: await currentBPM()
+        )
         if let activity = Activity<AlcoveLabAttributes>.activities.first {
             await activity.update(ActivityContent(state: state, staleDate: nil))
             return

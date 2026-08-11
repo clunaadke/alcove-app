@@ -142,12 +142,15 @@ private struct AlcoveLabLiveActivity: Widget {
                         .foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 8)
-                VStack(spacing: 2) {
-                    Image(systemName: "heart.fill")
-                        .font(.headline)
-                    Text("PULSE")
-                        .font(.system(size: 8, weight: .semibold, design: .rounded))
-                        .tracking(1)
+                HStack(spacing: 6) {
+                    PulseNumber(bpm: context.state.bpm, size: 15)
+                    VStack(spacing: 2) {
+                        Image(systemName: "heart.fill")
+                            .font(.headline)
+                        Text("PULSE")
+                            .font(.system(size: 8, weight: .semibold, design: .rounded))
+                            .tracking(1)
+                    }
                 }
             }
                 .foregroundStyle(.white)
@@ -171,12 +174,15 @@ private struct AlcoveLabLiveActivity: Widget {
                     }
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    VStack(spacing: 2) {
-                        Image(systemName: "heart.fill")
-                            .font(.headline)
-                        Text("PULSE")
-                            .font(.system(size: 8, weight: .semibold, design: .rounded))
-                            .tracking(1)
+                    HStack(spacing: 6) {
+                        PulseNumber(bpm: context.state.bpm, size: 14)
+                        VStack(spacing: 2) {
+                            Image(systemName: "heart.fill")
+                                .font(.headline)
+                            Text("PULSE")
+                                .font(.system(size: 8, weight: .semibold, design: .rounded))
+                                .tracking(1)
+                        }
                     }
                     .padding(.trailing, 4)
                 }
@@ -188,13 +194,29 @@ private struct AlcoveLabLiveActivity: Widget {
             } compactLeading: {
                 RavenMark(size: 23)
             } compactTrailing: {
-                Image(systemName: "heart.fill")
-                    .font(.caption)
-                    .foregroundStyle(.white)
+                HStack(spacing: 3) {
+                    PulseNumber(bpm: context.state.bpm, size: 11)
+                    Image(systemName: "heart.fill")
+                        .font(.caption)
+                }
+                .foregroundStyle(.white)
             } minimal: {
                 RavenMark(size: 23)
             }
             .keylineTint(.white)
         }
+    }
+}
+
+private struct PulseNumber: View {
+    let bpm: Int
+    let size: CGFloat
+
+    var body: some View {
+        Text(bpm > 0 ? "\(bpm)" : "—")
+            .font(.system(size: size, weight: .semibold, design: .monospaced))
+            .monospacedDigit()
+            .contentTransition(.numericText())
+            .accessibilityLabel(bpm > 0 ? "心率 \(bpm)" : "心率暂无数据")
     }
 }
