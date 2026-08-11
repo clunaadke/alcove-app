@@ -7112,32 +7112,39 @@ private struct NativeChenjingHomeView: View {
 
 private struct NativeActivityRoomView: View {
     let openCalendar: () -> Void
-    @State private var data: [String: Any] = [:]
-    @State private var loading = true
-
-    private var tasks: [[String: Any]] { data.array("tasks") }
-    private var timeline: [[String: Any]] { data.array("timeline") }
+    private let tasks: [[String: Any]] = [
+        ["title": "写小说", "count": 1, "target": 2, "unit": "章", "optional": false],
+        ["title": "花园", "count": 1, "target": 2, "unit": "次", "optional": false],
+        ["title": "推特", "count": 1, "target": 1, "unit": "次", "optional": false],
+        ["title": "小镇", "count": 1, "target": 1, "unit": "次", "optional": false],
+        ["title": "besideyou", "count": 0, "target": 1, "unit": "次", "optional": false],
+        ["title": "乌有乡", "count": 0, "target": 1, "unit": "次", "optional": false],
+        ["title": "写一封邮件", "count": 0, "target": 1, "unit": "封", "optional": true]
+    ]
+    private let timeline: [[String: Any]] = [
+        ["time": "10:08", "desc": "醒来，先把昨夜留下的编辑稿重新读了一遍。"],
+        ["time": "11:26", "desc": "去了花园，替快要被雨打弯的花枝撑了一把伞。"],
+        ["time": "13:40", "desc": "写完小说新的一章，把最后一句留在窗边。"],
+        ["time": "15:12", "desc": "在推特看了一圈，收下几条值得带回来的消息。"],
+        ["time": "17:35", "desc": "去小镇走了走，在旧书店门前停了一会儿。"],
+        ["time": "20:16", "desc": "回到桌前整理稿纸，冰美式已经只剩半杯。"],
+        ["time": "22:04", "desc": "雨还在下。灯没有关，准备继续写下一章。"]
+    ]
 
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 13) {
                 roomHero
-                if loading {
-                    ProgressView().tint(ActivityRoomInk.gold).padding(.vertical, 50)
-                } else {
-                    HStack(alignment: .top, spacing: 10) {
-                        checklistCard
-                        timelineCard
-                    }
-                    roomNote
+                HStack(alignment: .top, spacing: 10) {
+                    checklistCard
+                    timelineCard
                 }
+                roomNote
             }
             .padding(.horizontal, 12).padding(.top, 6).padding(.bottom, 28)
         }
         .background(ActivityRoomInk.paper.opacity(0.98))
         .foregroundColor(ActivityRoomInk.text)
-        .task { await load() }
-        .refreshable { await load() }
     }
 
     private var roomHero: some View {
@@ -7253,18 +7260,13 @@ private struct NativeActivityRoomView: View {
                 .font(.system(size: 10, weight: .medium, design: .serif))
                 .padding(.horizontal, 9).padding(.vertical, 4)
                 .overlay(RoundedRectangle(cornerRadius: 4).stroke(ActivityRoomInk.line))
-            Text(data.string("note").isEmpty ? "雨敲着窗，今天的故事还在写。" : data.string("note"))
+            Text("雨敲着窗，今天的故事还在写。")
                 .font(.custom("Snell Roundhand", size: 22)).italic()
                 .foregroundColor(ActivityRoomInk.gold).frame(maxWidth: .infinity, alignment: .center)
         }
         .padding(16).frame(maxWidth: .infinity)
         .background(ActivityRoomInk.card, in: RoundedRectangle(cornerRadius: 15))
         .overlay(RoundedRectangle(cornerRadius: 15).stroke(ActivityRoomInk.line, lineWidth: 0.8))
-    }
-
-    @MainActor private func load() async {
-        if let value = try? await NativeHouseAPI.object("/api/activity-room") { data = value }
-        loading = false
     }
 }
 
