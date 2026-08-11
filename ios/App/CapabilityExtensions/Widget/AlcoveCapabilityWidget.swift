@@ -105,11 +105,14 @@ private struct RavenMark: View {
     let size: CGFloat
 
     var body: some View {
-        Image("RavenOutlined")
+        Image("RavenOutlined", bundle: .main)
             .resizable()
+            .renderingMode(.original)
             .interpolation(.none)
             .scaledToFit()
+            .scaleEffect(1.5)
             .frame(width: size, height: size)
+            .clipped()
             .accessibilityHidden(true)
     }
 }
