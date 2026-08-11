@@ -110,9 +110,7 @@ struct RootView: View {
         .onAppear {
             prewarmPanelTexture()
             Task { await refreshThinkingState() }
-            if liveActivityEnabled {
-                Task { _ = await AlcoveLiveActivityController.start() }
-            }
+            restoreLiveActivityIfEnabled()
             // 声波念完两个音节再进门，跟 PWA 一个节奏
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.3) {
                 withAnimation(.easeOut(duration: 0.6)) { showSplash = false }
@@ -132,9 +130,7 @@ struct RootView: View {
                 Task { await refreshThinkingState() }
                 // iOS 杀掉后台进程后，重新进入 Alcove 就把灵动岛恢复到
                 // 当前状态，不必再去设置页手动关开一次。
-                if liveActivityEnabled {
-                    Task { _ = await AlcoveLiveActivityController.start() }
-                }
+                restoreLiveActivityIfEnabled()
             }
             else { SensorReporter.shared.appBackground() }
         }
@@ -159,6 +155,21 @@ struct RootView: View {
             )
         }
         .tint(Color(red: 0.86, green: 0.44, blue: 0.57))
+    }
+
+    private func restoreLiveActivityIfEnabled() {
+        guard liveActivityEnabled else { return }
+        Task {
+            // 首次回前台时 ActivityKit 偶尔仍在恢复旧活动列表。短间隔复查两次，
+            // 没有活动就重建，有活动则只刷新，不会生成重复灵动岛。
+            for delay in [0.0, 0.7, 2.0] {
+                if delay > 0 {
+                    try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                }
+                guard liveActivityEnabled else { return }
+                await AlcoveLiveActivityController.ensureRunning()
+            }
+        }
     }
 
     private func refreshRoundtableUnread() async {

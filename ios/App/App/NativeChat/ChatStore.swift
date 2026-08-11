@@ -506,8 +506,15 @@ final class ChatStore: ObservableObject {
     }
 
     func deleteMessage(_ msg: ChatMessage) {
-        messages.removeAll { $0.uid == msg.uid }
-        Task { try? await AlcoveAPI.deleteMessage(ts: msg.ts) }
+        let keepsAttachment = !(msg.attachmentUrl ?? "").isEmpty
+        if keepsAttachment, let index = messages.firstIndex(where: { $0.uid == msg.uid }) {
+            messages[index].text = ""
+        } else {
+            messages.removeAll { $0.uid == msg.uid }
+        }
+        Task {
+            try? await AlcoveAPI.deleteMessage(ts: msg.ts, textOnly: keepsAttachment)
+        }
     }
 
     func favoriteMessage(_ msg: ChatMessage) {
@@ -515,11 +522,21 @@ final class ChatStore: ObservableObject {
     }
 
     func deleteMessages(_ selected: [ChatMessage]) {
-        let ids = Set(selected.map(\.uid))
-        messages.removeAll { ids.contains($0.uid) }
+        let removeIDs = Set(selected.compactMap {
+            ($0.attachmentUrl ?? "").isEmpty ? $0.uid : nil
+        })
+        messages.removeAll { removeIDs.contains($0.uid) }
+        let clearIDs = Set(selected.compactMap {
+            ($0.attachmentUrl ?? "").isEmpty ? nil : $0.uid
+        })
+        for index in messages.indices where clearIDs.contains(messages[index].uid) {
+            messages[index].text = ""
+        }
         Task {
             for msg in selected {
-                try? await AlcoveAPI.deleteMessage(ts: msg.ts)
+                try? await AlcoveAPI.deleteMessage(
+                    ts: msg.ts, textOnly: !(msg.attachmentUrl ?? "").isEmpty
+                )
             }
         }
     }

@@ -322,8 +322,10 @@ enum AlcoveAPI {
         _ = try await session.data(for: req)
     }
 
-    static func deleteMessage(ts: String) async throws {
-        _ = try await postJSON("/api/chat/delete", body: ["ts": ts])
+    static func deleteMessage(ts: String, textOnly: Bool = false) async throws {
+        _ = try await postJSON("/api/chat/delete", body: [
+            "ts": ts, "text_only": textOnly
+        ])
     }
 
     static func favoriteMessage(ts: String, text: String, role: String) async throws {

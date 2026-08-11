@@ -205,10 +205,18 @@ enum AlcoveLiveActivityController {
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 4_000_000_000)
                 guard !Task.isCancelled else { break }
+                guard UserDefaults.standard.object(forKey: "liveActivityEnabled") == nil
+                        || UserDefaults.standard.bool(forKey: "liveActivityEnabled") else {
+                    break
+                }
                 let bpm = await currentBPM()
-                guard bpm > 0 else { continue }
                 let activities = Activity<AlcoveLabAttributes>.activities
-                guard !activities.isEmpty else { break }
+                if activities.isEmpty {
+                    // 开关仍开着但活动被 iOS 清掉：App 还活着时直接重建。
+                    _ = await start()
+                    continue
+                }
+                guard bpm > 0 else { continue }
                 for activity in activities where activity.content.state.bpm != bpm {
                     var state = activity.content.state
                     state.bpm = bpm
@@ -248,6 +256,21 @@ enum AlcoveLiveActivityController {
             return "灵动岛已开启。"
         } catch {
             return "灵动岛启动失败：\(error.localizedDescription)"
+        }
+    }
+
+    static func ensureRunning() async {
+        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+        if let activity = Activity<AlcoveLabAttributes>.activities.first {
+            let bpm = await currentBPM()
+            if bpm > 0, bpm != activity.content.state.bpm {
+                var state = activity.content.state
+                state.bpm = bpm
+                await activity.update(ActivityContent(state: state, staleDate: nil))
+            }
+            ensurePulseUpdates()
+        } else {
+            _ = await start()
         }
     }
 
