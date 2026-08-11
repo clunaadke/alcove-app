@@ -118,7 +118,7 @@ private struct AlcoveWidgetView: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Still here")
                         .font(.headline)
-                    Text("ALCOVE · ONLINE")
+                    Text("NEAR, ALWAYS.")
                         .font(.system(size: 9, weight: .medium, design: .rounded))
                         .foregroundStyle(.secondary)
                 }
