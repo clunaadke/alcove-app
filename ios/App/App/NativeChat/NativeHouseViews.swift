@@ -7144,13 +7144,14 @@ private struct NativeActivityRoomView: View {
                     .ignoresSafeArea()
 
                 VStack(spacing: 10) {
-                    roomHero(height: geo.size.height * 0.588)
+                    roomHero(height: geo.size.height * 0.538)
                     HStack(alignment: .top, spacing: 10) {
                         checklistCard
                         timelineCard
                     }
                     .frame(height: geo.size.height * 0.278)
                     .padding(.horizontal, 12)
+                    .offset(y: 2)
                     Color.clear
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .contentShape(Rectangle())
@@ -7178,7 +7179,7 @@ private struct NativeActivityRoomView: View {
                 Spacer()
             }
             .padding(.horizontal, 10)
-            .padding(.top, 72)
+            .padding(.top, 202)
             Button(action: openCalendar) {
                 Color.clear
                     .frame(width: 66, height: 72)
