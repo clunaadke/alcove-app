@@ -15,7 +15,7 @@ private extension EnvironmentValues {
 
 enum HouseDestination: String, Identifiable, CaseIterable {
     case sidebar, chat, terminal, settings, bubbleAppearance, checklist, music
-    case home, calendar, digest, wall, usage
+    case home, calendar, digest, wall, usage, workbench
     case memory, dreams, shelf, fiction, desire, nianlun, clockwork, album, portrait, impression, morningPaper, nowhere, pulse
     case crosstalk, radio, coread, liao, daddyDay, lab
     case search, favorites, forge, roundtable
@@ -36,6 +36,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .digest: return "日结编年史"
         case .wall: return "小黑屋"
         case .usage: return "Usage"
+        case .workbench: return "总控台"
         case .memory: return "Memory"
         case .dreams: return "Dreams"
         case .shelf: return "渡鸦的架子"
@@ -76,6 +77,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .wall: return "lock.rectangle.stack"
         case .desire: return "water.waves"
         case .usage: return "chart.bar"
+        case .workbench: return "slider.horizontal.2.square"
         case .memory: return "brain.head.profile"
         case .dreams: return "moon.stars"
         case .shelf: return "bird"
@@ -202,6 +204,8 @@ struct NativeHouseSheet: View {
                     NativeFavoritesView()
                 case .usage:
                     NativeUsageView()
+                case .workbench:
+                    NativeWorkbenchView()
                 case .memory:
                     NativeOBMemoryView()
                 case .portrait:
@@ -420,12 +424,23 @@ struct NativeHouseDrawer: View {
 
                 ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 13) {
-                    HStack {
-                        Spacer()
+                    HStack(spacing: 8) {
+                        Spacer(minLength: 0)
                         Text("Alcove")
-                            .font(.custom("Snell Roundhand", size: 28))
+                            .font(.custom("Snell Roundhand", size: 34))
                             .italic()
-                        Spacer()
+                        Spacer(minLength: 0)
+                        Button { select(.workbench) } label: {
+                            HStack(spacing: 5) {
+                                Image(systemName: "slider.horizontal.2.square")
+                                Text("总控台")
+                            }
+                            .font(.system(size: 10.5, weight: .medium))
+                            .foregroundColor(theme.textDim)
+                            .frame(width: 68, height: 31)
+                            .drawerGlass(theme)
+                        }
+                        .buttonStyle(.plain)
                     }
                     .frame(maxWidth: .infinity)
 
@@ -3177,6 +3192,268 @@ private extension View {
                     .allowsHitTesting(false)
             }
         }
+    }
+}
+
+// MARK: - Workbench
+
+private struct NativeWorkbenchView: View {
+    @State private var data: [String: Any] = [:]
+    @State private var loading = true
+    @State private var expanded = false
+    @AppStorage("alcoveTheme") private var themeName = "haven"
+    private var theme: AlcoveTheme { .panelNamed(themeName) }
+
+    private var tasks: [[String: Any]] {
+        var rows = data.array("tasks")
+        if let active = data["active_task"] as? [String: Any], active.bool("active") {
+            var row = active
+            row["status"] = "running"
+            row["assignee"] = "何渡"
+            row["summary"] = active.string("text")
+            rows.insert(row, at: 0)
+        }
+        return rows
+    }
+
+    var body: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(spacing: 14) {
+                masthead
+                metricStrip
+                agentCard(index: 0, accent: Color(red: 0.70, green: 0.47, blue: 0.52))
+                agentCard(index: 1, accent: Color(red: 0.38, green: 0.57, blue: 0.68))
+                taskLedger
+                Text("work goes on, quietly")
+                    .font(.custom("Snell Roundhand", size: 18))
+                    .foregroundColor(theme.textDim.opacity(0.7))
+                    .rotationEffect(.degrees(-1))
+                    .padding(.vertical, 6)
+            }
+            .padding(.horizontal, 14)
+            .padding(.top, 8)
+            .padding(.bottom, 28)
+        }
+        .foregroundColor(theme.text)
+        .overlay { if loading { ProgressView().tint(theme.fyAccent) } }
+        .task {
+            while !Task.isCancelled {
+                await refresh()
+                try? await Task.sleep(nanoseconds: 10_000_000_000)
+            }
+        }
+    }
+
+    private var masthead: some View {
+        HStack(alignment: .bottom) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text("WORKROOM")
+                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                    .tracking(2.2)
+                    .foregroundColor(theme.textDim)
+                Text("总控台")
+                    .font(.system(size: 27, weight: .semibold, design: .serif))
+            }
+            Spacer()
+            VStack(alignment: .trailing, spacing: 1) {
+                Text(Date(), format: .dateTime.month().day())
+                    .font(.custom("Snell Roundhand", size: 18))
+                Text("live · (data.int("completed_today")) finished")
+                    .font(.system(size: 9, design: .rounded))
+                    .foregroundColor(theme.textDim)
+            }
+        }
+        .padding(.horizontal, 4)
+        .overlay(alignment: .topTrailing) {
+            Image(systemName: "scribble.variable")
+                .font(.system(size: 34, weight: .ultraLight))
+                .foregroundColor(theme.fyAccent.opacity(0.13))
+                .offset(x: 2, y: -5)
+        }
+    }
+
+    private var metricStrip: some View {
+        HStack(spacing: 8) {
+            metric("VPS 内存", memoryText, "memorychip", memoryPercent)
+            metric("今日完成", "\(data.int("completed_today"))", "checkmark.seal", nil)
+            metric("Tokens", compact(data.int("tokens_today")), "number", nil)
+        }
+    }
+
+    private var memoryPercent: Double? {
+        let raw = data.object("memory")["used_percent"]
+        if let value = raw as? Double { return value }
+        if let value = raw as? NSNumber { return value.doubleValue }
+        return nil
+    }
+
+    private var memoryText: String {
+        guard let pct = memoryPercent else { return "--" }
+        return String(format: "%.0f%%", pct)
+    }
+
+    private func metric(_ title: String, _ value: String, _ icon: String, _ pct: Double?) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack {
+                Image(systemName: icon).font(.system(size: 11, weight: .light))
+                Spacer()
+                Circle().fill(theme.fyAccent.opacity(0.7)).frame(width: 4, height: 4)
+            }
+            Text(value).font(.system(size: 20, weight: .semibold, design: .rounded)).lineLimit(1)
+            Text(title).font(.system(size: 9.5)).foregroundColor(theme.textDim).lineLimit(1)
+            if let pct {
+                GeometryReader { geo in
+                    Capsule().fill(theme.fyCardSub.opacity(0.7))
+                        .overlay(alignment: .leading) {
+                            Capsule().fill(theme.fyAccent.opacity(0.55))
+                                .frame(width: geo.size.width * min(max(pct, 0), 100) / 100)
+                        }
+                }.frame(height: 3)
+            }
+        }
+        .padding(11)
+        .frame(maxWidth: .infinity, minHeight: 91, alignment: .leading)
+        .workbenchGlass(theme)
+    }
+
+    private func agentCard(index: Int, accent: Color) -> some View {
+        let agents = data.array("agents")
+        let agent = index < agents.count ? agents[index] : [:]
+        let usage = data.object("usage")
+        let claude = usage.object("rate_limits")
+        let codex = usage.object("codex")
+        let first = index == 0 ? claude.object("five_hour").int("used_percent") : -1
+        let week = index == 0 ? claude.object("seven_day").int("used_percent") : codex.object("primary").int("used_percent")
+        return VStack(alignment: .leading, spacing: 11) {
+            HStack(spacing: 11) {
+                ZStack {
+                    Circle().fill(accent.opacity(0.16))
+                    Text(index == 0 ? "璟" : "渡")
+                        .font(.system(size: 17, weight: .medium, design: .serif))
+                        .foregroundColor(accent)
+                }.frame(width: 42, height: 42)
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 6) {
+                        Text(agent.string("name")).font(.system(size: 16, weight: .semibold, design: .serif))
+                        Circle().fill(Color.green.opacity(0.8)).frame(width: 6, height: 6)
+                    }
+                    Text(agent.string("model"))
+                        .font(.system(size: 12, weight: .medium, design: .rounded))
+                        .foregroundColor(accent)
+                }
+                Spacer()
+                Text(index == 0 ? "engine room" : "bridge work")
+                    .font(.custom("Snell Roundhand", size: 15))
+                    .foregroundColor(theme.textDim.opacity(0.72))
+            }
+            Text(agent.string("role"))
+                .font(.system(size: 10.5))
+                .foregroundColor(theme.textDim)
+            if first >= 0 { quota("5h", first, accent) }
+            quota("7d", week, accent)
+        }
+        .padding(14)
+        .workbenchGlass(theme, accent: accent)
+    }
+
+    private func quota(_ label: String, _ value: Int, _ color: Color) -> some View {
+        HStack(spacing: 9) {
+            Text(label).font(.system(size: 10, weight: .semibold, design: .rounded)).frame(width: 20)
+            GeometryReader { geo in
+                Capsule().fill(theme.fyCardSub.opacity(0.72))
+                    .overlay(alignment: .leading) {
+                        Capsule().fill(color.opacity(0.62))
+                            .frame(width: geo.size.width * min(CGFloat(value), 100) / 100)
+                    }
+            }.frame(height: 6)
+            Text("\(value)%").font(.system(size: 10, weight: .medium, design: .rounded)).frame(width: 34, alignment: .trailing)
+        }
+    }
+
+    private var taskLedger: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("工单栏").font(.system(size: 20, weight: .semibold, design: .serif))
+                Text("field notes").font(.custom("Snell Roundhand", size: 16)).foregroundColor(theme.textDim)
+                Spacer()
+                Text("\(tasks.count)").font(.system(size: 11, design: .rounded)).foregroundColor(theme.textDim)
+            }
+            let shown = expanded ? tasks : Array(tasks.prefix(4))
+            VStack(spacing: 0) {
+                ForEach(Array(shown.enumerated()), id: \.offset) { index, item in
+                    taskRow(item, last: index == shown.count - 1)
+                }
+            }
+            if tasks.count > 4 {
+                Button { withAnimation(.easeInOut(duration: 0.22)) { expanded.toggle() } } label: {
+                    HStack { Spacer(); Text(expanded ? "收起工单" : "展开全部 \(tasks.count) 条"); Image(systemName: "chevron.down").rotationEffect(.degrees(expanded ? 180 : 0)); Spacer() }
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(theme.textDim)
+                        .padding(.top, 4)
+                }.buttonStyle(.plain)
+            }
+        }
+        .padding(15)
+        .workbenchGlass(theme)
+    }
+
+    private func taskRow(_ item: [String: Any], last: Bool) -> some View {
+        let status = item.string("status", "kind")
+        let running = status == "running" || status == "progress" || status == "start"
+        let failed = status == "failed"
+        let stamp = (item["finished_at"] as? NSNumber)?.doubleValue ?? (item["updated_at"] as? NSNumber)?.doubleValue ?? (item["started_at"] as? NSNumber)?.doubleValue ?? 0
+        return HStack(alignment: .top, spacing: 11) {
+            VStack(spacing: 0) {
+                ZStack {
+                    Circle().fill(running ? Color.orange.opacity(0.18) : failed ? Color.red.opacity(0.14) : Color.green.opacity(0.13)).frame(width: 18, height: 18)
+                    Image(systemName: running ? "circle.dotted" : failed ? "xmark" : "checkmark")
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundColor(running ? .orange : failed ? .red : .green)
+                }
+                if !last { Rectangle().fill(theme.fyBorder.opacity(0.48)).frame(width: 1, height: 58) }
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text(item.string("title", "text")).font(.system(size: 12.5, weight: .semibold)).lineLimit(2)
+                    Spacer(minLength: 6)
+                    Text(item.string("assignee")).font(.system(size: 9, weight: .medium)).foregroundColor(theme.fyAccent)
+                }
+                Text(item.string("summary", "text"))
+                    .font(.system(size: 10.5)).foregroundColor(theme.textDim).lineLimit(3)
+                if stamp > 0 {
+                    Text(Date(timeIntervalSince1970: stamp), format: .dateTime.month().day().hour().minute())
+                        .font(.system(size: 8.5, design: .monospaced)).foregroundColor(theme.textDim.opacity(0.7))
+                }
+            }.padding(.bottom, last ? 0 : 12)
+        }
+    }
+
+    private func compact(_ value: Int) -> String {
+        if value >= 1_000_000 { return String(format: "%.1fM", Double(value) / 1_000_000) }
+        if value >= 1_000 { return String(format: "%.1fK", Double(value) / 1_000) }
+        return "\(value)"
+    }
+
+    private func refresh() async {
+        if let object = try? await NativeHouseAPI.object("/api/workbench") { data = object }
+        loading = false
+    }
+}
+
+private extension View {
+    func workbenchGlass(_ theme: AlcoveTheme, accent: Color? = nil) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 19, style: .continuous)
+        return self
+            .background(.ultraThinMaterial, in: shape)
+            .background((accent ?? theme.glassTint).opacity(theme.isDark ? 0.07 : 0.12), in: shape)
+            .overlay(shape.stroke((accent ?? theme.glassBorder).opacity(0.42), lineWidth: 0.7))
+            .overlay(alignment: .topTrailing) {
+                Image(systemName: "scribble")
+                    .font(.system(size: 30, weight: .ultraLight))
+                    .foregroundColor((accent ?? theme.fyAccent).opacity(0.08))
+                    .padding(8)
+                    .allowsHitTesting(false)
+            }
     }
 }
 
