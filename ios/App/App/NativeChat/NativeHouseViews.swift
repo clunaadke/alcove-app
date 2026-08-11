@@ -2808,21 +2808,29 @@ private struct QuietRoomView: View {
 
             if loading {
                 ProgressView().frame(maxWidth: .infinity).padding(.vertical, 45)
-            } else {
-                VStack(spacing: 12) {
-                    quietToggle("今夜无声", "今晚先不追问，明早十点再来", "moon.stars.fill",
-                                isOn: quiet && quietMode == .tonight) { enabled in
-                        setQuiet(on: enabled, hours: nil)
-                    }
-                    quietToggle("借我片刻", "安静两个小时，时间到了再轻轻回来", "hourglass",
-                                isOn: quiet && quietMode == .twoHours) { enabled in
-                        setQuiet(on: enabled, hours: enabled ? 2 : nil)
-                    }
-                    if quiet, !until.isEmpty {
+            } else if quiet {
+                VStack(alignment: .leading, spacing: 10) {
+                    Label("此刻正在留白", systemImage: "moon.zzz.fill")
+                        .font(.system(size: 16, weight: .semibold))
+                    if !until.isEmpty {
                         Text("会安静到 \(displayUntil)")
                             .font(.system(size: 11)).foregroundColor(theme.textDim)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 4)
+                    }
+                    Button { setQuiet(on: false) } label: {
+                        Label("让声音回来", systemImage: "sunrise")
+                            .frame(maxWidth: .infinity).frame(height: 45)
+                            .background(theme.fyAccent.opacity(0.88), in: RoundedRectangle(cornerRadius: 14))
+                            .foregroundColor(.white)
+                    }.buttonStyle(.plain).disabled(sending)
+                }
+                .padding(15).foyerCard(theme)
+            } else {
+                HStack(spacing: 12) {
+                    quietChoice("今夜无声", "今晚先不追问\n明早十点再来", "moon.stars.fill") {
+                        setQuiet(on: true)
+                    }
+                    quietChoice("借我片刻", "安静两个小时\n再轻轻回来", "hourglass") {
+                        setQuiet(on: true, hours: 2)
                     }
                 }
             }
@@ -2841,23 +2849,19 @@ private struct QuietRoomView: View {
         }
     }
 
-    private func quietToggle(
-        _ title: String, _ subtitle: String, _ icon: String,
-        isOn: Bool, action: @escaping (Bool) -> Void
+    private func quietChoice(
+        _ title: String, _ subtitle: String, _ icon: String, action: @escaping () -> Void
     ) -> some View {
-        HStack(spacing: 14) {
-            Image(systemName: icon)
-                .font(.system(size: 19)).foregroundColor(theme.fyAccent)
-                .frame(width: 26)
-            VStack(alignment: .leading, spacing: 4) {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 10) {
+                Image(systemName: icon).font(.system(size: 19)).foregroundColor(theme.fyAccent)
                 Text(title).font(.system(size: 15, weight: .semibold, design: .serif))
-                Text(subtitle).font(.system(size: 10.5)).foregroundColor(theme.textDim)
+                Text(subtitle).font(.system(size: 10)).foregroundColor(theme.textDim)
+                    .multilineTextAlignment(.leading)
             }
-            Spacer()
-            Toggle("", isOn: Binding(get: { isOn }, set: action))
-                .labelsHidden().tint(theme.fyAccent).disabled(sending)
-        }
-        .padding(15).foyerCard(theme)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(14).foyerCard(theme)
+        }.buttonStyle(.plain).disabled(sending)
     }
 
     @MainActor private func refresh() async {
@@ -2892,17 +2896,6 @@ private struct QuietRoomView: View {
         out.timeZone = TimeZone(identifier: "Asia/Shanghai")
         out.dateFormat = "M月d日 HH:mm"
         return out.string(from: date)
-    }
-
-    private enum QuietMode { case tonight, twoHours }
-
-    private var quietMode: QuietMode {
-        let formatter = ISO8601DateFormatter()
-        guard let date = formatter.date(from: until) else { return .tonight }
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "Asia/Shanghai") ?? .current
-        return calendar.component(.hour, from: date) == 10 && calendar.component(.minute, from: date) == 0
-            ? .tonight : .twoHours
     }
 }
 
