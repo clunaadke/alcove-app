@@ -177,12 +177,35 @@ struct RemoteScreenSharePrompt: View {
     }
 }
 
+@MainActor
 enum AlcoveLiveActivityController {
+    private static var pulseTask: Task<Void, Never>?
+
     private static func currentBPM() async -> Int {
         guard let raw = try? await AlcoveAPI.getRaw("/pulse/now") else { return 0 }
         if let value = raw["bpm"] as? Int { return value }
         if let value = raw["bpm"] as? NSNumber { return value.intValue }
         return 0
+    }
+
+    private static func ensurePulseUpdates() {
+        guard pulseTask == nil else { return }
+        pulseTask = Task {
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 4_000_000_000)
+                guard !Task.isCancelled else { break }
+                let bpm = await currentBPM()
+                guard bpm > 0 else { continue }
+                let activities = Activity<AlcoveLabAttributes>.activities
+                guard !activities.isEmpty else { break }
+                for activity in activities where activity.content.state.bpm != bpm {
+                    var state = activity.content.state
+                    state.bpm = bpm
+                    await activity.update(ActivityContent(state: state, staleDate: nil))
+                }
+            }
+            pulseTask = nil
+        }
     }
 
     static func start() async -> String {
@@ -195,6 +218,7 @@ enum AlcoveLiveActivityController {
         )
         if let activity = Activity<AlcoveLabAttributes>.activities.first {
             await activity.update(ActivityContent(state: state, staleDate: nil))
+            ensurePulseUpdates()
             return "灵动岛已开启。"
         }
 
@@ -206,6 +230,7 @@ enum AlcoveLiveActivityController {
                 content: ActivityContent(state: state, staleDate: nil),
                 pushType: nil
             )
+            ensurePulseUpdates()
             return "灵动岛已开启。"
         } catch {
             return "灵动岛启动失败：\(error.localizedDescription)"
@@ -237,6 +262,7 @@ enum AlcoveLiveActivityController {
         )
         if let activity = Activity<AlcoveLabAttributes>.activities.first {
             await activity.update(ActivityContent(state: state, staleDate: nil))
+            ensurePulseUpdates()
             return
         }
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
@@ -245,9 +271,12 @@ enum AlcoveLiveActivityController {
             content: ActivityContent(state: state, staleDate: nil),
             pushType: nil
         )
+        ensurePulseUpdates()
     }
 
     static func stop() async {
+        pulseTask?.cancel()
+        pulseTask = nil
         for activity in Activity<AlcoveLabAttributes>.activities {
             await activity.end(nil, dismissalPolicy: .immediate)
         }
