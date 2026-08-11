@@ -7209,6 +7209,8 @@ private struct NativeActivityRoomView: View {
                     .overlay(Capsule().stroke(ActivityRoomInk.line, style: StrokeStyle(lineWidth: 0.8, dash: [3])))
                 }
             }
+            .padding(.leading, 9)
+            .padding(.trailing, 2)
         }
     }
 
