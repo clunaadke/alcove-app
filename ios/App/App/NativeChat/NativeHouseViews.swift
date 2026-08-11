@@ -7144,14 +7144,16 @@ private struct NativeActivityRoomView: View {
                     .ignoresSafeArea()
 
                 VStack(spacing: 10) {
-                    roomHero(height: max(280, geo.size.height - 386))
+                    roomHero(height: geo.size.height * 0.588)
                     HStack(alignment: .top, spacing: 10) {
                         checklistCard
                         timelineCard
                     }
-                    .frame(height: 274)
+                    .frame(height: geo.size.height * 0.278)
                     .padding(.horizontal, 12)
-                    roomNote
+                    Color.clear
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .contentShape(Rectangle())
                 }
                 .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
             }
@@ -7175,8 +7177,8 @@ private struct NativeActivityRoomView: View {
                 .accessibilityLabel("返回")
                 Spacer()
             }
-            .padding(.horizontal, 12)
-            .padding(.top, 48)
+            .padding(.horizontal, 10)
+            .padding(.top, 72)
             Button(action: openCalendar) {
                 Color.clear
                     .frame(width: 66, height: 72)
@@ -7185,7 +7187,7 @@ private struct NativeActivityRoomView: View {
             .buttonStyle(.plain)
             .accessibilityLabel("打开房间月历")
             .frame(maxWidth: .infinity, alignment: .trailing)
-            .padding(.top, 42)
+            .padding(.top, 72)
             .padding(.trailing, 6)
         }
     }
@@ -7273,7 +7275,7 @@ private struct NativeActivityRoomView: View {
         }
     }
 
-    private func roomCard<Content: View>(index: String, title: String,
+    private func roomCard<Content: View>(index _: String, title: String,
                                          @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline, spacing: 7) {
@@ -7281,59 +7283,11 @@ private struct NativeActivityRoomView: View {
                 Spacer(minLength: 0)
             }
             .padding(.leading, 45)
-            Divider().overlay(ActivityRoomInk.line)
             content()
         }
-        .padding(10).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(.ultraThinMaterial)
-        .background(ActivityRoomInk.card)
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(ActivityRoomInk.line, lineWidth: 0.8))
-        .overlay(alignment: .topLeading) {
-            VStack(spacing: 0) {
-                Text(index)
-                    .font(.system(size: 12, weight: .medium, design: .serif))
-                    .foregroundColor(Color(red: 0.25, green: 0.17, blue: 0.10))
-                    .padding(.top, 9)
-                Spacer(minLength: 0)
-            }
-            .frame(width: 38, height: 54)
-            .background(ActivityRoomInk.text)
-            .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
-            .padding(.leading, 12)
-            .offset(y: -1)
-        }
-    }
-
-    private var roomNote: some View {
-        ZStack(alignment: .leading) {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("房间札记")
-                    .font(.system(size: 10, weight: .medium, design: .serif))
-                    .padding(.horizontal, 9).padding(.vertical, 4)
-                    .overlay(RoundedRectangle(cornerRadius: 4).stroke(ActivityRoomInk.line))
-                Text("雨敲了一晚窗，他仍写完了一章。")
-                    .font(.custom("Xingkai SC", size: 24))
-                    .italic()
-                    .foregroundColor(ActivityRoomInk.gold)
-                    .frame(maxWidth: .infinity, alignment: .center)
-            }
-            .padding(.leading, 25)
-
-            VStack(spacing: 9) {
-                ForEach(0..<5, id: \.self) { _ in
-                    Capsule().stroke(ActivityRoomInk.gold.opacity(0.72), lineWidth: 1.4)
-                        .frame(width: 26, height: 7)
-                        .offset(x: -8)
-                }
-            }
-        }
-        .padding(12).frame(maxWidth: .infinity, minHeight: 92, maxHeight: 92)
-        .background(.ultraThinMaterial)
-        .background(ActivityRoomInk.card)
-        .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 15).stroke(ActivityRoomInk.line, lineWidth: 0.8))
-        .padding(.horizontal, 12)
+        .padding(.horizontal, 10)
+        .padding(.top, 7)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 }
 
