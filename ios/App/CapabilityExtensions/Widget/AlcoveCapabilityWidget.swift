@@ -66,7 +66,7 @@ private struct AlcoveWidgetView: View {
         case .systemMedium:
             widgetContent
                 .containerBackground(
-                    Color(red: 0.21, green: 0.21, blue: 0.23),
+                    Color(red: 0.88, green: 0.88, blue: 0.87),
                     for: .widget
                 )
         default:
@@ -80,13 +80,15 @@ private struct AlcoveWidgetView: View {
         switch family {
         case .systemMedium:
             ZStack {
-                Color(red: 0.21, green: 0.21, blue: 0.23)
-                HStack(spacing: 22) {
-                    RavenMark(size: 118)
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Time, gently kept.")
+                Color(red: 0.88, green: 0.88, blue: 0.87)
+                HStack(spacing: 18) {
+                    SleepingRavenMark(size: 118)
+                    VStack(alignment: .center, spacing: 12) {
+                        Text("Time, gently\nkept.")
                             .font(.system(.title3, design: .serif, weight: .medium))
                             .italic()
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: .infinity, alignment: .center)
                         HStack(alignment: .firstTextBaseline, spacing: 8) {
                             Text("✦")
                                 .font(.title3)
@@ -96,12 +98,11 @@ private struct AlcoveWidgetView: View {
                             Text("DAYS")
                                 .font(.system(size: 11, weight: .semibold, design: .rounded))
                                 .tracking(2)
-                                .foregroundStyle(.secondary)
                         }
+                        .frame(maxWidth: .infinity, alignment: .center)
                     }
-                    Spacer(minLength: 0)
                 }
-                .foregroundStyle(.white)
+                .foregroundStyle(.black)
                 .padding(.horizontal, 24)
             }
 
@@ -114,7 +115,7 @@ private struct AlcoveWidgetView: View {
 
         case .accessoryRectangular:
             HStack(spacing: 7) {
-                RavenMark(size: 34)
+                SleepingRavenMark(size: 40)
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Still here")
                         .font(.headline)
@@ -160,6 +161,21 @@ private struct AlcoveWidgetView: View {
         let start = calendar.startOfDay(for: startDate)
         let today = calendar.startOfDay(for: entry.date)
         return max(0, calendar.dateComponents([.day], from: start, to: today).day ?? 0)
+    }
+}
+
+private struct SleepingRavenMark: View {
+    let size: CGFloat
+
+    var body: some View {
+        Image("RavenSleeping", bundle: .main)
+            .resizable()
+            .renderingMode(.original)
+            .interpolation(.none)
+            .scaledToFit()
+            .frame(width: size, height: size)
+            .clipped()
+            .accessibilityHidden(true)
     }
 }
 
