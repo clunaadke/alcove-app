@@ -110,7 +110,6 @@ private struct RavenMark: View {
             .renderingMode(.original)
             .interpolation(.none)
             .scaledToFit()
-            .scaleEffect(1.5)
             .frame(width: size, height: size)
             .clipped()
             .accessibilityHidden(true)
