@@ -2543,29 +2543,35 @@ struct MusicPlayerSheet: View {
             }
             LinearGradient(colors: [.black.opacity(0.22), .black.opacity(0.7)],
                            startPoint: .top, endPoint: .bottom).ignoresSafeArea()
-            GeometryReader { container in
-            TabView(selection: $page) {
-                playerPage(size: container.size)
-                    .frame(width: container.size.width, height: container.size.height)
-                    .clipped().tag(0)
-                lyricPage
-                    .frame(width: container.size.width, height: container.size.height)
-                    .clipped().tag(1)
+            Group {
+                if page == 0 { playerPage }
+                else { lyricPage }
             }
-            .tabViewStyle(.page(indexDisplayMode: .never))
-            .frame(width: container.size.width, height: container.size.height)
-            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .clipped()
+            .contentShape(Rectangle())
+            .simultaneousGesture(
+                DragGesture(minimumDistance: 28)
+                    .onEnded { value in
+                        guard abs(value.translation.width) > abs(value.translation.height),
+                              abs(value.translation.width) > 45 else { return }
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            if value.translation.width < 0 { page = 1 }
+                            else { page = 0 }
+                        }
+                    }
+            )
         }
         .foregroundColor(.white)
         .sheet(isPresented: $showQueue) { MusicQueueSheet(model: model) }
     }
 
-    private func playerPage(size: CGSize) -> some View {
+    private var playerPage: some View {
         VStack(spacing: 0) {
             if let song = model.nowPlaying {
                 playerHeader(song)
                 Spacer(minLength: 4)
-                record(song, size: min(size.width * 0.54, size.height * 0.31))
+                record(song, size: 190)
                 Spacer(minLength: 8)
                 HStack(alignment: .center, spacing: 12) {
                     VStack(alignment: .leading, spacing: 4) {
@@ -2580,7 +2586,7 @@ struct MusicPlayerSheet: View {
                 pageDots
             }
         }
-        .frame(width: size.width, height: size.height)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
     }
 
