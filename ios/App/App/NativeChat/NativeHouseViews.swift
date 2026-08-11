@@ -1765,8 +1765,13 @@ final class MusicModel: ObservableObject {
     @Published var queue: [MusicSong] = []
     @Published var queueIndex = -1
     @Published var playMode: MusicPlayMode = .sequence
+    @Published var playbackLoading = false
     private var player: AVPlayer?
     private var timeObserver: Any?
+    private var itemStatusObserver: NSKeyValueObservation?
+    private var timeControlObserver: NSKeyValueObservation?
+    private var streamCache: [String: (url: URL, expires: Date)] = [:]
+    private var streamPrefetchTask: Task<Void, Never>?
     private var playbackPoll: Task<Void, Never>?
 
     private init() {
@@ -1786,6 +1791,7 @@ final class MusicModel: ObservableObject {
             return
         }
         songs = obj.object("result").array("songs").map(MusicSong.init)
+        prefetchArtwork(for: songs)
         if songs.isEmpty { message = "没搜到  换个词试试" }
     }
 
@@ -1799,18 +1805,10 @@ final class MusicModel: ObservableObject {
             queue = [song]
             queueIndex = 0
         }
-        // The service otherwise prefers lossless FLAC for some songs. Remote
-        // FLAC streams are not reliable in AVPlayer, while the MP3 endpoint is.
-        guard let obj = try? await NativeHouseAPI.object("/api/music/song/url?id=\(song.id)&br=128000"),
-              let rows = obj["data"] as? [[String: Any]],
-              let raw = rows.first?.string("url"), !raw.isEmpty else {
+        playbackLoading = true
+        guard let url = await streamURL(for: song.id) else {
             message = "这首暂时放不了"
-            return
-        }
-        let url = raw.hasPrefix("/") ? AlcoveAPI.fullURL(raw)
-            : URL(string: MusicSong.secureURL(raw))
-        guard let url else {
-            message = "播放地址坏了"
+            playbackLoading = false
             return
         }
         message = ""
@@ -1822,11 +1820,36 @@ final class MusicModel: ObservableObject {
         } catch {
             message = "音频通道没打开"
         }
-        player = AVPlayer(url: url)
-        player?.play()
+        let item = AVPlayerItem(url: url)
+        item.preferredForwardBufferDuration = 2
+        let nextPlayer = AVPlayer(playerItem: item)
+        nextPlayer.automaticallyWaitsToMinimizeStalling = false
+        player = nextPlayer
         nowPlaying = song
         isPlaying = false
         progress = 0; duration = 0
+        itemStatusObserver = item.observe(\.status, options: [.initial, .new]) { [weak self, weak item] _, _ in
+            Task { @MainActor in
+                guard let self, let item, self.player?.currentItem === item else { return }
+                switch item.status {
+                case .readyToPlay:
+                    self.player?.playImmediately(atRate: 1)
+                case .failed:
+                    self.playbackLoading = false
+                    self.isPlaying = false
+                    self.message = item.error?.localizedDescription ?? "这首没有成功加载"
+                default: break
+                }
+            }
+        }
+        timeControlObserver = nextPlayer.observe(\.timeControlStatus, options: [.initial, .new]) { [weak self, weak nextPlayer] _, _ in
+            Task { @MainActor in
+                guard let self, let nextPlayer, self.player === nextPlayer else { return }
+                self.isPlaying = nextPlayer.timeControlStatus == .playing
+                if self.isPlaying { self.playbackLoading = false }
+                self.publishNowPlaying()
+            }
+        }
         timeObserver = player?.addPeriodicTimeObserver(
             forInterval: CMTime(seconds: 0.5, preferredTimescale: 600), queue: .main
         ) { [weak self] time in
@@ -1836,7 +1859,6 @@ final class MusicModel: ObservableObject {
                 if dur.isFinite && dur > 0 {
                     self.duration = dur
                     self.progress = time.seconds
-                    self.isPlaying = self.player?.timeControlStatus == .playing
                     self.publishNowPlaying()
                 }
             }
@@ -1849,14 +1871,9 @@ final class MusicModel: ObservableObject {
             }
         }
         await loadLyrics(song.id)
-        try? await Task.sleep(nanoseconds: 350_000_000)
-        if player?.timeControlStatus == .playing { isPlaying = true }
-        else if player?.currentItem?.status == .failed {
-            message = "这首没有成功开始播放"
-            isPlaying = false
-        }
         publishNowPlaying(loadArtwork: true)
         await reportNowPlaying()
+        prefetchNextStream()
     }
 
     func loadHome() async {
@@ -1900,6 +1917,7 @@ final class MusicModel: ObservableObject {
         }
         playlistSongs = (obj["songs"] as? [[String: Any]] ?? []).map(MusicSong.init)
         songs = playlistSongs
+        prefetchArtwork(for: playlistSongs)
     }
 
     func toggle() {
@@ -2115,8 +2133,41 @@ final class MusicModel: ObservableObject {
     }
 
     private func cleanup() {
+        itemStatusObserver?.invalidate(); itemStatusObserver = nil
+        timeControlObserver?.invalidate(); timeControlObserver = nil
         if let obs = timeObserver { player?.removeTimeObserver(obs); timeObserver = nil }
         NotificationCenter.default.removeObserver(self, name: .AVPlayerItemDidPlayToEndTime, object: player?.currentItem)
+    }
+
+    private func streamURL(for songID: String) async -> URL? {
+        if let cached = streamCache[songID], cached.expires > Date() { return cached.url }
+        guard let obj = try? await NativeHouseAPI.object("/api/music/song/url?id=\(songID)&br=128000"),
+              let rows = obj["data"] as? [[String: Any]],
+              let raw = rows.first?.string("url"), !raw.isEmpty else { return nil }
+        let url = raw.hasPrefix("/") ? AlcoveAPI.fullURL(raw) : URL(string: MusicSong.secureURL(raw))
+        if let url { streamCache[songID] = (url, Date().addingTimeInterval(15 * 60)) }
+        return url
+    }
+
+    private func prefetchNextStream() {
+        streamPrefetchTask?.cancel()
+        guard !queue.isEmpty else { return }
+        let nextIndex = (queueIndex + 1) % queue.count
+        let id = queue[nextIndex].id
+        streamPrefetchTask = Task { [weak self] in _ = await self?.streamURL(for: id) }
+    }
+
+    private func prefetchArtwork(for songs: [MusicSong]) {
+        let urls = songs.prefix(16).compactMap { Self.artworkURL($0.cover) }
+        Task.detached(priority: .utility) {
+            for url in urls { _ = try? await URLSession.shared.data(from: url) }
+        }
+    }
+
+    static func artworkURL(_ raw: String, pixels: Int = 600) -> URL? {
+        guard !raw.isEmpty else { return nil }
+        let separator = raw.contains("?") ? "&" : "?"
+        return URL(string: "\(raw)\(separator)param=\(pixels)y\(pixels)")
     }
 }
 
@@ -2483,7 +2534,7 @@ struct MusicPlayerSheet: View {
     var body: some View {
         ZStack {
             if let cover = model.nowPlaying?.cover {
-                AsyncImage(url: artworkURL(cover, pixels: 900)) { image in
+                AsyncImage(url: MusicModel.artworkURL(cover)) { image in
                     image.resizable().scaledToFill()
                 } placeholder: {
                     LinearGradient(colors: theme.splashBg, startPoint: .top, endPoint: .bottom)
@@ -2492,23 +2543,29 @@ struct MusicPlayerSheet: View {
             }
             LinearGradient(colors: [.black.opacity(0.22), .black.opacity(0.7)],
                            startPoint: .top, endPoint: .bottom).ignoresSafeArea()
+            GeometryReader { container in
             TabView(selection: $page) {
-                playerPage.tag(0)
-                lyricPage.tag(1)
+                playerPage(size: container.size)
+                    .frame(width: container.size.width, height: container.size.height)
+                    .clipped().tag(0)
+                lyricPage
+                    .frame(width: container.size.width, height: container.size.height)
+                    .clipped().tag(1)
             }
             .tabViewStyle(.page(indexDisplayMode: .never))
+            .frame(width: container.size.width, height: container.size.height)
+            }
         }
         .foregroundColor(.white)
         .sheet(isPresented: $showQueue) { MusicQueueSheet(model: model) }
     }
 
-    private var playerPage: some View {
-        GeometryReader { geo in
+    private func playerPage(size: CGSize) -> some View {
         VStack(spacing: 0) {
             if let song = model.nowPlaying {
                 playerHeader(song)
                 Spacer(minLength: 4)
-                record(song, size: min(geo.size.width * 0.54, geo.size.height * 0.31))
+                record(song, size: min(size.width * 0.54, size.height * 0.31))
                 Spacer(minLength: 8)
                 HStack(alignment: .center, spacing: 12) {
                     VStack(alignment: .leading, spacing: 4) {
@@ -2523,7 +2580,8 @@ struct MusicPlayerSheet: View {
                 pageDots
             }
         }
-        }
+        .frame(width: size.width, height: size.height)
+        .clipped()
     }
 
     private var lyricPage: some View {
@@ -2584,7 +2642,7 @@ struct MusicPlayerSheet: View {
                     Circle().stroke(.white.opacity(0.035), lineWidth: 1)
                         .padding(CGFloat(ring) * 11)
                 }
-                AsyncImage(url: artworkURL(song.cover, pixels: 600)) { $0.resizable().scaledToFill() }
+                AsyncImage(url: MusicModel.artworkURL(song.cover)) { $0.resizable().scaledToFill() }
                     placeholder: { Color.white.opacity(0.08) }
                     .frame(width: size * 0.57, height: size * 0.57).clipShape(Circle())
                 Circle().fill(.black.opacity(0.7)).frame(width: 12, height: 12)
@@ -2632,9 +2690,11 @@ struct MusicPlayerSheet: View {
             Button { model.prev() } label: { Image(systemName: "backward.fill") }
             Spacer()
             Button { model.toggle() } label: {
-                Image(systemName: model.isPlaying ? "pause.fill" : "play.fill")
-                    .font(.system(size: 24)).frame(width: 58, height: 58)
-                    .background(.white, in: Circle()).foregroundColor(.black)
+                ZStack {
+                    Circle().fill(.white).frame(width: 58, height: 58)
+                    if model.playbackLoading { ProgressView().tint(.black) }
+                    else { Image(systemName: model.isPlaying ? "pause.fill" : "play.fill").font(.system(size: 24)) }
+                }.foregroundColor(.black)
             }
             Spacer()
             Button { model.next() } label: { Image(systemName: "forward.fill") }
@@ -2660,11 +2720,6 @@ struct MusicPlayerSheet: View {
         return String(format: "%d:%02d", Int(seconds) / 60, Int(seconds) % 60)
     }
 
-    private func artworkURL(_ raw: String, pixels: Int) -> URL? {
-        guard !raw.isEmpty else { return nil }
-        let separator = raw.contains("?") ? "&" : "?"
-        return URL(string: "\(raw)\(separator)param=\(pixels)y\(pixels)")
-    }
 }
 
 private struct MusicQueueSheet: View {
