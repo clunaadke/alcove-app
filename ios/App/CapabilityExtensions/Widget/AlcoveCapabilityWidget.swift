@@ -20,7 +20,14 @@ private struct LabProvider: TimelineProvider {
         completion(LabEntry(date: .now))
     }
     func getTimeline(in context: Context, completion: @escaping (Timeline<LabEntry>) -> Void) {
-        completion(Timeline(entries: [LabEntry(date: .now)], policy: .never))
+        let now = Date()
+        let calendar = Calendar.autoupdatingCurrent
+        let nextMidnight = calendar.date(
+            byAdding: .day,
+            value: 1,
+            to: calendar.startOfDay(for: now)
+        ) ?? now.addingTimeInterval(86_400)
+        completion(Timeline(entries: [LabEntry(date: now)], policy: .after(nextMidnight)))
     }
 }
 
@@ -33,6 +40,7 @@ private struct AlcoveHomeWidget: Widget {
         .description("看看家里此刻正在发生什么。")
         .supportedFamilies([
             .systemSmall,
+            .systemMedium,
             .accessoryCircular,
             .accessoryRectangular,
             .accessoryInline
@@ -55,6 +63,12 @@ private struct AlcoveWidgetView: View {
                     Color(red: 0.08, green: 0.075, blue: 0.09),
                     for: .widget
                 )
+        case .systemMedium:
+            widgetContent
+                .containerBackground(
+                    Color(red: 0.21, green: 0.21, blue: 0.23),
+                    for: .widget
+                )
         default:
             widgetContent
                 .containerBackground(.clear, for: .widget)
@@ -64,6 +78,33 @@ private struct AlcoveWidgetView: View {
     @ViewBuilder
     private var widgetContent: some View {
         switch family {
+        case .systemMedium:
+            ZStack {
+                Color(red: 0.21, green: 0.21, blue: 0.23)
+                HStack(spacing: 22) {
+                    RavenMark(size: 118)
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Time, gently kept.")
+                            .font(.system(.title3, design: .serif, weight: .medium))
+                            .italic()
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Text("✦")
+                                .font(.title3)
+                            Text("\(togetherDays)")
+                                .font(.system(size: 42, weight: .semibold, design: .rounded))
+                                .monospacedDigit()
+                            Text("DAYS")
+                                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                                .tracking(2)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    Spacer(minLength: 0)
+                }
+                .foregroundStyle(.white)
+                .padding(.horizontal, 24)
+            }
+
         case .accessoryCircular:
             ZStack {
                 AccessoryWidgetBackground()
@@ -108,6 +149,17 @@ private struct AlcoveWidgetView: View {
                 .padding(10)
             }
         }
+    }
+
+    private var togetherDays: Int {
+        let calendar = Calendar.autoupdatingCurrent
+        guard let startDate = calendar.date(
+            from: DateComponents(year: 2026, month: 6, day: 1)
+        ) else { return 0 }
+
+        let start = calendar.startOfDay(for: startDate)
+        let today = calendar.startOfDay(for: entry.date)
+        return max(0, calendar.dateComponents([.day], from: start, to: today).day ?? 0)
     }
 }
 
