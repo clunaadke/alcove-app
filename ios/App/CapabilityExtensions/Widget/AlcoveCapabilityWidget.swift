@@ -37,6 +37,7 @@ private struct AlcoveHomeWidget: Widget {
             .accessoryRectangular,
             .accessoryInline
         ])
+        .contentMarginsDisabled()
     }
 }
 
@@ -47,8 +48,17 @@ private struct AlcoveWidgetView: View {
 
     @ViewBuilder
     var body: some View {
-        widgetContent
-            .containerBackground(.clear, for: .widget)
+        switch family {
+        case .systemSmall:
+            widgetContent
+                .containerBackground(
+                    Color(red: 0.08, green: 0.075, blue: 0.09),
+                    for: .widget
+                )
+        default:
+            widgetContent
+                .containerBackground(.clear, for: .widget)
+        }
     }
 
     @ViewBuilder
