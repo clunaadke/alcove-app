@@ -3258,7 +3258,7 @@ private struct NativeWorkbenchView: View {
             VStack(alignment: .trailing, spacing: 1) {
                 Text(Date(), format: .dateTime.month().day())
                     .font(.custom("Snell Roundhand", size: 18))
-                Text("live · (data.int("completed_today")) finished")
+                Text("live · \(data.int("completed_today")) finished")
                     .font(.system(size: 9, design: .rounded))
                     .foregroundColor(theme.textDim)
             }
