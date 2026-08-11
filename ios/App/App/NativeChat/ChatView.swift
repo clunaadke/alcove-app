@@ -881,6 +881,12 @@ private struct SelectableMessageText: UIViewRepresentable {
     let color: UIColor
     let onAsk: (String) -> Void
 
+    final class Coordinator {
+        var renderedKey: String?
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
     func makeUIView(context: Context) -> AskSelectableTextView {
         let view = AskSelectableTextView()
         view.isEditable = false
@@ -895,6 +901,12 @@ private struct SelectableMessageText: UIViewRepresentable {
 
     func updateUIView(_ view: AskSelectableTextView, context: Context) {
         view.onAsk = onAsk
+        // 后台每 2.5 秒轮询会让 SwiftUI 重跑 updateUIView。正文其实没变，
+        // 但重新赋 attributedText 会强制收掉 iOS 的选区和复制菜单。
+        // 同一份渲染直接跳过；用户正在选字时，即使主题恰好变化也先让她选完。
+        let renderedKey = "\(text)\u{1f}\(fontSize)\u{1f}\(lineSpacing)\u{1f}\(color.description)"
+        guard context.coordinator.renderedKey != renderedKey else { return }
+        guard view.selectedRange.length == 0 else { return }
         let source = (try? AttributedString(markdown: text,
             options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(text)
         let rendered = NSMutableAttributedString(attributedString: NSAttributedString(source))
@@ -913,7 +925,8 @@ private struct SelectableMessageText: UIViewRepresentable {
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineSpacing = lineSpacing
         rendered.addAttribute(.paragraphStyle, value: paragraph, range: all)
-        if view.attributedText != rendered { view.attributedText = rendered }
+        view.attributedText = rendered
+        context.coordinator.renderedKey = renderedKey
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: AskSelectableTextView, context: Context) -> CGSize? {

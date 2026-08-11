@@ -254,6 +254,11 @@ enum AlcoveAPI {
         guard obj["ok"] as? Bool == true else { throw URLError(.cannotWriteToFile) }
     }
 
+    static func declineScreenShare() async throws {
+        let obj = try await postJSON("/api/screen-share/decline", body: [:])
+        guard obj["ok"] as? Bool == true else { throw URLError(.cannotWriteToFile) }
+    }
+
     static func terminalCapture(session: String = "main", lines: Int = 30) async throws -> String {
         let obj = try await getJSON("/api/terminal/capture?session=\(session)&lines=\(lines)")
         guard obj["ok"] as? Bool == true else { throw URLError(.cannotConnectToHost) }

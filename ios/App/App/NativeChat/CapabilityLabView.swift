@@ -131,7 +131,17 @@ final class ScreenShareCoordinator: ObservableObject {
         request = status
     }
 
-    func decline() { request = nil }
+    func decline() {
+        guard request != nil else { return }
+        request = nil
+        Task {
+            do {
+                try await AlcoveAPI.declineScreenShare()
+            } catch {
+                message = "拒绝状态没有送达：\(error.localizedDescription)"
+            }
+        }
+    }
 
     func acceptRequest() {
         request = nil
