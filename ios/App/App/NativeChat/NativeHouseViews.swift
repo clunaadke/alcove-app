@@ -896,6 +896,10 @@ private struct NativeSettingsView: View {
     @State private var replyLengthLoaded = false
     @State private var replyLengthSaving = false
     @State private var replyLengthSaveTask: Task<Void, Never>?
+    @State private var thoughtLength = 500.0
+    @State private var thoughtLengthLoaded = false
+    @State private var thoughtLengthSaving = false
+    @State private var thoughtLengthSaveTask: Task<Void, Never>?
     @Environment(\.houseOwnsHeader) private var houseOwnsHeader
     private var theme: AlcoveTheme { .panelNamed(themeName) }
 
@@ -956,6 +960,27 @@ private struct NativeSettingsView: View {
                         }
                         .font(.system(size: 9.5, design: .rounded))
                         .foregroundColor(theme.textDim)
+                    }
+                    Divider().opacity(0.25)
+                    VStack(alignment: .leading, spacing: 11) {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("思绪长度").font(.system(size: 13, weight: .medium))
+                                Text(thoughtLength == 0 ? "不限制他的思考篇幅" : "每轮思绪约 \(Int(thoughtLength)) 字以内")
+                                    .font(.system(size: 10)).foregroundColor(theme.textDim)
+                            }
+                            Spacer()
+                            Text(thoughtLength == 0 ? "不限" : "\(Int(thoughtLength)) 字")
+                                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                .foregroundColor(theme.fyAccent)
+                        }
+                        Slider(value: $thoughtLength, in: 0...1200, step: 20).tint(theme.fyAccent)
+                        HStack {
+                            Text("不限"); Spacer()
+                            if thoughtLengthSaving { ProgressView().scaleEffect(0.65) }
+                            Text("1200 字")
+                        }
+                        .font(.system(size: 9.5, design: .rounded)).foregroundColor(theme.textDim)
                     }
                 }
                 section("主题") {
@@ -1037,10 +1062,12 @@ private struct NativeSettingsView: View {
         .onChange(of: aiPhoto) { item in loadDataURL(item, into: $assistantAvatar) }
         .onChange(of: wallPhoto) { item in saveWallpaper(item) }
         .onChange(of: replyLength) { value in scheduleReplyLengthSave(value) }
+        .onChange(of: thoughtLength) { value in scheduleThoughtLengthSave(value) }
         .task {
             async let services: Void = loadServices()
             async let reply: Void = loadReplyLength()
-            _ = await (services, reply)
+            async let thought: Void = loadThoughtLength()
+            _ = await (services, reply, thought)
         }
     }
 
@@ -1138,6 +1165,27 @@ private struct NativeSettingsView: View {
             defer { replyLengthSaving = false }
             _ = try? await NativeHouseAPI.object(
                 "/api/reply-len", method: "POST", body: ["chars": Int(value)]
+            )
+        }
+    }
+
+    @MainActor private func loadThoughtLength() async {
+        if let value = try? await NativeHouseAPI.object("/api/reply-len") {
+            thoughtLength = Double(value.int("thought_chars"))
+        }
+        thoughtLengthLoaded = true
+    }
+
+    private func scheduleThoughtLengthSave(_ value: Double) {
+        guard thoughtLengthLoaded else { return }
+        thoughtLengthSaveTask?.cancel()
+        thoughtLengthSaveTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            guard !Task.isCancelled else { return }
+            thoughtLengthSaving = true
+            defer { thoughtLengthSaving = false }
+            _ = try? await NativeHouseAPI.object(
+                "/api/reply-len", method: "POST", body: ["thought_chars": Int(value)]
             )
         }
     }
@@ -1751,7 +1799,9 @@ final class MusicModel: ObservableObject {
             queue = [song]
             queueIndex = 0
         }
-        guard let obj = try? await NativeHouseAPI.object("/api/music/song/url?id=\(song.id)"),
+        // The service otherwise prefers lossless FLAC for some songs. Remote
+        // FLAC streams are not reliable in AVPlayer, while the MP3 endpoint is.
+        guard let obj = try? await NativeHouseAPI.object("/api/music/song/url?id=\(song.id)&br=128000"),
               let rows = obj["data"] as? [[String: Any]],
               let raw = rows.first?.string("url"), !raw.isEmpty else {
             message = "这首暂时放不了"
@@ -1775,7 +1825,7 @@ final class MusicModel: ObservableObject {
         player = AVPlayer(url: url)
         player?.play()
         nowPlaying = song
-        isPlaying = true
+        isPlaying = false
         progress = 0; duration = 0
         timeObserver = player?.addPeriodicTimeObserver(
             forInterval: CMTime(seconds: 0.5, preferredTimescale: 600), queue: .main
@@ -1786,6 +1836,7 @@ final class MusicModel: ObservableObject {
                 if dur.isFinite && dur > 0 {
                     self.duration = dur
                     self.progress = time.seconds
+                    self.isPlaying = self.player?.timeControlStatus == .playing
                     self.publishNowPlaying()
                 }
             }
@@ -1798,6 +1849,12 @@ final class MusicModel: ObservableObject {
             }
         }
         await loadLyrics(song.id)
+        try? await Task.sleep(nanoseconds: 350_000_000)
+        if player?.timeControlStatus == .playing { isPlaying = true }
+        else if player?.currentItem?.status == .failed {
+            message = "这首没有成功开始播放"
+            isPlaying = false
+        }
         publishNowPlaying(loadArtwork: true)
         await reportNowPlaying()
     }
@@ -2426,7 +2483,7 @@ struct MusicPlayerSheet: View {
     var body: some View {
         ZStack {
             if let cover = model.nowPlaying?.cover {
-                AsyncImage(url: URL(string: cover)) { image in
+                AsyncImage(url: artworkURL(cover, pixels: 900)) { image in
                     image.resizable().scaledToFill()
                 } placeholder: {
                     LinearGradient(colors: theme.splashBg, startPoint: .top, endPoint: .bottom)
@@ -2451,7 +2508,7 @@ struct MusicPlayerSheet: View {
             if let song = model.nowPlaying {
                 playerHeader(song)
                 Spacer(minLength: 4)
-                record(song, size: min(geo.size.width * 0.61, geo.size.height * 0.39))
+                record(song, size: min(geo.size.width * 0.54, geo.size.height * 0.31))
                 Spacer(minLength: 8)
                 HStack(alignment: .center, spacing: 12) {
                     VStack(alignment: .leading, spacing: 4) {
@@ -2486,12 +2543,13 @@ struct MusicPlayerSheet: View {
                                     Text(line.text).font(.system(size: index == activeLyric ? 19 : 15,
                                                                 weight: index == activeLyric ? .semibold : .regular))
                                         .multilineTextAlignment(.center)
+                                        .foregroundColor(index == activeLyric ? .white : .white.opacity(0.68))
                                     if let trans = line.translation, !trans.isEmpty {
-                                        Text(trans).font(.system(size: 11)).foregroundColor(theme.textDim)
+                                        Text(trans).font(.system(size: 11)).foregroundColor(.white.opacity(0.62))
                                             .multilineTextAlignment(.center)
                                     }
                                 }.frame(maxWidth: .infinity, alignment: .center)
-                                    .opacity(index == activeLyric ? 1 : 0.48)
+                                    .opacity(index == activeLyric ? 1 : 0.86)
                             }.buttonStyle(.plain).id(index)
                         }
                     }
@@ -2526,7 +2584,7 @@ struct MusicPlayerSheet: View {
                     Circle().stroke(.white.opacity(0.035), lineWidth: 1)
                         .padding(CGFloat(ring) * 11)
                 }
-                AsyncImage(url: URL(string: song.cover)) { $0.resizable().scaledToFill() }
+                AsyncImage(url: artworkURL(song.cover, pixels: 600)) { $0.resizable().scaledToFill() }
                     placeholder: { Color.white.opacity(0.08) }
                     .frame(width: size * 0.57, height: size * 0.57).clipShape(Circle())
                 Circle().fill(.black.opacity(0.7)).frame(width: 12, height: 12)
@@ -2601,6 +2659,12 @@ struct MusicPlayerSheet: View {
         guard seconds.isFinite, seconds >= 0 else { return "0:00" }
         return String(format: "%d:%02d", Int(seconds) / 60, Int(seconds) % 60)
     }
+
+    private func artworkURL(_ raw: String, pixels: Int) -> URL? {
+        guard !raw.isEmpty else { return nil }
+        let separator = raw.contains("?") ? "&" : "?"
+        return URL(string: "\(raw)\(separator)param=\(pixels)y\(pixels)")
+    }
 }
 
 private struct MusicQueueSheet: View {
@@ -2611,8 +2675,11 @@ private struct MusicQueueSheet: View {
         NavigationStack {
             List(Array(model.queue.enumerated()), id: \.element.id) { index, song in
                 Button {
-                    Task { await model.play(song, queue: model.queue) }
-                    dismiss()
+                    let source = model.queue
+                    Task {
+                        await model.play(song, queue: source)
+                        dismiss()
+                    }
                 } label: {
                     HStack(spacing: 12) {
                         Image(systemName: index == model.queueIndex ? "waveform" : "music.note")
