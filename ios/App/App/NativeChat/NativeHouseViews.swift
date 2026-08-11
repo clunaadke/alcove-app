@@ -1678,6 +1678,25 @@ struct MusicPlaylist: Identifiable, Equatable {
     }
 }
 
+enum MusicPlayMode: String, CaseIterable {
+    case sequence, shuffle, repeatOne
+
+    var icon: String {
+        switch self {
+        case .sequence: return "repeat"
+        case .shuffle: return "shuffle"
+        case .repeatOne: return "repeat.1"
+        }
+    }
+    var title: String {
+        switch self {
+        case .sequence: return "顺序播放"
+        case .shuffle: return "随机播放"
+        case .repeatOne: return "单曲循环"
+        }
+    }
+}
+
 @MainActor
 final class MusicModel: ObservableObject {
     static let shared = MusicModel()
@@ -1695,10 +1714,11 @@ final class MusicModel: ObservableObject {
     @Published var playlistSongs: [MusicSong] = []
     @Published var homeLoading = false
     @Published var likedSongIDs: Set<String> = []
+    @Published var queue: [MusicSong] = []
+    @Published var queueIndex = -1
+    @Published var playMode: MusicPlayMode = .sequence
     private var player: AVPlayer?
     private var timeObserver: Any?
-    private var playHistory: [MusicSong] = []
-    private var historyIndex = -1
     private var playbackPoll: Task<Void, Never>?
 
     private init() {
@@ -1721,7 +1741,16 @@ final class MusicModel: ObservableObject {
         if songs.isEmpty { message = "没搜到  换个词试试" }
     }
 
-    func play(_ song: MusicSong) async {
+    func play(_ song: MusicSong, queue source: [MusicSong]? = nil) async {
+        if let source, !source.isEmpty {
+            queue = source
+            queueIndex = source.firstIndex(where: { $0.id == song.id }) ?? 0
+        } else if let index = queue.firstIndex(where: { $0.id == song.id }) {
+            queueIndex = index
+        } else {
+            queue = [song]
+            queueIndex = 0
+        }
         guard let obj = try? await NativeHouseAPI.object("/api/music/song/url?id=\(song.id)"),
               let rows = obj["data"] as? [[String: Any]],
               let raw = rows.first?.string("url"), !raw.isEmpty else {
@@ -1748,10 +1777,6 @@ final class MusicModel: ObservableObject {
         nowPlaying = song
         isPlaying = true
         progress = 0; duration = 0
-        if historyIndex < 0 || historyIndex >= playHistory.count || playHistory[historyIndex] != song {
-            playHistory.append(song)
-            historyIndex = playHistory.count - 1
-        }
         timeObserver = player?.addPeriodicTimeObserver(
             forInterval: CMTime(seconds: 0.5, preferredTimescale: 600), queue: .main
         ) { [weak self] time in
@@ -1769,8 +1794,7 @@ final class MusicModel: ObservableObject {
             forName: .AVPlayerItemDidPlayToEndTime,
             object: player?.currentItem, queue: .main) { [weak self] _ in
             Task { @MainActor in
-                self?.isPlaying = false
-                self?.progress = self?.duration ?? 0
+                self?.handleTrackEnded()
             }
         }
         await loadLyrics(song.id)
@@ -1970,30 +1994,68 @@ final class MusicModel: ObservableObject {
         }.sorted { $0.time < $1.time }
     }
 
-    func prev() {
-        guard historyIndex > 0 else { return }
-        historyIndex -= 1
-        Task { await play(playHistory[historyIndex]) }
-    }
-
-    func next() {
-        if historyIndex + 1 < playHistory.count {
-            historyIndex += 1
-            Task { await play(playHistory[historyIndex]) }
-        } else if !songs.isEmpty {
-            let current = nowPlaying
-            if let idx = songs.firstIndex(where: { $0.id == current?.id }), idx + 1 < songs.count {
-                let nextSong = songs[idx + 1]
-                Task { await play(nextSong) }
-            }
+    func cyclePlayMode() {
+        switch playMode {
+        case .sequence: playMode = .shuffle
+        case .shuffle: playMode = .repeatOne
+        case .repeatOne: playMode = .sequence
         }
     }
 
-    var hasPrev: Bool { historyIndex > 0 }
-    var hasNext: Bool { historyIndex + 1 < playHistory.count || {
-        guard let np = nowPlaying, let idx = songs.firstIndex(where: { $0.id == np.id }) else { return false }
-        return idx + 1 < songs.count
-    }() }
+    func prev() {
+        guard !queue.isEmpty else { return }
+        if progress > 4 { seek(to: 0); return }
+        let index = queueIndex > 0 ? queueIndex - 1 : queue.count - 1
+        playQueueItem(at: index)
+    }
+
+    func next() { advance(automatic: false) }
+
+    var hasPrev: Bool { queue.count > 1 || progress > 0 }
+    var hasNext: Bool { queue.count > 1 }
+
+    private func handleTrackEnded() {
+        if playMode == .repeatOne {
+            seek(to: 0)
+            player?.play()
+            isPlaying = true
+            return
+        }
+        advance(automatic: true)
+    }
+
+    private func advance(automatic: Bool) {
+        guard !queue.isEmpty else { return }
+        let nextIndex: Int
+        switch playMode {
+        case .shuffle:
+            if queue.count == 1 { nextIndex = 0 }
+            else {
+                var candidate = queueIndex
+                while candidate == queueIndex { candidate = Int.random(in: 0..<queue.count) }
+                nextIndex = candidate
+            }
+        case .sequence, .repeatOne:
+            let candidate = queueIndex + 1
+            if candidate >= queue.count {
+                if automatic {
+                    isPlaying = false
+                    progress = duration
+                    publishNowPlaying()
+                    return
+                }
+                nextIndex = 0
+            } else { nextIndex = candidate }
+        }
+        playQueueItem(at: nextIndex)
+    }
+
+    private func playQueueItem(at index: Int) {
+        guard queue.indices.contains(index) else { return }
+        queueIndex = index
+        let song = queue[index]
+        Task { await play(song, queue: queue) }
+    }
 
     private func cleanup() {
         if let obs = timeObserver { player?.removeTimeObserver(obs); timeObserver = nil }
@@ -2029,7 +2091,7 @@ private struct NativeMusicView: View {
         .task { await model.loadHome() }
         .sheet(isPresented: $showPlayer) {
             MusicPlayerSheet(model: model)
-                .presentationDetents([.fraction(0.72)])
+                .presentationDetents([.fraction(0.75)])
                 .presentationDragIndicator(.visible)
                 .presentationBackground(.ultraThinMaterial)
         }
@@ -2127,7 +2189,7 @@ private struct NativeMusicView: View {
                 VStack(alignment: .leading, spacing: 7) {
                     Text(playlist.name).font(.system(size: 17, weight: .semibold)).lineLimit(2)
                     Text("\(playlist.count) 首").font(.system(size: 11)).foregroundColor(theme.textDim)
-                    Button { if let first = model.playlistSongs.first { Task { await model.play(first) } } } label: {
+                    Button { if let first = model.playlistSongs.first { Task { await model.play(first, queue: model.playlistSongs) } } } label: {
                         Label("播放全部", systemImage: "play.fill").font(.system(size: 11, weight: .medium))
                     }.buttonStyle(.borderedProminent).tint(theme.fyAccent)
                 }; Spacer()
@@ -2141,7 +2203,10 @@ private struct NativeMusicView: View {
             LazyVStack(spacing: 5) {
                 ForEach(Array(songs.enumerated()), id: \.element.id) { index, song in
                     HStack(spacing: 11) {
-                        HStack(spacing: 11) {
+                        Button {
+                            Task { await model.play(song, queue: songs) }
+                        } label: {
+                            HStack(spacing: 11) {
                             Text("\(index + 1)").font(.system(size: 11, design: .monospaced))
                                 .foregroundColor(theme.textLight).frame(width: 24)
                             AsyncImage(url: URL(string: song.cover)) { $0.resizable().scaledToFill() }
@@ -2154,9 +2219,10 @@ private struct NativeMusicView: View {
                             Spacer()
                             Image(systemName: model.nowPlaying?.id == song.id && model.isPlaying ? "waveform" : "play.fill")
                                 .foregroundColor(theme.fyAccent)
+                            }
                         }
                         .contentShape(Rectangle())
-                        .onTapGesture { Task { await model.play(song) } }
+                        .buttonStyle(.plain)
                         Button { giftSong = song } label: {
                             Image(systemName: "paperplane")
                                 .font(.system(size: 14, weight: .medium))
@@ -2354,6 +2420,8 @@ struct MusicPlayerSheet: View {
     @ObservedObject var model: MusicModel
     @AppStorage("alcoveTheme") private var themeName = "haven"
     private var theme: AlcoveTheme { .panelNamed(themeName) }
+    @State private var page = 0
+    @State private var showQueue = false
 
     var body: some View {
         ZStack {
@@ -2365,62 +2433,49 @@ struct MusicPlayerSheet: View {
                 }
                 .blur(radius: 48).scaleEffect(1.3).opacity(0.42).ignoresSafeArea()
             }
-            LinearGradient(colors: theme.splashBg, startPoint: .top, endPoint: .bottom)
-                .opacity(0.36).ignoresSafeArea()
-            TabView {
-                playerPage
-                lyricPage
+            LinearGradient(colors: [.black.opacity(0.22), .black.opacity(0.7)],
+                           startPoint: .top, endPoint: .bottom).ignoresSafeArea()
+            TabView(selection: $page) {
+                playerPage.tag(0)
+                lyricPage.tag(1)
             }
-            .tabViewStyle(.page(indexDisplayMode: .always))
-            .padding(.top, 10)
+            .tabViewStyle(.page(indexDisplayMode: .never))
         }
-        .foregroundColor(theme.text)
+        .foregroundColor(.white)
+        .sheet(isPresented: $showQueue) { MusicQueueSheet(model: model) }
     }
 
     private var playerPage: some View {
-        VStack(spacing: 18) {
+        GeometryReader { geo in
+        VStack(spacing: 0) {
             if let song = model.nowPlaying {
-                AsyncImage(url: URL(string: song.cover)) { image in
-                    image.resizable().scaledToFill()
-                } placeholder: { theme.fyCardSub }
-                .frame(width: 230, height: 230).clipShape(Circle())
-                .padding(14)
-                .background(Circle().fill(.black.opacity(0.22)))
-                .overlay(Circle().stroke(.white.opacity(0.18), lineWidth: 1))
-                .shadow(color: .black.opacity(0.18), radius: 20, y: 10)
-                Text(song.name).font(.system(size: 20, weight: .semibold)).lineLimit(1)
-                Text(song.artist).font(.system(size: 13)).foregroundColor(theme.textDim)
-                Button { Task { await model.toggleLike() } } label: {
-                    Image(systemName: model.currentIsLiked ? "heart.fill" : "heart")
-                        .font(.system(size: 26))
-                        .foregroundColor(model.currentIsLiked ? .red : theme.text)
-                }.buttonStyle(.plain)
-                VStack(spacing: 5) {
-                    Slider(value: Binding(get: { model.progress }, set: { model.seek(to: $0) }),
-                           in: 0...max(model.duration, 1)).tint(theme.fyAccent)
-                    HStack {
-                        Text(Self.time(model.progress)); Spacer(); Text(Self.time(model.duration))
-                    }.font(.system(size: 10, design: .monospaced)).foregroundColor(theme.textDim)
-                }.padding(.horizontal, 28)
-                HStack(spacing: 42) {
-                    Button { model.prev() } label: { Image(systemName: "backward.fill") }
-                    Button { model.toggle() } label: {
-                        Image(systemName: model.isPlaying ? "pause.fill" : "play.fill")
-                            .font(.system(size: 23)).frame(width: 58, height: 58)
-                            .background(theme.fyAccent, in: Circle()).foregroundColor(.white)
+                playerHeader(song)
+                Spacer(minLength: 4)
+                record(song, size: min(geo.size.width * 0.61, geo.size.height * 0.39))
+                Spacer(minLength: 8)
+                HStack(alignment: .center, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(song.name).font(.system(size: 21, weight: .semibold)).lineLimit(1)
+                        Text(song.artist).font(.system(size: 13)).foregroundColor(.white.opacity(0.62)).lineLimit(1)
                     }
-                    Button { model.next() } label: { Image(systemName: "forward.fill") }
-                }.font(.system(size: 20)).buttonStyle(.plain)
+                    Spacer()
+                    likeButton
+                }.padding(.horizontal, 28)
+                progressControls
+                playbackControls
+                pageDots
             }
-            Spacer(minLength: 4)
-        }.padding(.horizontal, 18)
+        }
+        }
     }
 
     private var lyricPage: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .center, spacing: 18) {
-                    Color.clear.frame(height: 100)
+        VStack(spacing: 0) {
+            if let song = model.nowPlaying { playerHeader(song) }
+            ScrollViewReader { proxy in
+                ScrollView(showsIndicators: false) {
+                    LazyVStack(alignment: .center, spacing: 20) {
+                    Color.clear.frame(height: 70)
                     if model.lyricsLoading { ProgressView().frame(maxWidth: .infinity) }
                     else if model.lyrics.isEmpty {
                         Text("这首没有歌词").foregroundColor(theme.textDim).frame(maxWidth: .infinity)
@@ -2440,23 +2495,103 @@ struct MusicPlayerSheet: View {
                             }.buttonStyle(.plain).id(index)
                         }
                     }
-                    Color.clear.frame(height: 160)
+                    Color.clear.frame(height: 110)
                 }.frame(maxWidth: .infinity).padding(.horizontal, 26)
-            }
-            .overlay(alignment: .bottom) {
-                Button { Task { await model.toggleLike() } } label: {
-                    Image(systemName: model.currentIsLiked ? "heart.fill" : "heart")
-                        .font(.system(size: 25))
-                        .foregroundColor(model.currentIsLiked ? .red : theme.text)
-                        .frame(width: 48, height: 48)
-                        .background(.ultraThinMaterial, in: Circle())
-                }.buttonStyle(.plain).padding(.bottom, 20)
-            }
+                }
             .onChange(of: activeLyric) { idx in
                 guard idx >= 0 else { return }
                 withAnimation(.easeOut(duration: 0.3)) { proxy.scrollTo(idx, anchor: .center) }
             }
+            }
+            HStack { likeButton; Spacer(); Image(systemName: "quote.bubble").font(.system(size: 19)) }
+                .padding(.horizontal, 34).padding(.top, 8)
+            progressControls
+            playbackControls
+            pageDots
         }
+    }
+
+    private func playerHeader(_ song: MusicSong) -> some View {
+        VStack(spacing: 2) {
+            Text(song.name).font(.system(size: 15, weight: .semibold)).lineLimit(1)
+            Text(song.artist).font(.system(size: 10)).foregroundColor(.white.opacity(0.55)).lineLimit(1)
+        }.frame(maxWidth: .infinity).padding(.horizontal, 48).padding(.top, 16).padding(.bottom, 8)
+    }
+
+    private func record(_ song: MusicSong, size: CGFloat) -> some View {
+        ZStack(alignment: .topTrailing) {
+            ZStack {
+                Circle().fill(.black.opacity(0.82))
+                ForEach(1..<7) { ring in
+                    Circle().stroke(.white.opacity(0.035), lineWidth: 1)
+                        .padding(CGFloat(ring) * 11)
+                }
+                AsyncImage(url: URL(string: song.cover)) { $0.resizable().scaledToFill() }
+                    placeholder: { Color.white.opacity(0.08) }
+                    .frame(width: size * 0.57, height: size * 0.57).clipShape(Circle())
+                Circle().fill(.black.opacity(0.7)).frame(width: 12, height: 12)
+            }
+            .frame(width: size, height: size)
+            .shadow(color: .black.opacity(0.45), radius: 22, y: 12)
+            ZStack(alignment: .top) {
+                Circle().fill(.black.opacity(0.7)).frame(width: 34, height: 34)
+                    .overlay(Circle().stroke(.white.opacity(0.2), lineWidth: 2))
+                Capsule().fill(.white.opacity(0.72)).frame(width: 8, height: size * 0.48)
+                    .overlay(alignment: .bottom) { Capsule().fill(.black.opacity(0.78)).frame(width: 18, height: 35).offset(y: 18) }
+                    .offset(y: 18)
+            }
+            .rotationEffect(.degrees(model.isPlaying ? 22 : 8), anchor: .top)
+            .animation(.easeInOut(duration: 0.45), value: model.isPlaying)
+            .offset(x: 12, y: -17)
+        }.frame(width: size + 35, height: size)
+    }
+
+    private var likeButton: some View {
+        Button { Task { await model.toggleLike() } } label: {
+            Image(systemName: model.currentIsLiked ? "heart.fill" : "heart")
+                .font(.system(size: 23))
+                .foregroundColor(model.currentIsLiked ? .red : .white)
+                .frame(width: 42, height: 42)
+        }.buttonStyle(.plain)
+    }
+
+    private var progressControls: some View {
+        VStack(spacing: 2) {
+            Slider(value: Binding(get: { model.progress }, set: { model.seek(to: $0) }),
+                   in: 0...max(model.duration, 1)).tint(.white)
+            HStack {
+                Text(Self.time(model.progress)); Spacer(); Text(Self.time(model.duration))
+            }.font(.system(size: 9, design: .monospaced)).foregroundColor(.white.opacity(0.52))
+        }.padding(.horizontal, 30).padding(.top, 6)
+    }
+
+    private var playbackControls: some View {
+        HStack {
+            Button { model.cyclePlayMode() } label: {
+                Image(systemName: model.playMode.icon).frame(width: 38)
+            }.accessibilityLabel(model.playMode.title)
+            Spacer()
+            Button { model.prev() } label: { Image(systemName: "backward.fill") }
+            Spacer()
+            Button { model.toggle() } label: {
+                Image(systemName: model.isPlaying ? "pause.fill" : "play.fill")
+                    .font(.system(size: 24)).frame(width: 58, height: 58)
+                    .background(.white, in: Circle()).foregroundColor(.black)
+            }
+            Spacer()
+            Button { model.next() } label: { Image(systemName: "forward.fill") }
+            Spacer()
+            Button { showQueue = true } label: { Image(systemName: "list.bullet") }.frame(width: 38)
+        }
+        .font(.system(size: 20)).buttonStyle(.plain)
+        .padding(.horizontal, 27).padding(.vertical, 5)
+    }
+
+    private var pageDots: some View {
+        HStack(spacing: 6) {
+            Circle().fill(.white.opacity(page == 0 ? 0.9 : 0.28)).frame(width: 5, height: 5)
+            Circle().fill(.white.opacity(page == 1 ? 0.9 : 0.28)).frame(width: 5, height: 5)
+        }.padding(.bottom, 10)
     }
 
     private var activeLyric: Int {
@@ -2465,6 +2600,35 @@ struct MusicPlayerSheet: View {
     private static func time(_ seconds: Double) -> String {
         guard seconds.isFinite, seconds >= 0 else { return "0:00" }
         return String(format: "%d:%02d", Int(seconds) / 60, Int(seconds) % 60)
+    }
+}
+
+private struct MusicQueueSheet: View {
+    @ObservedObject var model: MusicModel
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List(Array(model.queue.enumerated()), id: \.element.id) { index, song in
+                Button {
+                    Task { await model.play(song, queue: model.queue) }
+                    dismiss()
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: index == model.queueIndex ? "waveform" : "music.note")
+                            .foregroundColor(index == model.queueIndex ? .accentColor : .secondary)
+                            .frame(width: 22)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(song.name).lineLimit(1)
+                            Text(song.artist).font(.caption).foregroundColor(.secondary).lineLimit(1)
+                        }
+                    }
+                }.buttonStyle(.plain)
+            }
+            .navigationTitle("播放列表 · \(model.playMode.title)")
+            .navigationBarTitleDisplayMode(.inline)
+        }
+        .presentationDetents([.medium, .large])
     }
 }
 
