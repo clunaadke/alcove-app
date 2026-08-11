@@ -15,7 +15,7 @@ private extension EnvironmentValues {
 
 enum HouseDestination: String, Identifiable, CaseIterable {
     case sidebar, chat, terminal, settings, bubbleAppearance, checklist, music
-    case home, calendar, digest, wall, usage, workbench
+    case home, profile, activityRoom, calendar, digest, wall, usage, workbench
     case memory, dreams, shelf, fiction, desire, nianlun, clockwork, album, portrait, impression, morningPaper, nowhere, pulse
     case crosstalk, radio, coread, liao, daddyDay, lab
     case search, favorites, forge, roundtable
@@ -26,6 +26,8 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         switch self {
         case .sidebar: return "Alcove"
         case .home: return "大厅"
+        case .profile: return "陈璟"
+        case .activityRoom: return "活动房间"
         case .chat: return "Chat"
         case .terminal: return "Terminal"
         case .settings: return "设置"
@@ -66,6 +68,8 @@ enum HouseDestination: String, Identifiable, CaseIterable {
     var icon: String {
         switch self {
         case .home: return "house"
+        case .profile: return "person.crop.circle"
+        case .activityRoom: return "lamp.desk"
         case .chat: return "bubble.left"
         case .terminal: return "terminal"
         case .settings: return "gearshape"
@@ -206,6 +210,15 @@ struct NativeHouseSheet: View {
                     NativeUsageView()
                 case .workbench:
                     NativeWorkbenchView()
+                case .profile:
+                    NativeChenjingHomeView(
+                        openRoom: { withAnimation(.easeInOut(duration: 0.18)) { route = .activityRoom } },
+                        openDiary: { withAnimation(.easeInOut(duration: 0.18)) { route = .calendar } }
+                    )
+                case .activityRoom:
+                    NativeActivityRoomView(
+                        openCalendar: { withAnimation(.easeInOut(duration: 0.18)) { route = .calendar } }
+                    )
                 case .memory:
                     NativeOBMemoryView()
                 case .portrait:
@@ -268,13 +281,17 @@ struct NativeHouseSheet: View {
 
     private func houseHeader(safeTop: CGFloat) -> some View {
         ZStack {
-            Text(route.title)
-                .font(.system(size: 17, weight: .semibold, design: .serif))
-                .tracking(0.4)
+            if route != .activityRoom {
+                Text(route.title)
+                    .font(.system(size: 17, weight: .semibold, design: .serif))
+                    .tracking(0.4)
+            }
             HStack {
                 Button {
                     if route == .bubbleAppearance {
                         withAnimation(.easeInOut(duration: 0.18)) { route = .settings }
+                    } else if route == .activityRoom || route == .calendar {
+                        withAnimation(.easeInOut(duration: 0.18)) { route = .profile }
                     } else {
                         dismiss()
                     }
@@ -519,7 +536,7 @@ struct NativeHouseDrawer: View {
 
     private var homeCards: some View {
         HStack(spacing: 8) {
-            Button { select(.calendar) } label: {
+            Button { select(.profile) } label: {
                 HStack(spacing: 9) {
             Group {
                 if let avatar {
@@ -7020,6 +7037,234 @@ private struct NativeImpressionView: View {
             return (date, name, content)
         }
         if let latest = allItems.first { selectedDate = latest.0 }
+    }
+}
+
+// MARK: - 陈璟的活动房间
+
+private enum ActivityRoomInk {
+    static let paper = Color(red: 0.075, green: 0.052, blue: 0.035)
+    static let card = Color(red: 0.16, green: 0.12, blue: 0.085).opacity(0.82)
+    static let gold = Color(red: 0.88, green: 0.66, blue: 0.34)
+    static let text = Color(red: 0.94, green: 0.86, blue: 0.70)
+    static let dim = Color(red: 0.76, green: 0.67, blue: 0.55)
+    static let line = Color(red: 0.76, green: 0.55, blue: 0.29).opacity(0.45)
+}
+
+private struct NativeChenjingHomeView: View {
+    let openRoom: () -> Void
+    let openDiary: () -> Void
+
+    var body: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(spacing: 16) {
+                previewCard(title: "活动房间", subtitle: "今天的灯还亮着", action: openRoom) {
+                    Image("ActivityRoomRain")
+                        .resizable().scaledToFill()
+                        .frame(height: 245).clipped()
+                }
+                previewCard(title: "日记", subtitle: "旧日子都收在这里", action: openDiary) {
+                    ZStack(alignment: .bottomLeading) {
+                        LinearGradient(colors: [Color(red: 0.18, green: 0.12, blue: 0.08),
+                                                Color(red: 0.07, green: 0.05, blue: 0.04)],
+                                       startPoint: .topLeading, endPoint: .bottomTrailing)
+                        Image(systemName: "book.closed.fill")
+                            .font(.system(size: 58, weight: .light))
+                            .foregroundColor(ActivityRoomInk.gold.opacity(0.42))
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        Text("diary & moments")
+                            .font(.custom("Snell Roundhand", size: 22)).italic()
+                            .foregroundColor(ActivityRoomInk.text.opacity(0.82))
+                            .padding(18)
+                    }.frame(height: 150)
+                }
+            }
+            .padding(.horizontal, 15).padding(.top, 10).padding(.bottom, 30)
+        }
+        .background(ActivityRoomInk.paper.opacity(0.96))
+    }
+
+    private func previewCard<Content: View>(
+        title: String, subtitle: String, action: @escaping () -> Void,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        Button(action: action) {
+            VStack(spacing: 0) {
+                content()
+                HStack {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(title).font(.system(size: 19, weight: .semibold, design: .serif))
+                        Text(subtitle).font(.system(size: 10, design: .serif)).foregroundColor(ActivityRoomInk.dim)
+                    }
+                    Spacer()
+                    Image(systemName: "arrow.up.right")
+                        .font(.system(size: 13, weight: .semibold)).foregroundColor(ActivityRoomInk.gold)
+                }.padding(15)
+            }
+            .foregroundColor(ActivityRoomInk.text)
+            .background(.ultraThinMaterial)
+            .background(ActivityRoomInk.card)
+            .clipShape(RoundedRectangle(cornerRadius: 19, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 19).stroke(ActivityRoomInk.line, lineWidth: 0.8))
+        }.buttonStyle(.plain)
+    }
+}
+
+private struct NativeActivityRoomView: View {
+    let openCalendar: () -> Void
+    @State private var data: [String: Any] = [:]
+    @State private var loading = true
+
+    private var tasks: [[String: Any]] { data.array("tasks") }
+    private var timeline: [[String: Any]] { data.array("timeline") }
+
+    var body: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(spacing: 13) {
+                roomHero
+                if loading {
+                    ProgressView().tint(ActivityRoomInk.gold).padding(.vertical, 50)
+                } else {
+                    HStack(alignment: .top, spacing: 10) {
+                        checklistCard
+                        timelineCard
+                    }
+                    roomNote
+                }
+            }
+            .padding(.horizontal, 12).padding(.top, 6).padding(.bottom, 28)
+        }
+        .background(ActivityRoomInk.paper.opacity(0.98))
+        .foregroundColor(ActivityRoomInk.text)
+        .task { await load() }
+        .refreshable { await load() }
+    }
+
+    private var roomHero: some View {
+        ZStack(alignment: .topTrailing) {
+            Image("ActivityRoomRain")
+                .resizable().scaledToFill()
+                .frame(height: 370).clipped()
+            Button(action: openCalendar) {
+                Color.clear
+                    .frame(width: 66, height: 72)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("打开房间月历")
+            .padding(6)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 20).stroke(ActivityRoomInk.line, lineWidth: 0.8))
+    }
+
+    private var checklistCard: some View {
+        roomCard(index: "01", title: "今日待办") {
+            VStack(spacing: 9) {
+                ForEach(Array(tasks.filter { !$0.bool("optional") }.enumerated()), id: \.offset) { _, task in
+                    taskRow(task)
+                }
+                if let optional = tasks.first(where: { $0.bool("optional") }) {
+                    HStack(spacing: 5) {
+                        Image(systemName: "leaf.fill")
+                        Text("随心 · \(optional.string("title"))")
+                    }
+                    .font(.system(size: 9.5, design: .serif)).foregroundColor(ActivityRoomInk.gold)
+                    .padding(.horizontal, 8).frame(height: 28)
+                    .overlay(Capsule().stroke(ActivityRoomInk.line, style: StrokeStyle(lineWidth: 0.8, dash: [3])))
+                }
+            }
+        }
+    }
+
+    private func taskRow(_ task: [String: Any]) -> some View {
+        let count = task.int("count"), target = max(1, task.int("target"))
+        let done = count >= target
+        return VStack(spacing: 4) {
+            HStack(spacing: 6) {
+                Image(systemName: done ? "checkmark.circle.fill" : count > 0 ? "circle.lefthalf.filled" : "circle")
+                    .foregroundColor(done ? Color.green.opacity(0.75) : ActivityRoomInk.gold)
+                Text(task.string("title"))
+                    .font(.system(size: 10.5, design: .serif)).lineLimit(1)
+                Spacer(minLength: 2)
+                Text("\(count) / \(target)" + (task.string("unit") == "章" ? "章" : ""))
+                    .font(.system(size: 9.5, design: .rounded)).foregroundColor(ActivityRoomInk.dim)
+            }
+            GeometryReader { geo in
+                Capsule().fill(Color.black.opacity(0.42))
+                    .overlay(alignment: .leading) {
+                        Capsule().fill(ActivityRoomInk.gold)
+                            .frame(width: geo.size.width * CGFloat(count) / CGFloat(target))
+                    }
+            }.frame(height: 4)
+        }
+    }
+
+    private var timelineCard: some View {
+        roomCard(index: "02", title: "今天的时间线") {
+            ScrollView(showsIndicators: true) {
+                VStack(alignment: .leading, spacing: 16) {
+                    if timeline.isEmpty {
+                        Text("灯亮着，今天的痕迹还没落下来")
+                            .font(.system(size: 10, design: .serif)).foregroundColor(ActivityRoomInk.dim)
+                            .padding(.top, 12)
+                    } else {
+                        ForEach(Array(timeline.enumerated()), id: \.offset) { _, item in
+                            HStack(alignment: .top, spacing: 7) {
+                                Circle().fill(ActivityRoomInk.gold).frame(width: 7, height: 7)
+                                    .shadow(color: ActivityRoomInk.gold.opacity(0.55), radius: 4)
+                                    .padding(.top, 4)
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(item.string("time")).font(.system(size: 10, design: .rounded))
+                                        .foregroundColor(ActivityRoomInk.gold)
+                                    Text(item.string("desc")).font(.system(size: 9.5, design: .serif))
+                                        .lineLimit(3).foregroundColor(ActivityRoomInk.text)
+                                }
+                            }
+                        }
+                    }
+                }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 3)
+            }
+            .frame(height: 278)
+        }
+    }
+
+    private func roomCard<Content: View>(index: String, title: String,
+                                         @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: 7) {
+                Text(index).font(.system(size: 11, design: .serif)).foregroundColor(ActivityRoomInk.dim)
+                Text(title).font(.system(size: 13, weight: .semibold, design: .serif))
+                Spacer(minLength: 0)
+            }
+            Divider().overlay(ActivityRoomInk.line)
+            content()
+        }
+        .padding(12).frame(maxWidth: .infinity, minHeight: 360, alignment: .top)
+        .background(.ultraThinMaterial)
+        .background(ActivityRoomInk.card)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(ActivityRoomInk.line, lineWidth: 0.8))
+    }
+
+    private var roomNote: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("房间札记")
+                .font(.system(size: 10, weight: .medium, design: .serif))
+                .padding(.horizontal, 9).padding(.vertical, 4)
+                .overlay(RoundedRectangle(cornerRadius: 4).stroke(ActivityRoomInk.line))
+            Text(data.string("note").isEmpty ? "雨敲着窗，今天的故事还在写。" : data.string("note"))
+                .font(.custom("Snell Roundhand", size: 22)).italic()
+                .foregroundColor(ActivityRoomInk.gold).frame(maxWidth: .infinity, alignment: .center)
+        }
+        .padding(16).frame(maxWidth: .infinity)
+        .background(ActivityRoomInk.card, in: RoundedRectangle(cornerRadius: 15))
+        .overlay(RoundedRectangle(cornerRadius: 15).stroke(ActivityRoomInk.line, lineWidth: 0.8))
+    }
+
+    @MainActor private func load() async {
+        if let value = try? await NativeHouseAPI.object("/api/activity-room") { data = value }
+        loading = false
     }
 }
 
