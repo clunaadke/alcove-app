@@ -56,6 +56,7 @@ struct RoundtableMember: Identifiable, Equatable {
     let role: String
     let online: Bool
     let busy: Bool
+    let asleep: Bool
 }
 
 @MainActor
@@ -151,14 +152,20 @@ final class RoundtableStore: ObservableObject {
     }
 
     private func fetchMembers() async -> [RoundtableMember]? {
-        guard let obj = try? await AlcoveAPI.getRaw("/api/roundtable/status") else { return nil }
+        async let status = try? AlcoveAPI.getRaw("/api/roundtable/status")
+        async let sleep = try? AlcoveAPI.getRaw("/api/sleep/status")
+        let (statusObject, sleepObject) = await (status, sleep)
+        guard let obj = statusObject else { return nil }
+        let assistantAsleep = (sleepObject?["state"] as? String) == "asleep"
         let arr = (obj["members"] as? [[String: Any]]) ?? []
         return arr.map {
+            let role = $0["role"] as? String ?? ""
             RoundtableMember(
                 name: $0["name"] as? String ?? "",
-                role: $0["role"] as? String ?? "",
+                role: role,
                 online: $0["online"] as? Bool ?? false,
-                busy: $0["busy"] as? Bool ?? false
+                busy: $0["busy"] as? Bool ?? false,
+                asleep: role == "assistant" && assistantAsleep
             )
         }
     }
@@ -411,8 +418,7 @@ struct RoundtableView: View {
                     }
                 }
                 Circle()
-                    .fill(m.busy ? Color.orange
-                          : (m.online ? Color.green : Color.gray))
+                    .fill(memberStatusColor(m))
                     .frame(width: 8, height: 8)
                     .overlay(Circle().stroke(theme.glassBorder, lineWidth: 1))
                     .offset(x: 1, y: -1)
@@ -420,6 +426,12 @@ struct RoundtableView: View {
         }
         .buttonStyle(.plain)
         .frame(width: 40, height: 44)
+    }
+
+    private func memberStatusColor(_ member: RoundtableMember) -> Color {
+        if member.asleep { return .gray }
+        if member.busy { return .yellow }
+        return member.online ? .green : .red
     }
 
     private func topBarControl(_ name: String, size: CGFloat,

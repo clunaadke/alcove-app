@@ -2808,29 +2808,21 @@ private struct QuietRoomView: View {
 
             if loading {
                 ProgressView().frame(maxWidth: .infinity).padding(.vertical, 45)
-            } else if quiet {
-                VStack(alignment: .leading, spacing: 10) {
-                    Label("此刻正在留白", systemImage: "moon.zzz.fill")
-                        .font(.system(size: 16, weight: .semibold))
-                    if !until.isEmpty {
+            } else {
+                VStack(spacing: 12) {
+                    quietToggle("今夜无声", "今晚先不追问，明早十点再来", "moon.stars.fill",
+                                isOn: quiet && quietMode == .tonight) { enabled in
+                        setQuiet(on: enabled, hours: nil)
+                    }
+                    quietToggle("借我片刻", "安静两个小时，时间到了再轻轻回来", "hourglass",
+                                isOn: quiet && quietMode == .twoHours) { enabled in
+                        setQuiet(on: enabled, hours: enabled ? 2 : nil)
+                    }
+                    if quiet, !until.isEmpty {
                         Text("会安静到 \(displayUntil)")
                             .font(.system(size: 11)).foregroundColor(theme.textDim)
-                    }
-                    Button { setQuiet(on: false) } label: {
-                        Label("让声音回来", systemImage: "sunrise")
-                            .frame(maxWidth: .infinity).frame(height: 45)
-                            .background(theme.fyAccent.opacity(0.88), in: RoundedRectangle(cornerRadius: 14))
-                            .foregroundColor(.white)
-                    }.buttonStyle(.plain).disabled(sending)
-                }
-                .padding(15).foyerCard(theme)
-            } else {
-                HStack(spacing: 12) {
-                    quietChoice("今夜无声", "今晚先不追问\n明早十点再来", "moon.stars.fill") {
-                        setQuiet(on: true)
-                    }
-                    quietChoice("借我片刻", "安静两个小时\n再轻轻回来", "hourglass") {
-                        setQuiet(on: true, hours: 2)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 4)
                     }
                 }
             }
@@ -2849,19 +2841,23 @@ private struct QuietRoomView: View {
         }
     }
 
-    private func quietChoice(
-        _ title: String, _ subtitle: String, _ icon: String, action: @escaping () -> Void
+    private func quietToggle(
+        _ title: String, _ subtitle: String, _ icon: String,
+        isOn: Bool, action: @escaping (Bool) -> Void
     ) -> some View {
-        Button(action: action) {
-            VStack(alignment: .leading, spacing: 10) {
-                Image(systemName: icon).font(.system(size: 19)).foregroundColor(theme.fyAccent)
+        HStack(spacing: 14) {
+            Image(systemName: icon)
+                .font(.system(size: 19)).foregroundColor(theme.fyAccent)
+                .frame(width: 26)
+            VStack(alignment: .leading, spacing: 4) {
                 Text(title).font(.system(size: 15, weight: .semibold, design: .serif))
-                Text(subtitle).font(.system(size: 10)).foregroundColor(theme.textDim)
-                    .multilineTextAlignment(.leading)
+                Text(subtitle).font(.system(size: 10.5)).foregroundColor(theme.textDim)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(14).foyerCard(theme)
-        }.buttonStyle(.plain).disabled(sending)
+            Spacer()
+            Toggle("", isOn: Binding(get: { isOn }, set: action))
+                .labelsHidden().tint(theme.fyAccent).disabled(sending)
+        }
+        .padding(15).foyerCard(theme)
     }
 
     @MainActor private func refresh() async {
@@ -2896,6 +2892,17 @@ private struct QuietRoomView: View {
         out.timeZone = TimeZone(identifier: "Asia/Shanghai")
         out.dateFormat = "M月d日 HH:mm"
         return out.string(from: date)
+    }
+
+    private enum QuietMode { case tonight, twoHours }
+
+    private var quietMode: QuietMode {
+        let formatter = ISO8601DateFormatter()
+        guard let date = formatter.date(from: until) else { return .tonight }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "Asia/Shanghai") ?? .current
+        return calendar.component(.hour, from: date) == 10 && calendar.component(.minute, from: date) == 0
+            ? .tonight : .twoHours
     }
 }
 
@@ -3971,7 +3978,10 @@ private struct NativeWorkbenchView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
                         Text(agent.string("name")).font(.system(size: 16, weight: .semibold, design: .serif))
-                        Circle().fill(Color.green.opacity(0.8)).frame(width: 6, height: 6)
+                        Circle().fill(agentStatus(index).color).frame(width: 7, height: 7)
+                        Text(agentStatus(index).label)
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundColor(agentStatus(index).color)
                     }
                     Text(agent.string("model"))
                         .font(.system(size: 12, weight: .medium, design: .rounded))
@@ -4121,8 +4131,25 @@ private struct NativeWorkbenchView: View {
     }
 
     private func refresh() async {
-        if let object = try? await NativeHouseAPI.object("/api/workbench") { data = object }
+        async let workbench = try? NativeHouseAPI.object("/api/workbench")
+        async let roundtable = try? NativeHouseAPI.object("/api/roundtable/status")
+        async let sleep = try? NativeHouseAPI.object("/api/sleep/status")
+        let (work, members, sleeping) = await (workbench, roundtable, sleep)
+        if var object = work {
+            object["_members"] = members?.array("members") ?? []
+            object["_assistant_asleep"] = sleeping?.string("state") == "asleep"
+            data = object
+        }
         loading = false
+    }
+
+    private func agentStatus(_ index: Int) -> (label: String, color: Color) {
+        if index == 0, data.bool("_assistant_asleep") { return ("睡觉中", .gray) }
+        let role = index == 0 ? "assistant" : "gpt"
+        let member = data.array("_members").first { $0.string("role") == role } ?? [:]
+        if member.bool("busy") { return ("工作中", .yellow) }
+        if member.bool("online") { return ("待命", .green) }
+        return ("离线", .red)
     }
 }
 
