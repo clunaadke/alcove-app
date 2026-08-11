@@ -67,6 +67,10 @@ struct ChatView: View {
     private var miniTerminalHeight: CGFloat {
         min(310, UIScreen.main.bounds.height * 0.29)
     }
+    // 底部所有悬浮层只认这一份高度。输入框会随长文字／图片预览
+    // 实测变化；音乐条固定 62pt，再留 10pt 呼吸缝。
+    private var musicBarClearance: CGFloat { music.nowPlaying == nil ? 0 : 72 }
+    private var bottomChromeHeight: CGFloat { inputBarHeight + musicBarClearance }
 
     var body: some View {
         GeometryReader { root in
@@ -196,8 +200,7 @@ struct ChatView: View {
                                             theme: theme)
                                 .id("typing")
                         }
-                        Color.clear.frame(height: inputBarHeight
-                                          + (music.nowPlaying == nil ? 8 : 76)
+                        Color.clear.frame(height: bottomChromeHeight + 12
                                           + (showMiniTerminal ? miniTerminalHeight + 18 : 0))
                         Color.clear.frame(height: 1).id("tail")
                             .onAppear { atBottom = true }
@@ -219,7 +222,7 @@ struct ChatView: View {
                 if music.nowPlaying != nil && !paragraphSelectionMode {
                     MusicMiniPlayer(model: music) { showMusicPlayer = true }
                         .padding(.horizontal, 12)
-                        .padding(.bottom, inputBarHeight + 4)
+                        .padding(.bottom, inputBarHeight + 10)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
 
@@ -238,7 +241,7 @@ struct ChatView: View {
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                     .padding(.trailing, 16)
-                    .padding(.bottom, inputBarHeight + 12)
+                    .padding(.bottom, bottomChromeHeight + 12)
                     .transition(.opacity)
                 }
 
@@ -250,7 +253,7 @@ struct ChatView: View {
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                     .padding(.trailing, 12)
-                    .padding(.bottom, inputBarHeight + 8)
+                    .padding(.bottom, bottomChromeHeight + 8)
                 }
             }
             // 终端画在上层；消息流用等高底部占位做出键盘式避让。
@@ -263,7 +266,7 @@ struct ChatView: View {
                     }, mini: true)
                     .frame(height: miniTerminalHeight)
                     .padding(.horizontal, 16)
-                    .padding(.bottom, inputBarHeight + 14)
+                    .padding(.bottom, bottomChromeHeight + 14)
                     .transition(.scale(scale: 0.92, anchor: .bottomTrailing).combined(with: .opacity))
                 }
             }
@@ -293,6 +296,11 @@ struct ChatView: View {
                 }
             }
             .onChange(of: inputBarHeight) { _ in
+                if atBottom || inputFocused {
+                    scrollToTail(proxy, delays: [0.05, 0.3], animated: true)
+                }
+            }
+            .onChange(of: music.nowPlaying?.id) { _ in
                 if atBottom || inputFocused {
                     scrollToTail(proxy, delays: [0.05, 0.3], animated: true)
                 }
@@ -529,7 +537,7 @@ struct ChatView: View {
                 startPoint: .top,
                 endPoint: .bottom
             )
-            .frame(height: inputBarHeight + 8)
+            .frame(height: bottomChromeHeight + 12)
         }
     }
 
