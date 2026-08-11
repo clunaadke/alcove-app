@@ -3308,7 +3308,7 @@ private struct NativeWorkbenchView: View {
                     .font(.system(size: 10, weight: .medium, design: .rounded)).foregroundColor(theme.textDim)
             }
             resourceBar("CPU", used: number(cpu, "used_percent"),
-                        detail: "负载 \(number(cpu, "load_1m"), digits: 2)")
+                        detail: "负载 \(number(cpu, "load_1m", digits: 2))")
             resourceBar("内存", used: number(memory, "used_percent"),
                         detail: "已用 \(formatBytes(memory.int("used_bytes"))) · 剩余 \(formatBytes(memory.int("available_bytes")))")
             resourceBar("系统盘", used: number(disk, "used_percent"),
