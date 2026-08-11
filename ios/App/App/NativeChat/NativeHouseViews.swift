@@ -2259,7 +2259,11 @@ struct MusicMessageCard: View {
                 .frame(width: 58, height: 58)
                 .clipShape(Circle())
                 Button {
-                    if isCurrent { model.toggle() } else { play() }
+                    // A card may point at the same song that was previewed in the
+                    // music page, while that old AVPlayer is already paused,
+                    // expired or failed.  Re-open the stream instead of toggling
+                    // a stale player; only the visible playing state is paused.
+                    if isCurrent && isPlaying { model.toggle() } else { play() }
                 } label: {
                     Image(systemName: isPlaying ? "pause.fill" : "play.fill")
                         .font(.system(size: 16))
