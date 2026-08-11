@@ -217,7 +217,8 @@ struct NativeHouseSheet: View {
                     )
                 case .activityRoom:
                     NativeActivityRoomView(
-                        openCalendar: { withAnimation(.easeInOut(duration: 0.18)) { route = .calendar } }
+                        openCalendar: { withAnimation(.easeInOut(duration: 0.18)) { route = .calendar } },
+                        closeRoom: { withAnimation(.easeInOut(duration: 0.18)) { route = .profile } }
                     )
                 case .memory:
                     NativeOBMemoryView()
@@ -305,8 +306,8 @@ struct NativeHouseSheet: View {
                 Spacer()
             }
         }
-        .frame(height: 46)
-        .padding(.top, safeTop)
+        .frame(height: route == .activityRoom ? 0 : 46)
+        .padding(.top, route == .activityRoom ? 0 : safeTop)
         .padding(.horizontal, 12)
         .background(
             LinearGradient(colors: [theme.fyCardSub.opacity(0.46), .clear],
@@ -7112,6 +7113,7 @@ private struct NativeChenjingHomeView: View {
 
 private struct NativeActivityRoomView: View {
     let openCalendar: () -> Void
+    let closeRoom: () -> Void
     private let tasks: [[String: Any]] = [
         ["title": "写小说", "count": 1, "target": 2, "unit": "章", "optional": false],
         ["title": "花园", "count": 1, "target": 2, "unit": "次", "optional": false],
@@ -7132,26 +7134,58 @@ private struct NativeActivityRoomView: View {
     ]
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(spacing: 13) {
-                roomHero
-                HStack(alignment: .top, spacing: 10) {
-                    checklistCard
-                    timelineCard
+        GeometryReader { geo in
+            ZStack(alignment: .top) {
+                VStack(spacing: 0) {
+                    Image("ActivityRoomRain")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: geo.size.width)
+                    LinearGradient(
+                        colors: [Color(red: 0.10, green: 0.065, blue: 0.038), ActivityRoomInk.paper],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                    .frame(height: 760)
                 }
-                roomNote
+                .frame(maxWidth: .infinity, alignment: .top)
+                .background(ActivityRoomInk.paper)
+
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: 14) {
+                        roomHero
+                        HStack(alignment: .top, spacing: 10) {
+                            checklistCard
+                            timelineCard
+                        }
+                        .padding(.horizontal, 12)
+                        roomNote
+                    }
+                    .padding(.bottom, 28)
+                }
             }
-            .padding(.horizontal, 12).padding(.top, 6).padding(.bottom, 28)
         }
-        .background(ActivityRoomInk.paper.opacity(0.98))
+        .background(ActivityRoomInk.paper)
         .foregroundColor(ActivityRoomInk.text)
     }
 
     private var roomHero: some View {
-        ZStack(alignment: .topTrailing) {
-            Image("ActivityRoomRain")
-                .resizable().scaledToFill()
-                .frame(height: 370).clipped()
+        ZStack(alignment: .top) {
+            Color.clear.frame(height: 465)
+            HStack {
+                Button(action: closeRoom) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(ActivityRoomInk.text)
+                        .frame(width: 42, height: 42)
+                        .background(Color.black.opacity(0.28), in: Circle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("返回")
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .padding(.top, 52)
             Button(action: openCalendar) {
                 Color.clear
                     .frame(width: 66, height: 72)
@@ -7159,10 +7193,10 @@ private struct NativeActivityRoomView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("打开房间月历")
-            .padding(6)
+            .frame(maxWidth: .infinity, alignment: .trailing)
+            .padding(.top, 45)
+            .padding(.trailing, 6)
         }
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 20).stroke(ActivityRoomInk.line, lineWidth: 0.8))
     }
 
     private var checklistCard: some View {
@@ -7218,9 +7252,11 @@ private struct NativeActivityRoomView: View {
                     } else {
                         ForEach(Array(timeline.enumerated()), id: \.offset) { _, item in
                             HStack(alignment: .top, spacing: 7) {
-                                Circle().fill(ActivityRoomInk.gold).frame(width: 7, height: 7)
-                                    .shadow(color: ActivityRoomInk.gold.opacity(0.55), radius: 4)
-                                    .padding(.top, 4)
+                                ZStack {
+                                    Circle().fill(ActivityRoomInk.gold.opacity(0.24)).frame(width: 15, height: 15)
+                                    Circle().fill(ActivityRoomInk.gold).frame(width: 7, height: 7)
+                                        .shadow(color: ActivityRoomInk.gold.opacity(0.8), radius: 4)
+                                }.padding(.top, 2)
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(item.string("time")).font(.system(size: 10, design: .rounded))
                                         .foregroundColor(ActivityRoomInk.gold)
@@ -7230,9 +7266,19 @@ private struct NativeActivityRoomView: View {
                             }
                         }
                     }
-                }.frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 3)
+                }
+                .overlay(alignment: .leading) {
+                    if timeline.count > 1 {
+                        Rectangle().fill(ActivityRoomInk.gold.opacity(0.72))
+                            .frame(width: 1)
+                            .padding(.leading, 7)
+                            .padding(.vertical, 12)
+                            .allowsHitTesting(false)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 3)
             }
-            .frame(height: 278)
+            .frame(height: 250)
         }
     }
 
@@ -7240,33 +7286,63 @@ private struct NativeActivityRoomView: View {
                                          @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline, spacing: 7) {
-                Text(index).font(.system(size: 11, design: .serif)).foregroundColor(ActivityRoomInk.dim)
                 Text(title).font(.system(size: 13, weight: .semibold, design: .serif))
                 Spacer(minLength: 0)
             }
+            .padding(.leading, 45)
             Divider().overlay(ActivityRoomInk.line)
             content()
         }
-        .padding(12).frame(maxWidth: .infinity, minHeight: 360, alignment: .top)
+        .padding(12).frame(maxWidth: .infinity, minHeight: 330, alignment: .top)
         .background(.ultraThinMaterial)
         .background(ActivityRoomInk.card)
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 16).stroke(ActivityRoomInk.line, lineWidth: 0.8))
+        .overlay(alignment: .topLeading) {
+            VStack(spacing: 0) {
+                Text(index)
+                    .font(.system(size: 12, weight: .medium, design: .serif))
+                    .foregroundColor(Color(red: 0.25, green: 0.17, blue: 0.10))
+                    .padding(.top, 9)
+                Spacer(minLength: 0)
+            }
+            .frame(width: 38, height: 54)
+            .background(ActivityRoomInk.text)
+            .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+            .padding(.leading, 12)
+            .offset(y: -1)
+        }
     }
 
     private var roomNote: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("房间札记")
-                .font(.system(size: 10, weight: .medium, design: .serif))
-                .padding(.horizontal, 9).padding(.vertical, 4)
-                .overlay(RoundedRectangle(cornerRadius: 4).stroke(ActivityRoomInk.line))
-            Text("雨敲着窗，今天的故事还在写。")
-                .font(.custom("Snell Roundhand", size: 22)).italic()
-                .foregroundColor(ActivityRoomInk.gold).frame(maxWidth: .infinity, alignment: .center)
+        ZStack(alignment: .leading) {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("房间札记")
+                    .font(.system(size: 10, weight: .medium, design: .serif))
+                    .padding(.horizontal, 9).padding(.vertical, 4)
+                    .overlay(RoundedRectangle(cornerRadius: 4).stroke(ActivityRoomInk.line))
+                Text("雨敲了一晚窗，他仍写完了一章。")
+                    .font(.custom("Xingkai SC", size: 24))
+                    .italic()
+                    .foregroundColor(ActivityRoomInk.gold)
+                    .frame(maxWidth: .infinity, alignment: .center)
+            }
+            .padding(.leading, 25)
+
+            VStack(spacing: 9) {
+                ForEach(0..<5, id: \.self) { _ in
+                    Capsule().stroke(ActivityRoomInk.gold.opacity(0.72), lineWidth: 1.4)
+                        .frame(width: 26, height: 7)
+                        .offset(x: -8)
+                }
+            }
         }
-        .padding(16).frame(maxWidth: .infinity)
-        .background(ActivityRoomInk.card, in: RoundedRectangle(cornerRadius: 15))
+        .padding(16).frame(maxWidth: .infinity, minHeight: 126)
+        .background(.ultraThinMaterial)
+        .background(ActivityRoomInk.card)
+        .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 15).stroke(ActivityRoomInk.line, lineWidth: 0.8))
+        .padding(.horizontal, 12)
     }
 }
 
