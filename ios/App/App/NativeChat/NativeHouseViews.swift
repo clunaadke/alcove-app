@@ -3487,16 +3487,27 @@ private struct NativeWorkbenchView: View {
     }
 
     private func tokenLine(_ values: [String: Any], color: Color) -> some View {
-        let input = values.int("input")
+        let totalInput = values.int("input_total")
+        let newInput = values.int("input_new")
         let cache = values.int("cache_read")
         let output = values.int("output")
+        let window = values.int("window_total")
         let hit = number(values, "hit_percent")
-        return HStack(spacing: 5) {
-            Text("输入 \(compact(input))")
-            Text("· 缓存 \(compact(cache))")
-            Text("· 输出 \(compact(output))")
-            Spacer(minLength: 3)
-            Text(String(format: "命中 %.1f%%", hit)).foregroundColor(color)
+        return VStack(spacing: 4) {
+            HStack(spacing: 5) {
+                Text("最近一轮")
+                Text("· 总输入 \(compact(totalInput))")
+                Text("· 缓存 \(compact(cache))")
+                Text("· 新输入 \(compact(newInput))")
+                Text("· 输出 \(compact(output))")
+                Spacer(minLength: 0)
+            }
+            HStack {
+                Spacer()
+                Text("窗口累计 \(compact(window))")
+                Text("·")
+                Text(String(format: "命中 %.1f%%", hit)).foregroundColor(color)
+            }
         }
         .font(.system(size: 9.2, weight: .medium, design: .rounded))
         .foregroundColor(theme.textDim)
