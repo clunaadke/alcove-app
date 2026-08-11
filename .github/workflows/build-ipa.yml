@@ -31,6 +31,7 @@ jobs:
           ALCOVE_LOC_TOKEN: ${{ secrets.ALCOVE_LOC_TOKEN }}
         run: |
           plutil -replace AlcoveLocToken -string "${ALCOVE_LOC_TOKEN}" ios/App/App/Info.plist
+          plutil -replace AlcoveLocToken -string "${ALCOVE_LOC_TOKEN}" ios/App/CapabilityExtensions/Broadcast/Info.plist
 
       - name: Install CocoaPods
         working-directory: ios/App

@@ -230,6 +230,30 @@ enum AlcoveAPI {
         return obj["label"] as? String ?? ""
     }
 
+    struct ScreenShareStatus {
+        let id: String
+        let status: String
+        let requester: String
+        let expiresIn: Int
+    }
+
+    static func screenShareStatus() async throws -> ScreenShareStatus {
+        let obj = try await getJSON("/api/screen-share/status")
+        return ScreenShareStatus(
+            id: obj["id"] as? String ?? "",
+            status: obj["status"] as? String ?? "idle",
+            requester: obj["requester"] as? String ?? "陈璟",
+            expiresIn: obj["expires_in"] as? Int ?? 0
+        )
+    }
+
+    static func armScreenShare(requester: String = "陈璟") async throws {
+        let obj = try await postJSON("/api/screen-share/arm", body: [
+            "chat": "main", "requester": requester
+        ])
+        guard obj["ok"] as? Bool == true else { throw URLError(.cannotWriteToFile) }
+    }
+
     static func terminalCapture(session: String = "main", lines: Int = 30) async throws -> String {
         let obj = try await getJSON("/api/terminal/capture?session=\(session)&lines=\(lines)")
         guard obj["ok"] as? Bool == true else { throw URLError(.cannotConnectToHost) }

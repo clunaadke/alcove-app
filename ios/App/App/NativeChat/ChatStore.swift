@@ -73,6 +73,7 @@ final class ChatStore: ObservableObject {
     private var lastTs: String?
     private var pollTask: Task<Void, Never>?
     private var liveTask: Task<Void, Never>?
+    private var lastModelPoll = Date.distantPast
 
     func start() {
         guard pollTask == nil else { return }
@@ -445,6 +446,12 @@ final class ChatStore: ObservableObject {
             if r.isTyping { optimisticUntil = .distantPast }
             if isTyping { refreshTypingLine() }
             connectionError = false
+            if Date().timeIntervalSince(lastModelPoll) > 5 {
+                lastModelPoll = Date()
+                if let label = try? await AlcoveAPI.modelLabel(), !label.isEmpty {
+                    modelLabel = label
+                }
+            }
         } catch {
             connectionError = true
         }

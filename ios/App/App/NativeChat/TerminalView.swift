@@ -197,7 +197,8 @@ struct TerminalView: View {
             var comps = URLComponents(url: AlcoveAPI.fullURL("/api/terminal/capture"),
                                       resolvingAgainstBaseURL: false)!
             var query = [URLQueryItem(name: "session", value: session),
-                         URLQueryItem(name: "lines", value: "120")]
+                         URLQueryItem(name: "lines", value: "120"),
+                         URLQueryItem(name: "columns", value: mini ? "80" : "112")]
             if mini { query.append(URLQueryItem(name: "clean", value: "1")) }
             comps.queryItems = query
             guard let (data, _) = try? await AlcoveAPI.session.data(from: comps.url!),

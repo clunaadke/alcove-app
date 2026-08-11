@@ -101,6 +101,8 @@ struct RootView: View {
                     .transition(.opacity)
                     .zIndex(10)
             }
+            RemoteScreenSharePrompt()
+                .zIndex(100)
         }
         .blur(radius: housePage == nil || theme.isPaper ? 0 : 2.2)
         .animation(.easeOut(duration: 0.20), value: housePage != nil)

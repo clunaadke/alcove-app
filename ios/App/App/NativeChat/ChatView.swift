@@ -942,6 +942,7 @@ struct MessageRow: View {
     @State private var showActivity = false   // 0730 过程记录展开
     @State private var showRecall = false
     @State private var showPulse = false
+    @State private var showFullText = false
     @Environment(\.bubbleGlassStyle) private var bubbleGlassStyle
 
     private var isUser: Bool { msg.role == "user" }
@@ -1079,6 +1080,27 @@ struct MessageRow: View {
                 .padding(.top, 10).padding(.trailing, 12)
             }
         }
+        .fullScreenCover(isPresented: $showFullText) {
+            NavigationStack {
+                ScrollView {
+                    Text(msg.displayText)
+                        .font(.system(size: CGFloat(fontSize)))
+                        .lineSpacing(theme.isPaper ? 7 : 5)
+                        .foregroundColor(theme.text)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                        .padding(22)
+                }
+                .background(theme.fade.ignoresSafeArea())
+                .navigationTitle("正文")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("关闭") { showFullText = false }
+                    }
+                }
+            }
+        }
     }
 
     private var visibleChatThought: String? {
@@ -1128,6 +1150,13 @@ struct MessageRow: View {
         }
             .contentShape(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
+            )
+            .frame(maxHeight: msg.displayText.count > 600 ? 360 : nil, alignment: .top)
+            .clipped()
+            .simultaneousGesture(
+                TapGesture(count: 2).onEnded {
+                    if msg.displayText.count > 600 { showFullText = true }
+                }
             )
     }
 

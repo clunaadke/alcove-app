@@ -7,6 +7,7 @@ struct SystemFeaturesView: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage("liveActivityEnabled") private var liveActivityEnabled = true
     @State private var liveActivityStatus: String?
+    @ObservedObject private var screenShare = ScreenShareCoordinator.shared
 
     var body: some View {
         NavigationStack {
@@ -36,12 +37,16 @@ struct SystemFeaturesView: View {
                 }
 
                 Section("屏幕控制") {
-                    ZStack {
+                    Button {
+                        screenShare.beginManualShare()
+                    } label: {
                         Label("开始共享屏幕", systemImage: "rectangle.on.rectangle")
                             .foregroundStyle(.pink)
                             .frame(maxWidth: .infinity, minHeight: 48)
-                        BroadcastPicker()
-                            .opacity(0.02)
+                    }
+                    .disabled(screenShare.preparing)
+                    if !screenShare.message.isEmpty {
+                        Text(screenShare.message).font(.caption).foregroundStyle(.secondary)
                     }
                     Text("由你亲手在系统面板中开始或停止。开启期间 iOS 会持续显示录屏提示。")
                         .font(.caption)
@@ -65,7 +70,12 @@ struct SystemFeaturesView: View {
 
 }
 
-private struct BroadcastPicker: UIViewRepresentable {
+struct BroadcastPicker: UIViewRepresentable {
+    let trigger: Int
+
+    final class Coordinator { var lastTrigger = 0 }
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
     func makeUIView(context: Context) -> RPSystemBroadcastPickerView {
         let picker = RPSystemBroadcastPickerView()
         // 有些免费重签工具会改写子扩展 Bundle ID，不能写死构建时的地址。
@@ -74,10 +84,16 @@ private struct BroadcastPicker: UIViewRepresentable {
         return picker
     }
 
-    func updateUIView(_ uiView: RPSystemBroadcastPickerView, context: Context) {}
+    func updateUIView(_ uiView: RPSystemBroadcastPickerView, context: Context) {
+        guard trigger > 0, trigger != context.coordinator.lastTrigger else { return }
+        context.coordinator.lastTrigger = trigger
+        DispatchQueue.main.async {
+            uiView.subviews.compactMap { $0 as? UIButton }.first?.sendActions(for: .touchUpInside)
+        }
+    }
 }
 
-private var installedBroadcastBundleIdentifier: String? {
+var installedBroadcastBundleIdentifier: String? {
     guard let directory = Bundle.main.builtInPlugInsURL else { return nil }
     let URLs = ((try? FileManager.default.contentsOfDirectory(
         at: directory, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]
@@ -85,6 +101,80 @@ private var installedBroadcastBundleIdentifier: String? {
     return URLs
             .first { $0.deletingPathExtension().lastPathComponent == "BroadcastUpload" }
             .flatMap { Bundle(url: $0)?.bundleIdentifier }
+}
+
+@MainActor
+final class ScreenShareCoordinator: ObservableObject {
+    static let shared = ScreenShareCoordinator()
+    @Published var pickerTrigger = 0
+    @Published var preparing = false
+    @Published var message = ""
+    @Published var request: AlcoveAPI.ScreenShareStatus?
+    private var pollTask: Task<Void, Never>?
+    private var lastPromptedID = ""
+
+    func startPolling() {
+        guard pollTask == nil else { return }
+        pollTask = Task { [weak self] in
+            while !Task.isCancelled {
+                await self?.pollOnce()
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+            }
+        }
+    }
+
+    private func pollOnce() async {
+        guard let status = try? await AlcoveAPI.screenShareStatus(),
+              status.status == "requested", status.expiresIn > 0,
+              status.id != lastPromptedID else { return }
+        lastPromptedID = status.id
+        request = status
+    }
+
+    func decline() { request = nil }
+
+    func acceptRequest() {
+        request = nil
+        armAndOpen()
+    }
+
+    func beginManualShare() { armAndOpen() }
+
+    private func armAndOpen() {
+        guard !preparing else { return }
+        preparing = true
+        message = "正在创建一次性截图任务…"
+        Task {
+            do {
+                try await AlcoveAPI.armScreenShare()
+                message = "请在系统面板中确认开始共享；只会上传第一张画面。"
+                pickerTrigger += 1
+            } catch {
+                message = "创建截图任务失败：\(error.localizedDescription)"
+            }
+            preparing = false
+        }
+    }
+}
+
+struct RemoteScreenSharePrompt: View {
+    @ObservedObject private var coordinator = ScreenShareCoordinator.shared
+
+    var body: some View {
+        Color.clear
+            .frame(width: 1, height: 1)
+            .background(BroadcastPicker(trigger: coordinator.pickerTrigger).opacity(0.01))
+            .onAppear { coordinator.startPolling() }
+            .alert("想看一眼你的屏幕", isPresented: Binding(
+                get: { coordinator.request != nil },
+                set: { if !$0 { coordinator.decline() } }
+            )) {
+                Button("暂不共享", role: .cancel) { coordinator.decline() }
+                Button("确认并选择屏幕") { coordinator.acceptRequest() }
+            } message: {
+                Text("\(coordinator.request?.requester ?? "陈璟")发来一次性查看请求。确认后仍需在 iOS 系统面板亲手开始；只上传第一张画面。")
+            }
+    }
 }
 
 enum AlcoveLiveActivityController {
