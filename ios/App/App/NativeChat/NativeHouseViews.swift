@@ -1770,6 +1770,7 @@ final class MusicModel: ObservableObject {
     private var timeObserver: Any?
     private var itemStatusObserver: NSKeyValueObservation?
     private var timeControlObserver: NSKeyValueObservation?
+    private var endObserver: NSObjectProtocol?
     private var streamCache: [String: (url: URL, expires: Date)] = [:]
     private var streamPrefetchTask: Task<Void, Never>?
     private var playbackPoll: Task<Void, Never>?
@@ -1801,8 +1802,13 @@ final class MusicModel: ObservableObject {
             queueIndex = source.firstIndex(where: { $0.id == song.id }) ?? 0
         } else if let index = queue.firstIndex(where: { $0.id == song.id }) {
             queueIndex = index
+        } else if let index = songs.firstIndex(where: { $0.id == song.id }) {
+            queue = songs
+            queueIndex = index
         } else {
-            queue = [song]
+            // A music card has no list of its own. Keep the last real queue
+            // behind it so playback can still continue when the card ends.
+            queue = [song] + queue.filter { $0.id != song.id }
             queueIndex = 0
         }
         playbackLoading = true
@@ -1863,7 +1869,7 @@ final class MusicModel: ObservableObject {
                 }
             }
         }
-        NotificationCenter.default.addObserver(
+        endObserver = NotificationCenter.default.addObserver(
             forName: .AVPlayerItemDidPlayToEndTime,
             object: player?.currentItem, queue: .main) { [weak self] _ in
             Task { @MainActor in
@@ -2099,7 +2105,7 @@ final class MusicModel: ObservableObject {
         advance(automatic: true)
     }
 
-    private func advance(automatic: Bool) {
+    private func advance(automatic _: Bool) {
         guard !queue.isEmpty else { return }
         let nextIndex: Int
         switch playMode {
@@ -2113,12 +2119,6 @@ final class MusicModel: ObservableObject {
         case .sequence, .repeatOne:
             let candidate = queueIndex + 1
             if candidate >= queue.count {
-                if automatic {
-                    isPlaying = false
-                    progress = duration
-                    publishNowPlaying()
-                    return
-                }
                 nextIndex = 0
             } else { nextIndex = candidate }
         }
@@ -2136,7 +2136,7 @@ final class MusicModel: ObservableObject {
         itemStatusObserver?.invalidate(); itemStatusObserver = nil
         timeControlObserver?.invalidate(); timeControlObserver = nil
         if let obs = timeObserver { player?.removeTimeObserver(obs); timeObserver = nil }
-        NotificationCenter.default.removeObserver(self, name: .AVPlayerItemDidPlayToEndTime, object: player?.currentItem)
+        if let endObserver { NotificationCenter.default.removeObserver(endObserver); self.endObserver = nil }
     }
 
     private func streamURL(for songID: String) async -> URL? {
@@ -2532,36 +2532,47 @@ struct MusicPlayerSheet: View {
     @State private var showQueue = false
 
     var body: some View {
-        ZStack {
-            if let cover = model.nowPlaying?.cover {
-                AsyncImage(url: MusicModel.artworkURL(cover)) { image in
-                    image.resizable().scaledToFill()
-                } placeholder: {
-                    LinearGradient(colors: theme.splashBg, startPoint: .top, endPoint: .bottom)
-                }
-                .blur(radius: 48).scaleEffect(1.3).opacity(0.42).ignoresSafeArea()
-            }
-            LinearGradient(colors: [.black.opacity(0.22), .black.opacity(0.7)],
-                           startPoint: .top, endPoint: .bottom).ignoresSafeArea()
-            Group {
-                if page == 0 { playerPage }
-                else { lyricPage }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .clipped()
-            .contentShape(Rectangle())
-            .simultaneousGesture(
-                DragGesture(minimumDistance: 28)
-                    .onEnded { value in
-                        guard abs(value.translation.width) > abs(value.translation.height),
-                              abs(value.translation.width) > 45 else { return }
-                        withAnimation(.easeOut(duration: 0.2)) {
-                            if value.translation.width < 0 { page = 1 }
-                            else { page = 0 }
-                        }
+        GeometryReader { bounds in
+            ZStack {
+                if let cover = model.nowPlaying?.cover {
+                    AsyncImage(url: MusicModel.artworkURL(cover)) { image in
+                        image.resizable().scaledToFill()
+                            .frame(width: bounds.size.width, height: bounds.size.height)
+                            .clipped()
+                    } placeholder: {
+                        LinearGradient(colors: theme.splashBg, startPoint: .top, endPoint: .bottom)
+                            .frame(width: bounds.size.width, height: bounds.size.height)
                     }
-            )
+                    .frame(width: bounds.size.width, height: bounds.size.height)
+                    .clipped()
+                    .blur(radius: 48).opacity(0.42)
+                }
+                LinearGradient(colors: [.black.opacity(0.22), .black.opacity(0.7)],
+                               startPoint: .top, endPoint: .bottom)
+                    .frame(width: bounds.size.width, height: bounds.size.height)
+                Group {
+                    if page == 0 { playerPage }
+                    else { lyricPage }
+                }
+                .frame(width: bounds.size.width, height: bounds.size.height)
+                .clipped()
+                .contentShape(Rectangle())
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 28)
+                        .onEnded { value in
+                            guard abs(value.translation.width) > abs(value.translation.height),
+                                  abs(value.translation.width) > 45 else { return }
+                            withAnimation(.easeOut(duration: 0.2)) {
+                                if value.translation.width < 0 { page = 1 }
+                                else { page = 0 }
+                            }
+                        }
+                )
+            }
+            .frame(width: bounds.size.width, height: bounds.size.height)
+            .clipped()
         }
+        .ignoresSafeArea(edges: .bottom)
         .foregroundColor(.white)
         .sheet(isPresented: $showQueue) { MusicQueueSheet(model: model) }
     }
