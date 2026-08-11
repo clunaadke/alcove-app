@@ -160,7 +160,7 @@ final class RoundtableStore: ObservableObject {
         let arr = (obj["members"] as? [[String: Any]]) ?? []
         return arr.map {
             let role = $0["role"] as? String ?? ""
-            RoundtableMember(
+            return RoundtableMember(
                 name: $0["name"] as? String ?? "",
                 role: role,
                 online: $0["online"] as? Bool ?? false,
