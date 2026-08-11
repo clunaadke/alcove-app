@@ -3202,6 +3202,8 @@ private struct NativeWorkbenchView: View {
     @State private var loading = true
     @State private var expanded = false
     @AppStorage("alcoveTheme") private var themeName = "haven"
+    @AppStorage("rtAvatarAssistant") private var rtAvatarAssistant = ""
+    @AppStorage("rtAvatarGpt") private var rtAvatarGpt = ""
     private var theme: AlcoveTheme { .panelNamed(themeName) }
 
     private var tasks: [[String: Any]] {
@@ -3221,6 +3223,7 @@ private struct NativeWorkbenchView: View {
             VStack(spacing: 14) {
                 masthead
                 metricStrip
+                vpsCard
                 agentCard(index: 0, accent: Color(red: 0.70, green: 0.47, blue: 0.52))
                 agentCard(index: 1, accent: Color(red: 0.38, green: 0.57, blue: 0.68))
                 taskLedger
@@ -3239,7 +3242,7 @@ private struct NativeWorkbenchView: View {
         .task {
             while !Task.isCancelled {
                 await refresh()
-                try? await Task.sleep(nanoseconds: 10_000_000_000)
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
             }
         }
     }
@@ -3292,6 +3295,55 @@ private struct NativeWorkbenchView: View {
         return String(format: "%.0f%%", pct)
     }
 
+    private var vpsCard: some View {
+        let cpu = data.object("cpu")
+        let memory = data.object("memory")
+        let disk = data.object("disk")
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("VPS").font(.system(size: 18, weight: .semibold, design: .serif))
+                Text("machine room").font(.custom("Snell Roundhand", size: 15)).foregroundColor(theme.textDim)
+                Spacer()
+                Text("\(cpu.int("cores")) 核 · \(formatBytes(memory.int("total_bytes")))")
+                    .font(.system(size: 10, weight: .medium, design: .rounded)).foregroundColor(theme.textDim)
+            }
+            resourceBar("CPU", used: number(cpu, "used_percent"),
+                        detail: "负载 \(number(cpu, "load_1m"), digits: 2)")
+            resourceBar("内存", used: number(memory, "used_percent"),
+                        detail: "已用 \(formatBytes(memory.int("used_bytes"))) · 剩余 \(formatBytes(memory.int("available_bytes")))")
+            resourceBar("系统盘", used: number(disk, "used_percent"),
+                        detail: "已用 \(formatBytes(disk.int("used_bytes"))) · 剩余 \(formatBytes(disk.int("free_bytes"))) / \(formatBytes(disk.int("total_bytes")))")
+            Divider().opacity(0.22)
+            HStack {
+                Label(data.string("ipv4").isEmpty ? "IPv4 未取到" : data.string("ipv4"), systemImage: "network")
+                Spacer()
+                Text(data.string("expiry").isEmpty ? "到期日未发现" : "到期 \(data.string("expiry"))")
+            }
+            .font(.system(size: 10, design: .monospaced))
+            .foregroundColor(theme.textDim)
+        }
+        .padding(14)
+        .workbenchGlass(theme, accent: Color(red: 0.40, green: 0.63, blue: 0.57))
+    }
+
+    private func resourceBar(_ label: String, used: Double, detail: String) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack {
+                Text(label).font(.system(size: 11, weight: .semibold))
+                Text(detail).font(.system(size: 9.5)).foregroundColor(theme.textDim).lineLimit(1).minimumScaleFactor(0.75)
+                Spacer(minLength: 5)
+                Text(String(format: "%.1f%%", used)).font(.system(size: 10, weight: .medium, design: .rounded))
+            }
+            GeometryReader { geo in
+                Capsule().fill(theme.fyCardSub.opacity(0.72))
+                    .overlay(alignment: .leading) {
+                        Capsule().fill(theme.fyAccent.opacity(0.56))
+                            .frame(width: geo.size.width * min(max(used, 0), 100) / 100)
+                    }
+            }.frame(height: 6)
+        }
+    }
+
     private func metric(_ title: String, _ value: String, _ icon: String, _ pct: Double?) -> some View {
         VStack(alignment: .leading, spacing: 7) {
             HStack {
@@ -3326,12 +3378,20 @@ private struct NativeWorkbenchView: View {
         let week = index == 0 ? claude.object("seven_day").int("used_percent") : codex.object("primary").int("used_percent")
         return VStack(alignment: .leading, spacing: 11) {
             HStack(spacing: 11) {
-                ZStack {
-                    Circle().fill(accent.opacity(0.16))
-                    Text(index == 0 ? "璟" : "渡")
-                        .font(.system(size: 17, weight: .medium, design: .serif))
-                        .foregroundColor(accent)
-                }.frame(width: 42, height: 42)
+                Group {
+                    if let avatar = workbenchAvatar(index: index) {
+                        Image(uiImage: avatar).resizable().scaledToFill()
+                    } else {
+                        ZStack {
+                            Circle().fill(accent.opacity(0.16))
+                            Text(index == 0 ? "璟" : "渡")
+                                .font(.system(size: 17, weight: .medium, design: .serif))
+                                .foregroundColor(accent)
+                        }
+                    }
+                }
+                .frame(width: 42, height: 42).clipShape(Circle())
+                .overlay(Circle().stroke(accent.opacity(0.30), lineWidth: 0.7))
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
                         Text(agent.string("name")).font(.system(size: 16, weight: .semibold, design: .serif))
@@ -3351,6 +3411,7 @@ private struct NativeWorkbenchView: View {
                 .foregroundColor(theme.textDim)
             if first >= 0 { quota("5h", first, accent) }
             quota("7d", week, accent)
+            tokenLine(agent.object("tokens"), color: accent)
         }
         .padding(14)
         .workbenchGlass(theme, accent: accent)
@@ -3368,6 +3429,23 @@ private struct NativeWorkbenchView: View {
             }.frame(height: 6)
             Text("\(value)%").font(.system(size: 10, weight: .medium, design: .rounded)).frame(width: 34, alignment: .trailing)
         }
+    }
+
+    private func tokenLine(_ values: [String: Any], color: Color) -> some View {
+        let input = values.int("input")
+        let cache = values.int("cache_read")
+        let output = values.int("output")
+        let hit = number(values, "hit_percent")
+        return HStack(spacing: 5) {
+            Text("输入 \(compact(input))")
+            Text("· 缓存 \(compact(cache))")
+            Text("· 输出 \(compact(output))")
+            Spacer(minLength: 3)
+            Text(String(format: "命中 %.1f%%", hit)).foregroundColor(color)
+        }
+        .font(.system(size: 9.2, weight: .medium, design: .rounded))
+        .foregroundColor(theme.textDim)
+        .lineLimit(1).minimumScaleFactor(0.72)
     }
 
     private var taskLedger: some View {
@@ -3432,6 +3510,28 @@ private struct NativeWorkbenchView: View {
         if value >= 1_000_000 { return String(format: "%.1fM", Double(value) / 1_000_000) }
         if value >= 1_000 { return String(format: "%.1fK", Double(value) / 1_000) }
         return "\(value)"
+    }
+
+    private func number(_ object: [String: Any], _ key: String, digits: Int = 1) -> Double {
+        let value: Double
+        if let raw = object[key] as? NSNumber { value = raw.doubleValue }
+        else if let raw = object[key] as? String { value = Double(raw) ?? 0 }
+        else { value = 0 }
+        return Double(String(format: "%.*f", digits, value)) ?? value
+    }
+
+    private func formatBytes(_ value: Int) -> String {
+        guard value > 0 else { return "--" }
+        let gib = Double(value) / 1_073_741_824
+        return gib >= 10 ? String(format: "%.0fG", gib) : String(format: "%.1fG", gib)
+    }
+
+    private func workbenchAvatar(index: Int) -> UIImage? {
+        let raw = index == 0 ? rtAvatarAssistant : rtAvatarGpt
+        guard !raw.isEmpty else { return nil }
+        let pieces = raw.split(separator: ",", maxSplits: 1)
+        let encoded = pieces.count == 2 ? String(pieces[1]) : raw
+        return Data(base64Encoded: encoded).flatMap(UIImage.init(data:))
     }
 
     private func refresh() async {
