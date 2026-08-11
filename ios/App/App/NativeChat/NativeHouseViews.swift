@@ -892,6 +892,10 @@ private struct NativeSettingsView: View {
     @State private var codexThreadConnected = false
     @State private var servicesLoading = false
     @State private var showSystemFeatures = false
+    @State private var replyLength = 240.0
+    @State private var replyLengthLoaded = false
+    @State private var replyLengthSaving = false
+    @State private var replyLengthSaveTask: Task<Void, Never>?
     @Environment(\.houseOwnsHeader) private var houseOwnsHeader
     private var theme: AlcoveTheme { .panelNamed(themeName) }
 
@@ -928,6 +932,31 @@ private struct NativeSettingsView: View {
                         }
                     }
                     .buttonStyle(.plain)
+                }
+                section("陈璟的回复") {
+                    VStack(alignment: .leading, spacing: 11) {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("正文长度").font(.system(size: 13, weight: .medium))
+                                Text(replyLength == 0 ? "不限制，让他一路写到底" : "每轮正文约 \(Int(replyLength)) 字以内")
+                                    .font(.system(size: 10)).foregroundColor(theme.textDim)
+                            }
+                            Spacer()
+                            Text(replyLength == 0 ? "不限" : "\(Int(replyLength)) 字")
+                                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                                .foregroundColor(theme.fyAccent)
+                        }
+                        Slider(value: $replyLength, in: 0...1200, step: 20)
+                            .tint(theme.fyAccent)
+                        HStack {
+                            Text("不限")
+                            Spacer()
+                            if replyLengthSaving { ProgressView().scaleEffect(0.65) }
+                            Text("1200 字")
+                        }
+                        .font(.system(size: 9.5, design: .rounded))
+                        .foregroundColor(theme.textDim)
+                    }
                 }
                 section("主题") {
                     HStack(spacing: 8) {
@@ -1007,7 +1036,12 @@ private struct NativeSettingsView: View {
         .onChange(of: userPhoto) { item in loadDataURL(item, into: $userAvatar) }
         .onChange(of: aiPhoto) { item in loadDataURL(item, into: $assistantAvatar) }
         .onChange(of: wallPhoto) { item in saveWallpaper(item) }
-        .task { await loadServices() }
+        .onChange(of: replyLength) { value in scheduleReplyLengthSave(value) }
+        .task {
+            async let services: Void = loadServices()
+            async let reply: Void = loadReplyLength()
+            _ = await (services, reply)
+        }
     }
 
     @ViewBuilder private func panelTitle(_ text: String) -> some View {
@@ -1085,6 +1119,27 @@ private struct NativeSettingsView: View {
             backendLatency = nil; codexLatency = nil; codexThreadConnected = false
         }
         servicesLoading = false
+    }
+
+    @MainActor private func loadReplyLength() async {
+        if let value = try? await NativeHouseAPI.object("/api/reply-len") {
+            replyLength = Double(value.int("chars"))
+        }
+        replyLengthLoaded = true
+    }
+
+    private func scheduleReplyLengthSave(_ value: Double) {
+        guard replyLengthLoaded else { return }
+        replyLengthSaveTask?.cancel()
+        replyLengthSaveTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            guard !Task.isCancelled else { return }
+            replyLengthSaving = true
+            defer { replyLengthSaving = false }
+            _ = try? await NativeHouseAPI.object(
+                "/api/reply-len", method: "POST", body: ["chars": Int(value)]
+            )
+        }
     }
 
     private func themeChoice(
