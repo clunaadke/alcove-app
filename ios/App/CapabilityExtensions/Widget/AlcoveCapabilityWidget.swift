@@ -117,7 +117,7 @@ private struct AlcoveWidgetView: View {
             HStack(spacing: 7) {
                 SleepingRavenMark(size: 40)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("Still here")
+                    Text("Present")
                         .font(.headline)
                     Text("NEAR, ALWAYS.")
                         .font(.system(size: 9, weight: .medium, design: .rounded))
