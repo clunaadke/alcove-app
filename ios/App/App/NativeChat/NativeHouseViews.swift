@@ -7135,43 +7135,34 @@ private struct NativeActivityRoomView: View {
 
     var body: some View {
         GeometryReader { geo in
-            ZStack(alignment: .top) {
-                VStack(spacing: 0) {
-                    Image("ActivityRoomRain")
-                        .resizable()
-                        .scaledToFit()
-                        .frame(width: geo.size.width)
-                    LinearGradient(
-                        colors: [Color(red: 0.10, green: 0.065, blue: 0.038), ActivityRoomInk.paper],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                    .frame(height: 760)
-                }
-                .frame(maxWidth: .infinity, alignment: .top)
-                .background(ActivityRoomInk.paper)
+            ZStack {
+                Image("ActivityRoomRain")
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: geo.size.width, height: geo.size.height)
+                    .clipped()
+                    .ignoresSafeArea()
 
-                ScrollView(showsIndicators: false) {
-                    VStack(spacing: 14) {
-                        roomHero
-                        HStack(alignment: .top, spacing: 10) {
-                            checklistCard
-                            timelineCard
-                        }
-                        .padding(.horizontal, 12)
-                        roomNote
+                VStack(spacing: 10) {
+                    roomHero(height: max(280, geo.size.height - 386))
+                    HStack(alignment: .top, spacing: 10) {
+                        checklistCard
+                        timelineCard
                     }
-                    .padding(.bottom, 28)
+                    .frame(height: 274)
+                    .padding(.horizontal, 12)
+                    roomNote
                 }
+                .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
             }
         }
         .background(ActivityRoomInk.paper)
         .foregroundColor(ActivityRoomInk.text)
     }
 
-    private var roomHero: some View {
+    private func roomHero(height: CGFloat) -> some View {
         ZStack(alignment: .top) {
-            Color.clear.frame(height: 465)
+            Color.clear.frame(height: height)
             HStack {
                 Button(action: closeRoom) {
                     Image(systemName: "chevron.left")
@@ -7185,7 +7176,7 @@ private struct NativeActivityRoomView: View {
                 Spacer()
             }
             .padding(.horizontal, 12)
-            .padding(.top, 52)
+            .padding(.top, 48)
             Button(action: openCalendar) {
                 Color.clear
                     .frame(width: 66, height: 72)
@@ -7194,14 +7185,14 @@ private struct NativeActivityRoomView: View {
             .buttonStyle(.plain)
             .accessibilityLabel("打开房间月历")
             .frame(maxWidth: .infinity, alignment: .trailing)
-            .padding(.top, 45)
+            .padding(.top, 42)
             .padding(.trailing, 6)
         }
     }
 
     private var checklistCard: some View {
         roomCard(index: "01", title: "今日待办") {
-            VStack(spacing: 9) {
+            VStack(spacing: 6) {
                 ForEach(Array(tasks.filter { !$0.bool("optional") }.enumerated()), id: \.offset) { _, task in
                     taskRow(task)
                 }
@@ -7211,7 +7202,7 @@ private struct NativeActivityRoomView: View {
                         Text("随心 · \(optional.string("title"))")
                     }
                     .font(.system(size: 9.5, design: .serif)).foregroundColor(ActivityRoomInk.gold)
-                    .padding(.horizontal, 8).frame(height: 28)
+                    .padding(.horizontal, 7).frame(height: 24)
                     .overlay(Capsule().stroke(ActivityRoomInk.line, style: StrokeStyle(lineWidth: 0.8, dash: [3])))
                 }
             }
@@ -7278,7 +7269,7 @@ private struct NativeActivityRoomView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 3)
             }
-            .frame(height: 250)
+            .frame(height: 205)
         }
     }
 
@@ -7293,7 +7284,7 @@ private struct NativeActivityRoomView: View {
             Divider().overlay(ActivityRoomInk.line)
             content()
         }
-        .padding(12).frame(maxWidth: .infinity, minHeight: 330, alignment: .top)
+        .padding(10).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(.ultraThinMaterial)
         .background(ActivityRoomInk.card)
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
@@ -7337,7 +7328,7 @@ private struct NativeActivityRoomView: View {
                 }
             }
         }
-        .padding(16).frame(maxWidth: .infinity, minHeight: 126)
+        .padding(12).frame(maxWidth: .infinity, minHeight: 92, maxHeight: 92)
         .background(.ultraThinMaterial)
         .background(ActivityRoomInk.card)
         .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
