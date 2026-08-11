@@ -47,92 +47,142 @@ private struct AlcoveWidgetView: View {
 
     @ViewBuilder
     var body: some View {
+        widgetContent
+            .containerBackground(.clear, for: .widget)
+    }
+
+    @ViewBuilder
+    private var widgetContent: some View {
         switch family {
         case .accessoryCircular:
             ZStack {
                 AccessoryWidgetBackground()
-                VStack(spacing: 2) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.title3)
-                    Text("Alcove")
-                        .font(.caption2)
-                        .minimumScaleFactor(0.7)
-                }
+                RavenMark(size: 35)
             }
             .widgetAccentable()
 
         case .accessoryRectangular:
-            VStack(alignment: .leading, spacing: 3) {
-                Label("Alcove", systemImage: "checkmark.circle.fill")
-                    .font(.headline)
-                Text("小组件已运行")
+            HStack(spacing: 7) {
+                RavenMark(size: 34)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Still here")
+                        .font(.headline)
+                    Text("ALCOVE · ONLINE")
+                        .font(.system(size: 9, weight: .medium, design: .rounded))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 2)
+                Image(systemName: "heart.fill")
                     .font(.caption)
-                Text(entry.date, style: .time)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
             }
             .widgetAccentable()
 
         case .accessoryInline:
-            Label("Alcove 小组件已运行", systemImage: "checkmark.circle.fill")
+            Label("Still here", systemImage: "heart.fill")
 
         default:
             ZStack {
                 Color(red: 0.08, green: 0.075, blue: 0.09)
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Alcove")
-                        .font(.system(.title3, design: .serif, weight: .semibold))
-                    Text("家里正在发生")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Label("我在这里", systemImage: "checkmark.circle.fill")
-                        .font(.caption2)
+                VStack(spacing: 7) {
+                    RavenMark(size: 78)
+                    Text("Still here")
+                        .font(.system(.headline, design: .rounded, weight: .semibold))
+                    HStack(spacing: 5) {
+                        Text("ALCOVE · ONLINE")
+                        Image(systemName: "heart.fill")
+                    }
+                    .font(.system(size: 9, weight: .medium, design: .rounded))
+                    .foregroundStyle(.secondary)
                 }
                 .foregroundStyle(.white)
-                .padding()
+                .padding(10)
             }
-            .containerBackground(.clear, for: .widget)
         }
+    }
+}
+
+private struct RavenMark: View {
+    let size: CGFloat
+
+    var body: some View {
+        Image("RavenOutlined")
+            .resizable()
+            .interpolation(.none)
+            .scaledToFit()
+            .frame(width: size, height: size)
+            .accessibilityHidden(true)
     }
 }
 
 private struct AlcoveLabLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: AlcoveLabAttributes.self) { context in
-            Text("\(context.attributes.name) · \(context.state.message)")
-                .font(.headline)
+            HStack(spacing: 12) {
+                RavenMark(size: 54)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Still here")
+                        .font(.system(.headline, design: .rounded, weight: .semibold))
+                    Text("\(context.attributes.name) · ONLINE")
+                        .font(.system(size: 10, weight: .medium, design: .rounded))
+                        .foregroundStyle(.secondary)
+                    Text(context.state.message)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 8)
+                VStack(spacing: 2) {
+                    Image(systemName: "heart.fill")
+                        .font(.headline)
+                    Text("PULSE")
+                        .font(.system(size: 8, weight: .semibold, design: .rounded))
+                        .tracking(1)
+                }
+            }
                 .foregroundStyle(.white)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding()
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
                 .activityBackgroundTint(.black)
                 .activitySystemActionForegroundColor(.white)
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    Text("Alcove")
-                        .foregroundStyle(.pink)
+                    RavenMark(size: 48)
+                        .padding(.leading, 4)
                 }
                 DynamicIslandExpandedRegion(.center) {
-                    Text(context.attributes.name)
-                        .foregroundStyle(.white)
+                    VStack(spacing: 2) {
+                        Text("Still here")
+                            .font(.system(.headline, design: .rounded, weight: .semibold))
+                        Text("\(context.attributes.name) · ONLINE")
+                            .font(.system(size: 9, weight: .medium, design: .rounded))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                DynamicIslandExpandedRegion(.trailing) {
+                    VStack(spacing: 2) {
+                        Image(systemName: "heart.fill")
+                            .font(.headline)
+                        Text("PULSE")
+                            .font(.system(size: 8, weight: .semibold, design: .rounded))
+                            .tracking(1)
+                    }
+                    .padding(.trailing, 4)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
                     Text(context.state.message)
-                        .font(.caption)
-                        .foregroundStyle(.white)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
                 }
             } compactLeading: {
-                Text("A")
-                    .foregroundStyle(.pink)
+                RavenMark(size: 23)
             } compactTrailing: {
-                Text("渡")
+                Image(systemName: "heart.fill")
+                    .font(.caption)
                     .foregroundStyle(.white)
             } minimal: {
-                Text("A")
-                    .foregroundStyle(.pink)
+                RavenMark(size: 23)
             }
-            .keylineTint(.pink)
+            .keylineTint(.white)
         }
     }
 }

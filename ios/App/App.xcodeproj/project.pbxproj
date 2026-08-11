@@ -42,6 +42,7 @@
 		CA0000000000000000000023 /* SampleHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA0000000000000000000013 /* SampleHandler.swift */; };
 		CA0000000000000000000024 /* AlcoveCapabilityWidget.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = CA0000000000000000000001 /* AlcoveCapabilityWidget.appex */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		CA0000000000000000000025 /* BroadcastUpload.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = CA0000000000000000000002 /* BroadcastUpload.appex */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		CA0000000000000000000027 /* RavenOutlined.png in Resources */ = {isa = PBXBuildFile; fileRef = CA0000000000000000000014 /* RavenOutlined.png */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -103,6 +104,7 @@
 		CA0000000000000000000011 /* AlcoveCapabilityWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlcoveCapabilityWidget.swift; sourceTree = "<group>"; };
 		CA0000000000000000000012 /* AlcoveLabAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AlcoveLabAttributes.swift; path = CapabilityExtensions/Shared/AlcoveLabAttributes.swift; sourceTree = SOURCE_ROOT; };
 		CA0000000000000000000013 /* SampleHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SampleHandler.swift; sourceTree = "<group>"; };
+		CA0000000000000000000014 /* RavenOutlined.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = RavenOutlined.png; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -219,7 +221,7 @@
 		};
 		CA0000000000000000000031 /* Widget */ = {
 			isa = PBXGroup;
-			children = (CA0000000000000000000011 /* AlcoveCapabilityWidget.swift */, CA0000000000000000000012 /* AlcoveLabAttributes.swift */, );
+			children = (CA0000000000000000000011 /* AlcoveCapabilityWidget.swift */, CA0000000000000000000012 /* AlcoveLabAttributes.swift */, CA0000000000000000000014 /* RavenOutlined.png */, );
 			path = Widget;
 			sourceTree = "<group>";
 		};
@@ -326,7 +328,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		CA0000000000000000000061 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = ( ); runOnlyForDeploymentPostprocessing = 0; };
+		CA0000000000000000000061 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (CA0000000000000000000027 /* RavenOutlined.png in Resources */, ); runOnlyForDeploymentPostprocessing = 0; };
 		CA0000000000000000000062 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = ( ); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXResourcesBuildPhase section */
 
