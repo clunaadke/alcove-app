@@ -13,6 +13,7 @@ struct RootView: View {
     @State private var thinkingEnabled = false
     @State private var thinkingKnown = false
     @State private var switchingThinking = false
+    @State private var assistantAsleep = false
     @AppStorage("roundtableLastReadID") private var roundtableLastReadID = 0
     @AppStorage("roundtableReadInitialized") private var roundtableReadInitialized = false
     @AppStorage("liveActivityEnabled") private var liveActivityEnabled = true
@@ -122,12 +123,19 @@ struct RootView: View {
                 try? await Task.sleep(nanoseconds: 10_000_000_000)
             }
         }
+        .task {
+            while !Task.isCancelled {
+                await refreshSleepState()
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+            }
+        }
         .onChange(of: themeName) { _ in prewarmPanelTexture() }
         .preferredColorScheme(theme.isDark ? .dark : .light) // 跟 PWA 主题走，不跟系统
         .onChange(of: scenePhase) { phase in
             if phase == .active {
                 SensorReporter.shared.appActive()
                 Task { await refreshThinkingState() }
+                Task { await refreshSleepState() }
                 // iOS 杀掉后台进程后，重新进入 Alcove 就把灵动岛恢复到
                 // 当前状态，不必再去设置页手动关开一次。
                 restoreLiveActivityIfEnabled()
@@ -203,6 +211,7 @@ struct RootView: View {
     private var topBar: some View {
         HStack(alignment: .center, spacing: 0) {
                 Button { showTerminal = true } label: {
+                    ZStack(alignment: .topTrailing) {
                     glassCircle(size: 40) {
                         if let img = avatarImage {
                             Image(uiImage: img)
@@ -215,6 +224,14 @@ struct RootView: View {
                                 .font(.system(size: 14, design: .serif))
                                 .foregroundColor(textDim)
                         }
+                    }
+                    if assistantAsleep {
+                        Text("💤")
+                            .font(.system(size: 15))
+                            .offset(x: 7, y: -5)
+                            .transition(.scale.combined(with: .opacity))
+                            .accessibilityLabel("陈璟正在睡觉")
+                    }
                     }
                 }
                 .buttonStyle(.plain)
@@ -252,6 +269,14 @@ struct RootView: View {
            let enabled = thinkingState(in: screen) {
             thinkingEnabled = enabled
             thinkingKnown = true
+        }
+    }
+
+    @MainActor private func refreshSleepState() async {
+        guard let value = try? await NativeHouseAPI.object("/api/sleep/status") else { return }
+        let asleep = value.string("state") == "asleep"
+        if asleep != assistantAsleep {
+            withAnimation(.easeInOut(duration: 0.2)) { assistantAsleep = asleep }
         }
     }
 

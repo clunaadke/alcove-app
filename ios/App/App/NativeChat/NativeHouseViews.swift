@@ -892,6 +892,7 @@ private struct NativeSettingsView: View {
     @State private var codexThreadConnected = false
     @State private var servicesLoading = false
     @State private var showSystemFeatures = false
+    @State private var showQuietRoom = false
     @State private var replyLength = 240.0
     @State private var replyLengthLoaded = false
     @State private var replyLengthSaving = false
@@ -983,6 +984,16 @@ private struct NativeSettingsView: View {
                         .font(.system(size: 9.5, design: .rounded)).foregroundColor(theme.textDim)
                     }
                 }
+                section("相处") {
+                    Button { showQuietRoom = true } label: {
+                        settingRow("留白", "让追问暂时安静下来") {
+                            Image(systemName: "moon.stars")
+                                .foregroundColor(theme.textLight)
+                            Image(systemName: "chevron.right")
+                                .foregroundColor(theme.textLight)
+                        }
+                    }.buttonStyle(.plain)
+                }
                 section("主题") {
                     HStack(spacing: 8) {
                         familyChoice("玻璃", "光穿过去", false, [.white, .pink.opacity(0.42), .gray])
@@ -1057,6 +1068,12 @@ private struct NativeSettingsView: View {
         }
         .sheet(isPresented: $showSystemFeatures) {
             SystemFeaturesView()
+        }
+        .sheet(isPresented: $showQuietRoom) {
+            QuietRoomView()
+                .presentationDetents([.medium])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(.ultraThinMaterial)
         }
         .onChange(of: userPhoto) { item in loadDataURL(item, into: $userAvatar) }
         .onChange(of: aiPhoto) { item in loadDataURL(item, into: $assistantAvatar) }
@@ -2768,6 +2785,117 @@ private struct MusicQueueSheet: View {
             .navigationBarTitleDisplayMode(.inline)
         }
         .presentationDetents([.medium, .large])
+    }
+}
+
+private struct QuietRoomView: View {
+    @State private var quiet = false
+    @State private var until = ""
+    @State private var loading = true
+    @State private var sending = false
+    @State private var error = ""
+    @AppStorage("alcoveTheme") private var themeName = "haven"
+    private var theme: AlcoveTheme { .panelNamed(themeName) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 5) {
+                Text("留白")
+                    .font(.custom("Snell Roundhand", size: 31))
+                Text("有些时候，安静也是一种靠近")
+                    .font(.system(size: 11)).foregroundColor(theme.textDim)
+            }
+
+            if loading {
+                ProgressView().frame(maxWidth: .infinity).padding(.vertical, 45)
+            } else if quiet {
+                VStack(alignment: .leading, spacing: 10) {
+                    Label("此刻正在留白", systemImage: "moon.zzz.fill")
+                        .font(.system(size: 16, weight: .semibold))
+                    if !until.isEmpty {
+                        Text("会安静到 \(displayUntil)")
+                            .font(.system(size: 11)).foregroundColor(theme.textDim)
+                    }
+                    Button { setQuiet(on: false) } label: {
+                        Label("让声音回来", systemImage: "sunrise")
+                            .frame(maxWidth: .infinity).frame(height: 45)
+                            .background(theme.fyAccent.opacity(0.88), in: RoundedRectangle(cornerRadius: 14))
+                            .foregroundColor(.white)
+                    }.buttonStyle(.plain).disabled(sending)
+                }
+                .padding(15).foyerCard(theme)
+            } else {
+                HStack(spacing: 12) {
+                    quietChoice("今夜无声", "今晚先不追问\n明早十点再来", "moon.stars.fill") {
+                        setQuiet(on: true)
+                    }
+                    quietChoice("借我片刻", "安静两个小时\n再轻轻回来", "hourglass") {
+                        setQuiet(on: true, hours: 2)
+                    }
+                }
+            }
+            if !error.isEmpty {
+                Text(error).font(.system(size: 10)).foregroundColor(.red.opacity(0.85))
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(22)
+        .foregroundColor(theme.text)
+        .task {
+            while !Task.isCancelled {
+                await refresh()
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+            }
+        }
+    }
+
+    private func quietChoice(
+        _ title: String, _ subtitle: String, _ icon: String, action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 10) {
+                Image(systemName: icon).font(.system(size: 19)).foregroundColor(theme.fyAccent)
+                Text(title).font(.system(size: 15, weight: .semibold, design: .serif))
+                Text(subtitle).font(.system(size: 10)).foregroundColor(theme.textDim)
+                    .multilineTextAlignment(.leading)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(14).foyerCard(theme)
+        }.buttonStyle(.plain).disabled(sending)
+    }
+
+    @MainActor private func refresh() async {
+        guard let value = try? await NativeHouseAPI.object("/api/quiet") else {
+            loading = false; error = "暂时读不到后端状态"; return
+        }
+        quiet = value.bool("quiet")
+        until = value.string("until")
+        loading = false
+        error = ""
+    }
+
+    private func setQuiet(on: Bool, hours: Int? = nil) {
+        guard !sending else { return }
+        sending = true; error = ""
+        Task { @MainActor in
+            var body: [String: Any] = ["on": on]
+            if let hours { body["hours"] = hours }
+            do {
+                _ = try await NativeHouseAPI.object("/api/quiet", method: "POST", body: body)
+                await refresh()
+            } catch { self.error = "没有送到后端，再试一次" }
+            sending = false
+        }
+    }
+
+    private var displayUntil: String {
+        let formatter = ISO8601DateFormatter()
+        guard let date = formatter.date(from: until) else { return until }
+        let out = DateFormatter()
+        out.locale = Locale(identifier: "zh_CN")
+        out.timeZone = TimeZone(identifier: "Asia/Shanghai")
+        out.dateFormat = "M月d日 HH:mm"
+        return out.string(from: date)
     }
 }
 
