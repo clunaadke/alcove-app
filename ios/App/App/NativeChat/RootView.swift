@@ -15,6 +15,7 @@ struct RootView: View {
     @State private var switchingThinking = false
     @AppStorage("roundtableLastReadID") private var roundtableLastReadID = 0
     @AppStorage("roundtableReadInitialized") private var roundtableReadInitialized = false
+    @AppStorage("liveActivityEnabled") private var liveActivityEnabled = true
     @State private var preparedPanelTexture: UIImage?
     @State private var preparedPanelTextureName = ""
     @Environment(\.scenePhase) private var scenePhase
@@ -109,6 +110,9 @@ struct RootView: View {
         .onAppear {
             prewarmPanelTexture()
             Task { await refreshThinkingState() }
+            if liveActivityEnabled {
+                Task { _ = await AlcoveLiveActivityController.start() }
+            }
             // 声波念完两个音节再进门，跟 PWA 一个节奏
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.3) {
                 withAnimation(.easeOut(duration: 0.6)) { showSplash = false }
@@ -126,6 +130,11 @@ struct RootView: View {
             if phase == .active {
                 SensorReporter.shared.appActive()
                 Task { await refreshThinkingState() }
+                // iOS 杀掉后台进程后，重新进入 Alcove 就把灵动岛恢复到
+                // 当前状态，不必再去设置页手动关开一次。
+                if liveActivityEnabled {
+                    Task { _ = await AlcoveLiveActivityController.start() }
+                }
             }
             else { SensorReporter.shared.appBackground() }
         }

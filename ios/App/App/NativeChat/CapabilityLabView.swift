@@ -180,6 +180,7 @@ struct RemoteScreenSharePrompt: View {
 @MainActor
 enum AlcoveLiveActivityController {
     private static var pulseTask: Task<Void, Never>?
+    private static var starting = false
 
     private static func currentBPM() async -> Int {
         guard let raw = try? await AlcoveAPI.getRaw("/pulse/now") else { return 0 }
@@ -212,6 +213,9 @@ enum AlcoveLiveActivityController {
         guard ActivityAuthorizationInfo().areActivitiesEnabled else {
             return "系统未允许实时活动，请在 iPhone 设置中开启。"
         }
+        guard !starting else { return "灵动岛正在刷新。" }
+        starting = true
+        defer { starting = false }
 
         let state = AlcoveLabAttributes.ContentState(
             message: "等待任务", startedAt: .now, bpm: await currentBPM()
@@ -244,7 +248,9 @@ enum AlcoveLiveActivityController {
             return
         }
         guard let live, live.active || live.finishing else {
-            await stop()
+            // 实时工作流结束只代表陈璟回到空闲，不代表用户关闭了灵动岛。
+            // 保留活动并切回等待态；真正结束只允许走设置开关的 stop()。
+            _ = await start()
             return
         }
 
