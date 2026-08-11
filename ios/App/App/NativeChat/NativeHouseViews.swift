@@ -1646,6 +1646,14 @@ struct MusicSong: Identifiable, Equatable, Codable {
     static func secureURL(_ raw: String) -> String {
         raw.hasPrefix("http://") ? "https://" + String(raw.dropFirst("http://".count)) : raw
     }
+
+    func cardText(message: String) -> String? {
+        var copy = self
+        copy.message = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let data = try? JSONEncoder().encode(copy),
+              let json = String(data: data, encoding: .utf8) else { return nil }
+        return "[MUSIC_CARD]\(json)[/MUSIC_CARD]"
+    }
 }
 
 @MainActor
@@ -1998,6 +2006,7 @@ private struct NativeMusicView: View {
     @State private var query = ""
     @State private var selectedPlaylist: MusicPlaylist?
     @State private var showPlayer = false
+    @State private var giftSong: MusicSong?
     @AppStorage("alcoveTheme") private var themeName = "haven"
     private var theme: AlcoveTheme { .panelNamed(themeName) }
 
@@ -2021,6 +2030,12 @@ private struct NativeMusicView: View {
         .sheet(isPresented: $showPlayer) {
             MusicPlayerSheet(model: model)
                 .presentationDetents([.fraction(0.72)])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(.ultraThinMaterial)
+        }
+        .sheet(item: $giftSong) { song in
+            MusicGiftSheet(song: song) { giftSong = nil }
+                .presentationDetents([.medium])
                 .presentationDragIndicator(.visible)
                 .presentationBackground(.ultraThinMaterial)
         }
@@ -2125,7 +2140,7 @@ private struct NativeMusicView: View {
         ScrollView(showsIndicators: false) {
             LazyVStack(spacing: 5) {
                 ForEach(Array(songs.enumerated()), id: \.element.id) { index, song in
-                    Button { Task { await model.play(song) } } label: {
+                    HStack(spacing: 11) {
                         HStack(spacing: 11) {
                             Text("\(index + 1)").font(.system(size: 11, design: .monospaced))
                                 .foregroundColor(theme.textLight).frame(width: 24)
@@ -2139,8 +2154,17 @@ private struct NativeMusicView: View {
                             Spacer()
                             Image(systemName: model.nowPlaying?.id == song.id && model.isPlaying ? "waveform" : "play.fill")
                                 .foregroundColor(theme.fyAccent)
-                        }.padding(.horizontal, 10).padding(.vertical, 6)
-                    }.buttonStyle(.plain)
+                        }
+                        .contentShape(Rectangle())
+                        .onTapGesture { Task { await model.play(song) } }
+                        Button { giftSong = song } label: {
+                            Image(systemName: "paperplane")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundColor(theme.fyAccent)
+                                .frame(width: 34, height: 34)
+                                .background(theme.fyCardSub.opacity(0.72), in: Circle())
+                        }.buttonStyle(.plain)
+                    }.padding(.horizontal, 10).padding(.vertical, 6)
                 }
             }.padding(.horizontal, 14).padding(.vertical, 8)
         }
@@ -2153,11 +2177,63 @@ private struct NativeMusicView: View {
     }
 }
 
+private struct MusicGiftSheet: View {
+    let song: MusicSong
+    let dismiss: () -> Void
+    @State private var note = ""
+    @State private var sending = false
+    @State private var failed = false
+    @AppStorage("alcoveTheme") private var themeName = "haven"
+    private var theme: AlcoveTheme { .panelNamed(themeName) }
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Text("送给陈璟")
+                .font(.system(size: 20, weight: .semibold, design: .serif))
+            HStack(spacing: 13) {
+                AsyncImage(url: URL(string: song.cover)) { $0.resizable().scaledToFill() }
+                    placeholder: { theme.fyCardSub }
+                    .frame(width: 66, height: 66).clipShape(RoundedRectangle(cornerRadius: 13))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(song.name).font(.system(size: 16, weight: .semibold)).lineLimit(2)
+                    Text(song.artist).font(.system(size: 12)).foregroundColor(theme.textDim)
+                }
+                Spacer()
+                Image(systemName: "paperplane.fill").foregroundColor(theme.fyAccent)
+            }
+            .padding(12).foyerCard(theme)
+            VStack(alignment: .leading, spacing: 6) {
+                Text("捎一句话给他").font(.system(size: 11, weight: .medium)).foregroundColor(theme.textDim)
+                TextField("为什么想把这首歌送给他…", text: $note, axis: .vertical)
+                    .lineLimit(3...6).font(.system(size: 13))
+                    .padding(11).background(theme.fyCardSub.opacity(0.62), in: RoundedRectangle(cornerRadius: 13))
+            }
+            if failed { Text("没送出去，再点一次试试").font(.system(size: 10)).foregroundColor(.red) }
+            Button {
+                guard !sending, let text = song.cardText(message: note) else { return }
+                sending = true; failed = false
+                Task {
+                    do { _ = try await AlcoveAPI.send(text: text); dismiss() }
+                    catch { failed = true; sending = false }
+                }
+            } label: {
+                HStack { if sending { ProgressView().tint(.white) }; Text(sending ? "正在送给他" : "送给他"); Image(systemName: "paperplane.fill") }
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.white).frame(maxWidth: .infinity).frame(height: 44)
+                    .background(theme.fyAccent, in: RoundedRectangle(cornerRadius: 14))
+            }.buttonStyle(.plain).disabled(sending)
+        }
+        .padding(20).foregroundColor(theme.text)
+    }
+}
+
 struct MusicMessageCard: View {
     let song: MusicSong
     let theme: AlcoveTheme
+    let isUser: Bool
     let play: () -> Void
     @ObservedObject private var model = MusicModel.shared
+    @State private var messageExpanded = false
 
     private var isCurrent: Bool { model.nowPlaying?.id == song.id }
     private var isPlaying: Bool { isCurrent && model.isPlaying }
@@ -2168,7 +2244,7 @@ struct MusicMessageCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
-            Text("♫ 为你点播")
+            Text(isUser ? "♫ 送给陈璟" : "♫ 为你点播")
                 .font(.system(size: 11, weight: .medium))
                 .foregroundColor(theme.textDim)
             HStack(spacing: 12) {
@@ -2194,10 +2270,20 @@ struct MusicMessageCard: View {
                 }.buttonStyle(.plain)
             }
             if !song.message.isEmpty {
-                Text("›  \(song.message)")
-                    .font(.system(size: 12))
-                    .foregroundColor(theme.textDim)
-                    .lineLimit(3)
+                HStack(alignment: .bottom, spacing: 5) {
+                    Text("›  \(song.message)")
+                        .font(.system(size: 12))
+                        .foregroundColor(theme.textDim)
+                        .lineLimit(messageExpanded ? nil : 3)
+                    if song.message.count > 54 {
+                        Button { withAnimation(.easeInOut(duration: 0.18)) { messageExpanded.toggle() } } label: {
+                            Image(systemName: "chevron.down.circle")
+                                .font(.system(size: 13, weight: .medium))
+                                .rotationEffect(.degrees(messageExpanded ? 180 : 0))
+                                .foregroundColor(theme.textDim)
+                        }.buttonStyle(.plain)
+                    }
+                }
             }
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
@@ -3495,16 +3581,15 @@ private struct NativeWorkbenchView: View {
         let hit = number(values, "hit_percent")
         return VStack(spacing: 4) {
             HStack(spacing: 5) {
-                Text("最近一轮")
-                Text("· 总输入 \(compact(totalInput))")
+                Text("总输入 \(compact(totalInput))")
                 Text("· 缓存 \(compact(cache))")
                 Text("· 新输入 \(compact(newInput))")
                 Text("· 输出 \(compact(output))")
                 Spacer(minLength: 0)
             }
             HStack {
-                Spacer()
                 Text("窗口累计 \(compact(window))")
+                Spacer()
                 Text("·")
                 Text(String(format: "命中 %.1f%%", hit)).foregroundColor(color)
             }

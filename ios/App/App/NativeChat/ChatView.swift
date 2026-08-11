@@ -1111,7 +1111,7 @@ struct MessageRow: View {
                         )
                     }
                     if let song = msg.musicCard {
-                        MusicMessageCard(song: song, theme: theme) { onPlayMusic?(song) }
+                        MusicMessageCard(song: song, theme: theme, isUser: isUser) { onPlayMusic?(song) }
                     } else if !msg.displayText.isEmpty && !(msg.isSticker) {
                         if paragraphSelectionMode && !isUser {
                             HStack(alignment: .top, spacing: 9) {
