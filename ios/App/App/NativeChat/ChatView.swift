@@ -33,6 +33,9 @@ struct ChatView: View {
     @State private var switchingModel = false
     @State private var modelSwitchError = ""
     @State private var showMiniTerminal = false
+    @State private var paragraphSelectionMode = false
+    @State private var selectedParagraphIDs: Set<UUID> = []
+    @State private var showParagraphDeleteConfirmation = false
     @ObservedObject private var music = MusicModel.shared
     @FocusState private var inputFocused: Bool
     @Environment(\.scenePhase) private var scenePhase
@@ -207,9 +210,13 @@ struct ChatView: View {
                 .onTapGesture { inputFocused = false }
                 .mask(edgeFadeMask)
 
-                floatingInput
+                if paragraphSelectionMode {
+                    paragraphSelectionToolbar
+                } else {
+                    floatingInput
+                }
 
-                if music.nowPlaying != nil {
+                if music.nowPlaying != nil && !paragraphSelectionMode {
                     MusicMiniPlayer(model: music) { showMusicPlayer = true }
                         .padding(.horizontal, 12)
                         .padding(.bottom, inputBarHeight + 4)
@@ -235,7 +242,7 @@ struct ChatView: View {
                     .transition(.opacity)
                 }
 
-                if !showMiniTerminal {
+                if !showMiniTerminal && !paragraphSelectionMode {
                     ClawdPet(store: store) {
                         withAnimation(.spring(response: 0.3, dampingFraction: 0.84)) {
                             showMiniTerminal = true
@@ -311,6 +318,66 @@ struct ChatView: View {
                 }
             }
         }
+        .confirmationDialog(
+            "删除选中的 \(selectedParagraphIDs.count) 段正文？",
+            isPresented: $showParagraphDeleteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("删除", role: .destructive) { deleteSelectedParagraphs() }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("删除后这些段落会从聊天记录中消失。")
+        }
+    }
+
+    private var paragraphSelectionToolbar: some View {
+        HStack(spacing: 18) {
+            Button("取消") { leaveParagraphSelection() }
+                .foregroundColor(theme.textDim)
+            Text("已选 \(selectedParagraphIDs.count) 段")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundColor(theme.text)
+            Spacer()
+            Button {
+                favoriteSelectedParagraphs()
+            } label: {
+                Label("收藏", systemImage: "star")
+            }
+            .disabled(selectedParagraphIDs.isEmpty)
+            Button(role: .destructive) {
+                showParagraphDeleteConfirmation = true
+            } label: {
+                Label("删除", systemImage: "trash")
+            }
+            .disabled(selectedParagraphIDs.isEmpty)
+        }
+        .font(.system(size: 13, weight: .medium))
+        .padding(.horizontal, 18)
+        .frame(height: 54)
+        .background(.ultraThinMaterial, in: Capsule())
+        .overlay(Capsule().stroke(theme.glassBorder, lineWidth: 1))
+        .padding(.horizontal, 14)
+        .padding(.bottom, max(safeBottom, 8))
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+    }
+
+    private func selectedParagraphs() -> [ChatMessage] {
+        store.messages.filter { selectedParagraphIDs.contains($0.uid) }
+    }
+
+    private func leaveParagraphSelection() {
+        paragraphSelectionMode = false
+        selectedParagraphIDs.removeAll()
+    }
+
+    private func favoriteSelectedParagraphs() {
+        store.favoriteMessages(selectedParagraphs())
+        leaveParagraphSelection()
+    }
+
+    private func deleteSelectedParagraphs() {
+        store.deleteMessages(selectedParagraphs())
+        leaveParagraphSelection()
     }
 
     @ViewBuilder
@@ -345,6 +412,21 @@ struct ChatView: View {
                 },
                 onDelete: { store.deleteMessage(message) },
                 onFavorite: { store.favoriteMessage(message) },
+                wholeTurnText: wholeTurnText(for: message),
+                paragraphSelectionMode: paragraphSelectionMode,
+                paragraphSelected: selectedParagraphIDs.contains(message.uid),
+                onBeginParagraphSelection: {
+                    paragraphSelectionMode = true
+                    selectedParagraphIDs.insert(message.uid)
+                    inputFocused = false
+                },
+                onToggleParagraphSelection: {
+                    if selectedParagraphIDs.contains(message.uid) {
+                        selectedParagraphIDs.remove(message.uid)
+                    } else {
+                        selectedParagraphIDs.insert(message.uid)
+                    }
+                },
                 onQuote: { text in
                     selectedQuote = text
                     inputFocused = true
@@ -355,6 +437,17 @@ struct ChatView: View {
             )
             .id(message.id)
         }
+    }
+
+    private func wholeTurnText(for message: ChatMessage) -> String {
+        guard message.role == "assistant",
+              let turnID = message.turnID, !turnID.isEmpty else {
+            return message.displayText
+        }
+        return store.messages
+            .filter { $0.role == "assistant" && $0.turnID == turnID && !$0.displayText.isEmpty }
+            .map(\.displayText)
+            .joined(separator: "\n\n")
     }
 
     private func scrollToTail(
@@ -858,6 +951,7 @@ struct ChatView: View {
 
 private final class AskSelectableTextView: UITextView {
     var onAsk: ((String) -> Void)?
+    var onCopyTurn: (() -> Void)?
 
     override func buildMenu(with builder: UIMenuBuilder) {
         super.buildMenu(with: builder)
@@ -869,7 +963,10 @@ private final class AskSelectableTextView: UITextView {
             let selected = (self.text as NSString).substring(with: self.selectedRange)
             self.onAsk?(selected)
         }
-        builder.insertChild(UIMenu(options: .displayInline, children: [ask]),
+        let copyTurn = UIAction(title: "复制整轮", image: UIImage(systemName: "doc.on.doc")) {
+            [weak self] _ in self?.onCopyTurn?()
+        }
+        builder.insertChild(UIMenu(options: .displayInline, children: [ask, copyTurn]),
                             atStartOfMenu: .standardEdit)
     }
 }
@@ -880,6 +977,7 @@ private struct SelectableMessageText: UIViewRepresentable {
     let lineSpacing: CGFloat
     let color: UIColor
     let onAsk: (String) -> Void
+    let onCopyTurn: () -> Void
 
     final class Coordinator {
         var renderedKey: String?
@@ -901,6 +999,7 @@ private struct SelectableMessageText: UIViewRepresentable {
 
     func updateUIView(_ view: AskSelectableTextView, context: Context) {
         view.onAsk = onAsk
+        view.onCopyTurn = onCopyTurn
         // 后台每 2.5 秒轮询会让 SwiftUI 重跑 updateUIView。正文其实没变，
         // 但重新赋 attributedText 会强制收掉 iOS 的选区和复制菜单。
         // 同一份渲染直接跳过；用户正在选字时，即使主题恰好变化也先让她选完。
@@ -947,6 +1046,11 @@ struct MessageRow: View {
     var onTapImages: ([URL], Binding<Int>) -> Void
     var onDelete: (() -> Void)? = nil
     var onFavorite: (() -> Void)? = nil
+    var wholeTurnText: String = ""
+    var paragraphSelectionMode = false
+    var paragraphSelected = false
+    var onBeginParagraphSelection: (() -> Void)? = nil
+    var onToggleParagraphSelection: (() -> Void)? = nil
     var onQuote: ((String) -> Void)? = nil
     var onResend: ((String) -> Void)? = nil
     var onPlayMusic: ((MusicSong) -> Void)? = nil
@@ -1009,7 +1113,25 @@ struct MessageRow: View {
                     if let song = msg.musicCard {
                         MusicMessageCard(song: song, theme: theme) { onPlayMusic?(song) }
                     } else if !msg.displayText.isEmpty && !(msg.isSticker) {
-                        bubble
+                        if paragraphSelectionMode && !isUser {
+                            HStack(alignment: .top, spacing: 9) {
+                                Button { onToggleParagraphSelection?() } label: {
+                                    Image(systemName: paragraphSelected
+                                          ? "checkmark.circle.fill" : "circle")
+                                        .font(.system(size: 19, weight: .regular))
+                                        .foregroundColor(paragraphSelected
+                                                         ? theme.fyAccent : theme.textDim)
+                                }
+                                .buttonStyle(.plain)
+                                .padding(.top, 3)
+                                bubble
+                                    .allowsHitTesting(false)
+                            }
+                            .contentShape(Rectangle())
+                            .onTapGesture { onToggleParagraphSelection?() }
+                        } else {
+                            bubble
+                        }
                     }
                 }
                 if shouldShowMetaRow {
@@ -1028,6 +1150,16 @@ struct MessageRow: View {
                             Text(Self.hm.string(from: msg.date))
                                 .font(.system(size: 10, design: .serif))
                                 .foregroundColor(theme.timestamp)
+                        }
+                        if showTime, !isUser, !msg.displayText.isEmpty {
+                            Button { onBeginParagraphSelection?() } label: {
+                                Image(systemName: "checklist")
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundColor(theme.timestamp.opacity(
+                                        paragraphSelectionMode ? 1 : 0.72))
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("选择正文段落")
                         }
                         if showTime, !isUser, let bpm = msg.heartRate {
                             Button { showPulse = true } label: {
@@ -1189,7 +1321,11 @@ struct MessageRow: View {
                 fontSize: CGFloat(fontSize),
                 lineSpacing: theme.isPaper ? 7 : 5,
                 color: UIColor(msg.asleepAtSend ? theme.textDim : theme.text),
-                onAsk: { onQuote?($0) }
+                onAsk: { onQuote?($0) },
+                onCopyTurn: {
+                    UIPasteboard.general.string = wholeTurnText.isEmpty
+                        ? msg.displayText : wholeTurnText
+                }
             )
         }
     }

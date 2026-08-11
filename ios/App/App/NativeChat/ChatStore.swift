@@ -514,6 +514,26 @@ final class ChatStore: ObservableObject {
         Task { try? await AlcoveAPI.favoriteMessage(ts: msg.ts, text: msg.text, role: msg.role) }
     }
 
+    func deleteMessages(_ selected: [ChatMessage]) {
+        let ids = Set(selected.map(\.uid))
+        messages.removeAll { ids.contains($0.uid) }
+        Task {
+            for msg in selected {
+                try? await AlcoveAPI.deleteMessage(ts: msg.ts)
+            }
+        }
+    }
+
+    func favoriteMessages(_ selected: [ChatMessage]) {
+        Task {
+            for msg in selected {
+                try? await AlcoveAPI.favoriteMessage(
+                    ts: msg.ts, text: msg.displayText, role: msg.role
+                )
+            }
+        }
+    }
+
     func sendSticker(_ stk: Sticker) {
         var local = ChatMessage(localText: stk.descForAI)
         local.msgType = "sticker"
