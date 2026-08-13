@@ -4102,6 +4102,7 @@ private struct NativeStudioView: View {
     @State private var draft = ""
     @State private var showTerminal = false
     @State private var deliveryDraft: [String: Any]?
+    @State private var showActions = false
     @State private var loading = true
     @FocusState private var inputFocused: Bool
     @AppStorage("alcoveTheme") private var themeName = "haven"
@@ -4135,6 +4136,13 @@ private struct NativeStudioView: View {
         .overlay { if loading { ProgressView().tint(theme.fyAccent) } }
         .fullScreenCover(isPresented: $showTerminal) { TerminalView(initialSession: "work", availableSessions: ["work"]) }
         .sheet(isPresented: Binding(get: { deliveryDraft != nil }, set: { if !$0 { deliveryDraft = nil } })) { deliveryPreview }
+        .confirmationDialog("工作室操作", isPresented: $showActions, titleVisibility: .visible) {
+            if let task = currentOrLatestTask, task.string("status") == "queued" { Button("暂停排队任务") { Task { await action(task, "pause") } } }
+            if let task = currentOrLatestTask, task.string("status") == "paused" { Button("继续任务") { Task { await action(task, "resume") } } }
+            if let task = latestDoneTask { Button("带回主聊天") { Task { await deliver(task) } } }
+            if currentOrLatestTask == nil { Button("当前没有可操作任务", role: .cancel) {} }
+            Button("取消", role: .cancel) {}
+        }
         .task { while !Task.isCancelled { await refresh(); try? await Task.sleep(nanoseconds: 2_000_000_000) } }
     }
 
@@ -4149,11 +4157,9 @@ private struct NativeStudioView: View {
                 }.font(.system(size: 9.5)).foregroundColor(theme.textDim)
             }
             Spacer()
-            Menu {
-                if let task = currentOrLatestTask, task.string("status") == "queued" { Button("暂停排队任务") { Task { await action(task, "pause") } } }
-                if let task = currentOrLatestTask, task.string("status") == "paused" { Button("继续任务") { Task { await action(task, "resume") } } }
-                if let task = latestDoneTask { Button("带回主聊天") { Task { await deliver(task) } } }
-            } label: { Image(systemName: "ellipsis.circle").frame(width: 34, height: 34) }
+            Button { showActions = true } label: {
+                Image(systemName: "ellipsis.circle").frame(width: 38, height: 38).contentShape(Rectangle())
+            }.buttonStyle(.plain).accessibilityLabel("工作室操作")
             Button { showTerminal = true } label: { Image(systemName: "terminal").frame(width: 34, height: 34).background(.white.opacity(0.42), in: Circle()) }
                 .buttonStyle(.plain).accessibilityLabel("查看工作室终端")
         }.padding(.horizontal, 15).padding(.vertical, 10)
