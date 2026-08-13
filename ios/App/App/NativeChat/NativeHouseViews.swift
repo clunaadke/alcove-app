@@ -4262,8 +4262,13 @@ private struct NativeStudioView: View {
                     HStack { Image(systemName: "checkmark.seal.fill").foregroundColor(theme.fyAccent); TextField("交付卡标题", text: $deliveryTitle).font(.title3.weight(.semibold)); Spacer(); Text("已完成").font(.caption).foregroundColor(theme.fyAccent) }
                     Text("交付摘要").font(.caption.weight(.semibold)).foregroundColor(theme.textDim)
                     TextEditor(text: $deliverySummary).font(.system(size: 14, design: .serif)).lineSpacing(5)
-                        .frame(minHeight: 150).padding(9).scrollContentBackground(.hidden)
+                        .frame(height: 190).padding(9).scrollContentBackground(.hidden)
+                        .scrollIndicators(.visible)
                         .background(theme.fyCardSub, in: RoundedRectangle(cornerRadius: 14))
+                    if deliverySummary.count > 260 {
+                        Text("摘要可在框内上下滚动查看并直接编辑")
+                            .font(.system(size: 9)).foregroundColor(theme.textDim)
+                    }
                     Text("产物").font(.caption.weight(.semibold)).foregroundColor(theme.textDim)
                     ForEach(Array(deliveryArtifacts.enumerated()), id: \.offset) { index, item in
                         HStack { Label(item, systemImage: "doc.badge.gearshape").font(.caption); Spacer(); Button { deliveryArtifacts.remove(at: index) } label: { Image(systemName: "xmark.circle") }.buttonStyle(.plain) }
