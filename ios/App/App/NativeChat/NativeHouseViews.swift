@@ -3639,7 +3639,7 @@ private struct NativeCoreadRoomView: View {
         do {
             books = try await NativeHouseAPI.array("/read/api/books").map(CoreadBook.init)
             error = ""
-        } catch { error = "书架暂时没有递过来" }
+        } catch { self.error = "书架暂时没有递过来" }
     }
 }
 
