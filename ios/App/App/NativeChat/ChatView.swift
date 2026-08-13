@@ -1098,6 +1098,8 @@ struct MessageRow: View {
                     InsideMessageCard(text: inside, date: msg.date, theme: theme)
                 } else if let ghost = msg.ghostCard {
                     GhostActivityMessageCard(card: ghost, theme: theme)
+                } else if let reading = msg.readingCard {
+                    ReadingShareMessageCard(card: reading, theme: theme)
                 } else if msg.isSticker {
                     stickerBody
                 } else {
@@ -1580,6 +1582,34 @@ struct MessageRow: View {
         f.dateFormat = "HH:mm"
         return f
     }()
+}
+
+private struct ReadingShareMessageCard: View {
+    let card: ReadingShareCard
+    let theme: AlcoveTheme
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "books.vertical.fill")
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(card.book).font(.system(size: 16, weight: .semibold, design: .serif))
+                    if !card.author.isEmpty { Text(card.author).font(.system(size: 9.5)).foregroundColor(theme.textDim) }
+                }
+                Spacer()
+                Text("共读摘记").font(.system(size: 9, weight: .semibold)).foregroundColor(theme.fyAccent)
+            }
+            ForEach(card.quotes) { quote in
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("“\(quote.text)”").font(.system(size: 13, design: .serif)).lineSpacing(4)
+                    if !quote.note.isEmpty { Text(quote.note).font(.system(size: 11)).foregroundColor(theme.textDim) }
+                    HStack { Text("第 \(quote.chapter) 章"); Spacer(); Text(quote.time) }
+                        .font(.system(size: 8.5, design: .monospaced)).foregroundColor(theme.textDim.opacity(0.8))
+                }.padding(11).background(theme.fyCardSub.opacity(0.58), in: RoundedRectangle(cornerRadius: 12))
+            }
+        }.padding(14).frame(maxWidth: 315, alignment: .leading)
+            .background(theme.fyCard.opacity(0.94), in: RoundedRectangle(cornerRadius: 18))
+            .overlay(RoundedRectangle(cornerRadius: 18).stroke(theme.fyBorder.opacity(0.7), lineWidth: 0.7))
+    }
 }
 
 private struct InsideMessageCard: View {

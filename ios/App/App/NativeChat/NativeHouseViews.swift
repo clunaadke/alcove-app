@@ -7860,6 +7860,7 @@ private struct FictionReaderView: View {
     @State private var error: String?
     @AppStorage("fictionFontSize") private var fontSize = 17.0
     @AppStorage("fictionLetterSpacing") private var letterSpacing = 0.4
+    @AppStorage("fictionLineSpacing") private var lineSpacing = 9.0
     @AppStorage("fictionReadingMode") private var readingMode = "vertical"
     private var theme: AlcoveTheme { .panelNamed(themeName) }
 
@@ -7892,7 +7893,7 @@ private struct FictionReaderView: View {
                         ForEach(Array(readingPages(chapter.content).enumerated()), id: \.offset) { _, page in
                             ScrollView {
                                 FictionSelectableText(text: page, fontSize: fontSize,
-                                                      letterSpacing: letterSpacing) { quote in
+                                                      letterSpacing: letterSpacing, lineSpacing: lineSpacing) { quote in
                                     selectedQuote = quote; review = ""; showReview = true
                                 }
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -7906,7 +7907,7 @@ private struct FictionReaderView: View {
                     VStack(alignment: .leading, spacing: 18) {
                         Text(chapter.title).font(.system(size: 25, weight: .semibold, design: .serif))
                         FictionSelectableText(text: chapter.content, fontSize: fontSize,
-                                              letterSpacing: letterSpacing) { quote in
+                                              letterSpacing: letterSpacing, lineSpacing: lineSpacing) { quote in
                             selectedQuote = quote; review = ""; showReview = true
                         }
                         .frame(maxWidth: .infinity, minHeight: 360, alignment: .leading)
@@ -7958,9 +7959,9 @@ private struct FictionReaderView: View {
             }
         }
         .sheet(isPresented: $showReadingSettings) {
-            ReadingSettingsSheet(fontSize: $fontSize, letterSpacing: $letterSpacing,
+            ReadingSettingsSheet(fontSize: $fontSize, letterSpacing: $letterSpacing, lineSpacing: $lineSpacing,
                                  readingMode: $readingMode, theme: theme)
-                .presentationDetents([.height(310)])
+                .presentationDetents([.height(365)])
                 .presentationDragIndicator(.visible)
         }
     }
@@ -7983,6 +7984,7 @@ private struct FictionReaderView: View {
 private struct ReadingSettingsSheet: View {
     @Binding var fontSize: Double
     @Binding var letterSpacing: Double
+    @Binding var lineSpacing: Double
     @Binding var readingMode: String
     let theme: AlcoveTheme
     var body: some View {
@@ -7997,6 +7999,11 @@ private struct ReadingSettingsSheet: View {
                 Text("字距").font(.system(size: 13, weight: .medium))
                 Slider(value: $letterSpacing, in: 0...3, step: 0.25)
                 Text(String(format: "%.1f", letterSpacing)).font(.system(size: 11, design: .monospaced)).frame(width: 28)
+            }
+            HStack {
+                Text("行距").font(.system(size: 13, weight: .medium))
+                Slider(value: $lineSpacing, in: 3...20, step: 1)
+                Text("\(Int(lineSpacing))").font(.system(size: 11, design: .monospaced)).frame(width: 28)
             }
             Picker("翻页方式", selection: $readingMode) {
                 Label("上下滑动", systemImage: "arrow.up.and.down").tag("vertical")
@@ -8016,6 +8023,9 @@ private struct FictionQuotesView: View {
     let onBack: () -> Void
     @AppStorage("alcoveTheme") private var themeName = "haven"
     @State private var rows: [FictionQuoteRow] = []
+    @State private var selecting = false
+    @State private var selected: Set<String> = []
+    @State private var sending = false
     private var theme: AlcoveTheme { .panelNamed(themeName) }
     var body: some View {
         VStack(spacing: 0) {
@@ -8026,6 +8036,9 @@ private struct FictionQuotesView: View {
                 }.buttonStyle(.plain)
                 Text("摘句册").font(.system(size: 14, weight: .semibold, design: .serif))
                 Spacer()
+                if selecting {
+                    Button("取消") { selecting = false; selected.removeAll() }.font(.system(size: 11))
+                }
             }.padding(.horizontal, 14).padding(.vertical, 6)
             Group {
             if rows.isEmpty {
@@ -8035,6 +8048,11 @@ private struct FictionQuotesView: View {
                 ScrollView {
                     LazyVStack(spacing: 12) {
                         ForEach(rows) { row in
+                            HStack(alignment: .top, spacing: 10) {
+                                if selecting {
+                                    Image(systemName: selected.contains(row.id) ? "checkmark.circle.fill" : "circle")
+                                        .foregroundColor(theme.fyAccent).font(.system(size: 19))
+                                }
                             VStack(alignment: .leading, spacing: 8) {
                                 Text("“\(row.annotation.quote)”")
                                     .font(.system(size: 14, design: .serif))
@@ -8043,10 +8061,20 @@ private struct FictionQuotesView: View {
                                     .font(.system(size: 10)).foregroundColor(theme.textDim)
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(14).foyerCard(theme)
+                            }.frame(maxWidth: .infinity, alignment: .leading)
+                            }.padding(14).contentShape(Rectangle()).foyerCard(theme)
+                                .onTapGesture { if selecting { toggle(row) } }
+                                .onLongPressGesture { selecting = true; selected.insert(row.id) }
                         }
                     }.padding(18)
                 }
+            }
+            if selecting {
+                Button { Task { await sendSelected() } } label: {
+                    Label(sending ? "正在发送" : "合并发送给陈璟（\(selected.count)）", systemImage: "paperplane.fill")
+                        .font(.system(size: 13, weight: .semibold)).frame(maxWidth: .infinity).frame(height: 46)
+                }.buttonStyle(.borderedProminent).tint(theme.fyAccent).padding(.horizontal, 18).padding(.bottom, 10)
+                    .disabled(selected.isEmpty || sending)
             }
             }
         }
@@ -8060,6 +8088,23 @@ private struct FictionQuotesView: View {
             rows = gathered.sorted { ($0.annotation.ts ?? "") > ($1.annotation.ts ?? "") }
         }
     }
+
+    private func toggle(_ row: FictionQuoteRow) {
+        if selected.contains(row.id) { selected.remove(row.id) } else { selected.insert(row.id) }
+    }
+
+    @MainActor private func sendSelected() async {
+        let picked = rows.filter { selected.contains($0.id) }
+        guard !picked.isEmpty else { return }
+        sending = true; defer { sending = false }
+        let payload: [String: Any] = ["book": picked[0].book.title, "author": picked[0].book.author,
+          "quotes": picked.map { ["chapter": $0.annotation.chapter, "text": $0.annotation.quote,
+                                    "note": $0.annotation.note, "time": $0.annotation.ts ?? ""] }]
+        guard let data = try? JSONSerialization.data(withJSONObject: payload),
+              let json = String(data: data, encoding: .utf8) else { return }
+        _ = try? await AlcoveAPI.send(text: "[READING_CARD]\(json)[/READING_CARD]")
+        selecting = false; selected.removeAll()
+    }
 }
 
 private struct FictionQuoteRow: Identifiable {
@@ -8072,6 +8117,7 @@ private struct FictionSelectableText: UIViewRepresentable {
     let text: String
     let fontSize: Double
     let letterSpacing: Double
+    let lineSpacing: Double
     let onReview: (String) -> Void
     func makeUIView(context: Context) -> FictionTextView {
         let view = FictionTextView()
@@ -8089,7 +8135,7 @@ private struct FictionSelectableText: UIViewRepresentable {
     }
     func updateUIView(_ view: FictionTextView, context: Context) {
         let paragraph = NSMutableParagraphStyle()
-        paragraph.lineSpacing = max(3, fontSize * 0.55)
+        paragraph.lineSpacing = lineSpacing
         paragraph.paragraphSpacing = max(8, fontSize * 0.75)
         view.attributedText = NSAttributedString(string: text, attributes: [
             .font: UIFont.systemFont(ofSize: fontSize),

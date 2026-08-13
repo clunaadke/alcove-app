@@ -60,6 +60,12 @@ struct ChatMessage: Identifiable, Equatable {
         return try? JSONDecoder().decode(GhostActivityCard.self, from: data)
     }
 
+    var readingCard: ReadingShareCard? {
+        guard let raw = Self.taggedBody(text, tag: "READING_CARD"),
+              let data = raw.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(ReadingShareCard.self, from: data)
+    }
+
     // 陈璟每天只需投递这一枚日期标记；正文由归档接口按日期读取。
     var morningPaperDate: String? {
         Self.taggedBody(text, tag: "MORNING_PAPER")
@@ -142,6 +148,19 @@ struct ChatMessage: Identifiable, Equatable {
         self.asleepAtSend = false
         self.pending = true
     }
+}
+
+struct ReadingShareCard: Decodable, Equatable {
+    struct Quote: Decodable, Equatable, Identifiable {
+        let chapter: Int
+        let text: String
+        let note: String
+        let time: String
+        var id: String { "\(chapter)|\(time)|\(text)" }
+    }
+    let book: String
+    let author: String
+    let quotes: [Quote]
 }
 
 struct GhostActivityCard: Decodable, Equatable {
