@@ -4208,9 +4208,8 @@ private struct NativeUsageView: View {
                                              sub: rl["seven_day"] as? [String: Any], color: .purple)
                             }
                             .padding(14).foyerCard(theme)
-                            if rl.string("model").localizedCaseInsensitiveContains("fable"),
-                               let weekly = rl["seven_day"] as? [String: Any] {
-                                rateLimitCard("Fable · weekly", sub: weekly, color: .pink)
+                            if let fable = data["fable"] as? [String: Any] {
+                                fableUsageCard(fable)
                             }
                         }
                         if let st = data["session_tokens"] as? [String: Any] {
@@ -4290,6 +4289,43 @@ private struct NativeUsageView: View {
             Text("Resets in \(resetText(sub))").font(.system(size: 11)).foregroundColor(theme.textDim)
         }
         .padding(14).foyerCard(theme)
+    }
+
+    private func fableUsageCard(_ fable: [String: Any]) -> some View {
+        let today = fable.object("today")
+        let week = fable.object("week")
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("FABLE USAGE")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundColor(.pink)
+                Spacer()
+                Text(fable.string("model").replacingOccurrences(of: "claude-", with: ""))
+                    .font(.system(size: 10, design: .rounded))
+                    .foregroundColor(theme.textDim)
+            }
+            HStack(spacing: 10) {
+                fablePeriod("Today", today)
+                fablePeriod("This week", week)
+            }
+        }
+        .padding(14).foyerCard(theme)
+    }
+
+    private func fablePeriod(_ label: String, _ usage: [String: Any]) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(label).font(.system(size: 12, weight: .semibold))
+            Text(formatNum(usage.int("total_tokens")))
+                .font(.system(size: 17, weight: .bold, design: .rounded))
+                .foregroundColor(.pink)
+            Text("tokens · \(usage.int("messages")) messages")
+                .font(.system(size: 9.5))
+                .foregroundColor(theme.textDim)
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(theme.fyCardSub, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
     }
 
     private func statBox(_ value: String, _ label: String) -> some View {
