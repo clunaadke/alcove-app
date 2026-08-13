@@ -4103,6 +4103,9 @@ private struct NativeStudioView: View {
     @State private var draft = ""
     @State private var showTerminal = false
     @State private var deliveryDraft: [String: Any]?
+    @State private var deliverySummary = ""
+    @State private var deliveryArtifacts: [String] = []
+    @State private var newArtifact = ""
     @State private var showActions = false
     @State private var loading = true
     @State private var expandedThoughts: Set<Int> = []
@@ -4246,8 +4249,15 @@ private struct NativeStudioView: View {
             VStack(alignment: .leading, spacing: 15) {
                 if let card = deliveryDraft {
                     HStack { Image(systemName: "checkmark.seal.fill").foregroundColor(theme.fyAccent); Text(card.string("title")).font(.title3.weight(.semibold)); Spacer(); Text("已完成").font(.caption).foregroundColor(theme.fyAccent) }
-                    Text(card.string("result")).font(.system(size: 14, design: .serif)).lineSpacing(5).padding(14).frame(maxWidth: .infinity, alignment: .leading).background(theme.fyCardSub, in: RoundedRectangle(cornerRadius: 14))
-                    ForEach(card["artifacts"] as? [String] ?? [], id: \.self) { item in Label(item, systemImage: "doc.badge.gearshape").font(.caption) }
+                    Text("交付摘要").font(.caption.weight(.semibold)).foregroundColor(theme.textDim)
+                    TextEditor(text: $deliverySummary).font(.system(size: 14, design: .serif)).lineSpacing(5)
+                        .frame(minHeight: 150).padding(9).scrollContentBackground(.hidden)
+                        .background(theme.fyCardSub, in: RoundedRectangle(cornerRadius: 14))
+                    Text("产物").font(.caption.weight(.semibold)).foregroundColor(theme.textDim)
+                    ForEach(Array(deliveryArtifacts.enumerated()), id: \.offset) { index, item in
+                        HStack { Label(item, systemImage: "doc.badge.gearshape").font(.caption); Spacer(); Button { deliveryArtifacts.remove(at: index) } label: { Image(systemName: "xmark.circle") }.buttonStyle(.plain) }
+                    }
+                    HStack { TextField("补充文件、提交号或链接", text: $newArtifact).textFieldStyle(.roundedBorder); Button("添加") { let value = newArtifact.trimmingCharacters(in: .whitespacesAndNewlines); if !value.isEmpty { deliveryArtifacts.append(value); newArtifact = "" } } }
                     Text("确认后，这张卡会以你的消息身份发进主聊天，并提醒主窗口里的陈璟。")
                         .font(.caption).foregroundColor(theme.textDim)
                 }
@@ -4302,12 +4312,16 @@ private struct NativeStudioView: View {
     @MainActor private func action(_ task: [String: Any], _ action: String) async { guard (try? await NativeHouseAPI.object("/api/work/task/\(task.int("id"))/\(action)", method: "POST", body: [:])) != nil else { return }; await refresh() }
     @MainActor private func deliver(_ task: [String: Any]) async {
         guard let response = try? await NativeHouseAPI.object("/api/work/deliver", method: "POST", body: ["task_id": task.int("id")]) else { return }
-        deliveryDraft = response.object("draft")
+        let card = response.object("draft")
+        deliveryDraft = card
+        deliverySummary = card.string("result")
+        deliveryArtifacts = card["artifacts"] as? [String] ?? []
+        newArtifact = ""
     }
     @MainActor private func confirmDelivery() async {
         guard let card = deliveryDraft else { return }
         let taskID = card.int("task_id")
-        guard (try? await NativeHouseAPI.object("/api/work/deliver", method: "POST", body: ["task_id": taskID, "confirm": true])) != nil else { return }
+        guard (try? await NativeHouseAPI.object("/api/work/deliver", method: "POST", body: ["task_id": taskID, "summary": deliverySummary, "artifacts": deliveryArtifacts, "confirm": true])) != nil else { return }
         deliveryDraft = nil; await refresh()
     }
     private func compact(_ value: Int) -> String { value >= 1_000_000 ? String(format: "%.1fM", Double(value) / 1_000_000) : value >= 1000 ? String(format: "%.1fK", Double(value) / 1000) : "\(value)" }
