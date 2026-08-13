@@ -175,7 +175,7 @@ struct NativeHouseSheet: View {
         GeometryReader { root in
             FoyerGlassContainer(spacing: 8, paper: theme.isPaper) {
                 VStack(spacing: 0) {
-                    houseHeader(safeTop: root.safeAreaInsets.top)
+                    if route != .studio { houseHeader(safeTop: root.safeAreaInsets.top) }
                     Group {
                 switch route {
                 case .sidebar:
@@ -4104,6 +4104,7 @@ private struct NativeStudioView: View {
     @State private var deliveryDraft: [String: Any]?
     @State private var showActions = false
     @State private var loading = true
+    @State private var expandedThoughts: Set<Int> = []
     @FocusState private var inputFocused: Bool
     @AppStorage("alcoveTheme") private var themeName = "haven"
     private var theme: AlcoveTheme { .panelNamed(themeName) }
@@ -4162,15 +4163,43 @@ private struct NativeStudioView: View {
             }.buttonStyle(.plain).accessibilityLabel("工作室操作")
             Button { showTerminal = true } label: { Image(systemName: "terminal").frame(width: 34, height: 34).background(.white.opacity(0.42), in: Circle()) }
                 .buttonStyle(.plain).accessibilityLabel("查看工作室终端")
-        }.padding(.horizontal, 15).padding(.vertical, 10)
+        }.padding(.horizontal, 15).padding(.bottom, 10).padding(.top, 54)
     }
 
     private func messageBubble(_ message: [String: Any]) -> some View {
         let mine = message.string("role") == "user"
+        let messageID = message.int("id")
+        let thought = message.string("thinking")
         return HStack {
             if mine { Spacer(minLength: 52) }
             VStack(alignment: mine ? .trailing : .leading, spacing: 5) {
                 Text(mine ? "陈霁" : "陈璟").font(.system(size: 9, weight: .semibold)).foregroundColor(theme.textDim)
+                if !mine && !thought.isEmpty {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.18)) {
+                            if expandedThoughts.contains(messageID) { expandedThoughts.remove(messageID) }
+                            else { expandedThoughts.insert(messageID) }
+                        }
+                    } label: {
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "circle.dotted").font(.system(size: 10))
+                                Text("工作思绪").font(.system(size: 10, weight: .semibold, design: .serif))
+                                Spacer()
+                                Image(systemName: expandedThoughts.contains(messageID) ? "chevron.up" : "chevron.down").font(.system(size: 8))
+                            }
+                            if expandedThoughts.contains(messageID) {
+                                Text(thought).font(.system(size: 11, design: .serif)).lineSpacing(4).multilineTextAlignment(.leading)
+                            } else {
+                                Text(thought).font(.system(size: 10, design: .serif)).lineLimit(1)
+                            }
+                        }
+                        .foregroundColor(theme.textDim.opacity(0.86))
+                        .padding(.horizontal, 12).padding(.vertical, 9)
+                        .background(.ultraThinMaterial.opacity(0.62), in: RoundedRectangle(cornerRadius: 15))
+                        .overlay(RoundedRectangle(cornerRadius: 15).stroke(Color.white.opacity(0.30), lineWidth: 0.6))
+                    }.buttonStyle(.plain)
+                }
                 Text(message.string("text")).font(.system(size: 14, design: .serif)).lineSpacing(5).textSelection(.enabled)
                     .padding(.horizontal, 14).padding(.vertical, 11)
                     .background(mine ? theme.fyAccent.opacity(0.15) : Color.white.opacity(0.52), in: RoundedRectangle(cornerRadius: 18))
