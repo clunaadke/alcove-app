@@ -4113,6 +4113,7 @@ private struct NativeStudioView: View {
     @State private var showStudioNotice = false
     @State private var expandedThoughts: Set<Int> = []
     @State private var photoItem: PhotosPickerItem?
+    @State private var showPhotoPicker = false
     @State private var showFilePicker = false
     @Environment(\.dismiss) private var dismiss
     @FocusState private var inputFocused: Bool
@@ -4150,6 +4151,7 @@ private struct NativeStudioView: View {
         .overlay { if loading { ProgressView().tint(theme.fyAccent) } }
         .fullScreenCover(isPresented: $showTerminal) { TerminalView(initialSession: "work", availableSessions: ["work"]) }
         .sheet(isPresented: Binding(get: { deliveryDraft != nil }, set: { if !$0 { deliveryDraft = nil } })) { deliveryPreview }
+        .photosPicker(isPresented: $showPhotoPicker, selection: $photoItem, matching: .images)
         .fileImporter(isPresented: $showFilePicker, allowedContentTypes: [.item]) { result in
             guard case .success(let url) = result else { return }
             Task { await uploadFile(url) }
@@ -4243,7 +4245,7 @@ private struct NativeStudioView: View {
     private var inputBar: some View {
         HStack(alignment: .bottom, spacing: 9) {
             Menu {
-                PhotosPicker(selection: $photoItem, matching: .images) { Label("图片", systemImage: "photo") }
+                Button { showPhotoPicker = true } label: { Label("图片", systemImage: "photo") }
                 Button { showFilePicker = true } label: { Label("文件", systemImage: "doc") }
             } label: { Image(systemName: "plus").font(.system(size: 16, weight: .semibold)).frame(width: 38, height: 38).background(.white.opacity(0.50), in: Circle()) }
             TextField("在工作室里和他说……", text: $draft, axis: .vertical).lineLimit(1...6).focused($inputFocused)
