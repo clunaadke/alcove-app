@@ -4101,6 +4101,7 @@ private struct NativeStudioView: View {
     @State private var messages: [[String: Any]] = []
     @State private var draft = ""
     @State private var showTerminal = false
+    @State private var deliveryDraft: [String: Any]?
     @State private var loading = true
     @FocusState private var inputFocused: Bool
     @AppStorage("alcoveTheme") private var themeName = "haven"
@@ -4133,6 +4134,7 @@ private struct NativeStudioView: View {
         .foregroundColor(theme.text)
         .overlay { if loading { ProgressView().tint(theme.fyAccent) } }
         .fullScreenCover(isPresented: $showTerminal) { TerminalView(initialSession: "work", availableSessions: ["work"]) }
+        .sheet(isPresented: Binding(get: { deliveryDraft != nil }, set: { if !$0 { deliveryDraft = nil } })) { deliveryPreview }
         .task { while !Task.isCancelled { await refresh(); try? await Task.sleep(nanoseconds: 2_000_000_000) } }
     }
 
@@ -4181,6 +4183,24 @@ private struct NativeStudioView: View {
         }.padding(.horizontal, 12).padding(.top, 8).padding(.bottom, 10).background(.ultraThinMaterial)
     }
 
+    private var deliveryPreview: some View {
+        NavigationStack {
+            VStack(alignment: .leading, spacing: 15) {
+                if let card = deliveryDraft {
+                    HStack { Image(systemName: "checkmark.seal.fill").foregroundColor(theme.fyAccent); Text(card.string("title")).font(.title3.weight(.semibold)); Spacer(); Text("已完成").font(.caption).foregroundColor(theme.fyAccent) }
+                    Text(card.string("result")).font(.system(size: 14, design: .serif)).lineSpacing(5).padding(14).frame(maxWidth: .infinity, alignment: .leading).background(theme.fyCardSub, in: RoundedRectangle(cornerRadius: 14))
+                    ForEach(card["artifacts"] as? [String] ?? [], id: \.self) { item in Label(item, systemImage: "doc.badge.gearshape").font(.caption) }
+                    Text("确认后，这张卡会以你的消息身份发进主聊天，并提醒主窗口里的陈璟。")
+                        .font(.caption).foregroundColor(theme.textDim)
+                }
+                Spacer()
+                Button { Task { await confirmDelivery() } } label: { Text("发回主聊天").fontWeight(.semibold).frame(maxWidth: .infinity).padding(.vertical, 12) }
+                    .buttonStyle(.borderedProminent)
+            }.padding(20).navigationTitle("交付卡预览").navigationBarTitleDisplayMode(.inline)
+                .toolbar { ToolbarItem(placement: .cancellationAction) { Button("取消") { deliveryDraft = nil } } }
+        }.presentationDetents([.medium, .large])
+    }
+
     private var stateText: String { switch status.string("state") { case "running", "busy": return "工作中"; case "idle": return "待命"; case "dead": return "工作室未开启"; default: return "连接中" } }
     private var stateColor: Color { status.string("state") == "busy" || status.string("state") == "running" ? .orange : status.string("state") == "dead" ? .gray : .green }
     private var currentOrLatestTask: [String: Any]? { (status["current_task"] as? [String: Any]) ?? tasks.first }
@@ -4199,7 +4219,16 @@ private struct NativeStudioView: View {
         await refresh()
     }
     @MainActor private func action(_ task: [String: Any], _ action: String) async { guard (try? await NativeHouseAPI.object("/api/work/task/\(task.int("id"))/\(action)", method: "POST", body: [:])) != nil else { return }; await refresh() }
-    @MainActor private func deliver(_ task: [String: Any]) async { guard (try? await NativeHouseAPI.object("/api/work/deliver", method: "POST", body: ["task_id": task.int("id")])) != nil else { return }; await refresh() }
+    @MainActor private func deliver(_ task: [String: Any]) async {
+        guard let response = try? await NativeHouseAPI.object("/api/work/deliver", method: "POST", body: ["task_id": task.int("id")]) else { return }
+        deliveryDraft = response.object("draft")
+    }
+    @MainActor private func confirmDelivery() async {
+        guard let card = deliveryDraft else { return }
+        let taskID = card.int("task_id")
+        guard (try? await NativeHouseAPI.object("/api/work/deliver", method: "POST", body: ["task_id": taskID, "confirm": true])) != nil else { return }
+        deliveryDraft = nil; await refresh()
+    }
     private func compact(_ value: Int) -> String { value >= 1_000_000 ? String(format: "%.1fM", Double(value) / 1_000_000) : value >= 1000 ? String(format: "%.1fK", Double(value) / 1000) : "\(value)" }
 }
 

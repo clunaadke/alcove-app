@@ -1119,6 +1119,8 @@ struct MessageRow: View {
                     GhostActivityMessageCard(card: ghost, theme: theme)
                 } else if let reading = msg.readingCard {
                     ReadingShareMessageCard(card: reading, theme: theme)
+                } else if let work = msg.workCard {
+                    WorkDeliveryMessageCard(card: work, theme: theme)
                 } else if msg.isSticker {
                     stickerBody
                 } else {
@@ -1666,6 +1668,38 @@ private struct ReadingShareMessageCard: View {
         }.padding(14).frame(maxWidth: 315, alignment: .leading)
             .background(theme.fyCard.opacity(0.94), in: RoundedRectangle(cornerRadius: 18))
             .overlay(RoundedRectangle(cornerRadius: 18).stroke(theme.fyBorder.opacity(0.7), lineWidth: 0.7))
+    }
+}
+
+private struct WorkDeliveryMessageCard: View {
+    let card: WorkDeliveryCard
+    let theme: AlcoveTheme
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 9) {
+                Image(systemName: "checkmark.seal.fill").font(.system(size: 19)).foregroundColor(theme.fyAccent)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(card.title).font(.system(size: 16, weight: .semibold, design: .serif))
+                    Text("WORK DELIVERED · #\(card.taskId)").font(.system(size: 8.5, weight: .semibold, design: .monospaced)).tracking(0.7).foregroundColor(theme.textDim)
+                }
+                Spacer()
+                Text(card.status == "done" ? "已完成" : card.status).font(.system(size: 9, weight: .semibold)).foregroundColor(theme.fyAccent)
+            }
+            if !card.result.isEmpty {
+                Text(card.result).font(.system(size: 13, design: .serif)).lineSpacing(4)
+                    .padding(11).frame(maxWidth: .infinity, alignment: .leading)
+                    .background(theme.fyCardSub.opacity(0.58), in: RoundedRectangle(cornerRadius: 12))
+            }
+            if !card.artifacts.isEmpty {
+                VStack(alignment: .leading, spacing: 5) {
+                    ForEach(card.artifacts, id: \.self) { item in Label(item, systemImage: "doc.badge.gearshape").font(.system(size: 10, design: .monospaced)).foregroundColor(theme.textDim) }
+                }
+            }
+            Text(card.finishedAt.replacingOccurrences(of: "T", with: " ").prefix(16))
+                .font(.system(size: 8.5, design: .monospaced)).foregroundColor(theme.textDim.opacity(0.75))
+        }.padding(14).frame(maxWidth: 315, alignment: .leading)
+            .background(theme.fyCard.opacity(0.95), in: RoundedRectangle(cornerRadius: 18))
+            .overlay(RoundedRectangle(cornerRadius: 18).stroke(theme.fyAccent.opacity(0.38), lineWidth: 0.8))
     }
 }
 
