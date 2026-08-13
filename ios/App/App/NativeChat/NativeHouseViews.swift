@@ -3795,6 +3795,12 @@ private struct NativeWorkbenchView: View {
     @State private var data: [String: Any] = [:]
     @State private var loading = true
     @State private var expanded = false
+    @State private var contactItems: [[String: Any]] = []
+    @State private var showingContact = false
+    @State private var contactSender = "陈霁"
+    @State private var contactRecipient = "陈璟"
+    @State private var contactTitle = ""
+    @State private var contactDetail = ""
     @AppStorage("alcoveTheme") private var themeName = "haven"
     @AppStorage("rtAvatarAssistant") private var rtAvatarAssistant = ""
     @AppStorage("rtAvatarGpt") private var rtAvatarGpt = ""
@@ -3820,6 +3826,7 @@ private struct NativeWorkbenchView: View {
                 vpsCard
                 agentCard(index: 0, accent: Color(red: 0.70, green: 0.47, blue: 0.52))
                 agentCard(index: 1, accent: Color(red: 0.38, green: 0.57, blue: 0.68))
+                contactDesk
                 taskLedger
                 Text("work goes on, quietly")
                     .font(.custom("Snell Roundhand", size: 18))
@@ -3833,12 +3840,80 @@ private struct NativeWorkbenchView: View {
         }
         .foregroundColor(theme.text)
         .overlay { if loading { ProgressView().tint(theme.fyAccent) } }
+        .sheet(isPresented: $showingContact) { contactComposer }
         .task {
             while !Task.isCancelled {
                 await refresh()
                 try? await Task.sleep(nanoseconds: 2_000_000_000)
             }
         }
+    }
+
+    private var contactDesk: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("联络台").font(.system(size: 20, weight: .semibold, design: .serif))
+                Text("dispatch desk").font(.custom("Snell Roundhand", size: 16)).foregroundColor(theme.textDim)
+                Spacer()
+                Button { showingContact = true } label: {
+                    Label("新建", systemImage: "paperplane").font(.system(size: 11, weight: .semibold))
+                        .padding(.horizontal, 11).padding(.vertical, 7)
+                        .background(theme.fyAccent.opacity(0.14), in: Capsule())
+                }.buttonStyle(.plain).accessibilityLabel("新建协作或问题上报")
+            }
+            if contactItems.isEmpty {
+                Text("这里会收下我们三个人之间的协作请求与问题上报。")
+                    .font(.system(size: 11)).foregroundColor(theme.textDim).padding(.vertical, 5)
+            } else {
+                ForEach(Array(contactItems.prefix(3).enumerated()), id: \.offset) { _, item in
+                    HStack(alignment: .top, spacing: 10) {
+                        Image(systemName: item.string("status") == "done" ? "checkmark.circle.fill" : "arrow.up.right.circle.fill")
+                            .foregroundColor(item.string("status") == "done" ? .green : theme.fyAccent)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("\(item.string("sender")) → \(item.string("recipient"))")
+                                .font(.system(size: 9.5, weight: .semibold)).foregroundColor(theme.textDim)
+                            Text(item.string("title")).font(.system(size: 12, weight: .semibold)).lineLimit(2)
+                            if !item.string("detail").isEmpty {
+                                Text(item.string("detail")).font(.system(size: 10)).foregroundColor(theme.textDim).lineLimit(2)
+                            }
+                        }
+                        Spacer()
+                        Text(item.string("status") == "done" ? "完成" : "待接收")
+                            .font(.system(size: 9, weight: .medium)).foregroundColor(theme.textDim)
+                    }.padding(.vertical, 3)
+                }
+            }
+        }.padding(15).workbenchGlass(theme, accent: Color(red: 0.64, green: 0.52, blue: 0.72))
+    }
+
+    private var contactComposer: some View {
+        NavigationStack {
+            Form {
+                Section("从谁发出") { Picker("发起人", selection: $contactSender) { ForEach(["陈霁", "何渡", "陈璟"], id: \.self) { Text($0) } } }
+                Section("交给谁") { Picker("接收人", selection: $contactRecipient) { ForEach(["陈璟", "何渡", "你俩商量"], id: \.self) { Text($0) } } }
+                Section("内容") {
+                    TextField("一句话说明要做什么", text: $contactTitle)
+                    TextField("补充背景、相关文件或异常现象（可选）", text: $contactDetail, axis: .vertical).lineLimit(3...7)
+                }
+            }
+            .navigationTitle("新建联络")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("取消") { showingContact = false } }
+                ToolbarItem(placement: .confirmationAction) { Button("发送") { Task { await submitContact() } }.disabled(contactTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }
+            }
+        }.presentationDetents([.medium, .large])
+    }
+
+    @MainActor private func submitContact() async {
+        let body: [String: Any] = ["sender": contactSender, "recipient": contactRecipient,
+                                  "title": contactTitle, "detail": contactDetail]
+        guard (try? await NativeHouseAPI.object("/api/workbench/contacts", method: "POST", body: body)) != nil else { return }
+        contactTitle = ""; contactDetail = ""; showingContact = false
+        await loadContacts()
+    }
+
+    @MainActor private func loadContacts() async {
+        if let object = try? await NativeHouseAPI.object("/api/workbench/contacts") { contactItems = object.array("items") }
     }
 
     private var masthead: some View {
@@ -4152,6 +4227,7 @@ private struct NativeWorkbenchView: View {
             data = object
         }
         loading = false
+        await loadContacts()
     }
 
     private func agentStatus(_ index: Int) -> (label: String, color: Color) {
