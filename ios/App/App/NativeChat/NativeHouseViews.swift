@@ -4129,16 +4129,19 @@ private struct NativeStudioView: View {
                         Text("工作室里的也是我本人，同锚点同记忆，只是换了间屋子干活，不是分身。")
                             .font(.system(size: 11, design: .serif)).foregroundColor(theme.textDim)
                             .padding(.vertical, 12)
-                        ForEach(Array(messages.enumerated()), id: \.offset) { index, message in
-                            messageBubble(message).id(index)
+                        ForEach(Array(messages.enumerated()), id: \.offset) { _, message in
+                            messageBubble(message).id("studio-message-\(message.int("id"))")
                         }
                         if let current = status["current_task"] as? [String: Any] {
                             HStack(spacing: 7) { ProgressView().scaleEffect(0.7); Text("正在处理 · \(current.string("title"))") }
                                 .font(.system(size: 10)).foregroundColor(theme.textDim).padding(9)
                         }
+                        Color.clear.frame(height: 1).id("studio-tail")
                     }.padding(.horizontal, 15).padding(.bottom, 16)
                 }
-                .onChange(of: messages.count) { _ in withAnimation { proxy.scrollTo(max(messages.count - 1, 0), anchor: .bottom) } }
+                .onAppear { scrollStudioToTail(proxy, delays: [0, 0.08, 0.25, 0.6]) }
+                .onChange(of: messages.count) { _ in scrollStudioToTail(proxy, delays: [0, 0.08, 0.25]) }
+                .onChange(of: messages.last?.int("id") ?? 0) { _ in scrollStudioToTail(proxy, delays: [0, 0.08, 0.25]) }
             }
             inputBar
         }
@@ -4273,6 +4276,14 @@ private struct NativeStudioView: View {
             }.padding(20).navigationTitle("交付卡预览").navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .cancellationAction) { Button("取消") { deliveryDraft = nil } } }
         }.presentationDetents([.medium, .large])
+    }
+
+    private func scrollStudioToTail(_ proxy: ScrollViewProxy, delays: [Double]) {
+        for delay in delays {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                proxy.scrollTo("studio-tail", anchor: .bottom)
+            }
+        }
     }
 
     private var stateText: String { switch status.string("state") { case "running", "busy": return "工作中"; case "idle": return "待命"; case "dead": return "工作室未开启"; default: return "连接中" } }
