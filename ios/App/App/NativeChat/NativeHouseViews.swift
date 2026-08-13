@@ -2924,11 +2924,23 @@ private struct QuietRoomView: View {
     }
 
     private var displayUntil: String {
-        let formatter = ISO8601DateFormatter()
-        guard let date = formatter.date(from: until) else { return until }
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let regular = ISO8601DateFormatter()
+        guard let date = fractional.date(from: until) ?? regular.date(from: until) else { return "结束时间读取中" }
         let out = DateFormatter()
         out.locale = Locale(identifier: "zh_CN")
         out.timeZone = TimeZone(identifier: "Asia/Shanghai")
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = out.timeZone
+        if calendar.isDateInToday(date) {
+            out.dateFormat = "HH:mm"
+            return "今天 \(out.string(from: date))"
+        }
+        if calendar.isDateInTomorrow(date) {
+            out.dateFormat = "HH:mm"
+            return "明天 \(out.string(from: date))"
+        }
         out.dateFormat = "M月d日 HH:mm"
         return out.string(from: date)
     }
@@ -7874,6 +7886,9 @@ private struct FictionReaderView: View {
     @State private var review = ""
     @State private var showReview = false
     @State private var showReadingSettings = false
+    @State private var selectingAnnotations = false
+    @State private var selectedAnnotations: Set<String> = []
+    @State private var sendingAnnotations = false
     @State private var error: String?
     @AppStorage("fictionFontSize") private var fontSize = 17.0
     @AppStorage("fictionLetterSpacing") private var letterSpacing = 0.4
@@ -7929,12 +7944,45 @@ private struct FictionReaderView: View {
                         }
                         .frame(maxWidth: .infinity, minHeight: 360, alignment: .leading)
                         if !annotations.isEmpty {
-                            Text("你的划线").font(.system(size: 14, weight: .semibold, design: .serif))
+                            HStack {
+                                Text("你的划线").font(.system(size: 14, weight: .semibold, design: .serif))
+                                Spacer()
+                                if selectingAnnotations {
+                                    Button("取消") {
+                                        selectingAnnotations = false
+                                        selectedAnnotations.removeAll()
+                                    }.font(.system(size: 11))
+                                }
+                            }
                             ForEach(annotations) { item in
-                                VStack(alignment: .leading, spacing: 7) {
-                                    Text("“\(item.quote)”").font(.system(size: 13, design: .serif)).foregroundColor(theme.textDim)
-                                    Text(item.note).font(.system(size: 13))
-                                }.padding(13).foyerCard(theme)
+                                HStack(alignment: .top, spacing: 10) {
+                                    if selectingAnnotations {
+                                        Image(systemName: selectedAnnotations.contains(item.id) ? "checkmark.circle.fill" : "circle")
+                                            .foregroundColor(theme.fyAccent).font(.system(size: 19))
+                                    }
+                                    VStack(alignment: .leading, spacing: 7) {
+                                        Text("“\(item.quote)”").font(.system(size: 13, design: .serif)).foregroundColor(theme.textDim)
+                                        Text(item.note).font(.system(size: 13))
+                                    }.frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                                .padding(13).contentShape(Rectangle()).foyerCard(theme)
+                                .onTapGesture {
+                                    if selectingAnnotations { toggleAnnotation(item) }
+                                }
+                                .onLongPressGesture {
+                                    selectingAnnotations = true
+                                    selectedAnnotations.insert(item.id)
+                                }
+                            }
+                            if selectingAnnotations {
+                                Button { Task { await sendSelectedAnnotations() } } label: {
+                                    Label(sendingAnnotations ? "正在发送" : "合并发送给陈璟（\(selectedAnnotations.count)）",
+                                          systemImage: "paperplane.fill")
+                                        .font(.system(size: 13, weight: .semibold))
+                                        .frame(maxWidth: .infinity).frame(height: 44)
+                                }
+                                .buttonStyle(.borderedProminent).tint(theme.fyAccent)
+                                .disabled(selectedAnnotations.isEmpty || sendingAnnotations)
                             }
                         }
                     }.padding(20)
@@ -7995,6 +8043,29 @@ private struct FictionReaderView: View {
         }
         if !current.isEmpty { pages.append(current) }
         return pages.isEmpty ? [content] : pages
+    }
+
+    private func toggleAnnotation(_ item: FictionAnnotation) {
+        if selectedAnnotations.contains(item.id) { selectedAnnotations.remove(item.id) }
+        else { selectedAnnotations.insert(item.id) }
+    }
+
+    @MainActor private func sendSelectedAnnotations() async {
+        let picked = annotations.filter { selectedAnnotations.contains($0.id) }
+        guard !picked.isEmpty else { return }
+        sendingAnnotations = true
+        defer { sendingAnnotations = false }
+        let payload: [String: Any] = [
+            "book": book.title,
+            "author": book.author,
+            "quotes": picked.map { ["chapter": $0.chapter, "text": $0.quote,
+                                     "note": $0.note, "time": $0.ts ?? ""] }
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: payload),
+              let json = String(data: data, encoding: .utf8) else { return }
+        _ = try? await AlcoveAPI.send(text: "[READING_CARD]\(json)[/READING_CARD]")
+        selectingAnnotations = false
+        selectedAnnotations.removeAll()
     }
 }
 
