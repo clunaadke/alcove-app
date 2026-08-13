@@ -4290,7 +4290,7 @@ private struct NativeStudioView: View {
     private var stateColor: Color { status.string("state") == "busy" || status.string("state") == "running" ? .orange : status.string("state") == "dead" ? .gray : .green }
     private var currentOrLatestTask: [String: Any]? { (status["current_task"] as? [String: Any]) ?? tasks.first }
     private var latestDoneTask: [String: Any]? {
-        tasks.first {
+        tasks.reversed().first {
             $0.string("status") == "done" && ($0["deliver_card_id"] == nil || $0["deliver_card_id"] is NSNull)
         }
     }
@@ -4328,7 +4328,7 @@ private struct NativeStudioView: View {
     }
     @MainActor private func action(_ task: [String: Any], _ action: String) async { guard (try? await NativeHouseAPI.object("/api/work/task/\(task.int("id"))/\(action)", method: "POST", body: [:])) != nil else { return }; await refresh() }
     @MainActor private func deliver(_ task: [String: Any]) async {
-        guard let response = try? await NativeHouseAPI.object("/api/work/deliver", method: "POST", body: ["task_id": task.int("id")]) else {
+        guard let response = try? await NativeHouseAPI.objectIncludingHTTPError("/api/work/deliver", method: "POST", body: ["task_id": task.int("id")]) else {
             studioNotice = "交付卡暂时没有生成，请稍后再试。"
             showStudioNotice = true
             return

@@ -37,6 +37,27 @@ enum NativeHouseAPI {
         return value
     }
 
+    /// Decode a JSON error body as well as a success body. Use only where
+    /// the UI needs the server's actionable hint (for example work delivery 409).
+    static func objectIncludingHTTPError(
+        _ path: String,
+        method: String = "GET",
+        body: [String: Any]? = nil
+    ) async throws -> [String: Any] {
+        var request = URLRequest(url: AlcoveAPI.fullURL(path))
+        request.httpMethod = method
+        request.timeoutInterval = 35
+        if let body {
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        }
+        let (data, _) = try await AlcoveAPI.session.data(for: request)
+        guard let value = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            throw URLError(.cannotParseResponse)
+        }
+        return value
+    }
+
     static func array(
         _ path: String,
         key: String? = nil
