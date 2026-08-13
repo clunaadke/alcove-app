@@ -12,14 +12,14 @@ struct TerminalView: View {
     @Environment(\.dismiss) private var dismiss
     var onDismiss: (() -> Void)? = nil
     var mini = false
+    var initialSession = "main"
+    var availableSessions = ["main", "assistant", "gemini", "ghost"]
     @State private var session = "main"
     @State private var output = ""
     @State private var cmd = ""
     @State private var workState: CCWorkState = .resting
     @State private var pollTask: Task<Void, Never>?
     @FocusState private var cmdFocused: Bool
-
-    private let sessions = ["main", "assistant", "gemini", "ghost"]
 
     var body: some View {
         VStack(spacing: 0) {
@@ -55,7 +55,7 @@ struct TerminalView: View {
         }
         .shadow(color: mini ? .black.opacity(0.2) : .clear, radius: 16, y: 6)
         .preferredColorScheme(.dark)
-        .onAppear { startPoll() }
+        .onAppear { session = initialSession; startPoll() }
         .onDisappear { pollTask?.cancel() }
     }
 
@@ -82,7 +82,7 @@ struct TerminalView: View {
             .padding(.trailing, 4)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 4) {
-                    ForEach(sessions, id: \.self) { s in
+                    ForEach(availableSessions, id: \.self) { s in
                         Button {
                             session = s
                             output = ""

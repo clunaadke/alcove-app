@@ -4099,125 +4099,107 @@ private struct NativeStudioView: View {
     @State private var status: [String: Any] = [:]
     @State private var tasks: [[String: Any]] = []
     @State private var messages: [[String: Any]] = []
-    @State private var title = ""
-    @State private var prompt = ""
-    @State private var showingComposer = false
+    @State private var draft = ""
+    @State private var showTerminal = false
     @State private var loading = true
+    @FocusState private var inputFocused: Bool
     @AppStorage("alcoveTheme") private var themeName = "haven"
     private var theme: AlcoveTheme { .panelNamed(themeName) }
 
     var body: some View {
-        ZStack {
-            LinearGradient(colors: [Color(red: 0.97, green: 0.94, blue: 0.91), Color(red: 0.91, green: 0.88, blue: 0.86)], startPoint: .topLeading, endPoint: .bottomTrailing).ignoresSafeArea()
-            ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 16) {
-                    header
-                    Text("工作室里的也是我本人，同锚点同记忆，只是换了间屋子干活，不是分身。")
-                        .font(.system(size: 12, design: .serif)).foregroundColor(theme.textDim)
-                        .padding(13).frame(maxWidth: .infinity, alignment: .leading)
-                        .background(.white.opacity(0.40), in: RoundedRectangle(cornerRadius: 16))
-                    taskSection
-                    messageSection
-                }.padding(.horizontal, 15).padding(.vertical, 12)
+        VStack(spacing: 0) {
+            header
+            Divider().opacity(0.18)
+            ScrollViewReader { proxy in
+                ScrollView(showsIndicators: false) {
+                    LazyVStack(spacing: 13) {
+                        Text("工作室里的也是我本人，同锚点同记忆，只是换了间屋子干活，不是分身。")
+                            .font(.system(size: 11, design: .serif)).foregroundColor(theme.textDim)
+                            .padding(.vertical, 12)
+                        ForEach(Array(messages.enumerated()), id: \.offset) { index, message in
+                            messageBubble(message).id(index)
+                        }
+                        if let current = status["current_task"] as? [String: Any] {
+                            HStack(spacing: 7) { ProgressView().scaleEffect(0.7); Text("正在处理 · \(current.string("title"))") }
+                                .font(.system(size: 10)).foregroundColor(theme.textDim).padding(9)
+                        }
+                    }.padding(.horizontal, 15).padding(.bottom, 16)
+                }
+                .onChange(of: messages.count) { _ in withAnimation { proxy.scrollTo(max(messages.count - 1, 0), anchor: .bottom) } }
             }
-            if loading { ProgressView().tint(theme.fyAccent) }
+            inputBar
         }
+        .background(LinearGradient(colors: [Color(red: 0.985, green: 0.955, blue: 0.945), Color(red: 0.94, green: 0.91, blue: 0.90)], startPoint: .top, endPoint: .bottom).ignoresSafeArea())
         .foregroundColor(theme.text)
-        .sheet(isPresented: $showingComposer) { composer }
-        .task {
-            while !Task.isCancelled {
-                await refresh()
-                try? await Task.sleep(nanoseconds: 3_000_000_000)
-            }
-        }
+        .overlay { if loading { ProgressView().tint(theme.fyAccent) } }
+        .fullScreenCover(isPresented: $showTerminal) { TerminalView(initialSession: "work", availableSessions: ["work"]) }
+        .task { while !Task.isCancelled { await refresh(); try? await Task.sleep(nanoseconds: 2_000_000_000) } }
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            HStack {
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("CHENJING'S STUDIO").font(.system(size: 9, weight: .semibold)).tracking(2).foregroundColor(theme.textDim)
-                    Text("陈璟工作室").font(.system(size: 27, weight: .semibold, design: .serif))
-                }
-                Spacer()
-                Button { showingComposer = true } label: {
-                    Label("交给陈璟", systemImage: "paperplane.fill").font(.system(size: 11, weight: .semibold)).padding(.horizontal, 12).padding(.vertical, 9).background(theme.fyAccent.opacity(0.16), in: Capsule())
-                }.buttonStyle(.plain)
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("陈璟工作室").font(.system(size: 20, weight: .semibold, design: .serif))
+                HStack(spacing: 5) {
+                    Circle().fill(stateColor).frame(width: 6, height: 6)
+                    Text(stateText)
+                    Text("· \(compact(status.int("context_tokens"))) context")
+                }.font(.system(size: 9.5)).foregroundColor(theme.textDim)
             }
-            HStack(spacing: 8) {
-                badge(stateText, "circle.fill")
-                badge("队列 \(status.int("queue_count"))", "tray.full")
-                badge("上下文 \(compact(status.int("context_tokens")))", "text.alignleft")
+            Spacer()
+            Menu {
+                if let task = currentOrLatestTask, task.string("status") == "queued" { Button("暂停排队任务") { Task { await action(task, "pause") } } }
+                if let task = currentOrLatestTask, task.string("status") == "paused" { Button("继续任务") { Task { await action(task, "resume") } } }
+                if let task = latestDoneTask { Button("带回主聊天") { Task { await deliver(task) } } }
+            } label: { Image(systemName: "ellipsis.circle").frame(width: 34, height: 34) }
+            Button { showTerminal = true } label: { Image(systemName: "terminal").frame(width: 34, height: 34).background(.white.opacity(0.42), in: Circle()) }
+                .buttonStyle(.plain).accessibilityLabel("查看工作室终端")
+        }.padding(.horizontal, 15).padding(.vertical, 10)
+    }
+
+    private func messageBubble(_ message: [String: Any]) -> some View {
+        let mine = message.string("role") == "user"
+        return HStack {
+            if mine { Spacer(minLength: 52) }
+            VStack(alignment: mine ? .trailing : .leading, spacing: 5) {
+                Text(mine ? "陈霁" : "陈璟").font(.system(size: 9, weight: .semibold)).foregroundColor(theme.textDim)
+                Text(message.string("text")).font(.system(size: 14, design: .serif)).lineSpacing(5).textSelection(.enabled)
+                    .padding(.horizontal, 14).padding(.vertical, 11)
+                    .background(mine ? theme.fyAccent.opacity(0.15) : Color.white.opacity(0.52), in: RoundedRectangle(cornerRadius: 18))
+                if !message.string("tool_log").isEmpty { DisclosureGroup("终端记录") { Text(message.string("tool_log")).font(.system(size: 9, design: .monospaced)).textSelection(.enabled) }.font(.system(size: 9)).foregroundColor(theme.textDim) }
             }
+            if !mine { Spacer(minLength: 52) }
         }
     }
 
-    private var stateText: String {
-        switch status.string("state") { case "running", "busy": return "工作中"; case "idle": return "等新任务"; case "dead": return "休息中"; default: return "连接中" }
-    }
-    private func badge(_ text: String, _ icon: String) -> some View {
-        Label(text, systemImage: icon).font(.system(size: 9.5, weight: .medium)).padding(.horizontal, 9).padding(.vertical, 6).background(.white.opacity(0.45), in: Capsule())
-    }
-
-    private var taskSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("工作单").font(.system(size: 19, weight: .semibold, design: .serif))
-            if tasks.isEmpty { Text("桌面空着，等你放下一件事。").font(.system(size: 12)).foregroundColor(theme.textDim) }
-            ForEach(Array(tasks.prefix(8).enumerated()), id: \.offset) { _, task in
-                VStack(alignment: .leading, spacing: 7) {
-                    HStack { Text(task.string("title")).font(.system(size: 13, weight: .semibold)); Spacer(); Text(taskStatus(task.string("status"))).font(.system(size: 10)).foregroundColor(theme.fyAccent) }
-                    if !task.string("result").isEmpty { Text(task.string("result")).font(.system(size: 11)).foregroundColor(theme.textDim).lineLimit(3) }
-                    HStack {
-                        if task.string("status") == "queued" { Button("暂停") { Task { await action(task, "pause") } }.buttonStyle(.bordered) }
-                        if task.string("status") == "paused" { Button("继续") { Task { await action(task, "resume") } }.buttonStyle(.bordered) }
-                        Spacer()
-                        if task.string("status") == "done" && task["deliver_card_id"] == nil { Button("带回主聊天") { Task { await deliver(task) } }.buttonStyle(.borderedProminent) }
-                    }.font(.system(size: 10))
-                }.padding(13).background(.white.opacity(0.44), in: RoundedRectangle(cornerRadius: 17))
-            }
-        }
+    private var inputBar: some View {
+        HStack(alignment: .bottom, spacing: 9) {
+            TextField("在工作室里和他说……", text: $draft, axis: .vertical).lineLimit(1...6).focused($inputFocused)
+                .padding(.horizontal, 14).padding(.vertical, 10).background(.white.opacity(0.58), in: RoundedRectangle(cornerRadius: 19))
+            Button { Task { await send() } } label: { Image(systemName: "arrow.up").font(.system(size: 15, weight: .bold)).foregroundColor(.white).frame(width: 38, height: 38).background(theme.fyAccent, in: Circle()) }
+                .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        }.padding(.horizontal, 12).padding(.top, 8).padding(.bottom, 10).background(.ultraThinMaterial)
     }
 
-    private var messageSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("工作记录").font(.system(size: 19, weight: .semibold, design: .serif))
-            ForEach(Array(messages.suffix(12).enumerated()), id: \.offset) { _, message in
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(message.string("role") == "assistant" ? "陈璟" : "陈霁").font(.system(size: 10, weight: .semibold)).foregroundColor(theme.fyAccent)
-                    Text(message.string("text")).font(.system(size: 12, design: .serif)).lineSpacing(4)
-                    if !message.string("tool_log").isEmpty { DisclosureGroup("工具记录") { Text(message.string("tool_log")).font(.system(size: 9, design: .monospaced)).foregroundColor(theme.textDim) }.font(.system(size: 10)).foregroundColor(theme.textDim) }
-                }.padding(13).frame(maxWidth: .infinity, alignment: .leading).background(.white.opacity(0.38), in: RoundedRectangle(cornerRadius: 16))
-            }
-        }
-    }
-
-    private var composer: some View {
-        NavigationStack {
-            Form { TextField("这件事叫什么", text: $title); TextField("把要做的事写清楚", text: $prompt, axis: .vertical).lineLimit(5...12) }
-                .navigationTitle("交给陈璟")
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) { Button("取消") { showingComposer = false } }
-                    ToolbarItem(placement: .confirmationAction) { Button("放到桌上") { Task { await submit() } }.disabled(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }
-                }
-        }.presentationDetents([.medium, .large])
-    }
+    private var stateText: String { switch status.string("state") { case "running", "busy": return "工作中"; case "idle": return "待命"; case "dead": return "工作室未开启"; default: return "连接中" } }
+    private var stateColor: Color { status.string("state") == "busy" || status.string("state") == "running" ? .orange : status.string("state") == "dead" ? .gray : .green }
+    private var currentOrLatestTask: [String: Any]? { (status["current_task"] as? [String: Any]) ?? tasks.first }
+    private var latestDoneTask: [String: Any]? { tasks.first { $0.string("status") == "done" && $0["deliver_card_id"] == nil } }
 
     @MainActor private func refresh() async {
         async let s = try? NativeHouseAPI.object("/api/work/status"); async let t = try? NativeHouseAPI.object("/api/work/tasks"); async let m = try? NativeHouseAPI.object("/api/work/messages")
         let (newStatus, newTasks, newMessages) = await (s, t, m)
         if let newStatus { status = newStatus }; if let newTasks { tasks = Array(newTasks.array("tasks").reversed()) }; if let newMessages { messages = newMessages.array("messages") }; loading = false
     }
-    @MainActor private func submit() async {
-        guard (try? await NativeHouseAPI.object("/api/work/task", method: "POST", body: ["title": title, "prompt": prompt])) != nil else { return }
-        title = ""; prompt = ""; showingComposer = false; await refresh()
+    @MainActor private func send() async {
+        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines); guard !text.isEmpty else { return }
+        draft = ""; inputFocused = false
+        let title = String(text.prefix(28))
+        guard (try? await NativeHouseAPI.object("/api/work/task", method: "POST", body: ["title": title, "prompt": text])) != nil else { draft = text; return }
+        await refresh()
     }
-    @MainActor private func action(_ task: [String: Any], _ action: String) async {
-        guard (try? await NativeHouseAPI.object("/api/work/task/\(task.int("id"))/\(action)", method: "POST", body: [:])) != nil else { return }; await refresh()
-    }
-    @MainActor private func deliver(_ task: [String: Any]) async {
-        guard (try? await NativeHouseAPI.object("/api/work/deliver", method: "POST", body: ["task_id": task.int("id")])) != nil else { return }; await refresh()
-    }
-    private func taskStatus(_ value: String) -> String { ["queued":"排队中", "running":"工作中", "paused":"已暂停", "done":"已完成", "failed":"失败"][value] ?? value }
+    @MainActor private func action(_ task: [String: Any], _ action: String) async { guard (try? await NativeHouseAPI.object("/api/work/task/\(task.int("id"))/\(action)", method: "POST", body: [:])) != nil else { return }; await refresh() }
+    @MainActor private func deliver(_ task: [String: Any]) async { guard (try? await NativeHouseAPI.object("/api/work/deliver", method: "POST", body: ["task_id": task.int("id")])) != nil else { return }; await refresh() }
     private func compact(_ value: Int) -> String { value >= 1_000_000 ? String(format: "%.1fM", Double(value) / 1_000_000) : value >= 1000 ? String(format: "%.1fK", Double(value) / 1000) : "\(value)" }
 }
 
