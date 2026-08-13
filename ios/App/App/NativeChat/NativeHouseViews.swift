@@ -4208,6 +4208,10 @@ private struct NativeUsageView: View {
                                              sub: rl["seven_day"] as? [String: Any], color: .purple)
                             }
                             .padding(14).foyerCard(theme)
+                            if rl.string("model").localizedCaseInsensitiveContains("fable"),
+                               let weekly = rl["seven_day"] as? [String: Any] {
+                                rateLimitCard("Fable · weekly", sub: weekly, color: .pink)
+                            }
                         }
                         if let st = data["session_tokens"] as? [String: Any] {
                             VStack(alignment: .leading, spacing: 12) {
