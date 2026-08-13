@@ -4,6 +4,7 @@ import AVFoundation
 import MediaPlayer
 import WebKit
 import MapKit
+import UniformTypeIdentifiers
 
 private struct HouseOwnsHeaderKey: EnvironmentKey { static let defaultValue = false }
 private extension EnvironmentValues {
@@ -4105,6 +4106,9 @@ private struct NativeStudioView: View {
     @State private var showActions = false
     @State private var loading = true
     @State private var expandedThoughts: Set<Int> = []
+    @State private var photoItem: PhotosPickerItem?
+    @State private var showFilePicker = false
+    @Environment(\.dismiss) private var dismiss
     @FocusState private var inputFocused: Bool
     @AppStorage("alcoveTheme") private var themeName = "haven"
     private var theme: AlcoveTheme { .panelNamed(themeName) }
@@ -4137,6 +4141,14 @@ private struct NativeStudioView: View {
         .overlay { if loading { ProgressView().tint(theme.fyAccent) } }
         .fullScreenCover(isPresented: $showTerminal) { TerminalView(initialSession: "work", availableSessions: ["work"]) }
         .sheet(isPresented: Binding(get: { deliveryDraft != nil }, set: { if !$0 { deliveryDraft = nil } })) { deliveryPreview }
+        .fileImporter(isPresented: $showFilePicker, allowedContentTypes: [.item]) { result in
+            guard case .success(let url) = result else { return }
+            Task { await uploadFile(url) }
+        }
+        .onChange(of: photoItem) { item in
+            guard let item else { return }
+            Task { if let data = try? await item.loadTransferable(type: Data.self) { await upload(data, filename: "studio-photo-\(Int(Date().timeIntervalSince1970)).jpg") }; photoItem = nil }
+        }
         .confirmationDialog("工作室操作", isPresented: $showActions, titleVisibility: .visible) {
             if let task = currentOrLatestTask, task.string("status") == "queued" { Button("暂停排队任务") { Task { await action(task, "pause") } } }
             if let task = currentOrLatestTask, task.string("status") == "paused" { Button("继续任务") { Task { await action(task, "resume") } } }
@@ -4149,6 +4161,8 @@ private struct NativeStudioView: View {
 
     private var header: some View {
         HStack(spacing: 10) {
+            Button { dismiss() } label: { Image(systemName: "chevron.left").frame(width: 36, height: 36) }
+                .buttonStyle(.plain).accessibilityLabel("返回总控台")
             VStack(alignment: .leading, spacing: 2) {
                 Text("陈璟工作室").font(.system(size: 20, weight: .semibold, design: .serif))
                 HStack(spacing: 5) {
@@ -4170,7 +4184,7 @@ private struct NativeStudioView: View {
         let mine = message.string("role") == "user"
         let messageID = message.int("id")
         let thought = message.string("thinking")
-        return HStack {
+        return HStack(alignment: .bottom) {
             if mine { Spacer(minLength: 52) }
             VStack(alignment: mine ? .trailing : .leading, spacing: 5) {
                 Text(mine ? "陈霁" : "陈璟").font(.system(size: 9, weight: .semibold)).foregroundColor(theme.textDim)
@@ -4200,9 +4214,14 @@ private struct NativeStudioView: View {
                         .overlay(RoundedRectangle(cornerRadius: 15).stroke(Color.white.opacity(0.30), lineWidth: 0.6))
                     }.buttonStyle(.plain)
                 }
+                if !message.string("attachment_url").isEmpty {
+                    Label(message.string("attachment_filename").isEmpty ? "附件" : message.string("attachment_filename"), systemImage: message.string("attachment_type") == "image" ? "photo" : "doc")
+                        .font(.system(size: 11, weight: .medium)).padding(9).background(.white.opacity(0.34), in: RoundedRectangle(cornerRadius: 11))
+                }
                 Text(message.string("text")).font(.system(size: 14, design: .serif)).lineSpacing(5).textSelection(.enabled)
                     .padding(.horizontal, 14).padding(.vertical, 11)
                     .background(mine ? theme.fyAccent.opacity(0.15) : Color.white.opacity(0.52), in: RoundedRectangle(cornerRadius: 18))
+                    .frame(maxWidth: 300, alignment: mine ? .trailing : .leading)
                 if !message.string("tool_log").isEmpty { DisclosureGroup("终端记录") { Text(message.string("tool_log")).font(.system(size: 9, design: .monospaced)).textSelection(.enabled) }.font(.system(size: 9)).foregroundColor(theme.textDim) }
             }
             if !mine { Spacer(minLength: 52) }
@@ -4211,6 +4230,10 @@ private struct NativeStudioView: View {
 
     private var inputBar: some View {
         HStack(alignment: .bottom, spacing: 9) {
+            Menu {
+                PhotosPicker(selection: $photoItem, matching: .images) { Label("图片", systemImage: "photo") }
+                Button { showFilePicker = true } label: { Label("文件", systemImage: "doc") }
+            } label: { Image(systemName: "plus").font(.system(size: 16, weight: .semibold)).frame(width: 38, height: 38).background(.white.opacity(0.50), in: Circle()) }
             TextField("在工作室里和他说……", text: $draft, axis: .vertical).lineLimit(1...6).focused($inputFocused)
                 .padding(.horizontal, 14).padding(.vertical, 10).background(.white.opacity(0.58), in: RoundedRectangle(cornerRadius: 19))
             Button { Task { await send() } } label: { Image(systemName: "arrow.up").font(.system(size: 15, weight: .bold)).foregroundColor(.white).frame(width: 38, height: 38).background(theme.fyAccent, in: Circle()) }
@@ -4252,6 +4275,17 @@ private struct NativeStudioView: View {
         let title = String(text.prefix(28))
         guard (try? await NativeHouseAPI.object("/api/work/task", method: "POST", body: ["title": title, "prompt": text])) != nil else { draft = text; return }
         await refresh()
+    }
+    @MainActor private func uploadFile(_ url: URL) async {
+        let access = url.startAccessingSecurityScopedResource(); defer { if access { url.stopAccessingSecurityScopedResource() } }
+        guard let data = try? Data(contentsOf: url) else { return }; await upload(data, filename: url.lastPathComponent)
+    }
+    @MainActor private func upload(_ data: Data, filename: String) async {
+        var components = URLComponents(url: AlcoveAPI.fullURL("/api/work/upload"), resolvingAgainstBaseURL: false)!
+        components.queryItems = [URLQueryItem(name: "filename", value: filename)]
+        var request = URLRequest(url: components.url!); request.httpMethod = "POST"; request.httpBody = data
+        request.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
+        guard (try? await URLSession.shared.data(for: request)) != nil else { return }; await refresh()
     }
     @MainActor private func action(_ task: [String: Any], _ action: String) async { guard (try? await NativeHouseAPI.object("/api/work/task/\(task.int("id"))/\(action)", method: "POST", body: [:])) != nil else { return }; await refresh() }
     @MainActor private func deliver(_ task: [String: Any]) async {
