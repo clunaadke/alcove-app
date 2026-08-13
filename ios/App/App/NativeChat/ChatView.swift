@@ -984,6 +984,8 @@ private struct SelectableMessageText: UIViewRepresentable {
     let fontSize: CGFloat
     let lineSpacing: CGFloat
     let color: UIColor
+    var maximumNumberOfLines: Int = 0
+    var onTruncationChange: ((Bool) -> Void)? = nil
     let onAsk: (String) -> Void
     let onCopyTurn: () -> Void
 
@@ -1011,7 +1013,9 @@ private struct SelectableMessageText: UIViewRepresentable {
         // 后台每 2.5 秒轮询会让 SwiftUI 重跑 updateUIView。正文其实没变，
         // 但重新赋 attributedText 会强制收掉 iOS 的选区和复制菜单。
         // 同一份渲染直接跳过；用户正在选字时，即使主题恰好变化也先让她选完。
-        let renderedKey = "\(text)\u{1f}\(fontSize)\u{1f}\(lineSpacing)\u{1f}\(color.description)"
+        view.textContainer.maximumNumberOfLines = maximumNumberOfLines
+        view.textContainer.lineBreakMode = maximumNumberOfLines > 0 ? .byTruncatingTail : .byWordWrapping
+        let renderedKey = "\(text)\u{1f}\(fontSize)\u{1f}\(lineSpacing)\u{1f}\(color.description)\u{1f}\(maximumNumberOfLines)"
         guard context.coordinator.renderedKey != renderedKey else { return }
         guard view.selectedRange.length == 0 else { return }
         let source = (try? AttributedString(markdown: text,
@@ -1034,11 +1038,22 @@ private struct SelectableMessageText: UIViewRepresentable {
         rendered.addAttribute(.paragraphStyle, value: paragraph, range: all)
         view.attributedText = rendered
         context.coordinator.renderedKey = renderedKey
+        reportTruncation(view)
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: AskSelectableTextView, context: Context) -> CGSize? {
         guard let width = proposal.width else { return nil }
-        return uiView.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
+        let size = uiView.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
+        DispatchQueue.main.async { reportTruncation(uiView) }
+        return size
+    }
+
+    private func reportTruncation(_ view: UITextView) {
+        guard maximumNumberOfLines > 0, let onTruncationChange else { return }
+        view.layoutManager.ensureLayout(for: view.textContainer)
+        let shown = view.layoutManager.glyphRange(for: view.textContainer)
+        let truncated = NSMaxRange(shown) < view.layoutManager.numberOfGlyphs
+        DispatchQueue.main.async { onTruncationChange(truncated) }
     }
 }
 
@@ -1068,6 +1083,10 @@ struct MessageRow: View {
     @State private var showRecall = false
     @State private var showPulse = false
     @State private var showFullText = false
+    @State private var fullTextIsTruncated = false
+    @State private var showReaderSettings = false
+    @State private var readerFontSize: Double = 17
+    @State private var readerLineSpacing: Double = 8
     @Environment(\.bubbleGlassStyle) private var bubbleGlassStyle
 
     private var isUser: Bool { msg.role == "user" }
@@ -1236,24 +1255,53 @@ struct MessageRow: View {
             }
         }
         .fullScreenCover(isPresented: $showFullText) {
-            NavigationStack {
-                ScrollView {
-                    Text(msg.displayText)
-                        .font(.system(size: CGFloat(fontSize)))
-                        .lineSpacing(theme.isPaper ? 7 : 5)
-                        .foregroundColor(theme.text)
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .topLeading)
-                        .padding(22)
-                }
-                .background(theme.fade.ignoresSafeArea())
-                .navigationTitle("正文")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("关闭") { showFullText = false }
+            ZStack {
+                Color(red: 0.995, green: 0.965, blue: 0.972).ignoresSafeArea()
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .stroke(Color(red: 0.72, green: 0.54, blue: 0.60).opacity(0.24), lineWidth: 1)
+                    .padding(14)
+                VStack(spacing: 0) {
+                    HStack {
+                        Button { showFullText = false } label: {
+                            Image(systemName: "xmark").frame(width: 36, height: 36)
+                        }
+                        Spacer()
+                        Image(systemName: "sparkles").font(.system(size: 13)).opacity(0.35)
+                        Button { showReaderSettings.toggle() } label: {
+                            Image(systemName: "textformat.size").frame(width: 36, height: 36)
+                        }
                     }
+                    .foregroundColor(Color(red: 0.42, green: 0.30, blue: 0.34))
+                    .padding(.horizontal, 25).padding(.top, 10)
+                    ScrollView {
+                        Text(msg.displayText)
+                            .font(.system(size: readerFontSize, design: .serif))
+                            .lineSpacing(readerLineSpacing)
+                            .foregroundColor(Color(red: 0.28, green: 0.22, blue: 0.24))
+                            .textSelection(.enabled)
+                            .frame(maxWidth: 620, alignment: .leading)
+                            .padding(.horizontal, 36).padding(.vertical, 28)
+                            .frame(maxWidth: .infinity)
+                    }
+                    Image(systemName: "heart.text.square")
+                        .font(.system(size: 14)).opacity(0.22).padding(.bottom, 18)
                 }
+            }
+            .sheet(isPresented: $showReaderSettings) {
+                VStack(alignment: .leading, spacing: 22) {
+                    Text("阅读设置").font(.headline)
+                    VStack(alignment: .leading) {
+                        Text("字号  \(Int(readerFontSize))")
+                        Slider(value: $readerFontSize, in: 14...25, step: 1)
+                    }
+                    VStack(alignment: .leading) {
+                        Text("行距  \(Int(readerLineSpacing))")
+                        Slider(value: $readerLineSpacing, in: 3...18, step: 1)
+                    }
+                    Spacer()
+                }
+                .padding(24)
+                .presentationDetents([.height(280)])
             }
         }
     }
@@ -1306,11 +1354,9 @@ struct MessageRow: View {
             .contentShape(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
             )
-            .frame(maxHeight: msg.displayText.count > 600 ? 360 : nil, alignment: .top)
-            .clipped()
             .simultaneousGesture(
                 TapGesture(count: 2).onEnded {
-                    if msg.displayText.count > 600 { showFullText = true }
+                    if !isUser && fullTextIsTruncated { showFullText = true }
                 }
             )
     }
@@ -1331,12 +1377,23 @@ struct MessageRow: View {
                 fontSize: CGFloat(fontSize),
                 lineSpacing: theme.isPaper ? 7 : 5,
                 color: UIColor(msg.asleepAtSend ? theme.textDim : theme.text),
+                maximumNumberOfLines: isUser ? 0 : 17,
+                onTruncationChange: { fullTextIsTruncated = $0 },
                 onAsk: { onQuote?($0) },
                 onCopyTurn: {
                     UIPasteboard.general.string = wholeTurnText.isEmpty
                         ? msg.displayText : wholeTurnText
                 }
             )
+            if !isUser && fullTextIsTruncated {
+                Button { showFullText = true } label: {
+                    Text("余下的话，藏在这一页之后。")
+                        .font(.system(size: 13, weight: .regular, design: .serif).italic())
+                        .foregroundColor(theme.textDim.opacity(0.72))
+                        .padding(.top, 3)
+                }
+                .buttonStyle(.plain)
+            }
         }
     }
 
