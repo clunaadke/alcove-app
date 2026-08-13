@@ -4150,7 +4150,7 @@ private struct NativeWorkbenchView: View {
         .task {
             while !Task.isCancelled {
                 await refresh()
-                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                try? await Task.sleep(nanoseconds: 10_000_000_000)
             }
         }
     }
@@ -4570,14 +4570,15 @@ private struct NativeWorkbenchView: View {
         async let workbench = try? NativeHouseAPI.object("/api/workbench")
         async let roundtable = try? NativeHouseAPI.object("/api/roundtable/status")
         async let sleep = try? NativeHouseAPI.object("/api/sleep/status")
-        let (work, members, sleeping) = await (workbench, roundtable, sleep)
+        async let contacts = try? NativeHouseAPI.object("/api/workbench/contacts")
+        let (work, members, sleeping, contactData) = await (workbench, roundtable, sleep, contacts)
         if var object = work {
             object["_members"] = members?.array("members") ?? []
             object["_assistant_asleep"] = sleeping?.string("state") == "asleep"
             data = object
         }
+        if let contactData { contactItems = contactData.array("items") }
         loading = false
-        await loadContacts()
     }
 
     private func agentStatus(_ index: Int) -> (label: String, color: Color) {
