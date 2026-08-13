@@ -7314,7 +7314,7 @@ private struct NativeActivityRoomView: View {
                     }
                     .frame(height: geo.size.height * 0.278)
                     .padding(.horizontal, 17)
-                    .offset(x: 2, y: 14)
+                    .offset(x: 2, y: 29)
                     Color.clear
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .contentShape(Rectangle())
