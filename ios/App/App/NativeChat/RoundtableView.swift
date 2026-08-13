@@ -317,7 +317,7 @@ struct RoundtableView: View {
         .onChange(of: rtAvatarGpt) { _ in refreshRTImageCache() }
         .sheet(isPresented: $showCamera) {
             CameraView { image in
-                if let jpeg = image.jpegData(compressionQuality: 0.85) { pendingImages.append((image, jpeg)) }
+                if let prepared = UploadImage.prepare(image) { pendingImages.append(prepared) }
             }
         }
         .sheet(isPresented: $showDocPicker) {
@@ -334,7 +334,7 @@ struct RoundtableView: View {
         .sheet(isPresented: $showPhotoPicker) {
             PhotoLibraryPicker(maxCount: 9) { images in
                 for image in images {
-                    if let jpeg = image.jpegData(compressionQuality: 0.85) { pendingImages.append((image, jpeg)) }
+                    if let prepared = UploadImage.prepare(image) { pendingImages.append(prepared) }
                 }
             }
         }

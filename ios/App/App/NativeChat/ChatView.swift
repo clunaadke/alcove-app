@@ -107,8 +107,8 @@ struct ChatView: View {
         }
         .sheet(isPresented: $showCamera) {
             CameraView { image in
-                if let jpeg = image.jpegData(compressionQuality: 0.85) {
-                    pendingImages.append((thumb: image, jpeg: jpeg))
+                if let prepared = UploadImage.prepare(image) {
+                    pendingImages.append(prepared)
                 }
             }
         }
@@ -127,8 +127,8 @@ struct ChatView: View {
         .sheet(isPresented: $showPhotoPicker) {
             PhotoLibraryPicker(maxCount: 9) { images in
                 for img in images {
-                    if let jpeg = img.jpegData(compressionQuality: 0.85) {
-                        pendingImages.append((thumb: img, jpeg: jpeg))
+                    if let prepared = UploadImage.prepare(img) {
+                        pendingImages.append(prepared)
                     }
                 }
             }
@@ -174,8 +174,8 @@ struct ChatView: View {
                 for item in items {
                     if let raw = try? await item.loadTransferable(type: Data.self),
                        let img = UIImage(data: raw),
-                       let jpeg = img.jpegData(compressionQuality: 0.85) {
-                        pendingImages.append((thumb: img, jpeg: jpeg))
+                       let prepared = UploadImage.prepare(img) {
+                        pendingImages.append(prepared)
                     }
                 }
             }
@@ -2570,6 +2570,42 @@ struct PhotoLibraryPicker: UIViewControllerRepresentable {
             group.notify(queue: .main) {
                 self.parent.onPick(images)
             }
+        }
+    }
+}
+
+// MARK: 上传前的图片处理
+
+/// 0813 查卡顿查出来的病根：三个入口都只调 jpegData(compressionQuality:)，
+/// 只压质量不降分辨率。iPhone 直出 4032×3024，一张 2-4MB 原样上行，
+/// 相册一次还能选九张。库里 1875 张图有 172 张超过 2MB。
+/// 长边压到 2048 之后约掉到十分之一，她屏幕上看不出差别。
+/// 缩完的图同时当预览条的缩略图用，省得全尺寸 UIImage 堆在内存里。
+enum UploadImage {
+    static let maxEdge: CGFloat = 2048
+    static let quality: CGFloat = 0.8
+
+    static func prepare(_ image: UIImage) -> (thumb: UIImage, jpeg: Data)? {
+        let scaled = downscaled(image)
+        guard let data = scaled.jpegData(compressionQuality: quality) else { return nil }
+        return (scaled, data)
+    }
+
+    static func downscaled(_ image: UIImage) -> UIImage {
+        // size 是点数，乘 scale 才是真实像素——相机和相册来的图 scale 不一定是 1
+        let pixelWidth = image.size.width * image.scale
+        let pixelHeight = image.size.height * image.scale
+        let longest = max(pixelWidth, pixelHeight)
+        guard longest > maxEdge, longest > 0 else { return image }
+        let ratio = maxEdge / longest
+        let target = CGSize(width: (pixelWidth * ratio).rounded(),
+                            height: (pixelHeight * ratio).rounded())
+        let format = UIGraphicsImageRendererFormat.default()
+        // target 已经是像素目标，再乘屏幕倍率会画出三倍大的图
+        format.scale = 1
+        format.opaque = true
+        return UIGraphicsImageRenderer(size: target, format: format).image { _ in
+            image.draw(in: CGRect(origin: .zero, size: target))
         }
     }
 }
