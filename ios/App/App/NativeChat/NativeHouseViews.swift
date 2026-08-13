@@ -4044,7 +4044,7 @@ private struct NativeWorkbenchView: View {
                 Spacer(minLength: 0)
             }
             HStack {
-                Text("窗口累计 \(compact(window))")
+                Text("历史累计 \(compact(window))")
                 Spacer()
                 Text("·")
                 Text(String(format: "命中 %.1f%%", hit)).foregroundColor(color)
