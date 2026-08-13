@@ -4153,7 +4153,7 @@ private struct NativeStudioView: View {
             if let task = currentOrLatestTask, task.string("status") == "queued" { Button("暂停排队任务") { Task { await action(task, "pause") } } }
             if let task = currentOrLatestTask, task.string("status") == "paused" { Button("继续任务") { Task { await action(task, "resume") } } }
             if let task = latestDoneTask { Button("带回主聊天") { Task { await deliver(task) } } }
-            if currentOrLatestTask == nil { Button("当前没有可操作任务", role: .cancel) {} }
+            if !hasStudioAction { Button("当前没有可操作任务", role: .cancel) {} }
             Button("取消", role: .cancel) {}
         }
         .task { while !Task.isCancelled { await refresh(); try? await Task.sleep(nanoseconds: 2_000_000_000) } }
@@ -4262,7 +4262,15 @@ private struct NativeStudioView: View {
     private var stateText: String { switch status.string("state") { case "running", "busy": return "工作中"; case "idle": return "待命"; case "dead": return "工作室未开启"; default: return "连接中" } }
     private var stateColor: Color { status.string("state") == "busy" || status.string("state") == "running" ? .orange : status.string("state") == "dead" ? .gray : .green }
     private var currentOrLatestTask: [String: Any]? { (status["current_task"] as? [String: Any]) ?? tasks.first }
-    private var latestDoneTask: [String: Any]? { tasks.first { $0.string("status") == "done" && $0["deliver_card_id"] == nil } }
+    private var latestDoneTask: [String: Any]? {
+        tasks.first {
+            $0.string("status") == "done" && ($0["deliver_card_id"] == nil || $0["deliver_card_id"] is NSNull)
+        }
+    }
+    private var hasStudioAction: Bool {
+        if let task = currentOrLatestTask, ["queued", "paused"].contains(task.string("status")) { return true }
+        return latestDoneTask != nil
+    }
 
     @MainActor private func refresh() async {
         async let s = try? NativeHouseAPI.object("/api/work/status"); async let t = try? NativeHouseAPI.object("/api/work/tasks"); async let m = try? NativeHouseAPI.object("/api/work/messages")
