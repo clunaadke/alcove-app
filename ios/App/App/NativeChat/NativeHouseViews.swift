@@ -7150,11 +7150,24 @@ private struct NativeActivityRoomView: View {
                 Image("ActivityRoomTitle")
                     .resizable()
                     .scaledToFit()
-                    .frame(width: geo.size.width * 0.82)
+                    .frame(width: geo.size.width * 0.41)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     .padding(.leading, geo.size.width * 0.055)
                     .padding(.top, max(geo.safeAreaInsets.top + 8, 48))
                     .allowsHitTesting(false)
+
+                Button(action: openCalendar) {
+                    Image("ActivityRoomCalendar")
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: geo.size.width * 0.165)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("打开房间月历")
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                .padding(.trailing, geo.size.width * 0.04)
+                .padding(.top, max(geo.safeAreaInsets.top + 8, 48))
 
                 VStack(spacing: 10) {
                     roomHero(height: geo.size.height * 0.538)
@@ -7193,16 +7206,6 @@ private struct NativeActivityRoomView: View {
             }
             .padding(.horizontal, 10)
             .padding(.top, 154)
-            Button(action: openCalendar) {
-                Color.clear
-                    .frame(width: 66, height: 72)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("打开房间月历")
-            .frame(maxWidth: .infinity, alignment: .trailing)
-            .padding(.top, 72)
-            .padding(.trailing, 6)
         }
     }
 
