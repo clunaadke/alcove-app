@@ -1082,11 +1082,6 @@ struct MessageRow: View {
     @State private var showActivity = false   // 0730 过程记录展开
     @State private var showRecall = false
     @State private var showPulse = false
-    @State private var showFullText = false
-    @State private var fullTextIsTruncated = false
-    @State private var showReaderSettings = false
-    @State private var readerFontSize: Double = 17
-    @State private var readerLineSpacing: Double = 8
     @Environment(\.bubbleGlassStyle) private var bubbleGlassStyle
 
     private var isUser: Bool { msg.role == "user" }
@@ -1256,56 +1251,6 @@ struct MessageRow: View {
                 .padding(.top, 10).padding(.trailing, 12)
             }
         }
-        .fullScreenCover(isPresented: $showFullText) {
-            ZStack {
-                Color(red: 0.995, green: 0.965, blue: 0.972).ignoresSafeArea()
-                RoundedRectangle(cornerRadius: 28, style: .continuous)
-                    .stroke(Color(red: 0.72, green: 0.54, blue: 0.60).opacity(0.24), lineWidth: 1)
-                    .padding(14)
-                VStack(spacing: 0) {
-                    HStack {
-                        Button { showFullText = false } label: {
-                            Image(systemName: "xmark").frame(width: 36, height: 36)
-                        }
-                        Spacer()
-                        Image(systemName: "sparkles").font(.system(size: 13)).opacity(0.35)
-                        Button { showReaderSettings.toggle() } label: {
-                            Image(systemName: "textformat.size").frame(width: 36, height: 36)
-                        }
-                    }
-                    .foregroundColor(Color(red: 0.42, green: 0.30, blue: 0.34))
-                    .padding(.horizontal, 25).padding(.top, 10)
-                    ScrollView {
-                        Text(msg.displayText)
-                            .font(.system(size: readerFontSize, design: .serif))
-                            .lineSpacing(readerLineSpacing)
-                            .foregroundColor(Color(red: 0.28, green: 0.22, blue: 0.24))
-                            .textSelection(.enabled)
-                            .frame(maxWidth: 620, alignment: .leading)
-                            .padding(.horizontal, 36).padding(.vertical, 28)
-                            .frame(maxWidth: .infinity)
-                    }
-                    Image(systemName: "heart.text.square")
-                        .font(.system(size: 14)).opacity(0.22).padding(.bottom, 18)
-                }
-            }
-            .sheet(isPresented: $showReaderSettings) {
-                VStack(alignment: .leading, spacing: 22) {
-                    Text("阅读设置").font(.headline)
-                    VStack(alignment: .leading) {
-                        Text("字号  \(Int(readerFontSize))")
-                        Slider(value: $readerFontSize, in: 14...25, step: 1)
-                    }
-                    VStack(alignment: .leading) {
-                        Text("行距  \(Int(readerLineSpacing))")
-                        Slider(value: $readerLineSpacing, in: 3...18, step: 1)
-                    }
-                    Spacer()
-                }
-                .padding(24)
-                .presentationDetents([.height(280)])
-            }
-        }
     }
 
     private var visibleChatThought: String? {
@@ -1356,11 +1301,7 @@ struct MessageRow: View {
             .contentShape(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
             )
-            .simultaneousGesture(
-                TapGesture(count: 2).onEnded {
-                    if !isUser && fullTextIsTruncated { showFullText = true }
-                }
-            )
+
     }
 
     private var bubbleContents: some View {
@@ -1379,23 +1320,14 @@ struct MessageRow: View {
                 fontSize: CGFloat(fontSize),
                 lineSpacing: theme.isPaper ? 7 : 5,
                 color: UIColor(msg.asleepAtSend ? theme.textDim : theme.text),
-                maximumNumberOfLines: isUser ? 0 : 17,
-                onTruncationChange: { fullTextIsTruncated = $0 },
+                maximumNumberOfLines: 0,
+                onTruncationChange: { _ in },
                 onAsk: { onQuote?($0) },
                 onCopyTurn: {
                     UIPasteboard.general.string = wholeTurnText.isEmpty
                         ? msg.displayText : wholeTurnText
                 }
             )
-            if !isUser && fullTextIsTruncated {
-                Button { showFullText = true } label: {
-                    Text("余下的话，藏在这一页之后。")
-                        .font(.system(size: 13, weight: .regular, design: .serif).italic())
-                        .foregroundColor(theme.textDim.opacity(0.72))
-                        .padding(.top, 3)
-                }
-                .buttonStyle(.plain)
-            }
         }
     }
 

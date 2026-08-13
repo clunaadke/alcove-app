@@ -4,6 +4,7 @@ import SwiftUI
 @MainActor
 final class ChatStore: ObservableObject {
     @Published var messages: [ChatMessage] = []
+    private var deletedMessageTs: Set<String> = []
     @Published var isTyping = false
     @Published var currentTool: String?
     @Published var stickers: [Sticker] = []
@@ -465,6 +466,8 @@ final class ChatStore: ObservableObject {
         }
         var out = messages
         for rec in recs {
+            // 删除请求与轮询可能交叉：服务器旧快照晚到时不能把已删气泡复活。
+            if deletedMessageTs.contains(rec.ts) { continue }
             if rec.role == "user",
                let idx = out.lastIndex(where: { $0.pending && $0.text == rec.text }) {
                 out[idx] = rec
@@ -506,6 +509,7 @@ final class ChatStore: ObservableObject {
     }
 
     func deleteMessage(_ msg: ChatMessage) {
+        deletedMessageTs.insert(msg.ts)
         let keepsAttachment = !(msg.attachmentUrl ?? "").isEmpty
         if keepsAttachment, let index = messages.firstIndex(where: { $0.uid == msg.uid }) {
             messages[index].text = ""
@@ -513,7 +517,12 @@ final class ChatStore: ObservableObject {
             messages.removeAll { $0.uid == msg.uid }
         }
         Task {
-            try? await AlcoveAPI.deleteMessage(ts: msg.ts, textOnly: keepsAttachment)
+            do {
+                try await AlcoveAPI.deleteMessage(ts: msg.ts, textOnly: keepsAttachment)
+            } catch {
+                deletedMessageTs.remove(msg.ts)
+                connectionError = true
+            }
         }
     }
 
@@ -522,6 +531,7 @@ final class ChatStore: ObservableObject {
     }
 
     func deleteMessages(_ selected: [ChatMessage]) {
+        selected.forEach { deletedMessageTs.insert($0.ts) }
         let removeIDs = Set(selected.compactMap {
             ($0.attachmentUrl ?? "").isEmpty ? $0.uid : nil
         })
