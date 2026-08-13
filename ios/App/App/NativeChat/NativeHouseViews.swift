@@ -4293,7 +4293,11 @@ private struct NativeStudioView: View {
         components.queryItems = [URLQueryItem(name: "filename", value: filename)]
         var request = URLRequest(url: components.url!); request.httpMethod = "POST"; request.httpBody = data
         request.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
-        guard (try? await URLSession.shared.data(for: request)) != nil else { return }; await refresh()
+        guard let (data, _) = try? await URLSession.shared.data(for: request),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              object["ok"] as? Bool == true else { return }
+        if let message = object["message"] as? [String: Any] { messages.append(message) }
+        await refresh()
     }
     @MainActor private func action(_ task: [String: Any], _ action: String) async { guard (try? await NativeHouseAPI.object("/api/work/task/\(task.int("id"))/\(action)", method: "POST", body: [:])) != nil else { return }; await refresh() }
     @MainActor private func deliver(_ task: [String: Any]) async {
