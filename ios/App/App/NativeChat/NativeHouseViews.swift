@@ -7555,14 +7555,30 @@ private struct NativeActivityRoomView: View {
     }
 
     private var roomBackground: String {
-        if weatherCode >= 10 { return isNight ? "ActivityRoomRain" : "ActivityRoomRainyDay" }
-        if weatherCode >= 4 { return "ActivityRoomOvercast" }
+        if rainyWeatherCodes.contains(weatherCode) { return isNight ? "ActivityRoomRain" : "ActivityRoomRainyDay" }
+        if weatherCode >= 2 { return "ActivityRoomOvercast" }
         return isNight ? "ActivityRoomAfterglow" : "ActivityRoomSunny"
     }
 
     private var weatherLabel: String {
-        let condition = weatherCode >= 10 ? "雨" : weatherCode >= 4 ? "阴" : "晴"
+        let condition: String
+        switch weatherCode {
+        case 0, 1: condition = "晴"
+        case 2: condition = "多云"
+        case 3: condition = "阴"
+        case 45, 48: condition = "雾"
+        case 51, 53, 55, 56, 57: condition = "毛毛雨"
+        case 61, 63, 65, 66, 67: condition = "雨"
+        case 71, 73, 75, 77, 85, 86: condition = "雪"
+        case 80, 81, 82: condition = "阵雨"
+        case 95, 96, 99: condition = "雷雨"
+        default: condition = "多云"
+        }
         return "武汉 · \(condition) \(Int(weatherTemp.rounded()))°"
+    }
+
+    private var rainyWeatherCodes: Set<Int> {
+        [51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82, 95, 96, 99]
     }
 
     var body: some View {
