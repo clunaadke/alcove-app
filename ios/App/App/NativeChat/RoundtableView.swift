@@ -214,6 +214,7 @@ struct RoundtableView: View {
     @State private var paginationReady = false
     @State private var preservingHistoryPosition = false
     @State private var observedTailID: Int?
+    @State private var entryID = UUID()
     @State private var isNearBottom = true
     @State private var tailVisible = true
     @State private var showConsole = false
@@ -288,6 +289,7 @@ struct RoundtableView: View {
                     .ignoresSafeArea()
 
                 messageList
+                    .id(entryID)
 
                 header
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -302,6 +304,11 @@ struct RoundtableView: View {
         }
         .foregroundColor(theme.text)
         .onAppear {
+            observedTailID = nil
+            isNearBottom = true
+            tailVisible = true
+            paginationReady = false
+            entryID = UUID()
             refreshRTImageCache()
             store.start()
         }
@@ -865,6 +872,31 @@ struct RoundtableView: View {
     }
 }
 
+private struct RoundtableRemoteImage: View {
+    let previewURL: URL
+    let originalURL: URL
+
+    var body: some View {
+        AsyncImage(url: previewURL) { phase in
+            switch phase {
+            case .success(let image):
+                image.resizable().scaledToFit()
+            case .failure:
+                AsyncImage(url: originalURL) { originalPhase in
+                    switch originalPhase {
+                    case .success(let image): image.resizable().scaledToFit()
+                    case .failure: Image(systemName: "photo").foregroundStyle(.secondary)
+                    default: ProgressView()
+                    }
+                }
+            default:
+                ProgressView()
+            }
+        }
+        .frame(minWidth: 90, minHeight: 90)
+    }
+}
+
 private struct RoundtableRow: View {
     let msg: RoundtableMessage
     let showAvatar: Bool
@@ -957,8 +989,10 @@ private struct RoundtableRow: View {
                                           onOpen: onTapImages)
                         .matchedTransitionSource(id: "rt-\(msg.id)", in: photoNamespace)
                 } else if msg.attachmentType == "image", let raw = msg.attachmentURL {
-                    AsyncImage(url: AlcoveAPI.attachmentThumbnailURL(raw)) { image in image.resizable().scaledToFit() }
-                    placeholder: { ProgressView().frame(width: 180, height: 140) }
+                    RoundtableRemoteImage(
+                        previewURL: AlcoveAPI.attachmentThumbnailURL(raw),
+                        originalURL: AlcoveAPI.attachmentURL(raw)
+                    )
                     .frame(maxWidth: msg.attachmentFilename?.hasPrefix("sticker_") == true ? 110 : 220,
                            maxHeight: msg.attachmentFilename?.hasPrefix("sticker_") == true ? 110 : 300)
                     .clipShape(RoundedRectangle(cornerRadius: 14))

@@ -7879,7 +7879,7 @@ private struct NativeActivityRoomView: View {
                     }
                     .frame(height: geo.size.height * 0.278)
                     .padding(.horizontal, 17)
-                    .offset(x: 2, y: 29)
+                    .offset(x: -2, y: 34)
                     Color.clear
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .contentShape(Rectangle())
@@ -7983,7 +7983,7 @@ private struct NativeActivityRoomView: View {
                 Capsule().fill(Color.black.opacity(0.42))
                     .overlay(alignment: .leading) {
                         Capsule().fill(ActivityRoomInk.gold)
-                            .frame(width: geo.size.width * CGFloat(count) / CGFloat(target))
+                            .frame(width: geo.size.width * min(1, max(0, CGFloat(count) / CGFloat(target))))
                     }
             }.frame(height: 4)
         }
