@@ -2812,6 +2812,8 @@ private struct QuietRoomView: View {
     @State private var loading = true
     @State private var sending = false
     @State private var error = ""
+    @State private var chosenHours = 2
+    @State private var choosingDuration = false
     @AppStorage("alcoveTheme") private var themeName = "haven"
     private var theme: AlcoveTheme { .panelNamed(themeName) }
 
@@ -2848,7 +2850,7 @@ private struct QuietRoomView: View {
                         setQuiet(on: true)
                     }
                     quietChoice("借我片刻", "安静两个小时\n再轻轻回来", "hourglass") {
-                        setQuiet(on: true, hours: 2)
+                        choosingDuration = true
                     }
                 }
             }
@@ -2859,6 +2861,21 @@ private struct QuietRoomView: View {
         }
         .padding(22)
         .foregroundColor(theme.text)
+        .sheet(isPresented: $choosingDuration) {
+            NavigationStack {
+                VStack(spacing: 22) {
+                    Text("想安静多久").font(.system(size: 22, weight: .semibold, design: .serif))
+                    Picker("静默时长", selection: $chosenHours) {
+                        ForEach(1...24, id: \.self) { Text("\($0) 小时").tag($0) }
+                    }.pickerStyle(.wheel).frame(height: 180)
+                    Button { choosingDuration = false; setQuiet(on: true, hours: chosenHours) } label: {
+                        Text("安静 \(chosenHours) 小时").font(.system(size: 14, weight: .semibold))
+                            .frame(maxWidth: .infinity).frame(height: 46)
+                    }.buttonStyle(.borderedProminent).tint(theme.fyAccent)
+                }.padding(22).foregroundColor(theme.text)
+                    .toolbar { ToolbarItem(placement: .cancellationAction) { Button("取消") { choosingDuration = false } } }
+            }.presentationDetents([.height(360)])
+        }
         .task {
             while !Task.isCancelled {
                 await refresh()
@@ -8062,7 +8079,7 @@ private struct FictionQuotesView: View {
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                             }.frame(maxWidth: .infinity, alignment: .leading)
-                            }.padding(14).contentShape(Rectangle()).foyerCard(theme)
+                            .padding(14).contentShape(Rectangle()).foyerCard(theme)
                                 .onTapGesture { if selecting { toggle(row) } }
                                 .onLongPressGesture { selecting = true; selected.insert(row.id) }
                         }
