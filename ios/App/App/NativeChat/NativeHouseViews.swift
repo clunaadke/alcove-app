@@ -194,8 +194,10 @@ struct NativeHouseSheet: View {
                     )
                 case .bubbleAppearance:
                     BubbleAppearanceSettingsView()
-                case .crosstalk, .coread, .liao:
+                case .crosstalk, .liao:
                     NativePlayView(destination: route)
+                case .coread:
+                    NativeCoreadRoomView()
                 case .checklist:
                     NativeChecklistView()
                 case .music:
@@ -282,7 +284,7 @@ struct NativeHouseSheet: View {
 
     private func houseHeader(safeTop: CGFloat) -> some View {
         ZStack {
-            if route != .activityRoom {
+            if route != .activityRoom && route != .coread {
                 Text(route.title)
                     .font(.system(size: 17, weight: .semibold, design: .serif))
                     .tracking(0.4)
@@ -306,8 +308,8 @@ struct NativeHouseSheet: View {
                 Spacer()
             }
         }
-        .frame(height: route == .activityRoom ? 0 : 46)
-        .padding(.top, route == .activityRoom ? 0 : safeTop)
+        .frame(height: route == .activityRoom || route == .coread ? 0 : 46)
+        .padding(.top, route == .activityRoom || route == .coread ? 0 : safeTop)
         .padding(.horizontal, 12)
         .background(
             LinearGradient(colors: [theme.fyCardSub.opacity(0.46), .clear],
@@ -3512,6 +3514,275 @@ private struct WebHouseView: View {
                 .overlay(RoundedRectangle(cornerRadius: 18).stroke(theme.glassBorder, lineWidth: 1))
         }
         .padding(.horizontal, 12).padding(.bottom, 12)
+    }
+}
+
+// MARK: - 共读室
+
+private struct CoreadBook: Identifiable, Hashable {
+    let id: String
+    let title: String
+    let chapters: Int
+    let currentChapter: Int
+    let chapterTitles: [String]
+    let coverURL: String?
+
+    init(_ value: [String: Any]) {
+        id = value.string("id")
+        title = value.string("title")
+        chapters = value.int("total_chapters")
+        currentChapter = value.int("current_chapter")
+        chapterTitles = value["chapter_titles"] as? [String] ?? []
+        coverURL = value.string("cover_url", "cover").isEmpty ? nil : value.string("cover_url", "cover")
+    }
+}
+
+private struct NativeCoreadRoomView: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var books: [CoreadBook] = []
+    @State private var selected: CoreadBook?
+    @State private var reading: (CoreadBook, Int)?
+    @State private var page = 0
+    @State private var loading = true
+    @State private var error = ""
+
+    private var isNight: Bool {
+        let hour = Calendar.current.component(.hour, from: Date())
+        return hour < 6 || hour >= 19
+    }
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack {
+                Image(isNight ? "CoreadNight" : "CoreadDay")
+                    .resizable().scaledToFill()
+                    .frame(width: geo.size.width, height: geo.size.height)
+                    .clipped().ignoresSafeArea()
+
+                if let (book, chapter) = reading {
+                    CoreadReaderView(book: book, chapter: chapter) { reading = nil }
+                } else if let book = selected {
+                    CoreadDetailView(book: book, onBack: { selected = nil }) { chapter in
+                        reading = (book, chapter)
+                    }
+                } else {
+                    shelf(geo)
+                }
+
+                if selected == nil && reading == nil {
+                    Button { dismiss() } label: {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundColor(Color(red: 0.35, green: 0.28, blue: 0.31))
+                            .frame(width: 44, height: 44)
+                            .background(.white.opacity(0.64), in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .position(x: 34, y: max(geo.safeAreaInsets.top + 22, 43))
+                }
+            }
+        }
+        .task { await loadBooks() }
+    }
+
+    @ViewBuilder private func shelf(_ geo: GeometryProxy) -> some View {
+        let pages = max(1, Int(ceil(Double(books.count) / 6.0)))
+        VStack(spacing: 0) {
+            Spacer().frame(height: geo.size.height * 0.278)
+            if loading { ProgressView().tint(.pink.opacity(0.7)) }
+            else if !error.isEmpty { Text(error).font(.system(size: 12)).foregroundColor(.secondary) }
+            else {
+                TabView(selection: $page) {
+                    ForEach(0..<pages, id: \.self) { pageIndex in
+                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 11), count: 3), spacing: 28) {
+                            ForEach(Array(books.dropFirst(pageIndex * 6).prefix(6))) { book in
+                                Button { selected = book } label: { CoreadBookSlot(book: book) }
+                                    .buttonStyle(CoreadPressStyle())
+                            }
+                        }
+                        .padding(.horizontal, geo.size.width * 0.072)
+                        .tag(pageIndex)
+                    }
+                }
+                .tabViewStyle(.page(indexDisplayMode: .never))
+                .frame(height: geo.size.height * 0.405)
+                Text("\(page + 1) / \(pages)")
+                    .font(.system(size: 10, weight: .medium, design: .rounded))
+                    .foregroundColor(Color(red: 0.47, green: 0.39, blue: 0.43).opacity(0.7))
+                    .padding(.top, 3)
+            }
+            Spacer()
+            HStack(spacing: 34) {
+                coreadAction("正在共读", "person.2.fill") {
+                    if let book = books.first { reading = (book, min(book.currentChapter, max(0, book.chapters - 1))) }
+                }
+                coreadAction("随机抽一本", "dice.fill") {
+                    if let book = books.randomElement() { selected = book }
+                }
+            }
+            .padding(.bottom, max(geo.safeAreaInsets.bottom + 14, 30))
+        }
+    }
+
+    private func coreadAction(_ title: String, _ icon: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: icon)
+                .font(.system(size: 12, weight: .semibold, design: .rounded))
+                .foregroundColor(Color(red: 0.37, green: 0.29, blue: 0.33))
+                .padding(.horizontal, 14).frame(height: 42)
+                .background(.white.opacity(0.66), in: Capsule())
+        }.buttonStyle(CoreadPressStyle())
+    }
+
+    @MainActor private func loadBooks() async {
+        loading = true; defer { loading = false }
+        do {
+            books = try await NativeHouseAPI.array("/read/api/books").map(CoreadBook.init)
+            error = ""
+        } catch { error = "书架暂时没有递过来" }
+    }
+}
+
+private struct CoreadPressStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label.scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .animation(.easeOut(duration: 0.14), value: configuration.isPressed)
+    }
+}
+
+private struct CoreadBookSlot: View {
+    let book: CoreadBook
+    private let colors: [[Color]] = [
+        [Color(red: 0.76, green: 0.65, blue: 0.70), Color(red: 0.92, green: 0.84, blue: 0.86)],
+        [Color(red: 0.58, green: 0.65, blue: 0.69), Color(red: 0.81, green: 0.85, blue: 0.84)],
+        [Color(red: 0.69, green: 0.64, blue: 0.76), Color(red: 0.87, green: 0.82, blue: 0.89)]
+    ]
+    var body: some View {
+        VStack(spacing: 6) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(LinearGradient(colors: colors[abs(book.id.hashValue) % colors.count], startPoint: .topLeading, endPoint: .bottomTrailing))
+                Image(systemName: "book.closed.fill").font(.system(size: 22, weight: .light)).foregroundColor(.white.opacity(0.5))
+                Text(book.title).font(.system(size: 11, weight: .semibold, design: .serif))
+                    .foregroundColor(.white).multilineTextAlignment(.center).lineLimit(4).padding(8)
+            }
+            .aspectRatio(0.68, contentMode: .fit)
+            .shadow(color: .black.opacity(0.09), radius: 3, y: 2)
+            Text(book.title).font(.system(size: 9, weight: .medium, design: .serif))
+                .foregroundColor(Color(red: 0.32, green: 0.27, blue: 0.29)).lineLimit(1)
+            ProgressView(value: book.chapters == 0 ? 0 : Double(book.currentChapter + 1) / Double(book.chapters))
+                .tint(Color(red: 0.75, green: 0.47, blue: 0.55)).scaleEffect(y: 0.55)
+        }
+    }
+}
+
+private struct CoreadDetailView: View {
+    let book: CoreadBook
+    let onBack: () -> Void
+    let open: (Int) -> Void
+    var body: some View {
+        VStack(spacing: 18) {
+            HStack { Button(action: onBack) { Image(systemName: "chevron.left").frame(width: 44, height: 44) }; Spacer() }
+            .padding(.top, 48).padding(.horizontal, 14)
+            CoreadBookSlot(book: book).frame(width: 128)
+            Text(book.title).font(.system(size: 22, weight: .semibold, design: .serif)).multilineTextAlignment(.center)
+            Text("共 \(book.chapters) 章 · 已读到第 \(min(book.currentChapter + 1, book.chapters)) 章")
+                .font(.system(size: 12)).foregroundColor(.secondary)
+            Button { open(min(book.currentChapter, max(0, book.chapters - 1))) } label: {
+                Label("继续读下去", systemImage: "book.pages.fill").frame(maxWidth: .infinity).frame(height: 48)
+            }.buttonStyle(.borderedProminent).tint(Color(red: 0.67, green: 0.43, blue: 0.51)).padding(.horizontal, 46)
+            ScrollView {
+                LazyVStack(spacing: 9) {
+                    ForEach(0..<book.chapters, id: \.self) { index in
+                        Button { open(index) } label: {
+                            HStack { Text(book.chapterTitles.indices.contains(index) ? book.chapterTitles[index] : "第 \(index + 1) 章"); Spacer(); Image(systemName: "chevron.right") }
+                                .font(.system(size: 13, design: .serif)).padding(14)
+                                .background(.white.opacity(0.64), in: RoundedRectangle(cornerRadius: 13))
+                        }.buttonStyle(.plain)
+                    }
+                }.padding(.horizontal, 24)
+            }
+        }.foregroundColor(Color(red: 0.29, green: 0.24, blue: 0.27))
+    }
+}
+
+private struct CoreadReaderView: View {
+    let book: CoreadBook
+    let chapter: Int
+    let onBack: () -> Void
+    @State private var title = ""
+    @State private var content = ""
+    @State private var showChat = false
+    @State private var samePage = false
+    @State private var knocked = false
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Button(action: onBack) { Image(systemName: "chevron.left").frame(width: 44, height: 44) }
+                Text(title.isEmpty ? book.title : title).font(.system(size: 14, weight: .semibold, design: .serif)).lineLimit(1)
+                Spacer()
+                if samePage { Label("同页", systemImage: "person.2.fill").font(.system(size: 10, weight: .medium)).foregroundColor(.pink) }
+                Button { Task { await knock() } } label: { Image(systemName: knocked ? "hand.wave.fill" : "hand.wave") }.frame(width: 44, height: 44)
+                Button { showChat = true } label: { Image(systemName: "bubble.left.and.bubble.right.fill") }.frame(width: 44, height: 44)
+            }.padding(.top, 44).padding(.horizontal, 8).background(.white.opacity(0.77))
+            ScrollView {
+                Text(content).font(.system(size: 17, design: .serif)).lineSpacing(9)
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 24).padding(.vertical, 24)
+            }.background(Color(red: 0.985, green: 0.965, blue: 0.965).opacity(0.9))
+        }
+        .foregroundColor(Color(red: 0.27, green: 0.23, blue: 0.25))
+        .task { await load(); await heartbeat() }
+        .sheet(isPresented: $showChat) { CoreadChatSheet(book: book, chapter: chapter, pageText: String(content.prefix(1800))) }
+    }
+    @MainActor private func load() async {
+        guard let value = try? await NativeHouseAPI.object("/read/api/book/\(book.id)/chapter/\(chapter)") else { return }
+        title = value.string("title"); content = value.string("content")
+    }
+    @MainActor private func heartbeat() async {
+        try? await NativeHouseAPI.post("/coread/presence", body: ["actor":"陈霁", "book_id":book.id, "chapter":chapter, "offset":0])
+        if let value = try? await NativeHouseAPI.object("/coread/presence?book_id=\(book.id)") { samePage = value.bool("same_page") }
+    }
+    @MainActor private func knock() async {
+        guard !content.isEmpty else { return }
+        try? await NativeHouseAPI.post("/coread/knock", body: ["book_id":book.id, "chapter":chapter, "page_text":String(content.prefix(1800))])
+        knocked = true
+    }
+}
+
+private struct CoreadChatSheet: View {
+    let book: CoreadBook
+    let chapter: Int
+    let pageText: String
+    @Environment(\.dismiss) private var dismiss
+    @State private var messages: [[String: Any]] = []
+    @State private var text = ""
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack { Text("陪读 · \(book.title)").font(.system(size: 15, weight: .semibold, design: .serif)); Spacer(); Button { dismiss() } label: { Image(systemName: "xmark") } }.padding(18)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(spacing: 10) {
+                        ForEach(Array(messages.enumerated()), id: \.offset) { _, item in
+                            HStack { if item.string("actor") == "陈霁" { Spacer() }; Text(item.string("text")).font(.system(size: 14)).padding(12).background(item.string("actor") == "陈霁" ? Color.pink.opacity(0.2) : Color.white.opacity(0.8), in: RoundedRectangle(cornerRadius: 14)); if item.string("actor") != "陈霁" { Spacer() } }
+                        }
+                    }.padding(14)
+                }
+            }
+            HStack { TextField("和陈璟聊聊这一页…", text: $text).textFieldStyle(.roundedBorder); Button("发送") { Task { await send() } }.disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }.padding(12)
+        }
+        .background(Color(red: 0.97, green: 0.93, blue: 0.94))
+        .presentationDetents([.fraction(0.52), .large]).presentationDragIndicator(.visible)
+        .task { await poll() }
+    }
+    @MainActor private func poll() async {
+        while !Task.isCancelled {
+            if let value = try? await NativeHouseAPI.object("/coread/messages?book_id=\(book.id)&chapter=\(chapter)&since=0") { messages = value.array("messages") }
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+        }
+    }
+    @MainActor private func send() async {
+        let value = text.trimmingCharacters(in: .whitespacesAndNewlines); guard !value.isEmpty else { return }; text = ""
+        try? await NativeHouseAPI.post("/coread/say", body: ["book_id":book.id, "chapter":chapter, "text":value, "page_text":pageText])
     }
 }
 
