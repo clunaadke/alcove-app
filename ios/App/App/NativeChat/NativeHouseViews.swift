@@ -7143,6 +7143,15 @@ private struct NativeActivityRoomView: View {
                     .clipped()
                     .ignoresSafeArea()
 
+                Image("ActivityRoomTitle")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: geo.size.width * 0.82)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .padding(.leading, geo.size.width * 0.055)
+                    .padding(.top, max(geo.safeAreaInsets.top + 8, 48))
+                    .allowsHitTesting(false)
+
                 VStack(spacing: 10) {
                     roomHero(height: geo.size.height * 0.538)
                     HStack(alignment: .top, spacing: 10) {
@@ -7150,8 +7159,8 @@ private struct NativeActivityRoomView: View {
                         timelineCard
                     }
                     .frame(height: geo.size.height * 0.278)
-                    .padding(.horizontal, 12)
-                    .offset(y: 2)
+                    .padding(.horizontal, 17)
+                    .offset(x: 2, y: 7)
                     Color.clear
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .contentShape(Rectangle())
@@ -7179,7 +7188,7 @@ private struct NativeActivityRoomView: View {
                 Spacer()
             }
             .padding(.horizontal, 10)
-            .padding(.top, 202)
+            .padding(.top, 154)
             Button(action: openCalendar) {
                 Color.clear
                     .frame(width: 66, height: 72)
@@ -7289,7 +7298,7 @@ private struct NativeActivityRoomView: View {
             content()
         }
         .padding(.horizontal, 10)
-        .padding(.top, 7)
+            .padding(.top, 10)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 }

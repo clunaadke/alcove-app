@@ -191,6 +191,7 @@ struct RemoteScreenSharePrompt: View {
 enum AlcoveLiveActivityController {
     private static var pulseTask: Task<Void, Never>?
     private static var starting = false
+    private static var retryTask: Task<Void, Never>?
 
     private static func currentBPM() async -> Int {
         guard let raw = try? await AlcoveAPI.getRaw("/pulse/now") else { return 0 }
@@ -260,6 +261,8 @@ enum AlcoveLiveActivityController {
     }
 
     static func ensureRunning() async {
+        guard UserDefaults.standard.object(forKey: "liveActivityEnabled") == nil
+                || UserDefaults.standard.bool(forKey: "liveActivityEnabled") else { return }
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
         if let activity = Activity<AlcoveLabAttributes>.activities.first {
             let bpm = await currentBPM()
@@ -270,7 +273,31 @@ enum AlcoveLiveActivityController {
             }
             ensurePulseUpdates()
         } else {
-            _ = await start()
+            let result = await start()
+            // 冷启动时 ActivityKit 偶尔尚未接纳首个 request。不要只相信返回文案，
+            // 重新读取系统活动列表；仍为空就继续补试，直到真的出现或 App 被挂起。
+            if Activity<AlcoveLabAttributes>.activities.isEmpty,
+               !result.contains("系统未允许") {
+                scheduleRetry()
+            }
+        }
+    }
+
+    private static func scheduleRetry() {
+        guard retryTask == nil else { return }
+        retryTask = Task {
+            defer { retryTask = nil }
+            for delay in [1.5, 3.0, 6.0] {
+                try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                guard !Task.isCancelled,
+                      UserDefaults.standard.object(forKey: "liveActivityEnabled") == nil
+                        || UserDefaults.standard.bool(forKey: "liveActivityEnabled") else { return }
+                if !Activity<AlcoveLabAttributes>.activities.isEmpty {
+                    ensurePulseUpdates()
+                    return
+                }
+                _ = await start()
+            }
         }
     }
 
@@ -314,6 +341,8 @@ enum AlcoveLiveActivityController {
     }
 
     static func stop() async {
+        retryTask?.cancel()
+        retryTask = nil
         pulseTask?.cancel()
         pulseTask = nil
         for activity in Activity<AlcoveLabAttributes>.activities {
