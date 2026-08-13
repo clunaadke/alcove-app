@@ -3801,6 +3801,9 @@ private struct NativeWorkbenchView: View {
     @State private var contactRecipient = "陈璟"
     @State private var contactTitle = ""
     @State private var contactDetail = ""
+    @State private var selectedContact: [String: Any]?
+    @State private var contactReply = ""
+    @State private var contactActor = "陈霁"
     @AppStorage("alcoveTheme") private var themeName = "haven"
     @AppStorage("rtAvatarAssistant") private var rtAvatarAssistant = ""
     @AppStorage("rtAvatarGpt") private var rtAvatarGpt = ""
@@ -3841,6 +3844,9 @@ private struct NativeWorkbenchView: View {
         .foregroundColor(theme.text)
         .overlay { if loading { ProgressView().tint(theme.fyAccent) } }
         .sheet(isPresented: $showingContact) { contactComposer }
+        .sheet(isPresented: Binding(get: { selectedContact != nil }, set: { if !$0 { selectedContact = nil } })) {
+            if let selectedContact { contactTimeline(selectedContact) }
+        }
         .task {
             while !Task.isCancelled {
                 await refresh()
@@ -3865,8 +3871,8 @@ private struct NativeWorkbenchView: View {
                 Text("这里会收下我们三个人之间的协作请求与问题上报。")
                     .font(.system(size: 11)).foregroundColor(theme.textDim).padding(.vertical, 5)
             } else {
-                ForEach(Array(contactItems.prefix(3).enumerated()), id: \.offset) { _, item in
-                    HStack(alignment: .top, spacing: 10) {
+                ForEach(Array(contactItems.prefix(5).enumerated()), id: \.offset) { _, item in
+                    Button { selectedContact = item } label: { HStack(alignment: .top, spacing: 10) {
                         Image(systemName: item.string("status") == "done" ? "checkmark.circle.fill" : "arrow.up.right.circle.fill")
                             .foregroundColor(item.string("status") == "done" ? .green : theme.fyAccent)
                         VStack(alignment: .leading, spacing: 3) {
@@ -3878,12 +3884,56 @@ private struct NativeWorkbenchView: View {
                             }
                         }
                         Spacer()
-                        Text(item.string("status") == "done" ? "完成" : "待接收")
+                        Text(contactStatus(item.string("status")))
                             .font(.system(size: 9, weight: .medium)).foregroundColor(theme.textDim)
-                    }.padding(.vertical, 3)
+                    }.padding(.vertical, 5).contentShape(Rectangle()) }.buttonStyle(.plain)
                 }
             }
         }.padding(15).workbenchGlass(theme, accent: Color(red: 0.64, green: 0.52, blue: 0.72))
+    }
+
+    private func contactTimeline(_ item: [String: Any]) -> some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 15) {
+                    HStack { Text("\(item.string("sender")) → \(item.string("recipient"))").font(.caption).foregroundColor(theme.textDim); Spacer(); Text(contactStatus(item.string("status"))).font(.caption.weight(.semibold)).foregroundColor(theme.fyAccent) }
+                    Text(item.string("title")).font(.title3.weight(.semibold))
+                    ForEach(Array(item.array("events").enumerated()), id: \.offset) { index, event in
+                        HStack(alignment: .top, spacing: 11) {
+                            VStack(spacing: 0) {
+                                Circle().fill(event.string("kind") == "completed" ? Color.green : theme.fyAccent).frame(width: 9, height: 9)
+                                if index < item.array("events").count - 1 { Rectangle().fill(theme.fyBorder.opacity(0.7)).frame(width: 1, height: 54) }
+                            }.padding(.top, 4)
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack { Text(event.string("actor")).font(.system(size: 12, weight: .semibold)); Text(eventLabel(event.string("kind"))).font(.system(size: 9)).foregroundColor(theme.textDim); Spacer(); if let stamp = event["created_at"] as? NSNumber { Text(Date(timeIntervalSince1970: stamp.doubleValue), format: .dateTime.month().day().hour().minute()).font(.system(size: 8, design: .monospaced)).foregroundColor(theme.textDim) } }
+                                Text(event.string("text")).font(.system(size: 12)).foregroundColor(theme.text)
+                            }
+                        }
+                    }
+                    Divider()
+                    Picker("回复人", selection: $contactActor) { ForEach(["陈霁", "何渡", "陈璟"], id: \.self) { Text($0) } }.pickerStyle(.segmented)
+                    TextField("在这张协作单里继续回复", text: $contactReply, axis: .vertical).lineLimit(2...5).textFieldStyle(.roundedBorder)
+                    HStack {
+                        if item.string("status") == "pending" { Button("接收") { Task { await updateContact(item, action: "accept") } }.buttonStyle(.bordered) }
+                        Spacer()
+                        Button("发送回复") { Task { await updateContact(item, action: "reply") } }.buttonStyle(.borderedProminent).disabled(contactReply.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        if item.string("status") != "done" { Button("完成") { Task { await updateContact(item, action: "complete") } }.buttonStyle(.bordered) }
+                    }
+                }.padding(18)
+            }.navigationTitle("联络记录").navigationBarTitleDisplayMode(.inline)
+                .toolbar { ToolbarItem(placement: .cancellationAction) { Button("关闭") { selectedContact = nil } } }
+        }.presentationDetents([.large])
+    }
+
+    private func contactStatus(_ status: String) -> String { status == "done" ? "已完成" : status == "active" ? "进行中" : "待接收" }
+    private func eventLabel(_ kind: String) -> String { kind == "completed" ? "完成" : kind == "accepted" ? "接收" : kind == "reply" ? "回复" : "发起" }
+
+    @MainActor private func updateContact(_ item: [String: Any], action: String) async {
+        var body: [String: Any] = ["actor": contactActor]
+        if action == "reply" { body["text"] = contactReply }
+        guard (try? await NativeHouseAPI.object("/api/workbench/contacts/\(item.string("id"))/\(action)", method: "POST", body: body)) != nil else { return }
+        contactReply = ""; await loadContacts()
+        selectedContact = contactItems.first { $0.string("id") == item.string("id") }
     }
 
     private var contactComposer: some View {
