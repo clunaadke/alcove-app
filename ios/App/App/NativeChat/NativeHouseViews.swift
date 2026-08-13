@@ -7165,7 +7165,7 @@ private struct NativeActivityRoomView: View {
                 .foregroundColor(ActivityRoomInk.text)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .padding(.leading, geo.size.width * 0.068)
-                .padding(.top, max(geo.safeAreaInsets.top + 60, 100))
+                .padding(.top, max(geo.safeAreaInsets.top + 46, 86))
 
                 Button(action: openCalendar) {
                     Image("ActivityRoomCalendar")
@@ -7188,7 +7188,7 @@ private struct NativeActivityRoomView: View {
                     }
                     .frame(height: geo.size.height * 0.278)
                     .padding(.horizontal, 17)
-                    .offset(x: 2, y: 7)
+                    .offset(x: 2, y: 14)
                     Color.clear
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .contentShape(Rectangle())
