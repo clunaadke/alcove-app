@@ -3739,12 +3739,12 @@ private struct CoreadReaderView: View {
         title = value.string("title"); content = value.string("content")
     }
     @MainActor private func heartbeat() async {
-        try? await NativeHouseAPI.post("/coread/presence", body: ["actor":"陈霁", "book_id":book.id, "chapter":chapter, "offset":0])
-        if let value = try? await NativeHouseAPI.object("/coread/presence?book_id=\(book.id)") { samePage = value.bool("same_page") }
+        try? await NativeHouseAPI.post("/api/coread/presence", body: ["actor":"陈霁", "book_id":book.id, "chapter":chapter, "offset":0])
+        if let value = try? await NativeHouseAPI.object("/api/coread/presence?book_id=\(book.id)") { samePage = value.bool("same_page") }
     }
     @MainActor private func knock() async {
         guard !content.isEmpty else { return }
-        try? await NativeHouseAPI.post("/coread/knock", body: ["book_id":book.id, "chapter":chapter, "page_text":String(content.prefix(1800))])
+        try? await NativeHouseAPI.post("/api/coread/knock", body: ["book_id":book.id, "chapter":chapter, "page_text":String(content.prefix(1800))])
         knocked = true
     }
 }
@@ -3776,13 +3776,13 @@ private struct CoreadChatSheet: View {
     }
     @MainActor private func poll() async {
         while !Task.isCancelled {
-            if let value = try? await NativeHouseAPI.object("/coread/messages?book_id=\(book.id)&chapter=\(chapter)&since=0") { messages = value.array("messages") }
+            if let value = try? await NativeHouseAPI.object("/api/coread/messages?book_id=\(book.id)&chapter=\(chapter)&since=0") { messages = value.array("messages") }
             try? await Task.sleep(nanoseconds: 1_500_000_000)
         }
     }
     @MainActor private func send() async {
         let value = text.trimmingCharacters(in: .whitespacesAndNewlines); guard !value.isEmpty else { return }; text = ""
-        try? await NativeHouseAPI.post("/coread/say", body: ["book_id":book.id, "chapter":chapter, "text":value, "page_text":pageText])
+        try? await NativeHouseAPI.post("/api/coread/say", body: ["book_id":book.id, "chapter":chapter, "text":value, "page_text":pageText])
     }
 }
 
