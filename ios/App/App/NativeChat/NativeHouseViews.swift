@@ -7119,11 +7119,29 @@ private struct NativeActivityRoomView: View {
     let closeRoom: () -> Void
     @State private var tasks: [[String: Any]] = []
     @State private var timeline: [[String: Any]] = []
+    @State private var weatherCode = 1
+    @State private var weatherTemp = 0.0
+
+    private var isNight: Bool {
+        let hour = Calendar(identifier: .gregorian).component(.hour, from: Date())
+        return hour < 6 || hour >= 19
+    }
+
+    private var roomBackground: String {
+        if weatherCode >= 10 { return isNight ? "ActivityRoomRain" : "ActivityRoomRainyDay" }
+        if weatherCode >= 4 { return "ActivityRoomOvercast" }
+        return isNight ? "ActivityRoomAfterglow" : "ActivityRoomSunny"
+    }
+
+    private var weatherLabel: String {
+        let condition = weatherCode >= 10 ? "雨" : weatherCode >= 4 ? "阴" : "晴"
+        return "武汉 · \(condition) \(Int(weatherTemp.rounded()))°"
+    }
 
     var body: some View {
         GeometryReader { geo in
             ZStack {
-                Image("ActivityRoomRain")
+                Image(roomBackground)
                     .resizable()
                     .scaledToFill()
                     .frame(width: geo.size.width, height: geo.size.height)
@@ -7138,6 +7156,16 @@ private struct NativeActivityRoomView: View {
                     .padding(.leading, geo.size.width * 0.055)
                     .padding(.top, max(geo.safeAreaInsets.top + 8, 48))
                     .allowsHitTesting(false)
+
+                HStack(spacing: 5) {
+                    Image(systemName: "location.fill")
+                    Text(weatherLabel)
+                }
+                .font(.system(size: 10.5, weight: .medium, design: .serif))
+                .foregroundColor(ActivityRoomInk.text)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .padding(.leading, geo.size.width * 0.068)
+                .padding(.top, max(geo.safeAreaInsets.top + 60, 100))
 
                 Button(action: openCalendar) {
                     Image("ActivityRoomCalendar")
@@ -7172,7 +7200,9 @@ private struct NativeActivityRoomView: View {
         .foregroundColor(ActivityRoomInk.text)
         .task {
             while !Task.isCancelled {
-                await loadGhostTodo()
+                async let todo: Void = loadGhostTodo()
+                async let weather: Void = loadWeather()
+                _ = await (todo, weather)
                 try? await Task.sleep(nanoseconds: 30_000_000_000)
             }
         }
@@ -7195,6 +7225,13 @@ private struct NativeActivityRoomView: View {
             }
         }
         .sorted { $0.string("time") < $1.string("time") }
+    }
+
+    @MainActor
+    private func loadWeather() async {
+        guard let object = try? await NativeHouseAPI.object("/api/weather") else { return }
+        weatherCode = object.int("code")
+        if let value = object["temp"] as? NSNumber { weatherTemp = value.doubleValue }
     }
 
     private func roomHero(height: CGFloat) -> some View {
