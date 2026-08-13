@@ -1674,6 +1674,7 @@ private struct ReadingShareMessageCard: View {
 private struct WorkDeliveryMessageCard: View {
     let card: WorkDeliveryCard
     let theme: AlcoveTheme
+    @State private var expanded = false
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 9) {
@@ -1687,13 +1688,18 @@ private struct WorkDeliveryMessageCard: View {
             }
             if !card.result.isEmpty {
                 Text(card.result).font(.system(size: 13, design: .serif)).lineSpacing(4)
+                    .lineLimit(expanded ? nil : 5)
                     .padding(11).frame(maxWidth: .infinity, alignment: .leading)
                     .background(theme.fyCardSub.opacity(0.58), in: RoundedRectangle(cornerRadius: 12))
             }
             if !card.artifacts.isEmpty {
                 VStack(alignment: .leading, spacing: 5) {
-                    ForEach(card.artifacts, id: \.self) { item in Label(item, systemImage: "doc.badge.gearshape").font(.system(size: 10, design: .monospaced)).foregroundColor(theme.textDim) }
+                    ForEach(expanded ? card.artifacts : Array(card.artifacts.prefix(3)), id: \.self) { item in Label(item, systemImage: "doc.badge.gearshape").font(.system(size: 10, design: .monospaced)).foregroundColor(theme.textDim) }
                 }
+            }
+            if card.result.count > 180 || card.artifacts.count > 3 {
+                Button(expanded ? "收起交付" : "查看完整交付") { withAnimation(.easeInOut(duration: 0.2)) { expanded.toggle() } }
+                    .font(.system(size: 10, weight: .semibold)).foregroundColor(theme.fyAccent)
             }
             Text(card.finishedAt.replacingOccurrences(of: "T", with: " ").prefix(16))
                 .font(.system(size: 8.5, design: .monospaced)).foregroundColor(theme.textDim.opacity(0.75))

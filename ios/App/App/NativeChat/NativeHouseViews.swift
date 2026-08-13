@@ -4103,11 +4103,14 @@ private struct NativeStudioView: View {
     @State private var draft = ""
     @State private var showTerminal = false
     @State private var deliveryDraft: [String: Any]?
+    @State private var deliveryTitle = ""
     @State private var deliverySummary = ""
     @State private var deliveryArtifacts: [String] = []
     @State private var newArtifact = ""
     @State private var showActions = false
     @State private var loading = true
+    @State private var studioNotice = ""
+    @State private var showStudioNotice = false
     @State private var expandedThoughts: Set<Int> = []
     @State private var photoItem: PhotosPickerItem?
     @State private var showFilePicker = false
@@ -4139,7 +4142,7 @@ private struct NativeStudioView: View {
             }
             inputBar
         }
-        .background(LinearGradient(colors: [Color(red: 0.985, green: 0.955, blue: 0.945), Color(red: 0.94, green: 0.91, blue: 0.90)], startPoint: .top, endPoint: .bottom).ignoresSafeArea())
+        .background(LinearGradient(colors: theme.isDark ? [Color(red: 0.075, green: 0.068, blue: 0.09), Color(red: 0.13, green: 0.105, blue: 0.14)] : [Color(red: 0.985, green: 0.955, blue: 0.945), Color(red: 0.94, green: 0.91, blue: 0.90)], startPoint: .top, endPoint: .bottom).ignoresSafeArea())
         .foregroundColor(theme.text)
         .overlay { if loading { ProgressView().tint(theme.fyAccent) } }
         .fullScreenCover(isPresented: $showTerminal) { TerminalView(initialSession: "work", availableSessions: ["work"]) }
@@ -4152,6 +4155,7 @@ private struct NativeStudioView: View {
             guard let item else { return }
             Task { if let data = try? await item.loadTransferable(type: Data.self) { await upload(data, filename: "studio-photo-\(Int(Date().timeIntervalSince1970)).jpg") }; photoItem = nil }
         }
+        .alert("工作室", isPresented: $showStudioNotice) { Button("知道了", role: .cancel) {} } message: { Text(studioNotice) }
         .confirmationDialog("工作室操作", isPresented: $showActions, titleVisibility: .visible) {
             if let task = currentOrLatestTask, task.string("status") == "queued" { Button("暂停排队任务") { Task { await action(task, "pause") } } }
             if let task = currentOrLatestTask, task.string("status") == "paused" { Button("继续任务") { Task { await action(task, "resume") } } }
@@ -4164,7 +4168,9 @@ private struct NativeStudioView: View {
 
     private var header: some View {
         HStack(spacing: 10) {
-            Button { dismiss() } label: { Image(systemName: "chevron.left").frame(width: 36, height: 36) }
+            Button { dismiss() } label: {
+                Image(systemName: "chevron.left").frame(width: 48, height: 48).contentShape(Rectangle())
+            }
                 .buttonStyle(.plain).accessibilityLabel("返回总控台")
             VStack(alignment: .leading, spacing: 2) {
                 Text("陈璟工作室").font(.system(size: 20, weight: .semibold, design: .serif))
@@ -4241,14 +4247,14 @@ private struct NativeStudioView: View {
                 .padding(.horizontal, 14).padding(.vertical, 10).background(.white.opacity(0.58), in: RoundedRectangle(cornerRadius: 19))
             Button { Task { await send() } } label: { Image(systemName: "arrow.up").font(.system(size: 15, weight: .bold)).foregroundColor(.white).frame(width: 38, height: 38).background(theme.fyAccent, in: Circle()) }
                 .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-        }.padding(.horizontal, 12).padding(.top, 8).padding(.bottom, 10).background(.ultraThinMaterial)
+        }.padding(.horizontal, 12).padding(.top, 8).padding(.bottom, 18).background(.ultraThinMaterial)
     }
 
     private var deliveryPreview: some View {
         NavigationStack {
             VStack(alignment: .leading, spacing: 15) {
                 if let card = deliveryDraft {
-                    HStack { Image(systemName: "checkmark.seal.fill").foregroundColor(theme.fyAccent); Text(card.string("title")).font(.title3.weight(.semibold)); Spacer(); Text("已完成").font(.caption).foregroundColor(theme.fyAccent) }
+                    HStack { Image(systemName: "checkmark.seal.fill").foregroundColor(theme.fyAccent); TextField("交付卡标题", text: $deliveryTitle).font(.title3.weight(.semibold)); Spacer(); Text("已完成").font(.caption).foregroundColor(theme.fyAccent) }
                     Text("交付摘要").font(.caption.weight(.semibold)).foregroundColor(theme.textDim)
                     TextEditor(text: $deliverySummary).font(.system(size: 14, design: .serif)).lineSpacing(5)
                         .frame(minHeight: 150).padding(9).scrollContentBackground(.hidden)
@@ -4311,9 +4317,19 @@ private struct NativeStudioView: View {
     }
     @MainActor private func action(_ task: [String: Any], _ action: String) async { guard (try? await NativeHouseAPI.object("/api/work/task/\(task.int("id"))/\(action)", method: "POST", body: [:])) != nil else { return }; await refresh() }
     @MainActor private func deliver(_ task: [String: Any]) async {
-        guard let response = try? await NativeHouseAPI.object("/api/work/deliver", method: "POST", body: ["task_id": task.int("id")]) else { return }
+        guard let response = try? await NativeHouseAPI.object("/api/work/deliver", method: "POST", body: ["task_id": task.int("id")]) else {
+            studioNotice = "交付卡暂时没有生成，请稍后再试。"
+            showStudioNotice = true
+            return
+        }
+        guard response["ok"] as? Bool == true else {
+            studioNotice = response.string("hint").isEmpty ? "这项任务还没有交付卡草稿。" : response.string("hint")
+            showStudioNotice = true
+            return
+        }
         let card = response.object("draft")
         deliveryDraft = card
+        deliveryTitle = card.string("title")
         deliverySummary = card.string("result")
         deliveryArtifacts = card["artifacts"] as? [String] ?? []
         newArtifact = ""
@@ -4321,7 +4337,7 @@ private struct NativeStudioView: View {
     @MainActor private func confirmDelivery() async {
         guard let card = deliveryDraft else { return }
         let taskID = card.int("task_id")
-        guard (try? await NativeHouseAPI.object("/api/work/deliver", method: "POST", body: ["task_id": taskID, "summary": deliverySummary, "artifacts": deliveryArtifacts, "confirm": true])) != nil else { return }
+        guard (try? await NativeHouseAPI.object("/api/work/deliver", method: "POST", body: ["task_id": taskID, "title": deliveryTitle, "summary": deliverySummary, "artifacts": deliveryArtifacts, "confirm": true])) != nil else { return }
         deliveryDraft = nil; await refresh()
     }
     private func compact(_ value: Int) -> String { value >= 1_000_000 ? String(format: "%.1fM", Double(value) / 1_000_000) : value >= 1000 ? String(format: "%.1fK", Double(value) / 1000) : "\(value)" }
