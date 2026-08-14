@@ -1250,12 +1250,6 @@ struct MessageRow: View {
     private var isIceTheme: Bool {
         theme.panelTextureAsset == "ChatWallIce" || theme.panelTextureAsset == "ChatWallIceDark"
     }
-    private var iceBubbleWidth: CGFloat {
-        let longest = msg.displayText.split(separator: "\n", omittingEmptySubsequences: false)
-            .map(\.count).max() ?? 1
-        let estimated = CGFloat(longest) * CGFloat(fontSize) * 0.94 + 30
-        return min(UIScreen.main.bounds.width * 0.72, max(82, estimated))
-    }
     private var timestampTextInset: CGFloat {
         if theme.isPaper && !isUser { return 0 }
         return !msg.text.isEmpty && !msg.isSticker ? 12 : 0
@@ -1481,7 +1475,7 @@ struct MessageRow: View {
                     }
             }
         }
-            .frame(width: isIceTheme ? iceBubbleWidth : nil,
+            .frame(minWidth: isIceTheme ? 82 : nil,
                    alignment: isUser ? .trailing : .leading)
             .overlay(alignment: .bottomTrailing) {
                 if isIceTheme && showTime {
