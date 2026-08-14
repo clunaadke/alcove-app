@@ -440,19 +440,10 @@ struct NativeHouseDrawer: View {
     var body: some View {
         GeometryReader { geo in
             ZStack {
-                if themeName == "ice" || themeName == "ice-dark" {
-                    Image(theme.isDark ? "ChatWallIceDark" : "ChatWallIce")
-                        .resizable().scaledToFill()
-                        .frame(width: geo.size.width, height: geo.size.height).clipped()
-                    Rectangle().fill(.ultraThinMaterial)
-                    (theme.isDark ? Color(red: 0.02, green: 0.10, blue: 0.24) : Color.white)
-                        .opacity(theme.isDark ? 0.30 : 0.22)
-                } else {
-                    Image(theme.isDark ? "DrawerDark" : "DrawerLight")
-                        .resizable().scaledToFill()
-                        .frame(width: geo.size.width, height: geo.size.height).clipped()
-                    (theme.isDark ? Color.black : Color.white).opacity(theme.isDark ? 0.10 : 0.08)
-                }
+                Image(theme.isDark ? "DrawerDark" : "DrawerLight")
+                    .resizable().scaledToFill()
+                    .frame(width: geo.size.width, height: geo.size.height).clipped()
+                (theme.isDark ? Color.black : Color.white).opacity(theme.isDark ? 0.10 : 0.08)
 
                 ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 13) {
@@ -1034,10 +1025,6 @@ private struct NativeSettingsView: View {
                             Color(red: 185/255, green: 120/255, blue: 120/255),
                             Color(red: 37/255, green: 36/255, blue: 34/255)
                         ])
-                        familyChoice("冰蓝", "雾里透光", "ice", [
-                            .white, Color(red: 0.66, green: 0.84, blue: 1),
-                            Color(red: 0.03, green: 0.18, blue: 0.42)
-                        ])
                     }
                     Divider().opacity(0.25)
                     Picker("外观", selection: appearanceBinding) {
@@ -1264,12 +1251,10 @@ private struct NativeSettingsView: View {
     }
 
     private var isPaperFamily: Bool { themeName == "paper" || themeName == "paper-dark" }
-    private var isIceFamily: Bool { themeName == "ice" || themeName == "ice-dark" }
-    private var themeFamily: String { isPaperFamily ? "paper" : (isIceFamily ? "ice" : "glass") }
+    private var themeFamily: String { isPaperFamily ? "paper" : "glass" }
     private var appearanceBinding: Binding<Bool> {
         Binding(get: { theme.isDark }, set: { dark in
             themeName = isPaperFamily ? (dark ? "paper-dark" : "paper") :
-                        isIceFamily ? (dark ? "ice-dark" : "ice") :
                         (dark ? "midnight" : "haven")
         })
     }
@@ -1277,7 +1262,6 @@ private struct NativeSettingsView: View {
         Button {
             switch family {
             case "paper": themeName = theme.isDark ? "paper-dark" : "paper"
-            case "ice": themeName = theme.isDark ? "ice-dark" : "ice"
             default: themeName = theme.isDark ? "midnight" : "haven"
             }
         } label: {

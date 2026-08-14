@@ -203,10 +203,6 @@ struct ChatView: View {
                                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { olderPagingArmed = true }
                                 }
                         }
-                        ForEach(Array(stagedDrafts.enumerated()), id: \.offset) { idx, text in
-                            stagedMessageBubble(text: text, index: idx)
-                                .id("staged-\(idx)")
-                        }
                         // 实时预览框已退休；陈璟正在…是独立状态，一根毛不动。
                         if store.isTyping {
                             TypingIndicator(tool: store.currentTool,
@@ -299,9 +295,6 @@ struct ChatView: View {
             .onChange(of: store.messages.count) { _ in
                 guard atBottom || inputFocused else { return }
                 scrollToTail(proxy, delays: [0, 0.15, 0.4], animated: true)
-            }
-            .onChange(of: stagedDrafts.count) { _ in
-                scrollToTail(proxy, delays: [0, 0.12], animated: true)
             }
             .onChange(of: store.loading) { loading in
                 if !loading {
@@ -570,7 +563,7 @@ struct ChatView: View {
 
     // PWA .chat-input-capsule 同款：大胶囊两行，粉描边，透底毛玻璃
     @ViewBuilder private var floatingInput: some View {
-        if themeName == "ice" || themeName == "ice-dark" { iceFloatingInput } else { legacyFloatingInput }
+        legacyFloatingInput
     }
 
     private var legacyFloatingInput: some View {
@@ -583,6 +576,7 @@ struct ChatView: View {
                     .padding(.vertical, 3)
                     .background(.ultraThinMaterial, in: Capsule())
             }
+            stagedDraftStrip
             VStack(spacing: 0) {
                 if let quote = selectedQuote {
                     HStack(alignment: .center, spacing: 8) {
@@ -742,7 +736,14 @@ struct ChatView: View {
                         if recorder.isRecording {
                             if let data = recorder.stopAndTake() { store.sendVoice(data: data) }
                         } else {
-                            sendDraftBatch()
+                            let t = takeDraftBatch()
+                            if !pendingImages.isEmpty {
+                                let imgs = pendingImages.map(\.jpeg)
+                                pendingImages = []
+                                store.sendImages(imgs, caption: outgoingText(t))
+                            } else {
+                                store.sendText(outgoingText(t))
+                            }
                         }
                     } label: {
                         Image(systemName: "paperplane.fill")
@@ -783,121 +784,30 @@ struct ChatView: View {
         .onPreferenceChange(InputBarHeightKey.self) { inputBarHeight = $0 }
     }
 
-    private var iceFloatingInput: some View {
-        VStack(spacing: 7) {
-            if !pendingImages.isEmpty {
+    private var stagedDraftStrip: some View {
+        Group {
+            if !stagedDrafts.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 7) {
-                        ForEach(Array(pendingImages.enumerated()), id: \.offset) { idx, item in
-                            Image(uiImage: item.thumb).resizable().scaledToFill()
-                                .frame(width: 52, height: 52).clipShape(RoundedRectangle(cornerRadius: 14))
-                                .overlay(alignment: .topTrailing) {
-                                    Button { pendingImages.remove(at: idx) } label: {
-                                        Image(systemName: "xmark.circle.fill").foregroundStyle(.white).shadow(radius: 2)
-                                    }.offset(x: 5, y: -5)
+                        ForEach(Array(stagedDrafts.enumerated()), id: \.offset) { idx, text in
+                            HStack(spacing: 7) {
+                                Text(text).lineLimit(1)
+                                Button { draft = text; stagedDrafts.remove(at: idx) } label: {
+                                    Image(systemName: "pencil").font(.system(size: 10, weight: .semibold))
                                 }
+                                Button { stagedDrafts.remove(at: idx) } label: {
+                                    Image(systemName: "xmark").font(.system(size: 10, weight: .semibold))
+                                }
+                            }
+                            .font(.system(size: 12)).foregroundColor(theme.textDim)
+                            .padding(.horizontal, 11).frame(height: 32)
+                            .background(.ultraThinMaterial, in: Capsule())
+                            .overlay(Capsule().stroke(theme.glassBorder, lineWidth: 0.7))
                         }
-                    }.padding(.horizontal, 16)
+                    }.padding(.horizontal, 15)
                 }
-            }
-            HStack(spacing: 6) {
-                Menu {
-                    Button { showPhotoPicker = true } label: { Label("从相册选择", systemImage: "photo.on.rectangle") }
-                    Button { showCamera = true } label: { Label("拍照或录像", systemImage: "camera") }
-                    Button { showDocPicker = true } label: { Label("选取文件", systemImage: "doc") }
-                    Button { showStickers = true } label: { Label("贴纸", systemImage: "face.smiling") }
-                } label: {
-                    Image(systemName: "plus").font(.system(size: 17, weight: .medium))
-                        .foregroundColor(theme.textDim).frame(width: 40, height: 40)
-                        .background(.ultraThinMaterial, in: Circle())
-                        .overlay(Circle().stroke(theme.glassBorder, lineWidth: 0.8))
-                }
-                TextField("Message...", text: $draft)
-                    .focused($inputFocused).lineLimit(1).submitLabel(.return)
-                    .onSubmit { stageCurrentDraft() }
-                    .font(.system(size: 15.5)).foregroundColor(theme.text)
-                    .padding(.horizontal, 15).frame(height: 40)
-                    .background(.ultraThinMaterial, in: Capsule())
-                    .background(theme.capsuleTint, in: Capsule())
-                    .overlay(Capsule().stroke(theme.glassBorder, lineWidth: 0.8))
-                Button {
-                    if recorder.isRecording {
-                        if let data = recorder.stopAndTake() { store.sendVoice(data: data) }
-                    } else { recorder.start() }
-                } label: {
-                    Image(systemName: recorder.isRecording ? "stop.fill" : "mic")
-                        .font(.system(size: 16, weight: .medium)).foregroundColor(theme.textDim)
-                        .frame(width: 38, height: 40).background(.ultraThinMaterial, in: Circle())
-                        .overlay(Circle().stroke(theme.glassBorder, lineWidth: 0.8))
-                }
-                Button {
-                    sendDraftBatch()
-                } label: {
-                    Image(systemName: "arrow.up").font(.system(size: 17, weight: .semibold)).foregroundColor(.white)
-                        .frame(width: 40, height: 40)
-                        .background(LinearGradient(colors: [theme.sendTop, theme.sendBottom], startPoint: .topLeading, endPoint: .bottomTrailing), in: Circle())
-                }.disabled(!canSend).opacity(canSend ? 1 : 0.42)
-            }.padding(.horizontal, 12)
-        }
-        .padding(.bottom, 2)
-        .background(GeometryReader { geo in Color.clear.preference(key: InputBarHeightKey.self, value: geo.size.height) })
-        .onPreferenceChange(InputBarHeightKey.self) { inputBarHeight = $0 }
-    }
-
-    private func stagedMessageBubble(text: String, index: Int) -> some View {
-        return HStack(alignment: .bottom) {
-            Spacer(minLength: 48)
-            VStack(alignment: .trailing, spacing: 4) {
-                Text(text)
-                    .font(.system(size: CGFloat(chatFontSize)))
-                    .foregroundColor(theme.text)
-                    .lineSpacing(theme.isPaper ? 7 : 5)
-                Text("待发送")
-                    .font(.system(size: 9, design: .serif))
-                    .foregroundColor(theme.timestamp.opacity(0.72))
-            }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
-            .frame(minWidth: 82, alignment: .trailing)
-            .background {
-                if themeName == "ice" || themeName == "ice-dark" {
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .fill(.ultraThinMaterial)
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                .fill(theme.bubbleUser.opacity(0.34))
-                        }
-                        .overlay {
-                            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                .stroke(theme.glassBorder.opacity(0.72), lineWidth: 0.7)
-                        }
-                } else if theme.isPaper {
-                    RoundedRectangle(cornerRadius: 18, style: .continuous).fill(theme.bubbleUser)
-                } else {
-                    BubbleGlassBackground(tintColor: theme.bubbleUser,
-                                          tintOpacity: 0.14,
-                                          style: bubbleGlassStyle)
-                }
-            }
-            .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .onTapGesture {
-                guard stagedDrafts.indices.contains(index) else { return }
-                draft = stagedDrafts.remove(at: index)
-                inputFocused = true
-            }
-            .contextMenu {
-                Button {
-                    guard stagedDrafts.indices.contains(index) else { return }
-                    draft = stagedDrafts.remove(at: index)
-                    inputFocused = true
-                } label: { Label("编辑", systemImage: "pencil") }
-                Button(role: .destructive) {
-                    guard stagedDrafts.indices.contains(index) else { return }
-                    stagedDrafts.remove(at: index)
-                } label: { Label("删除", systemImage: "trash") }
             }
         }
-        .padding(.bottom, 5)
     }
 
     private func stageCurrentDraft() {
@@ -905,27 +815,16 @@ struct ChatView: View {
         guard !text.isEmpty else { return }
         stagedDrafts.append(text)
         draft = ""
+        inputFocused = true
+        DispatchQueue.main.async { inputFocused = true }
     }
 
-    private func takeDraftBatch() -> [String] {
+    private func takeDraftBatch() -> String {
         let tail = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         let parts = stagedDrafts + (tail.isEmpty ? [] : [tail])
         stagedDrafts = []
         draft = ""
-        return parts
-    }
-
-    // 0814 她要的连发：暂存几条就发几条独立消息，不再拼成一条换行长文。
-    // 引用只挂在第一条上（outgoingText 用完即清 selectedQuote）。
-    private func sendDraftBatch() {
-        var parts = takeDraftBatch()
-        if !pendingImages.isEmpty {
-            let imgs = pendingImages.map(\.jpeg)
-            pendingImages = []
-            let caption = parts.isEmpty ? "" : parts.removeFirst()
-            store.sendImages(imgs, caption: outgoingText(caption))
-        }
-        for part in parts { store.sendText(outgoingText(part)) }
+        return parts.joined(separator: "\n\n")
     }
 
     private func outgoingText(_ body: String) -> String {
@@ -1248,9 +1147,6 @@ struct MessageRow: View {
     @Environment(\.bubbleGlassStyle) private var bubbleGlassStyle
 
     private var isUser: Bool { msg.role == "user" }
-    private var isIceTheme: Bool {
-        theme.panelTextureAsset == "ChatWallIce" || theme.panelTextureAsset == "ChatWallIceDark"
-    }
     private var timestampTextInset: CGFloat {
         if theme.isPaper && !isUser { return 0 }
         return !msg.text.isEmpty && !msg.isSticker ? 12 : 0
@@ -1338,7 +1234,7 @@ struct MessageRow: View {
                                 .font(.system(size: 10))
                                 .foregroundColor(.secondary)
                         }
-                        if showTime && !isIceTheme {
+                        if showTime {
                             Text(Self.hm.string(from: msg.date))
                                 .font(.system(size: 10, design: .serif))
                                 .foregroundColor(theme.timestamp)
@@ -1450,22 +1346,10 @@ struct MessageRow: View {
                 bubbleContents
                     .padding(.horizontal, 14)
                     .padding(.vertical, theme.isPaper && isUser ? 11 : 10)
-                    .padding(.bottom, isIceTheme && showTime ? 11 : 0)
                     .background {
                         if theme.isPaper {
                             RoundedRectangle(cornerRadius: 18, style: .continuous)
                                 .fill(isUser ? theme.bubbleUser : theme.bubbleAI)
-                        } else if isIceTheme {
-                            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                .fill(.ultraThinMaterial)
-                                .overlay {
-                                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                        .fill(isUser ? theme.bubbleUser : theme.bubbleAI)
-                                }
-                                .overlay {
-                                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                        .stroke(theme.glassBorder.opacity(0.72), lineWidth: 0.7)
-                                }
                         } else {
                             BubbleGlassBackground(
                                 tintColor: isUser ? theme.bubbleUser : theme.bubbleAI,
@@ -1476,22 +1360,6 @@ struct MessageRow: View {
                     }
             }
         }
-            .frame(minWidth: isIceTheme ? 82 : nil,
-                   alignment: isUser ? .trailing : .leading)
-            .overlay(alignment: .bottomTrailing) {
-                if isIceTheme && showTime {
-                    HStack(spacing: 3) {
-                        Text(Self.hm.string(from: msg.date))
-                        if isUser {
-                            Text("✓✓").fontWeight(.semibold)
-                        }
-                    }
-                    .font(.system(size: 10, design: .serif))
-                    .foregroundColor(theme.timestamp.opacity(0.78))
-                    .padding(.trailing, 12)
-                    .padding(.bottom, 8)
-                }
-            }
             .contentShape(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
             )

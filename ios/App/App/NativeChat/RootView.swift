@@ -209,7 +209,7 @@ struct RootView: View {
 
     // 左头像｜中间留空｜右侧三枚按钮共用一块清透玻璃胶囊
     @ViewBuilder private var topBar: some View {
-        if themeName == "ice" || themeName == "ice-dark" { iceTopBar } else { legacyTopBar }
+        legacyTopBar
     }
 
     private var legacyTopBar: some View {
@@ -266,47 +266,6 @@ struct RootView: View {
         .frame(height: 44)
         .padding(.leading, 15)
         .padding(.trailing, 12)
-    }
-
-    private var iceTopBar: some View {
-        HStack(spacing: 10) {
-            Button { showTerminal = true } label: {
-                Group {
-                    if let img = avatarImage { Image(uiImage: img).resizable().scaledToFill() }
-                    else { Text("璟").font(.system(size: 13, design: .serif)) }
-                }.frame(width: 36, height: 36).clipShape(Circle())
-                    .overlay(Circle().stroke(Color.white.opacity(0.65), lineWidth: 1))
-            }.buttonStyle(.plain)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(UserDefaults.standard.string(forKey: "assistantName") ?? "陈璟")
-                    .font(.system(size: 15, weight: .semibold, design: .serif)).foregroundColor(theme.text)
-                Text(assistantAsleep ? "resting" : "online")
-                    .font(.system(size: 10, weight: .medium)).foregroundColor(theme.textLight)
-            }
-            Spacer()
-            Button { presentHouse(.music) } label: {
-                Image(systemName: "music.note").frame(width: 40, height: 40)
-            }
-            Button { presentHouse(.sidebar) } label: {
-                Image(systemName: "ellipsis")
-                    .frame(width: 48, height: 48)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-        }
-        .foregroundColor(theme.textDim)
-        .padding(.horizontal, 14)
-        .frame(height: 58)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .background(theme.glassTint.opacity(0.42), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .stroke(theme.glassBorder.opacity(0.72), lineWidth: 0.7)
-        }
-        .shadow(color: .black.opacity(theme.isDark ? 0.10 : 0.04), radius: 14, y: 4)
-        .padding(.horizontal, 10)
-        .padding(.top, 4)
-        .zIndex(5)
     }
 
     private func refreshThinkingState() async {
