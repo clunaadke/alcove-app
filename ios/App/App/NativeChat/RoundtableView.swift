@@ -229,6 +229,8 @@ struct RoundtableView: View {
     let onDismiss: () -> Void
     @StateObject private var store = RoundtableStore()
     @State private var draft = ""
+    @State private var previousDraft = ""
+    @State private var handlingReturn = false
     @State private var quotedText: String?
     @State private var paginationReady = false
     @State private var preservingHistoryPosition = false
@@ -814,14 +816,17 @@ struct RoundtableView: View {
     }
 
     private var draftField: some View {
-        PersistentReturnTextField(
-            text: $draft,
-            isFocused: $focused,
-            placeholder: "ring the chime …",
-            onReturn: holdRoundtableDraft
-        )
-        .frame(height: 54)
-        .padding(.horizontal, 14)
+        TextField("", text: $draft,
+                  prompt: Text("ring the chime …")
+                    .font(.system(size: 15.5, design: .serif)).italic(),
+                  axis: .vertical)
+            .focused($focused)
+            .lineLimit(1...5)
+            .font(.system(size: 15.5))
+            .tint(Color(uiColor: .systemGray3))
+            .padding(.init(top: 16, leading: 14, bottom: 12, trailing: 14))
+            .contentShape(Rectangle())
+            .onChange(of: draft) { value in handleDraftChange(value) }
     }
 
     private var recordingStatus: some View {
@@ -854,7 +859,7 @@ struct RoundtableView: View {
         Image(systemName: name)
             .font(.system(size: 18, weight: .medium))
             .foregroundColor(theme.textDim)
-            .frame(width: 32, height: 32)
+            .frame(width: 36, height: 36)
             .background(theme.capsuleTint.opacity(theme.isDark ? 0.64 : 0.82), in: Circle())
     }
 
@@ -918,6 +923,25 @@ struct RoundtableView: View {
         quotedText = nil
         focused = true
         Task { await store.sendHold(outgoing) }
+    }
+
+    private func handleDraftChange(_ value: String) {
+        guard !handlingReturn else {
+            previousDraft = value
+            return
+        }
+        let before = previousDraft
+        previousDraft = value
+        guard value == before + "\n",
+              !before.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        handlingReturn = true
+        draft = before
+        holdRoundtableDraft()
+        previousDraft = ""
+        DispatchQueue.main.async {
+            handlingReturn = false
+            previousDraft = draft
+        }
     }
 
     private var canSend: Bool {

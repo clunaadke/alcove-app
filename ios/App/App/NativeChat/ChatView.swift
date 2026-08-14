@@ -5,81 +5,6 @@ import AVFoundation
 import UniformTypeIdentifiers
 import UIKit
 
-/// SwiftUI's TextField briefly ends editing on submit.  This wrapper handles
-/// Return at the UITextField delegate boundary and returns false, so the same
-/// responder stays active while the current paragraph is held.
-struct PersistentReturnTextField: UIViewRepresentable {
-    @Binding var text: String
-    var isFocused: FocusState<Bool>.Binding
-    let placeholder: String
-    let onReturn: () -> Void
-
-    func makeCoordinator() -> Coordinator { Coordinator(self) }
-
-    func makeUIView(context: Context) -> UITextField {
-        let field = UITextField(frame: .zero)
-        field.delegate = context.coordinator
-        field.font = .systemFont(ofSize: 15.5)
-        field.returnKeyType = .default
-        field.clearButtonMode = .never
-        field.autocorrectionType = .default
-        field.attributedPlaceholder = NSAttributedString(
-            string: placeholder,
-            attributes: [
-                .font: UIFont.italicSystemFont(ofSize: 15.5),
-                .foregroundColor: UIColor.tertiaryLabel
-            ]
-        )
-        field.addTarget(context.coordinator, action: #selector(Coordinator.changed), for: .editingChanged)
-        return field
-    }
-
-    func updateUIView(_ field: UITextField, context: Context) {
-        context.coordinator.parent = self
-        // 拼音组字期间禁止回写：轮询刷新一到就覆盖 field.text 会把
-        // 正在组的字母当场抹掉，中文一个字都打不进去
-        if field.markedTextRange == nil, field.text != text { field.text = text }
-        // 焦点边沿触发：只有 SwiftUI 侧的值相对上次同步发生变化时才去推
-        // UIKit。UIKit 自己发起的聚焦/失焦经 delegate 回写 syncedFocus，
-        // 不会在下一次刷新时被稚旧状态反向拽回（点好几下才聚焦、键盘
-        // 收不下来的死循环就是这么来的）
-        let want = isFocused.wrappedValue
-        if want != context.coordinator.syncedFocus {
-            context.coordinator.syncedFocus = want
-            DispatchQueue.main.async {
-                if want {
-                    if !field.isFirstResponder { field.becomeFirstResponder() }
-                } else {
-                    if field.isFirstResponder { field.resignFirstResponder() }
-                }
-            }
-        }
-    }
-
-    final class Coordinator: NSObject, UITextFieldDelegate {
-        var parent: PersistentReturnTextField
-        var syncedFocus = false
-        init(_ parent: PersistentReturnTextField) { self.parent = parent }
-
-        @objc func changed(_ field: UITextField) {
-            guard field.markedTextRange == nil else { return }
-            parent.text = field.text ?? ""
-        }
-        func textFieldDidBeginEditing(_ textField: UITextField) {
-            syncedFocus = true
-            DispatchQueue.main.async { self.parent.isFocused.wrappedValue = true }
-        }
-        func textFieldDidEndEditing(_ textField: UITextField) {
-            syncedFocus = false
-            DispatchQueue.main.async { self.parent.isFocused.wrappedValue = false }
-        }
-        func textFieldShouldReturn(_ textField: UITextField) -> Bool {
-            parent.onReturn()
-            return false
-        }
-    }
-}
-
 struct ChatView: View {
     @Binding var thinkingEnabled: Bool
     let thinkingKnown: Bool
@@ -89,6 +14,8 @@ struct ChatView: View {
     @StateObject private var store = ChatStore()
     @StateObject private var wallpaperStore = ChatWallpaperStore()
     @State private var draft = ""
+    @State private var previousDraft = ""
+    @State private var handlingReturn = false
     @State private var selectedQuote: String?
     @State private var showStickers = false
     @State private var photoItems: [PhotosPickerItem] = []
@@ -721,14 +648,17 @@ struct ChatView: View {
                     }
                     .padding(.init(top: 16, leading: 14, bottom: 4, trailing: 14))
                 } else {
-                    PersistentReturnTextField(
-                        text: $draft,
-                        isFocused: $inputFocused,
-                        placeholder: "ring the chime …",
-                        onReturn: holdCurrentDraft
-                    )
-                    .frame(height: 54)
-                    .padding(.horizontal, 14)
+                    TextField("", text: $draft,
+                              prompt: Text("ring the chime …")
+                                .font(.system(size: 15.5, design: .serif)).italic(),
+                              axis: .vertical)
+                        .focused($inputFocused)
+                        .lineLimit(1...5)
+                        .font(.system(size: 15.5))
+                        .tint(Color(uiColor: .systemGray3))
+                        .padding(.init(top: 16, leading: 14, bottom: 12, trailing: 14))
+                        .contentShape(Rectangle())
+                        .onChange(of: draft) { value in handleDraftChange(value) }
                 }
                 HStack(spacing: 2) {
                     if recorder.isRecording {
@@ -736,7 +666,7 @@ struct ChatView: View {
                             Image(systemName: "xmark")
                                 .font(.system(size: 15, weight: .light))
                                 .foregroundColor(theme.textDim)
-                                .frame(width: 32, height: 32)
+                                .frame(width: 36, height: 36)
                         }
                         Spacer()
                     } else {
@@ -757,7 +687,7 @@ struct ChatView: View {
                             Image(systemName: "plus")
                                 .font(.system(size: 18, weight: .medium))
                                 .foregroundColor(theme.textDim)
-                                .frame(width: 32, height: 32)
+                                .frame(width: 36, height: 36)
                                 .background(theme.glassTint.opacity(theme.isDark ? 0.64 : 0.82), in: Circle())
                         }
                         if !store.modelLabel.isEmpty {
@@ -773,7 +703,7 @@ struct ChatView: View {
                                 }
                                 .font(.system(size: 12, weight: .medium))
                                 .foregroundColor(theme.textLight)
-                                .padding(.horizontal, 10).frame(height: 32)
+                                .padding(.horizontal, 12).frame(height: 36)
                                 .background(theme.glassTint.opacity(theme.isDark ? 0.72 : 0.92),
                                             in: Capsule())
                                 .overlay(Capsule().stroke(theme.glassBorder, lineWidth: 1))
@@ -835,6 +765,25 @@ struct ChatView: View {
         draft = ""
         store.sendHold(text)
         inputFocused = true
+    }
+
+    private func handleDraftChange(_ value: String) {
+        guard !handlingReturn else {
+            previousDraft = value
+            return
+        }
+        let before = previousDraft
+        previousDraft = value
+        guard value == before + "\n",
+              !before.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        handlingReturn = true
+        draft = before
+        holdCurrentDraft()
+        previousDraft = ""
+        DispatchQueue.main.async {
+            handlingReturn = false
+            previousDraft = draft
+        }
     }
 
     private func performDynamicComposerAction() {
