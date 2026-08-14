@@ -742,14 +742,7 @@ struct ChatView: View {
                         if recorder.isRecording {
                             if let data = recorder.stopAndTake() { store.sendVoice(data: data) }
                         } else {
-                            let t = takeDraftBatch()
-                            if !pendingImages.isEmpty {
-                                let imgs = pendingImages.map(\.jpeg)
-                                pendingImages = []
-                                store.sendImages(imgs, caption: outgoingText(t))
-                            } else {
-                                store.sendText(outgoingText(t))
-                            }
+                            sendDraftBatch()
                         }
                     } label: {
                         Image(systemName: "paperplane.fill")
@@ -838,9 +831,7 @@ struct ChatView: View {
                         .overlay(Circle().stroke(theme.glassBorder, lineWidth: 0.8))
                 }
                 Button {
-                    let t = takeDraftBatch()
-                    if !pendingImages.isEmpty { let imgs = pendingImages.map(\.jpeg); pendingImages = []; store.sendImages(imgs, caption: outgoingText(t)) }
-                    else { store.sendText(outgoingText(t)) }
+                    sendDraftBatch()
                 } label: {
                     Image(systemName: "arrow.up").font(.system(size: 17, weight: .semibold)).foregroundColor(.white)
                         .frame(width: 40, height: 40)
@@ -854,9 +845,6 @@ struct ChatView: View {
     }
 
     private func stagedMessageBubble(text: String, index: Int) -> some View {
-        let longest = text.split(separator: "\n", omittingEmptySubsequences: false).map(\.count).max() ?? 1
-        let width = min(UIScreen.main.bounds.width * 0.72,
-                        max(82, CGFloat(longest) * CGFloat(chatFontSize) * 0.94 + 30))
         return HStack(alignment: .bottom) {
             Spacer(minLength: 48)
             VStack(alignment: .trailing, spacing: 4) {
@@ -870,7 +858,7 @@ struct ChatView: View {
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 10)
-            .frame(width: width, alignment: .trailing)
+            .frame(minWidth: 82, alignment: .trailing)
             .background {
                 if themeName == "ice" || themeName == "ice-dark" {
                     RoundedRectangle(cornerRadius: 18, style: .continuous)
@@ -919,12 +907,25 @@ struct ChatView: View {
         draft = ""
     }
 
-    private func takeDraftBatch() -> String {
+    private func takeDraftBatch() -> [String] {
         let tail = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         let parts = stagedDrafts + (tail.isEmpty ? [] : [tail])
         stagedDrafts = []
         draft = ""
-        return parts.joined(separator: "\n\n")
+        return parts
+    }
+
+    // 0814 她要的连发：暂存几条就发几条独立消息，不再拼成一条换行长文。
+    // 引用只挂在第一条上（outgoingText 用完即清 selectedQuote）。
+    private func sendDraftBatch() {
+        var parts = takeDraftBatch()
+        if !pendingImages.isEmpty {
+            let imgs = pendingImages.map(\.jpeg)
+            pendingImages = []
+            let caption = parts.isEmpty ? "" : parts.removeFirst()
+            store.sendImages(imgs, caption: outgoingText(caption))
+        }
+        for part in parts { store.sendText(outgoingText(part)) }
     }
 
     private func outgoingText(_ body: String) -> String {
