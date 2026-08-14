@@ -13,7 +13,6 @@ struct ChatView: View {
     @StateObject private var store = ChatStore()
     @StateObject private var wallpaperStore = ChatWallpaperStore()
     @State private var draft = ""
-    @State private var stagedDrafts: [String] = []
     @State private var selectedQuote: String?
     @State private var showStickers = false
     @State private var photoItems: [PhotosPickerItem] = []
@@ -558,7 +557,7 @@ struct ChatView: View {
     }
 
     private var canSend: Bool {
-        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !stagedDrafts.isEmpty || !pendingImages.isEmpty
+        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !pendingImages.isEmpty
     }
 
     // PWA .chat-input-capsule 同款：大胶囊两行，粉描边，透底毛玻璃
@@ -576,7 +575,6 @@ struct ChatView: View {
                     .padding(.vertical, 3)
                     .background(.ultraThinMaterial, in: Capsule())
             }
-            stagedDraftStrip
             VStack(spacing: 0) {
                 if let quote = selectedQuote {
                     HStack(alignment: .center, spacing: 8) {
@@ -654,7 +652,7 @@ struct ChatView: View {
                     .focused($inputFocused)
                     .lineLimit(1)
                     .submitLabel(.return)
-                    .onSubmit { stageCurrentDraft() }
+                    .onSubmit { holdCurrentDraft() }
                     .font(.system(size: 15.5, weight: .regular, design: .default))
                     .tint(Color(uiColor: .systemGray3))
                     .padding(.init(top: 16, leading: 14, bottom: 12, trailing: 14))
@@ -722,12 +720,23 @@ struct ChatView: View {
                         Spacer()
                         // 攒气泡：空行入库不触发回复（她的 hold 功能）
                         Button {
-                            stageCurrentDraft()
+                            holdCurrentDraft()
                         } label: {
-                            Image(systemName: "arrow.turn.down.left")
+                            ZStack(alignment: .topTrailing) {
+                                Image(systemName: "arrow.turn.down.left")
                                     .font(.system(size: 15, weight: .medium))
                                     .foregroundColor(theme.textDim)
                                     .frame(width: 32, height: 32)
+                                if store.heldCount > 0 {
+                                    Text("\(store.heldCount)")
+                                        .font(.system(size: 10, weight: .semibold))
+                                        .foregroundColor(.white)
+                                        .padding(.horizontal, 4)
+                                        .frame(minWidth: 15, minHeight: 15)
+                                        .background(theme.sendTop, in: Capsule())
+                                        .offset(x: 3, y: -3)
+                                }
+                            }
                         }
                         .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                         .padding(.trailing, 12)
@@ -736,7 +745,8 @@ struct ChatView: View {
                         if recorder.isRecording {
                             if let data = recorder.stopAndTake() { store.sendVoice(data: data) }
                         } else {
-                            let t = takeDraftBatch()
+                            let t = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+                            draft = ""
                             if !pendingImages.isEmpty {
                                 let imgs = pendingImages.map(\.jpeg)
                                 pendingImages = []
@@ -784,47 +794,13 @@ struct ChatView: View {
         .onPreferenceChange(InputBarHeightKey.self) { inputBarHeight = $0 }
     }
 
-    private var stagedDraftStrip: some View {
-        Group {
-            if !stagedDrafts.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 7) {
-                        ForEach(Array(stagedDrafts.enumerated()), id: \.offset) { idx, text in
-                            HStack(spacing: 7) {
-                                Text(text).lineLimit(1)
-                                Button { draft = text; stagedDrafts.remove(at: idx) } label: {
-                                    Image(systemName: "pencil").font(.system(size: 10, weight: .semibold))
-                                }
-                                Button { stagedDrafts.remove(at: idx) } label: {
-                                    Image(systemName: "xmark").font(.system(size: 10, weight: .semibold))
-                                }
-                            }
-                            .font(.system(size: 12)).foregroundColor(theme.textDim)
-                            .padding(.horizontal, 11).frame(height: 32)
-                            .background(.ultraThinMaterial, in: Capsule())
-                            .overlay(Capsule().stroke(theme.glassBorder, lineWidth: 0.7))
-                        }
-                    }.padding(.horizontal, 15)
-                }
-            }
-        }
-    }
-
-    private func stageCurrentDraft() {
+    private func holdCurrentDraft() {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
-        stagedDrafts.append(text)
         draft = ""
+        store.sendHold(text)
         inputFocused = true
         DispatchQueue.main.async { inputFocused = true }
-    }
-
-    private func takeDraftBatch() -> String {
-        let tail = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        let parts = stagedDrafts + (tail.isEmpty ? [] : [tail])
-        stagedDrafts = []
-        draft = ""
-        return parts.joined(separator: "\n\n")
     }
 
     private func outgoingText(_ body: String) -> String {
