@@ -21,6 +21,7 @@ struct ChatView: View {
     @State private var photoViewer: PhotoViewerSelection?
     @StateObject private var recorder = VoiceRecorder()
     @State private var atBottom = true
+    @State private var olderPagingArmed = false
     @State private var showCamera = false
     @State private var showDocPicker = false
     @State private var showPhotoPicker = false
@@ -192,7 +193,15 @@ struct ChatView: View {
                     LazyVStack(alignment: .leading, spacing: 6) {
                         ForEach(Array(store.messages.enumerated()), id: \.element.id) { idx, msg in
                             chatMessageRow(at: idx, message: msg)
-                                .onAppear { if idx == 0 { store.loadOlder() } }
+                                .onAppear {
+                                    guard idx == 0, olderPagingArmed else { return }
+                                    olderPagingArmed = false
+                                    store.loadOlder()
+                                }
+                                .onDisappear {
+                                    guard idx == 0 else { return }
+                                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { olderPagingArmed = true }
+                                }
                         }
                         // 实时预览框已退休；陈璟正在…是独立状态，一根毛不动。
                         if store.isTyping {
@@ -289,7 +298,9 @@ struct ChatView: View {
             }
             .onChange(of: store.loading) { loading in
                 if !loading {
+                    olderPagingArmed = false
                     scrollToTail(proxy, delays: [0.05, 0.3, 0.8, 1.5], animated: false)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { olderPagingArmed = true }
                 }
             }
             .onChange(of: store.isTyping) { t in
