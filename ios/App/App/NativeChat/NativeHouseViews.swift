@@ -4205,7 +4205,7 @@ private struct NativeStudioView: View {
                     Label(message.string("attachment_filename").isEmpty ? "附件" : message.string("attachment_filename"), systemImage: message.string("attachment_type") == "image" ? "photo" : "doc")
                         .font(.system(size: 11, weight: .medium)).padding(9).background(.white.opacity(0.34), in: RoundedRectangle(cornerRadius: 11))
                 }
-                Text(message.string("text")).font(.system(size: 14, design: .serif)).lineSpacing(5).textSelection(.enabled)
+                Text(alcoveMarkdown(message.string("text"))).font(.system(size: 14, design: .serif)).lineSpacing(5).textSelection(.enabled)
                     .padding(.horizontal, 14).padding(.vertical, 11)
                     .background(mine ? theme.fyAccent.opacity(0.15) : Color.white.opacity(0.52), in: RoundedRectangle(cornerRadius: 18))
                     .frame(maxWidth: 300, alignment: mine ? .trailing : .leading)

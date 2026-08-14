@@ -1068,7 +1068,7 @@ private struct RoundtableRow: View {
 
     // 气泡跟主聊天页统一：同一个玻璃背景，只有 tint 分你我（她定的）
     private var bubble: some View {
-        Text(msg.text)
+        Text(alcoveMarkdown(msg.text))
             .font(.system(size: CGFloat(fontSize)))
             .lineSpacing(5)
             .foregroundColor(theme.text)

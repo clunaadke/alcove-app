@@ -1,5 +1,14 @@
 import Foundation
 
+/// One renderer for ordinary chat text in every Alcove room. The stored text
+/// stays untouched; only its presentation receives inline Markdown styling.
+func alcoveMarkdown(_ raw: String) -> AttributedString {
+    (try? AttributedString(
+        markdown: raw,
+        options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+    )) ?? AttributedString(raw)
+}
+
 // 后端 /api/history 与 /api/poll 返回的消息记录
 struct ChatMessage: Identifiable, Equatable {
     let uid = UUID()

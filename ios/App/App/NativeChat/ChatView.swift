@@ -20,7 +20,7 @@ struct PersistentReturnTextField: UIViewRepresentable {
         let field = UITextField(frame: .zero)
         field.delegate = context.coordinator
         field.font = .systemFont(ofSize: 15.5)
-        field.returnKeyType = .return
+        field.returnKeyType = .default
         field.clearButtonMode = .never
         field.autocorrectionType = .default
         field.attributedPlaceholder = NSAttributedString(
@@ -1085,8 +1085,7 @@ private struct SelectableMessageText: UIViewRepresentable {
         let renderedKey = "\(text)\u{1f}\(fontSize)\u{1f}\(lineSpacing)\u{1f}\(color.description)\u{1f}\(maximumNumberOfLines)"
         guard context.coordinator.renderedKey != renderedKey else { return }
         guard view.selectedRange.length == 0 else { return }
-        let source = (try? AttributedString(markdown: text,
-            options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(text)
+        let source = alcoveMarkdown(text)
         let rendered = NSMutableAttributedString(attributedString: NSAttributedString(source))
         let all = NSRange(location: 0, length: rendered.length)
         rendered.addAttribute(.foregroundColor, value: color, range: all)
@@ -1336,11 +1335,7 @@ struct MessageRow: View {
 
     // The text stays crisp above a real wallpaper-refraction layer.
     private func markdownText(_ raw: String) -> Text {
-        if let attr = try? AttributedString(markdown: raw,
-                options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)) {
-            return Text(attr)
-        }
-        return Text(raw)
+        Text(alcoveMarkdown(raw))
     }
 
     private var bubble: some View {
