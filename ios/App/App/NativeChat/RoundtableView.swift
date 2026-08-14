@@ -932,8 +932,14 @@ struct RoundtableView: View {
         }
         let before = previousDraft
         previousDraft = value
-        guard value == before + "\n",
-              !before.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        guard value == before + "\n" else { return }
+        guard !before.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            handlingReturn = true
+            draft = before
+            previousDraft = before
+            DispatchQueue.main.async { handlingReturn = false }
+            return
+        }
         handlingReturn = true
         draft = before
         holdRoundtableDraft()
