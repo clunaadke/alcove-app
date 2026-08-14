@@ -36,21 +36,43 @@ struct PersistentReturnTextField: UIViewRepresentable {
 
     func updateUIView(_ field: UITextField, context: Context) {
         context.coordinator.parent = self
-        if field.text != text { field.text = text }
-        if isFocused.wrappedValue, !field.isFirstResponder {
-            field.becomeFirstResponder()
-        } else if !isFocused.wrappedValue, field.isFirstResponder {
-            field.resignFirstResponder()
+        // 拼音组字期间禁止回写：轮询刷新一到就覆盖 field.text 会把
+        // 正在组的字母当场抹掉，中文一个字都打不进去
+        if field.markedTextRange == nil, field.text != text { field.text = text }
+        // 焦点边沿触发：只有 SwiftUI 侧的值相对上次同步发生变化时才去推
+        // UIKit。UIKit 自己发起的聚焦/失焦经 delegate 回写 syncedFocus，
+        // 不会在下一次刷新时被稚旧状态反向拽回（点好几下才聚焦、键盘
+        // 收不下来的死循环就是这么来的）
+        let want = isFocused.wrappedValue
+        if want != context.coordinator.syncedFocus {
+            context.coordinator.syncedFocus = want
+            DispatchQueue.main.async {
+                if want {
+                    if !field.isFirstResponder { field.becomeFirstResponder() }
+                } else {
+                    if field.isFirstResponder { field.resignFirstResponder() }
+                }
+            }
         }
     }
 
     final class Coordinator: NSObject, UITextFieldDelegate {
         var parent: PersistentReturnTextField
+        var syncedFocus = false
         init(_ parent: PersistentReturnTextField) { self.parent = parent }
 
-        @objc func changed(_ field: UITextField) { parent.text = field.text ?? "" }
-        func textFieldDidBeginEditing(_ textField: UITextField) { parent.isFocused.wrappedValue = true }
-        func textFieldDidEndEditing(_ textField: UITextField) { parent.isFocused.wrappedValue = false }
+        @objc func changed(_ field: UITextField) {
+            guard field.markedTextRange == nil else { return }
+            parent.text = field.text ?? ""
+        }
+        func textFieldDidBeginEditing(_ textField: UITextField) {
+            syncedFocus = true
+            DispatchQueue.main.async { self.parent.isFocused.wrappedValue = true }
+        }
+        func textFieldDidEndEditing(_ textField: UITextField) {
+            syncedFocus = false
+            DispatchQueue.main.async { self.parent.isFocused.wrappedValue = false }
+        }
         func textFieldShouldReturn(_ textField: UITextField) -> Bool {
             parent.onReturn()
             return false
@@ -344,6 +366,9 @@ struct ChatView: View {
                 } else {
                     scrollToTail(proxy, delays: [0.1, 0.35], animated: true)
                 }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
+                scrollToTail(proxy, delays: [0, 0.12, 0.3], animated: true)
             }
             .onChange(of: store.messages.count) { _ in
                 guard atBottom || inputFocused else { return }
@@ -702,16 +727,16 @@ struct ChatView: View {
                         placeholder: "ring the chime …",
                         onReturn: holdCurrentDraft
                     )
-                    .frame(height: 47)
+                    .frame(height: 62)
                     .padding(.horizontal, 14)
                 }
                 HStack(spacing: 2) {
                     if recorder.isRecording {
                         Button { recorder.cancel() } label: {
                             Image(systemName: "xmark")
-                                .font(.system(size: 15, weight: .light))
+                                .font(.system(size: 14, weight: .light))
                                 .foregroundColor(theme.textDim)
-                                .frame(width: 32, height: 32)
+                                .frame(width: 28, height: 28)
                         }
                         Spacer()
                     } else {
@@ -730,9 +755,9 @@ struct ChatView: View {
                             }
                         } label: {
                             Image(systemName: "plus")
-                                .font(.system(size: 18, weight: .medium))
+                                .font(.system(size: 16, weight: .medium))
                                 .foregroundColor(theme.textDim)
-                                .frame(width: 36, height: 36)
+                                .frame(width: 28, height: 28)
                                 .background(theme.glassTint.opacity(theme.isDark ? 0.64 : 0.82), in: Circle())
                         }
                         if !store.modelLabel.isEmpty {
@@ -746,9 +771,9 @@ struct ChatView: View {
                                     Text(store.modelLabel)
                                     Image(systemName: "chevron.up.chevron.down").font(.system(size: 8))
                                 }
-                                .font(.system(size: 12, weight: .medium))
+                                .font(.system(size: 11, weight: .medium))
                                 .foregroundColor(theme.textLight)
-                                .padding(.horizontal, 12).frame(height: 36)
+                                .padding(.horizontal, 9).frame(height: 28)
                                 .background(theme.glassTint.opacity(theme.isDark ? 0.72 : 0.92),
                                             in: Capsule())
                                 .overlay(Capsule().stroke(theme.glassBorder, lineWidth: 1))
@@ -760,10 +785,10 @@ struct ChatView: View {
                     }
                     Button(action: performDynamicComposerAction) {
                         ZStack(alignment: .topTrailing) {
-                            Image(systemName: (canSend || recorder.isRecording) ? "arrow.up" : "waveform")
-                            .font(.system(size: 17, weight: .semibold))
+                            Image(systemName: (canSend || recorder.isRecording || store.heldCount > 0) ? "arrow.up" : "waveform")
+                            .font(.system(size: 15, weight: .semibold))
                             .foregroundColor(.white)
-                            .frame(width: 40, height: 40)
+                            .frame(width: 32, height: 32)
                             .background(
                                 LinearGradient(
                                     colors: [theme.sendTop, theme.sendBottom],
@@ -771,7 +796,7 @@ struct ChatView: View {
                             .clipShape(Circle())
                             .shadow(color: .black.opacity(0.2),
                                     radius: 4, y: 2)
-                            if store.heldCount > 0 && (canSend || recorder.isRecording) {
+                            if store.heldCount > 0 {
                                 Text("\(store.heldCount)")
                                     .font(.system(size: 10, weight: .bold))
                                     .foregroundColor(.white)
@@ -782,7 +807,9 @@ struct ChatView: View {
                         }
                     }
                 }
-                .padding(.init(top: 4, leading: 8, bottom: 8, trailing: 8))
+                // 0814 她要的：按钮排缩小并贴底一点，省出的高度全给打字区
+                // （54→62），外框总高不变
+                .padding(.init(top: 2, leading: 8, bottom: 6, trailing: 8))
             }
             .background {
                 RoundedRectangle(cornerRadius: 28, style: .continuous)
@@ -818,6 +845,10 @@ struct ChatView: View {
             return
         }
         guard canSend else {
+            if store.heldCount > 0 {
+                store.flushHeld()
+                return
+            }
             recorder.start()
             return
         }

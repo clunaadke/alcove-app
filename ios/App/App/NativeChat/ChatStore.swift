@@ -533,6 +533,24 @@ final class ChatStore: ObservableObject {
         }
     }
 
+    /// Send bubbles already stored by sendHold without manufacturing an extra
+    /// empty bubble. The backend accepts an empty final text when held items exist.
+    func flushHeld() {
+        guard heldCount > 0 else { return }
+        heldCount = 0
+        heldGen += 1
+        optimisticTyping()
+        Task {
+            do {
+                _ = try await AlcoveAPI.send(text: "")
+                if let count = try? await AlcoveAPI.heldCount() { heldCount = count }
+            } catch {
+                connectionError = true
+                if let count = try? await AlcoveAPI.heldCount() { heldCount = count }
+            }
+        }
+    }
+
     func deleteMessage(_ msg: ChatMessage) {
         deletedMessageTs.insert(msg.ts)
         let keepsAttachment = !(msg.attachmentUrl ?? "").isEmpty

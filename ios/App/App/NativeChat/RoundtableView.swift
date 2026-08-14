@@ -64,6 +64,7 @@ final class RoundtableStore: ObservableObject {
     @Published var messages: [RoundtableMessage] = []
     @Published var members: [RoundtableMember] = []
     @Published var sending = false
+    @Published var heldCount = 0
     @Published var blockAssistant = false
     @Published var blockGpt = false
     @Published var loadingOlder = false
@@ -177,7 +178,25 @@ final class RoundtableStore: ObservableObject {
         sending = true
         defer { sending = false }
         _ = try? await AlcoveAPI.postRaw("/api/roundtable/append", body: body)
+        heldCount = 0
         await refresh()
+        _ = try? await AlcoveAPI.postRaw("/api/roundtable/codex", body: [:])
+        await refresh()
+    }
+
+    func sendHold(_ text: String) async {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let body = ["role": "user", "sender": "陈霁", "text": trimmed]
+        if (try? await AlcoveAPI.postRaw("/api/roundtable/append", body: body)) != nil {
+            heldCount += 1
+            await refresh()
+        }
+    }
+
+    func flushHeld() async {
+        guard heldCount > 0 else { return }
+        heldCount = 0
         _ = try? await AlcoveAPI.postRaw("/api/roundtable/codex", body: [:])
         await refresh()
     }
@@ -627,6 +646,9 @@ struct RoundtableView: View {
                 // 跟主聊天页一样：键盘改变可视区域后重新把尾部锚到输入框上方。
                 scrollToRoundtableTail(proxy, delays: [0.05, 0.25, 0.5], animated: true)
             }
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
+                scrollToRoundtableTail(proxy, delays: [0, 0.12, 0.3], animated: true)
+            }
             .onChange(of: inputBarHeight) { _ in
                 scrollToRoundtableTail(proxy, delays: [0.05, 0.3], animated: true)
             }
@@ -751,16 +773,26 @@ struct RoundtableView: View {
                     Spacer()
                 }
                 Button(action: performDynamicComposerAction) {
-                    Image(systemName: (canSend || recorder.isRecording) ? "arrow.up" : "waveform")
+                    ZStack(alignment: .topTrailing) {
+                    Image(systemName: (canSend || recorder.isRecording || store.heldCount > 0) ? "arrow.up" : "waveform")
                         .font(.system(size: 17, weight: .semibold))
                         .foregroundColor(.white)
-                        .frame(width: 40, height: 40)
+                        .frame(width: 36, height: 36)
                         .background(
                             LinearGradient(colors: [theme.sendTop, theme.sendBottom],
                                            startPoint: .topLeading,
                                            endPoint: .bottomTrailing))
                         .clipShape(Circle())
                         .shadow(color: .black.opacity(0.2), radius: 4, y: 2)
+                        if store.heldCount > 0 {
+                            Text("\(store.heldCount)")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundColor(.white)
+                                .frame(minWidth: 16, minHeight: 16)
+                                .background(theme.sendTop, in: Capsule())
+                                .offset(x: 3, y: -3)
+                        }
+                    }
                 }
             }
             .padding(.init(top: 4, leading: 8, bottom: 8, trailing: 8))
@@ -782,16 +814,14 @@ struct RoundtableView: View {
     }
 
     private var draftField: some View {
-        TextField("", text: $draft,
-                  prompt: Text("ring the chime …")
-                    .font(.system(size: 15.5, design: .serif)).italic(),
-                  axis: .vertical)
-            .focused($focused)
-            .lineLimit(1...5)
-            .font(.system(size: 15.5))
-            .tint(Color(uiColor: .systemGray3))
-            .padding(.init(top: 16, leading: 14, bottom: 12, trailing: 14))
-            .contentShape(Rectangle())
+        PersistentReturnTextField(
+            text: $draft,
+            isFocused: $focused,
+            placeholder: "ring the chime …",
+            onReturn: holdRoundtableDraft
+        )
+        .frame(height: 54)
+        .padding(.horizontal, 14)
     }
 
     private var recordingStatus: some View {
@@ -824,7 +854,7 @@ struct RoundtableView: View {
         Image(systemName: name)
             .font(.system(size: 18, weight: .medium))
             .foregroundColor(theme.textDim)
-            .frame(width: 36, height: 36)
+            .frame(width: 32, height: 32)
             .background(theme.capsuleTint.opacity(theme.isDark ? 0.64 : 0.82), in: Circle())
     }
 
@@ -868,9 +898,26 @@ struct RoundtableView: View {
     private func performDynamicComposerAction() {
         if recorder.isRecording || canSend {
             sendComposerContent()
+        } else if store.heldCount > 0 {
+            Task { await store.flushHeld() }
         } else {
             recorder.start()
         }
+    }
+
+    private func holdRoundtableDraft() {
+        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        let outgoing: String
+        if let quotedText {
+            outgoing = "「\(quotedText.prefix(60))」\n\(text)"
+        } else {
+            outgoing = text
+        }
+        draft = ""
+        quotedText = nil
+        focused = true
+        Task { await store.sendHold(outgoing) }
     }
 
     private var canSend: Bool {
