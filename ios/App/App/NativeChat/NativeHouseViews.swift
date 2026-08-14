@@ -4386,6 +4386,7 @@ private struct NativeWorkbenchView: View {
     @State private var loading = true
     @State private var expanded = false
     @State private var contactItems: [[String: Any]] = []
+    @State private var contactsExpanded = false
     @State private var showingContact = false
     @State private var contactSender = "陈霁"
     @State private var contactRecipient = "陈璟"
@@ -4461,7 +4462,7 @@ private struct NativeWorkbenchView: View {
                 Text("这里会收下我们三个人之间的协作请求与问题上报。")
                     .font(.system(size: 11)).foregroundColor(theme.textDim).padding(.vertical, 5)
             } else {
-                ForEach(Array(contactItems.prefix(5).enumerated()), id: \.offset) { _, item in
+                ForEach(Array((contactsExpanded ? contactItems : Array(contactItems.prefix(4))).enumerated()), id: \.offset) { _, item in
                     Button { selectedContact = item } label: { HStack(alignment: .top, spacing: 10) {
                         Image(systemName: item.string("status") == "done" ? "checkmark.circle.fill" : "arrow.up.right.circle.fill")
                             .foregroundColor(item.string("status") == "done" ? .green : theme.fyAccent)
@@ -4477,6 +4478,22 @@ private struct NativeWorkbenchView: View {
                         Text(contactStatus(item.string("status")))
                             .font(.system(size: 9, weight: .medium)).foregroundColor(theme.textDim)
                     }.padding(.vertical, 5).contentShape(Rectangle()) }.buttonStyle(.plain)
+                }
+                if contactItems.count > 4 {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) { contactsExpanded.toggle() }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Text(contactsExpanded ? "收起" : "展开全部 · \(contactItems.count)")
+                            Image(systemName: contactsExpanded ? "chevron.up" : "chevron.down")
+                        }
+                        .font(.system(size: 10.5, weight: .semibold))
+                        .foregroundColor(theme.fyAccent)
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 6)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
                 }
             }
         }.padding(15).workbenchGlass(theme, accent: Color(red: 0.64, green: 0.52, blue: 0.72))
@@ -4620,6 +4637,10 @@ private struct NativeWorkbenchView: View {
                         detail: "负载 \(number(cpu, "load_1m", digits: 2))")
             resourceBar("内存", used: number(memory, "used_percent"),
                         detail: "已用 \(formatBytes(memory.int("used_bytes"))) · 剩余 \(formatBytes(memory.int("available_bytes")))")
+            let swap = memory.object("swap")
+            resourceBar("Swap", used: number(swap, "used_percent"),
+                        detail: "已用 \(formatBytes(swap.int("used_bytes"))) · 剩余 \(formatBytes(swap.int("free_bytes"))) / \(formatBytes(swap.int("total_bytes")))",
+                        warning: number(swap, "used_percent"))
             resourceBar("系统盘", used: number(disk, "used_percent"),
                         detail: "已用 \(formatBytes(disk.int("used_bytes"))) · 剩余 \(formatBytes(disk.int("free_bytes"))) / \(formatBytes(disk.int("total_bytes")))")
             Divider().opacity(0.22)
@@ -4635,7 +4656,7 @@ private struct NativeWorkbenchView: View {
         .workbenchGlass(theme, accent: Color(red: 0.40, green: 0.63, blue: 0.57))
     }
 
-    private func resourceBar(_ label: String, used: Double, detail: String) -> some View {
+    private func resourceBar(_ label: String, used: Double, detail: String, warning: Double? = nil) -> some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack {
                 Text(label).font(.system(size: 11, weight: .semibold))
@@ -4646,7 +4667,8 @@ private struct NativeWorkbenchView: View {
             GeometryReader { geo in
                 Capsule().fill(theme.fyCardSub.opacity(0.72))
                     .overlay(alignment: .leading) {
-                        Capsule().fill(theme.fyAccent.opacity(0.56))
+                        Capsule().fill(warning.map { $0 >= 85 ? Color.red : ($0 >= 60 ? Color.orange : theme.fyAccent) } ?? theme.fyAccent)
+                            .opacity(0.62)
                             .frame(width: geo.size.width * min(max(used, 0), 100) / 100)
                     }
             }.frame(height: 6)
