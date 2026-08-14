@@ -1465,7 +1465,7 @@ struct MessageRow: View {
                                 .fill(.ultraThinMaterial)
                                 .overlay {
                                     RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                        .fill((isUser ? theme.bubbleUser : theme.bubbleAI).opacity(0.34))
+                                        .fill(isUser ? theme.bubbleUser : theme.bubbleAI)
                                 }
                                 .overlay {
                                     RoundedRectangle(cornerRadius: 18, style: .continuous)

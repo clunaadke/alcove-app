@@ -254,8 +254,8 @@ struct AlcoveTheme {
         let border = dark ? Color(red: 0.72, green: 0.82, blue: 0.98).opacity(0.34) : Color.white.opacity(0.78)
         return AlcoveTheme(
             isDark: dark, isPaper: false, usesWallImage: true, wallGradient: [],
-            bubbleUser: dark ? Color(red: 0.25, green: 0.40, blue: 0.66).opacity(0.22) : Color(red: 0.72, green: 0.84, blue: 0.98).opacity(0.18),
-            bubbleAI: dark ? Color(red: 0.22, green: 0.31, blue: 0.50).opacity(0.18) : Color.white.opacity(0.20),
+            bubbleUser: dark ? Color(red: 0.25, green: 0.40, blue: 0.66).opacity(0.50) : Color(red: 0.72, green: 0.84, blue: 0.98).opacity(0.55),
+            bubbleAI: dark ? Color(red: 0.22, green: 0.31, blue: 0.50).opacity(0.45) : Color.white.opacity(0.62),
             text: ink, textDim: dim, textLight: dim.opacity(0.72), timestamp: dim,
             glassTint: card, glassBorder: border, capsuleTint: card, capsuleBorder: border,
             sendTop: dark ? Color(red: 0.22, green: 0.57, blue: 0.96) : Color(red: 0.31, green: 0.55, blue: 0.82),
