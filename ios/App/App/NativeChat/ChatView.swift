@@ -203,6 +203,10 @@ struct ChatView: View {
                                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { olderPagingArmed = true }
                                 }
                         }
+                        ForEach(Array(stagedDrafts.enumerated()), id: \.offset) { idx, text in
+                            stagedMessageBubble(text: text, index: idx)
+                                .id("staged-\(idx)")
+                        }
                         // 实时预览框已退休；陈璟正在…是独立状态，一根毛不动。
                         if store.isTyping {
                             TypingIndicator(tool: store.currentTool,
@@ -295,6 +299,9 @@ struct ChatView: View {
             .onChange(of: store.messages.count) { _ in
                 guard atBottom || inputFocused else { return }
                 scrollToTail(proxy, delays: [0, 0.15, 0.4], animated: true)
+            }
+            .onChange(of: stagedDrafts.count) { _ in
+                scrollToTail(proxy, delays: [0, 0.12], animated: true)
             }
             .onChange(of: store.loading) { loading in
                 if !loading {
@@ -576,7 +583,6 @@ struct ChatView: View {
                     .padding(.vertical, 3)
                     .background(.ultraThinMaterial, in: Capsule())
             }
-            stagedDraftStrip
             VStack(spacing: 0) {
                 if let quote = selectedQuote {
                     HStack(alignment: .center, spacing: 8) {
@@ -786,7 +792,6 @@ struct ChatView: View {
 
     private var iceFloatingInput: some View {
         VStack(spacing: 7) {
-            stagedDraftStrip
             if !pendingImages.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 7) {
@@ -848,30 +853,63 @@ struct ChatView: View {
         .onPreferenceChange(InputBarHeightKey.self) { inputBarHeight = $0 }
     }
 
-    private var stagedDraftStrip: some View {
-        Group {
-            if !stagedDrafts.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 7) {
-                        ForEach(Array(stagedDrafts.enumerated()), id: \.offset) { idx, text in
-                            HStack(spacing: 7) {
-                                Text(text).lineLimit(1)
-                                Button { draft = text; stagedDrafts.remove(at: idx) } label: {
-                                    Image(systemName: "pencil").font(.system(size: 10, weight: .semibold))
-                                }
-                                Button { stagedDrafts.remove(at: idx) } label: {
-                                    Image(systemName: "xmark").font(.system(size: 10, weight: .semibold))
-                                }
-                            }
-                            .font(.system(size: 12)).foregroundColor(theme.textDim)
-                            .padding(.horizontal, 11).frame(height: 32)
-                            .background(.ultraThinMaterial, in: Capsule())
-                            .overlay(Capsule().stroke(theme.glassBorder, lineWidth: 0.7))
+    private func stagedMessageBubble(text: String, index: Int) -> some View {
+        let longest = text.split(separator: "\n", omittingEmptySubsequences: false).map(\.count).max() ?? 1
+        let width = min(UIScreen.main.bounds.width * 0.72,
+                        max(82, CGFloat(longest) * CGFloat(chatFontSize) * 0.94 + 30))
+        return HStack(alignment: .bottom) {
+            Spacer(minLength: 48)
+            VStack(alignment: .trailing, spacing: 4) {
+                Text(text)
+                    .font(.system(size: CGFloat(chatFontSize)))
+                    .foregroundColor(theme.text)
+                    .lineSpacing(theme.isPaper ? 7 : 5)
+                Text("待发送")
+                    .font(.system(size: 9, design: .serif))
+                    .foregroundColor(theme.timestamp.opacity(0.72))
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .frame(width: width, alignment: .trailing)
+            .background {
+                if themeName == "ice" || themeName == "ice-dark" {
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(.ultraThinMaterial)
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .fill(theme.bubbleUser.opacity(0.34))
                         }
-                    }.padding(.horizontal, 15)
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .stroke(theme.glassBorder.opacity(0.72), lineWidth: 0.7)
+                        }
+                } else if theme.isPaper {
+                    RoundedRectangle(cornerRadius: 18, style: .continuous).fill(theme.bubbleUser)
+                } else {
+                    BubbleGlassBackground(tintColor: theme.bubbleUser,
+                                          tintOpacity: 0.14,
+                                          style: bubbleGlassStyle)
                 }
             }
+            .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .onTapGesture {
+                guard stagedDrafts.indices.contains(index) else { return }
+                draft = stagedDrafts.remove(at: index)
+                inputFocused = true
+            }
+            .contextMenu {
+                Button {
+                    guard stagedDrafts.indices.contains(index) else { return }
+                    draft = stagedDrafts.remove(at: index)
+                    inputFocused = true
+                } label: { Label("编辑", systemImage: "pencil") }
+                Button(role: .destructive) {
+                    guard stagedDrafts.indices.contains(index) else { return }
+                    stagedDrafts.remove(at: index)
+                } label: { Label("删除", systemImage: "trash") }
+            }
         }
+        .padding(.bottom, 5)
     }
 
     private func stageCurrentDraft() {
@@ -1212,6 +1250,12 @@ struct MessageRow: View {
     private var isIceTheme: Bool {
         theme.panelTextureAsset == "ChatWallIce" || theme.panelTextureAsset == "ChatWallIceDark"
     }
+    private var iceBubbleWidth: CGFloat {
+        let longest = msg.displayText.split(separator: "\n", omittingEmptySubsequences: false)
+            .map(\.count).max() ?? 1
+        let estimated = CGFloat(longest) * CGFloat(fontSize) * 0.94 + 30
+        return min(UIScreen.main.bounds.width * 0.72, max(82, estimated))
+    }
     private var timestampTextInset: CGFloat {
         if theme.isPaper && !isUser { return 0 }
         return !msg.text.isEmpty && !msg.isSticker ? 12 : 0
@@ -1411,6 +1455,7 @@ struct MessageRow: View {
                 bubbleContents
                     .padding(.horizontal, 14)
                     .padding(.vertical, theme.isPaper && isUser ? 11 : 10)
+                    .padding(.bottom, isIceTheme && showTime ? 11 : 0)
                     .background {
                         if theme.isPaper {
                             RoundedRectangle(cornerRadius: 18, style: .continuous)
@@ -1436,6 +1481,22 @@ struct MessageRow: View {
                     }
             }
         }
+            .frame(width: isIceTheme ? iceBubbleWidth : nil,
+                   alignment: isUser ? .trailing : .leading)
+            .overlay(alignment: .bottomTrailing) {
+                if isIceTheme && showTime {
+                    HStack(spacing: 3) {
+                        Text(Self.hm.string(from: msg.date))
+                        if isUser {
+                            Text("✓✓").fontWeight(.semibold)
+                        }
+                    }
+                    .font(.system(size: 10, design: .serif))
+                    .foregroundColor(theme.timestamp.opacity(0.78))
+                    .padding(.trailing, 12)
+                    .padding(.bottom, 8)
+                }
+            }
             .contentShape(
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
             )
@@ -1466,13 +1527,6 @@ struct MessageRow: View {
                         ? msg.displayText : wholeTurnText
                 }
             )
-            if isIceTheme && showTime {
-                Text(Self.hm.string(from: msg.date))
-                    .font(.system(size: 10, design: .serif))
-                    .foregroundColor(theme.timestamp.opacity(0.76))
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-                    .padding(.top, -3)
-            }
         }
     }
 
