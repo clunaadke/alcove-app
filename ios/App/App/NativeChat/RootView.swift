@@ -270,10 +270,6 @@ struct RootView: View {
 
     private var iceTopBar: some View {
         HStack(spacing: 10) {
-            Button { presentHouse(.sidebar) } label: {
-                Image(systemName: "chevron.left").font(.system(size: 18, weight: .medium))
-                    .foregroundColor(theme.textDim).frame(width: 40, height: 44)
-            }.buttonStyle(.plain)
             Button { showTerminal = true } label: {
                 Group {
                     if let img = avatarImage { Image(uiImage: img).resizable().scaledToFill() }
@@ -292,15 +288,25 @@ struct RootView: View {
                 Image(systemName: "music.note").frame(width: 40, height: 40)
             }
             Button { presentHouse(.sidebar) } label: {
-                Image(systemName: "ellipsis").frame(width: 40, height: 40)
+                Image(systemName: "ellipsis")
+                    .frame(width: 48, height: 48)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
         }
         .foregroundColor(theme.textDim)
-        .padding(.horizontal, 10).frame(height: 54)
-        .background(.ultraThinMaterial)
-        .background(theme.glassTint.opacity(0.60))
-        .overlay(alignment: .bottom) { Rectangle().fill(theme.glassBorder).frame(height: 0.7) }
+        .padding(.horizontal, 14)
+        .frame(height: 58)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .background(theme.glassTint.opacity(0.42), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(theme.glassBorder.opacity(0.72), lineWidth: 0.7)
+        }
+        .shadow(color: .black.opacity(theme.isDark ? 0.10 : 0.04), radius: 14, y: 4)
+        .padding(.horizontal, 10)
+        .padding(.top, 4)
+        .zIndex(5)
     }
 
     private func refreshThinkingState() async {

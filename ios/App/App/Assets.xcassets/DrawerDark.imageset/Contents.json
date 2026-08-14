@@ -1,1 +1,13 @@
-{"images":[{"filename":"drawer-dark.png","idiom":"universal","scale":"1x"}],"info":{"author":"xcode","version":1}}
+{
+  "images": [
+    {
+      "filename": "drawer-dark.jpg",
+      "idiom": "universal",
+      "scale": "1x"
+    }
+  ],
+  "info": {
+    "author": "xcode",
+    "version": 1
+  }
+}

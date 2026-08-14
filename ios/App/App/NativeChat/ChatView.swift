@@ -649,11 +649,12 @@ struct ChatView: View {
                         text: $draft,
                         prompt: Text("ring the chime …")
                             .font(.system(size: 15.5, design: .serif))
-                            .italic(),
-                        axis: .vertical
+                            .italic()
                     )
                     .focused($inputFocused)
-                    .lineLimit(1...5)
+                    .lineLimit(1)
+                    .submitLabel(.return)
+                    .onSubmit { stageCurrentDraft() }
                     .font(.system(size: 15.5, weight: .regular, design: .default))
                     .tint(Color(uiColor: .systemGray3))
                     .padding(.init(top: 16, leading: 14, bottom: 12, trailing: 14))
@@ -801,7 +802,7 @@ struct ChatView: View {
                     }.padding(.horizontal, 16)
                 }
             }
-            HStack(spacing: 9) {
+            HStack(spacing: 6) {
                 Menu {
                     Button { showPhotoPicker = true } label: { Label("从相册选择", systemImage: "photo.on.rectangle") }
                     Button { showCamera = true } label: { Label("拍照或录像", systemImage: "camera") }
@@ -809,7 +810,7 @@ struct ChatView: View {
                     Button { showStickers = true } label: { Label("贴纸", systemImage: "face.smiling") }
                 } label: {
                     Image(systemName: "plus").font(.system(size: 17, weight: .medium))
-                        .foregroundColor(theme.textDim).frame(width: 44, height: 44)
+                        .foregroundColor(theme.textDim).frame(width: 40, height: 40)
                         .background(.ultraThinMaterial, in: Circle())
                         .overlay(Circle().stroke(theme.glassBorder, lineWidth: 0.8))
                 }
@@ -817,7 +818,7 @@ struct ChatView: View {
                     .focused($inputFocused).lineLimit(1).submitLabel(.return)
                     .onSubmit { stageCurrentDraft() }
                     .font(.system(size: 15.5)).foregroundColor(theme.text)
-                    .padding(.horizontal, 16).frame(height: 44)
+                    .padding(.horizontal, 15).frame(height: 40)
                     .background(.ultraThinMaterial, in: Capsule())
                     .background(theme.capsuleTint, in: Capsule())
                     .overlay(Capsule().stroke(theme.glassBorder, lineWidth: 0.8))
@@ -828,7 +829,7 @@ struct ChatView: View {
                 } label: {
                     Image(systemName: recorder.isRecording ? "stop.fill" : "mic")
                         .font(.system(size: 16, weight: .medium)).foregroundColor(theme.textDim)
-                        .frame(width: 44, height: 44).background(.ultraThinMaterial, in: Circle())
+                        .frame(width: 38, height: 40).background(.ultraThinMaterial, in: Circle())
                         .overlay(Circle().stroke(theme.glassBorder, lineWidth: 0.8))
                 }
                 Button {
@@ -837,10 +838,10 @@ struct ChatView: View {
                     else { store.sendText(outgoingText(t)) }
                 } label: {
                     Image(systemName: "arrow.up").font(.system(size: 17, weight: .semibold)).foregroundColor(.white)
-                        .frame(width: 44, height: 44)
+                        .frame(width: 40, height: 40)
                         .background(LinearGradient(colors: [theme.sendTop, theme.sendBottom], startPoint: .topLeading, endPoint: .bottomTrailing), in: Circle())
                 }.disabled(!canSend).opacity(canSend ? 1 : 0.42)
-            }.padding(.horizontal, 14)
+            }.padding(.horizontal, 12)
         }
         .padding(.bottom, 2)
         .background(GeometryReader { geo in Color.clear.preference(key: InputBarHeightKey.self, value: geo.size.height) })
@@ -1208,6 +1209,9 @@ struct MessageRow: View {
     @Environment(\.bubbleGlassStyle) private var bubbleGlassStyle
 
     private var isUser: Bool { msg.role == "user" }
+    private var isIceTheme: Bool {
+        theme.panelTextureAsset == "ChatWallIce" || theme.panelTextureAsset == "ChatWallIceDark"
+    }
     private var timestampTextInset: CGFloat {
         if theme.isPaper && !isUser { return 0 }
         return !msg.text.isEmpty && !msg.isSticker ? 12 : 0
@@ -1295,7 +1299,7 @@ struct MessageRow: View {
                                 .font(.system(size: 10))
                                 .foregroundColor(.secondary)
                         }
-                        if showTime {
+                        if showTime && !isIceTheme {
                             Text(Self.hm.string(from: msg.date))
                                 .font(.system(size: 10, design: .serif))
                                 .foregroundColor(theme.timestamp)
@@ -1411,6 +1415,17 @@ struct MessageRow: View {
                         if theme.isPaper {
                             RoundedRectangle(cornerRadius: 18, style: .continuous)
                                 .fill(isUser ? theme.bubbleUser : theme.bubbleAI)
+                        } else if isIceTheme {
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .fill(.ultraThinMaterial)
+                                .overlay {
+                                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                        .fill((isUser ? theme.bubbleUser : theme.bubbleAI).opacity(0.34))
+                                }
+                                .overlay {
+                                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                        .stroke(theme.glassBorder.opacity(0.72), lineWidth: 0.7)
+                                }
                         } else {
                             BubbleGlassBackground(
                                 tintColor: isUser ? theme.bubbleUser : theme.bubbleAI,
@@ -1451,6 +1466,13 @@ struct MessageRow: View {
                         ? msg.displayText : wholeTurnText
                 }
             )
+            if isIceTheme && showTime {
+                Text(Self.hm.string(from: msg.date))
+                    .font(.system(size: 10, design: .serif))
+                    .foregroundColor(theme.timestamp.opacity(0.76))
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .padding(.top, -3)
+            }
         }
     }
 

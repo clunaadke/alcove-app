@@ -250,12 +250,12 @@ struct AlcoveTheme {
     private func iceCopy(dark: Bool) -> AlcoveTheme {
         let ink = dark ? Color(red: 0.90, green: 0.95, blue: 1.0) : Color(red: 0.10, green: 0.20, blue: 0.34)
         let dim = dark ? Color(red: 0.66, green: 0.78, blue: 0.93) : Color(red: 0.30, green: 0.45, blue: 0.63)
-        let card = dark ? Color(red: 0.06, green: 0.18, blue: 0.36).opacity(0.48) : Color.white.opacity(0.34)
-        let border = dark ? Color(red: 0.48, green: 0.76, blue: 1.0).opacity(0.26) : Color.white.opacity(0.70)
+        let card = dark ? Color(red: 0.18, green: 0.28, blue: 0.46).opacity(0.24) : Color.white.opacity(0.22)
+        let border = dark ? Color(red: 0.72, green: 0.82, blue: 0.98).opacity(0.34) : Color.white.opacity(0.78)
         return AlcoveTheme(
             isDark: dark, isPaper: false, usesWallImage: true, wallGradient: [],
-            bubbleUser: dark ? Color(red: 0.08, green: 0.32, blue: 0.62).opacity(0.52) : Color(red: 0.63, green: 0.82, blue: 1.0).opacity(0.42),
-            bubbleAI: dark ? Color(red: 0.08, green: 0.20, blue: 0.39).opacity(0.50) : Color.white.opacity(0.40),
+            bubbleUser: dark ? Color(red: 0.25, green: 0.40, blue: 0.66).opacity(0.22) : Color(red: 0.72, green: 0.84, blue: 0.98).opacity(0.18),
+            bubbleAI: dark ? Color(red: 0.22, green: 0.31, blue: 0.50).opacity(0.18) : Color.white.opacity(0.20),
             text: ink, textDim: dim, textLight: dim.opacity(0.72), timestamp: dim,
             glassTint: card, glassBorder: border, capsuleTint: card, capsuleBorder: border,
             sendTop: dark ? Color(red: 0.22, green: 0.57, blue: 0.96) : Color(red: 0.31, green: 0.55, blue: 0.82),
