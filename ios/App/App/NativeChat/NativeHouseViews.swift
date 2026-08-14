@@ -3517,25 +3517,22 @@ private struct CoreadBook: Identifiable, Hashable {
 
 private struct NativeCoreadRoomView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
     @State private var books: [CoreadBook] = []
     @State private var selected: CoreadBook?
     @State private var reading: (CoreadBook, Int)?
     @State private var page = 0
     @State private var loading = true
     @State private var error = ""
-
-    private var isNight: Bool {
-        let hour = Calendar.current.component(.hour, from: Date())
-        return hour < 6 || hour >= 19
-    }
+    @State private var showWorkbench = false
+    @AppStorage("coreadActiveBookID") private var activeBookID = ""
+    @AppStorage("coreadActiveChapter") private var activeChapter = 0
+    private var isNight: Bool { colorScheme == .dark }
 
     var body: some View {
         GeometryReader { geo in
             ZStack {
-                Image(isNight ? "CoreadNight" : "CoreadDay")
-                    .resizable().scaledToFill()
-                    .frame(width: geo.size.width, height: geo.size.height)
-                    .clipped().ignoresSafeArea()
+                CoreadPetalBackground(isNight: isNight).ignoresSafeArea()
 
                 if let (book, chapter) = reading {
                     CoreadReaderView(book: book, chapter: chapter) { reading = nil }
@@ -3551,39 +3548,55 @@ private struct NativeCoreadRoomView: View {
                     Button { dismiss() } label: {
                         Image(systemName: "chevron.left")
                             .font(.system(size: 15, weight: .semibold))
-                            .foregroundColor(Color(red: 0.35, green: 0.28, blue: 0.31))
+                            .foregroundColor(isNight ? Color(red: 0.94, green: 0.84, blue: 0.87) : Color(red: 0.35, green: 0.28, blue: 0.31))
                             .frame(width: 44, height: 44)
-                            .background(.white.opacity(0.64), in: Circle())
+                            .background(isNight ? Color.white.opacity(0.08) : Color.white.opacity(0.64), in: Circle())
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("返回")
                     .position(x: 34, y: max(geo.safeAreaInsets.top + 22, 43))
                 }
             }
         }
         .task { await loadBooks() }
+        .sheet(isPresented: $showWorkbench) { CoreadWorkbenchView(isNight: isNight) }
     }
 
     @ViewBuilder private func shelf(_ geo: GeometryProxy) -> some View {
-        let pages = max(1, Int(ceil(Double(books.count) / 6.0)))
+        let pages = max(1, Int(ceil(Double(books.count) / 9.0)))
         VStack(spacing: 0) {
-            Spacer().frame(height: geo.size.height * 0.278)
+            HStack {
+                Spacer()
+                VStack(spacing: 2) {
+                    Text("共读室").font(.system(size: 21, weight: .semibold, design: .serif))
+                    Text("慢慢翻，慢慢读").font(.system(size: 10, design: .serif)).opacity(0.62)
+                }
+                Spacer()
+                Button { showWorkbench = true } label: {
+                    Image(systemName: "chart.bar.xaxis").frame(width: 44, height: 44)
+                        .background(isNight ? Color.white.opacity(0.08) : Color.white.opacity(0.62), in: Circle())
+                }.buttonStyle(.plain).accessibilityLabel("DeepSeek 工作台")
+            }
+            .foregroundColor(isNight ? Color(red: 0.94, green: 0.84, blue: 0.87) : Color(red: 0.34, green: 0.27, blue: 0.30))
+            .padding(.top, max(geo.safeAreaInsets.top + 10, 26)).padding(.horizontal, 18)
+            Spacer().frame(height: 18)
             if loading { ProgressView().tint(.pink.opacity(0.7)) }
             else if !error.isEmpty { Text(error).font(.system(size: 12)).foregroundColor(.secondary) }
             else {
                 TabView(selection: $page) {
                     ForEach(0..<pages, id: \.self) { pageIndex in
-                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 11), count: 3), spacing: 28) {
-                            ForEach(Array(books.dropFirst(pageIndex * 6).prefix(6))) { book in
-                                Button { selected = book } label: { CoreadBookSlot(book: book) }
+                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 13), count: 3), spacing: 17) {
+                            ForEach(Array(books.dropFirst(pageIndex * 9).prefix(9))) { book in
+                                Button { selected = book } label: { CoreadBookSlot(book: book, isNight: isNight) }
                                     .buttonStyle(CoreadPressStyle())
                             }
                         }
-                        .padding(.horizontal, geo.size.width * 0.072)
+                        .padding(.horizontal, 24).padding(.vertical, 4)
                         .tag(pageIndex)
                     }
                 }
                 .tabViewStyle(.page(indexDisplayMode: .never))
-                .frame(height: geo.size.height * 0.405)
+                .frame(maxHeight: .infinity)
                 Text("\(page + 1) / \(pages)")
                     .font(.system(size: 10, weight: .medium, design: .rounded))
                     .foregroundColor(Color(red: 0.47, green: 0.39, blue: 0.43).opacity(0.7))
@@ -3592,7 +3605,11 @@ private struct NativeCoreadRoomView: View {
             Spacer()
             HStack(spacing: 34) {
                 coreadAction("正在共读", "person.2.fill") {
-                    if let book = books.first { reading = (book, min(book.currentChapter, max(0, book.chapters - 1))) }
+                    if let book = books.first(where: { $0.id == activeBookID }) {
+                        reading = (book, min(activeChapter, max(0, book.chapters - 1)))
+                    } else if let book = books.first {
+                        reading = (book, min(book.currentChapter, max(0, book.chapters - 1)))
+                    }
                 }
                 coreadAction("随机抽一本", "dice.fill") {
                     if let book = books.randomElement() { selected = book }
@@ -3606,9 +3623,9 @@ private struct NativeCoreadRoomView: View {
         Button(action: action) {
             Label(title, systemImage: icon)
                 .font(.system(size: 12, weight: .semibold, design: .rounded))
-                .foregroundColor(Color(red: 0.37, green: 0.29, blue: 0.33))
+                .foregroundColor(isNight ? Color(red: 0.94, green: 0.84, blue: 0.87) : Color(red: 0.37, green: 0.29, blue: 0.33))
                 .padding(.horizontal, 14).frame(height: 42)
-                .background(.white.opacity(0.66), in: Capsule())
+                .background(isNight ? Color.white.opacity(0.08) : Color.white.opacity(0.66), in: Capsule())
         }.buttonStyle(CoreadPressStyle())
     }
 
@@ -3628,8 +3645,127 @@ private struct CoreadPressStyle: ButtonStyle {
     }
 }
 
+private struct CoreadPetalBackground: View {
+    let isNight: Bool
+    private let petals: [(CGFloat, CGFloat, CGFloat, Double)] = [
+        (0.10, 0.16, 7, -24), (0.83, 0.12, 5, 31), (0.72, 0.29, 6, -12),
+        (0.18, 0.39, 5, 42), (0.91, 0.52, 7, 18), (0.08, 0.67, 6, -38),
+        (0.78, 0.75, 5, 26), (0.27, 0.88, 7, 11), (0.94, 0.92, 4, -19)
+    ]
+    var body: some View {
+        GeometryReader { geo in
+            ZStack {
+                (isNight
+                 ? Color(red: 0.16, green: 0.12, blue: 0.14)
+                 : Color(red: 0.985, green: 0.955, blue: 0.962))
+                RadialGradient(colors: [
+                    (isNight ? Color(red: 0.35, green: 0.23, blue: 0.28) : Color.white).opacity(0.24),
+                    .clear
+                ], center: .topTrailing, startRadius: 5, endRadius: geo.size.width * 0.9)
+                ForEach(Array(petals.enumerated()), id: \.offset) { _, item in
+                    CoreadPetal()
+                        .fill(isNight ? Color(red: 0.69, green: 0.43, blue: 0.51).opacity(0.20)
+                                      : Color(red: 0.82, green: 0.58, blue: 0.65).opacity(0.20))
+                        .frame(width: item.2, height: item.2 * 1.55)
+                        .rotationEffect(.degrees(item.3))
+                        .position(x: geo.size.width * item.0, y: geo.size.height * item.1)
+                }
+            }
+        }
+    }
+}
+
+private struct CoreadPetal: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.midX, y: rect.minY))
+        path.addCurve(to: CGPoint(x: rect.midX, y: rect.maxY),
+                      control1: CGPoint(x: rect.maxX, y: rect.height * 0.28),
+                      control2: CGPoint(x: rect.maxX, y: rect.height * 0.76))
+        path.addCurve(to: CGPoint(x: rect.midX, y: rect.minY),
+                      control1: CGPoint(x: rect.minX, y: rect.height * 0.76),
+                      control2: CGPoint(x: rect.minX, y: rect.height * 0.28))
+        return path
+    }
+}
+
+private struct CoreadWorkbenchView: View {
+    let isNight: Bool
+    @Environment(\.dismiss) private var dismiss
+    @State private var dashboard: [String: Any] = [:]
+    @State private var loading = true
+
+    private var apiLog: [String: Any] { dashboard["api_log"] as? [String: Any] ?? [:] }
+    private var totals: [String: Any] { apiLog["totals"] as? [String: Any] ?? [:] }
+    private var recent: [[String: Any]] { apiLog["recent"] as? [[String: Any]] ?? [] }
+    private var books: [[String: Any]] { dashboard["books"] as? [[String: Any]] ?? [] }
+    private var foreground: Color { isNight ? Color(red: 0.94, green: 0.86, blue: 0.88) : Color(red: 0.31, green: 0.25, blue: 0.28) }
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                CoreadPetalBackground(isNight: isNight).ignoresSafeArea()
+                if loading { ProgressView().tint(.pink) }
+                else {
+                    ScrollView {
+                        VStack(spacing: 16) {
+                            HStack(spacing: 10) {
+                                stat("DS 调用", "\(apiLog.int("total_calls"))")
+                                stat("总花费", String(format: "¥%.4f", number(totals, "cost_yuan")))
+                                stat("书籍", "\(books.count)")
+                            }
+                            HStack(spacing: 10) {
+                                stat("输入 Token", token(totals.int("input_tokens")))
+                                stat("输出 Token", token(totals.int("output_tokens")))
+                            }
+                            VStack(alignment: .leading, spacing: 10) {
+                                Text("最近的章节预读").font(.system(size: 15, weight: .semibold, design: .serif))
+                                ForEach(Array(recent.reversed().enumerated()), id: \.offset) { _, row in
+                                    HStack(spacing: 10) {
+                                        Text(row.string("chapter")).lineLimit(2)
+                                        Spacer()
+                                        Text("\(row.int("input_tokens"))+\(row.int("output_tokens"))")
+                                            .foregroundColor(foreground.opacity(0.58))
+                                        Text(String(format: "¥%.4f", number(row, "cost_yuan")))
+                                            .fontWeight(.semibold)
+                                    }
+                                    .font(.system(size: 11, design: .serif)).padding(11)
+                                    .background(cardColor, in: RoundedRectangle(cornerRadius: 12))
+                                }
+                            }
+                        }.padding(18)
+                    }
+                }
+            }
+            .foregroundColor(foreground)
+            .navigationTitle("DeepSeek 工作台").navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("完成") { dismiss() } } }
+        }
+        .preferredColorScheme(isNight ? .dark : .light)
+        .task {
+            dashboard = (try? await NativeHouseAPI.object("/read/api/dashboard")) ?? [:]
+            loading = false
+        }
+    }
+
+    private var cardColor: Color { isNight ? Color.white.opacity(0.07) : Color.white.opacity(0.62) }
+    private func stat(_ title: String, _ value: String) -> some View {
+        VStack(spacing: 5) {
+            Text(value).font(.system(size: 17, weight: .semibold, design: .rounded)).minimumScaleFactor(0.75)
+            Text(title).font(.system(size: 9, design: .rounded)).foregroundColor(foreground.opacity(0.58))
+        }.frame(maxWidth: .infinity).frame(height: 66).background(cardColor, in: RoundedRectangle(cornerRadius: 14))
+    }
+    private func token(_ value: Int) -> String { value >= 10_000 ? String(format: "%.1fk", Double(value) / 1000) : "\(value)" }
+    private func number(_ row: [String: Any], _ key: String) -> Double {
+        if let value = row[key] as? NSNumber { return value.doubleValue }
+        if let value = row[key] as? String { return Double(value) ?? 0 }
+        return 0
+    }
+}
+
 private struct CoreadBookSlot: View {
     let book: CoreadBook
+    var isNight = false
     private let colors: [[Color]] = [
         [Color(red: 0.76, green: 0.65, blue: 0.70), Color(red: 0.92, green: 0.84, blue: 0.86)],
         [Color(red: 0.58, green: 0.65, blue: 0.69), Color(red: 0.81, green: 0.85, blue: 0.84)],
@@ -3644,10 +3780,10 @@ private struct CoreadBookSlot: View {
                 Text(book.title).font(.system(size: 11, weight: .semibold, design: .serif))
                     .foregroundColor(.white).multilineTextAlignment(.center).lineLimit(4).padding(8)
             }
-            .aspectRatio(0.68, contentMode: .fit)
+            .aspectRatio(0.70, contentMode: .fit)
             .shadow(color: .black.opacity(0.09), radius: 3, y: 2)
             Text(book.title).font(.system(size: 9, weight: .medium, design: .serif))
-                .foregroundColor(Color(red: 0.32, green: 0.27, blue: 0.29)).lineLimit(1)
+                .foregroundColor(isNight ? Color(red: 0.91, green: 0.82, blue: 0.85) : Color(red: 0.32, green: 0.27, blue: 0.29)).lineLimit(1)
             ProgressView(value: book.chapters == 0 ? 0 : Double(book.currentChapter + 1) / Double(book.chapters))
                 .tint(Color(red: 0.75, green: 0.47, blue: 0.55)).scaleEffect(y: 0.55)
         }
@@ -3658,11 +3794,13 @@ private struct CoreadDetailView: View {
     let book: CoreadBook
     let onBack: () -> Void
     let open: (Int) -> Void
+    @Environment(\.colorScheme) private var colorScheme
+    private var isNight: Bool { colorScheme == .dark }
     var body: some View {
         VStack(spacing: 18) {
             HStack { Button(action: onBack) { Image(systemName: "chevron.left").frame(width: 44, height: 44) }; Spacer() }
             .padding(.top, 48).padding(.horizontal, 14)
-            CoreadBookSlot(book: book).frame(width: 128)
+            CoreadBookSlot(book: book, isNight: isNight).frame(width: 128)
             Text(book.title).font(.system(size: 22, weight: .semibold, design: .serif)).multilineTextAlignment(.center)
             Text("共 \(book.chapters) 章 · 已读到第 \(min(book.currentChapter + 1, book.chapters)) 章")
                 .font(.system(size: 12)).foregroundColor(.secondary)
@@ -3675,12 +3813,12 @@ private struct CoreadDetailView: View {
                         Button { open(index) } label: {
                             HStack { Text(book.chapterTitles.indices.contains(index) ? book.chapterTitles[index] : "第 \(index + 1) 章"); Spacer(); Image(systemName: "chevron.right") }
                                 .font(.system(size: 13, design: .serif)).padding(14)
-                                .background(.white.opacity(0.64), in: RoundedRectangle(cornerRadius: 13))
+                                .background(isNight ? Color.white.opacity(0.07) : Color.white.opacity(0.64), in: RoundedRectangle(cornerRadius: 13))
                         }.buttonStyle(.plain)
                     }
                 }.padding(.horizontal, 24)
             }
-        }.foregroundColor(Color(red: 0.29, green: 0.24, blue: 0.27))
+        }.foregroundColor(isNight ? Color(red: 0.94, green: 0.85, blue: 0.88) : Color(red: 0.29, green: 0.24, blue: 0.27))
     }
 }
 
@@ -3693,6 +3831,11 @@ private struct CoreadReaderView: View {
     @State private var showChat = false
     @State private var samePage = false
     @State private var knocked = false
+    @State private var quotedText: String?
+    @Environment(\.colorScheme) private var colorScheme
+    @AppStorage("coreadActiveBookID") private var activeBookID = ""
+    @AppStorage("coreadActiveChapter") private var activeChapter = 0
+    private var isNight: Bool { colorScheme == .dark }
     var body: some View {
         VStack(spacing: 0) {
             HStack {
@@ -3701,16 +3844,23 @@ private struct CoreadReaderView: View {
                 Spacer()
                 if samePage { Label("同页", systemImage: "person.2.fill").font(.system(size: 10, weight: .medium)).foregroundColor(.pink) }
                 Button { Task { await knock() } } label: { Image(systemName: knocked ? "hand.wave.fill" : "hand.wave") }.frame(width: 44, height: 44)
-                Button { showChat = true } label: { Image(systemName: "bubble.left.and.bubble.right.fill") }.frame(width: 44, height: 44)
-            }.padding(.top, 44).padding(.horizontal, 8).background(.white.opacity(0.77))
+                Button { openChat() } label: { Image(systemName: "bubble.left.and.bubble.right.fill") }.frame(width: 44, height: 44)
+            }.padding(.top, 44).padding(.horizontal, 8)
+                .background(isNight ? Color(red: 0.20, green: 0.15, blue: 0.17).opacity(0.96) : Color.white.opacity(0.77))
             ScrollView {
-                Text(content).font(.system(size: 17, design: .serif)).lineSpacing(9)
-                    .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 24).padding(.vertical, 24)
-            }.background(Color(red: 0.985, green: 0.965, blue: 0.965).opacity(0.9))
+                CoreadSelectableText(text: content, isNight: isNight) { quote in
+                    quotedText = quote
+                    openChat()
+                    Task { await saveHighlight(quote) }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 24).padding(.vertical, 24)
+            }.background(isNight ? Color(red: 0.15, green: 0.115, blue: 0.13) : Color(red: 0.985, green: 0.965, blue: 0.965))
         }
-        .foregroundColor(Color(red: 0.27, green: 0.23, blue: 0.25))
+        .foregroundColor(isNight ? Color(red: 0.93, green: 0.86, blue: 0.88) : Color(red: 0.27, green: 0.23, blue: 0.25))
         .task { await load(); await heartbeat() }
-        .sheet(isPresented: $showChat) { CoreadChatSheet(book: book, chapter: chapter, pageText: String(content.prefix(1800))) }
+        .sheet(isPresented: $showChat) {
+            CoreadChatSheet(book: book, chapter: chapter, pageText: String(content.prefix(1800)), quotedText: $quotedText)
+        }
     }
     @MainActor private func load() async {
         guard let value = try? await NativeHouseAPI.object("/read/api/book/\(book.id)/chapter/\(chapter)") else { return }
@@ -3725,15 +3875,78 @@ private struct CoreadReaderView: View {
         try? await NativeHouseAPI.post("/api/coread/knock", body: ["book_id":book.id, "chapter":chapter, "page_text":String(content.prefix(1800))])
         knocked = true
     }
+    private func openChat() {
+        activeBookID = book.id
+        activeChapter = chapter
+        showChat = true
+    }
+    @MainActor private func saveHighlight(_ quote: String) async {
+        try? await NativeHouseAPI.post("/read/api/book/\(book.id)/annotate", body: [
+            "chapter": chapter, "text": quote, "note": "引用到陪读室", "author": "luna"
+        ])
+    }
+}
+
+private struct CoreadSelectableText: UIViewRepresentable {
+    let text: String
+    let isNight: Bool
+    let onQuote: (String) -> Void
+
+    func makeUIView(context: Context) -> CoreadTextView {
+        let view = CoreadTextView()
+        view.isEditable = false
+        view.isScrollEnabled = false
+        view.backgroundColor = .clear
+        view.textContainerInset = .zero
+        view.textContainer.lineFragmentPadding = 0
+        view.textContainer.widthTracksTextView = true
+        view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        view.onQuote = onQuote
+        return view
+    }
+    func updateUIView(_ view: CoreadTextView, context: Context) {
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineSpacing = 9
+        paragraph.paragraphSpacing = 12
+        view.attributedText = NSAttributedString(string: text, attributes: [
+            .font: UIFont.systemFont(ofSize: 17),
+            .foregroundColor: isNight ? UIColor(red: 0.93, green: 0.86, blue: 0.88, alpha: 1) : UIColor(red: 0.27, green: 0.23, blue: 0.25, alpha: 1),
+            .paragraphStyle: paragraph
+        ])
+        view.onQuote = onQuote
+    }
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: CoreadTextView, context: Context) -> CGSize? {
+        guard let width = proposal.width, width > 0 else { return nil }
+        let measured = uiView.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
+        return CGSize(width: width, height: measured.height)
+    }
+}
+
+private final class CoreadTextView: UITextView {
+    var onQuote: ((String) -> Void)?
+    override func buildMenu(with builder: UIMenuBuilder) {
+        super.buildMenu(with: builder)
+        guard builder.system == .context else { return }
+        let action = UIAction(title: "引用到陪读室", image: UIImage(systemName: "quote.bubble")) { [weak self] _ in
+            guard let self, let range = selectedTextRange,
+                  let quote = text(in: range)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !quote.isEmpty else { return }
+            onQuote?(quote)
+        }
+        builder.insertChild(UIMenu(options: .displayInline, children: [action]), atStartOfMenu: .standardEdit)
+    }
 }
 
 private struct CoreadChatSheet: View {
     let book: CoreadBook
     let chapter: Int
     let pageText: String
+    @Binding var quotedText: String?
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var colorScheme
     @State private var messages: [[String: Any]] = []
     @State private var text = ""
+    private var isNight: Bool { colorScheme == .dark }
     var body: some View {
         VStack(spacing: 0) {
             HStack { Text("陪读 · \(book.title)").font(.system(size: 15, weight: .semibold, design: .serif)); Spacer(); Button { dismiss() } label: { Image(systemName: "xmark") } }.padding(18)
@@ -3741,14 +3954,26 @@ private struct CoreadChatSheet: View {
                 ScrollView {
                     LazyVStack(spacing: 10) {
                         ForEach(Array(messages.enumerated()), id: \.offset) { _, item in
-                            HStack { if item.string("actor") == "陈霁" { Spacer() }; Text(item.string("text")).font(.system(size: 14)).padding(12).background(item.string("actor") == "陈霁" ? Color.pink.opacity(0.2) : Color.white.opacity(0.8), in: RoundedRectangle(cornerRadius: 14)); if item.string("actor") != "陈霁" { Spacer() } }
+                            HStack { if item.string("actor") == "陈霁" { Spacer() }; Text(item.string("text")).font(.system(size: 14)).foregroundColor(isNight ? Color(red: 0.95, green: 0.88, blue: 0.90) : Color(red: 0.28, green: 0.22, blue: 0.25)).padding(12).background(item.string("actor") == "陈霁" ? Color.pink.opacity(isNight ? 0.24 : 0.2) : (isNight ? Color.white.opacity(0.08) : Color.white.opacity(0.8)), in: RoundedRectangle(cornerRadius: 14)); if item.string("actor") != "陈霁" { Spacer() } }
                         }
                     }.padding(14)
                 }
             }
-            HStack { TextField("和陈璟聊聊这一页…", text: $text).textFieldStyle(.roundedBorder); Button("发送") { Task { await send() } }.disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }.padding(12)
+            VStack(spacing: 7) {
+                if let quote = quotedText, !quote.isEmpty {
+                    HStack(alignment: .top, spacing: 8) {
+                        Image(systemName: "quote.opening").font(.system(size: 11))
+                        Text(quote).font(.system(size: 12, design: .serif)).lineLimit(3)
+                        Spacer()
+                        Button { quotedText = nil } label: { Image(systemName: "xmark.circle.fill") }
+                    }
+                    .foregroundColor(isNight ? Color(red: 0.89, green: 0.77, blue: 0.81) : Color(red: 0.48, green: 0.34, blue: 0.39))
+                    .padding(10).background(isNight ? Color.white.opacity(0.07) : Color.white.opacity(0.62), in: RoundedRectangle(cornerRadius: 12))
+                }
+                HStack { TextField("和陈璟聊聊这一页…", text: $text).textFieldStyle(.roundedBorder); Button("发送") { Task { await send() } }.disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) }
+            }.padding(12)
         }
-        .background(Color(red: 0.97, green: 0.93, blue: 0.94))
+        .background(isNight ? Color(red: 0.17, green: 0.125, blue: 0.145) : Color(red: 0.97, green: 0.93, blue: 0.94))
         .presentationDetents([.fraction(0.52), .large]).presentationDragIndicator(.visible)
         .task { await poll() }
     }
@@ -3760,7 +3985,9 @@ private struct CoreadChatSheet: View {
     }
     @MainActor private func send() async {
         let value = text.trimmingCharacters(in: .whitespacesAndNewlines); guard !value.isEmpty else { return }; text = ""
-        try? await NativeHouseAPI.post("/api/coread/say", body: ["book_id":book.id, "chapter":chapter, "text":value, "page_text":pageText])
+        let outgoing = quotedText.map { "「\($0)」\n\(value)" } ?? value
+        quotedText = nil
+        try? await NativeHouseAPI.post("/api/coread/say", body: ["book_id":book.id, "chapter":chapter, "text":outgoing, "page_text":pageText])
     }
 }
 
