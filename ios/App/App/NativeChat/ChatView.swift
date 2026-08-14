@@ -13,6 +13,7 @@ struct ChatView: View {
     @StateObject private var store = ChatStore()
     @StateObject private var wallpaperStore = ChatWallpaperStore()
     @State private var draft = ""
+    @State private var stagedDrafts: [String] = []
     @State private var selectedQuote: String?
     @State private var showStickers = false
     @State private var photoItems: [PhotosPickerItem] = []
@@ -542,11 +543,15 @@ struct ChatView: View {
     }
 
     private var canSend: Bool {
-        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !pendingImages.isEmpty
+        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !stagedDrafts.isEmpty || !pendingImages.isEmpty
     }
 
     // PWA .chat-input-capsule 同款：大胶囊两行，粉描边，透底毛玻璃
-    private var floatingInput: some View {
+    @ViewBuilder private var floatingInput: some View {
+        if themeName == "ice" || themeName == "ice-dark" { iceFloatingInput } else { legacyFloatingInput }
+    }
+
+    private var legacyFloatingInput: some View {
         VStack(spacing: 4) {
             if store.connectionError {
                 Text("连接不上小屋，重试中…")
@@ -556,6 +561,7 @@ struct ChatView: View {
                     .padding(.vertical, 3)
                     .background(.ultraThinMaterial, in: Capsule())
             }
+            stagedDraftStrip
             VStack(spacing: 0) {
                 if let quote = selectedQuote {
                     HStack(alignment: .center, spacing: 8) {
@@ -700,9 +706,7 @@ struct ChatView: View {
                         Spacer()
                         // 攒气泡：空行入库不触发回复（她的 hold 功能）
                         Button {
-                            let t = draft
-                            draft = ""
-                            store.sendHold(t)
+                            stageCurrentDraft()
                         } label: {
                             Image(systemName: "arrow.turn.down.left")
                                     .font(.system(size: 15, weight: .medium))
@@ -716,12 +720,11 @@ struct ChatView: View {
                         if recorder.isRecording {
                             if let data = recorder.stopAndTake() { store.sendVoice(data: data) }
                         } else {
-                            let t = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-                            draft = ""
+                            let t = takeDraftBatch()
                             if !pendingImages.isEmpty {
                                 let imgs = pendingImages.map(\.jpeg)
                                 pendingImages = []
-                                store.sendImages(imgs, caption: t)
+                                store.sendImages(imgs, caption: outgoingText(t))
                             } else {
                                 store.sendText(outgoingText(t))
                             }
@@ -763,6 +766,111 @@ struct ChatView: View {
             Color.clear.preference(key: InputBarHeightKey.self, value: geo.size.height)
         })
         .onPreferenceChange(InputBarHeightKey.self) { inputBarHeight = $0 }
+    }
+
+    private var iceFloatingInput: some View {
+        VStack(spacing: 7) {
+            stagedDraftStrip
+            if !pendingImages.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 7) {
+                        ForEach(Array(pendingImages.enumerated()), id: \.offset) { idx, item in
+                            Image(uiImage: item.thumb).resizable().scaledToFill()
+                                .frame(width: 52, height: 52).clipShape(RoundedRectangle(cornerRadius: 14))
+                                .overlay(alignment: .topTrailing) {
+                                    Button { pendingImages.remove(at: idx) } label: {
+                                        Image(systemName: "xmark.circle.fill").foregroundStyle(.white).shadow(radius: 2)
+                                    }.offset(x: 5, y: -5)
+                                }
+                        }
+                    }.padding(.horizontal, 16)
+                }
+            }
+            HStack(spacing: 9) {
+                Menu {
+                    Button { showPhotoPicker = true } label: { Label("从相册选择", systemImage: "photo.on.rectangle") }
+                    Button { showCamera = true } label: { Label("拍照或录像", systemImage: "camera") }
+                    Button { showDocPicker = true } label: { Label("选取文件", systemImage: "doc") }
+                    Button { showStickers = true } label: { Label("贴纸", systemImage: "face.smiling") }
+                } label: {
+                    Image(systemName: "plus").font(.system(size: 17, weight: .medium))
+                        .foregroundColor(theme.textDim).frame(width: 44, height: 44)
+                        .background(.ultraThinMaterial, in: Circle())
+                        .overlay(Circle().stroke(theme.glassBorder, lineWidth: 0.8))
+                }
+                TextField("Message...", text: $draft)
+                    .focused($inputFocused).lineLimit(1).submitLabel(.return)
+                    .onSubmit { stageCurrentDraft() }
+                    .font(.system(size: 15.5)).foregroundColor(theme.text)
+                    .padding(.horizontal, 16).frame(height: 44)
+                    .background(.ultraThinMaterial, in: Capsule())
+                    .background(theme.capsuleTint, in: Capsule())
+                    .overlay(Capsule().stroke(theme.glassBorder, lineWidth: 0.8))
+                Button {
+                    if recorder.isRecording {
+                        if let data = recorder.stopAndTake() { store.sendVoice(data: data) }
+                    } else { recorder.start() }
+                } label: {
+                    Image(systemName: recorder.isRecording ? "stop.fill" : "mic")
+                        .font(.system(size: 16, weight: .medium)).foregroundColor(theme.textDim)
+                        .frame(width: 44, height: 44).background(.ultraThinMaterial, in: Circle())
+                        .overlay(Circle().stroke(theme.glassBorder, lineWidth: 0.8))
+                }
+                Button {
+                    let t = takeDraftBatch()
+                    if !pendingImages.isEmpty { let imgs = pendingImages.map(\.jpeg); pendingImages = []; store.sendImages(imgs, caption: outgoingText(t)) }
+                    else { store.sendText(outgoingText(t)) }
+                } label: {
+                    Image(systemName: "arrow.up").font(.system(size: 17, weight: .semibold)).foregroundColor(.white)
+                        .frame(width: 44, height: 44)
+                        .background(LinearGradient(colors: [theme.sendTop, theme.sendBottom], startPoint: .topLeading, endPoint: .bottomTrailing), in: Circle())
+                }.disabled(!canSend).opacity(canSend ? 1 : 0.42)
+            }.padding(.horizontal, 14)
+        }
+        .padding(.bottom, 2)
+        .background(GeometryReader { geo in Color.clear.preference(key: InputBarHeightKey.self, value: geo.size.height) })
+        .onPreferenceChange(InputBarHeightKey.self) { inputBarHeight = $0 }
+    }
+
+    private var stagedDraftStrip: some View {
+        Group {
+            if !stagedDrafts.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 7) {
+                        ForEach(Array(stagedDrafts.enumerated()), id: \.offset) { idx, text in
+                            HStack(spacing: 7) {
+                                Text(text).lineLimit(1)
+                                Button { draft = text; stagedDrafts.remove(at: idx) } label: {
+                                    Image(systemName: "pencil").font(.system(size: 10, weight: .semibold))
+                                }
+                                Button { stagedDrafts.remove(at: idx) } label: {
+                                    Image(systemName: "xmark").font(.system(size: 10, weight: .semibold))
+                                }
+                            }
+                            .font(.system(size: 12)).foregroundColor(theme.textDim)
+                            .padding(.horizontal, 11).frame(height: 32)
+                            .background(.ultraThinMaterial, in: Capsule())
+                            .overlay(Capsule().stroke(theme.glassBorder, lineWidth: 0.7))
+                        }
+                    }.padding(.horizontal, 15)
+                }
+            }
+        }
+    }
+
+    private func stageCurrentDraft() {
+        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        stagedDrafts.append(text)
+        draft = ""
+    }
+
+    private func takeDraftBatch() -> String {
+        let tail = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let parts = stagedDrafts + (tail.isEmpty ? [] : [tail])
+        stagedDrafts = []
+        draft = ""
+        return parts.joined(separator: "\n\n")
     }
 
     private func outgoingText(_ body: String) -> String {

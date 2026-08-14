@@ -116,11 +116,15 @@ struct AlcoveTheme {
         fyDash: Color(red: 120/255, green: 105/255, blue: 112/255).opacity(0.4),
         panelTextureAsset: "WetGlassMidnight")
 
+    static let ice = haven.iceCopy(dark: false)
+    static let iceDark = midnight.iceCopy(dark: true)
     static let paper = haven.paperCopy(dark: false)
     static let paperDark = midnight.paperCopy(dark: true)
 
     static func named(_ name: String) -> AlcoveTheme {
         switch name {
+        case "ice": return .ice
+        case "ice-dark": return .iceDark
         case "paper": return .paper
         case "paper-dark": return .paperDark
         case "midnight": return .midnight
@@ -132,6 +136,8 @@ struct AlcoveTheme {
     // 因而新增蓝色选项不会改动聊天气泡、输入框、顶栏或聊天壁纸。
     static func panelNamed(_ name: String) -> AlcoveTheme {
         switch name {
+        case "ice": return ice
+        case "ice-dark": return iceDark
         case "paper": return paper
         case "paper-dark": return paperDark
         case "midnight":
@@ -238,6 +244,29 @@ struct AlcoveTheme {
             fyFold: Color.white.opacity(isDark ? 0.08 : 0.22),
             fyDash: border.opacity(0.72),
             panelTextureAsset: textureAsset
+        )
+    }
+
+    private func iceCopy(dark: Bool) -> AlcoveTheme {
+        let ink = dark ? Color(red: 0.90, green: 0.95, blue: 1.0) : Color(red: 0.10, green: 0.20, blue: 0.34)
+        let dim = dark ? Color(red: 0.66, green: 0.78, blue: 0.93) : Color(red: 0.30, green: 0.45, blue: 0.63)
+        let card = dark ? Color(red: 0.06, green: 0.18, blue: 0.36).opacity(0.48) : Color.white.opacity(0.34)
+        let border = dark ? Color(red: 0.48, green: 0.76, blue: 1.0).opacity(0.26) : Color.white.opacity(0.70)
+        return AlcoveTheme(
+            isDark: dark, isPaper: false, usesWallImage: true, wallGradient: [],
+            bubbleUser: dark ? Color(red: 0.08, green: 0.32, blue: 0.62).opacity(0.52) : Color(red: 0.63, green: 0.82, blue: 1.0).opacity(0.42),
+            bubbleAI: dark ? Color(red: 0.08, green: 0.20, blue: 0.39).opacity(0.50) : Color.white.opacity(0.40),
+            text: ink, textDim: dim, textLight: dim.opacity(0.72), timestamp: dim,
+            glassTint: card, glassBorder: border, capsuleTint: card, capsuleBorder: border,
+            sendTop: dark ? Color(red: 0.22, green: 0.57, blue: 0.96) : Color(red: 0.31, green: 0.55, blue: 0.82),
+            sendBottom: dark ? Color(red: 0.10, green: 0.34, blue: 0.72) : Color(red: 0.18, green: 0.39, blue: 0.69),
+            fade: dark ? Color(red: 0.01, green: 0.06, blue: 0.15) : Color(red: 0.94, green: 0.98, blue: 1.0),
+            splashBg: dark ? [Color(red: 0.01, green: 0.08, blue: 0.20), Color(red: 0.03, green: 0.16, blue: 0.38)] : [Color.white, Color(red: 0.88, green: 0.95, blue: 1.0)],
+            splashBarTop: dim, splashBarBottom: dim.opacity(0.8), splashGlowA: border, splashGlowB: card,
+            splashPetal: dim.opacity(0.4), splashTitle: dim,
+            fyAccent: dim, fyAccentSoft: dim.opacity(0.22), fyCard: card, fyCardSub: card.opacity(0.78),
+            fyBorder: border, fyShadow: Color.black.opacity(dark ? 0.28 : 0.08), fyFold: border.opacity(0.35), fyDash: border,
+            panelTextureAsset: dark ? "ChatWallIceDark" : "ChatWallIce"
         )
     }
 

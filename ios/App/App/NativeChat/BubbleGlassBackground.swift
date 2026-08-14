@@ -27,6 +27,8 @@ final class ChatWallpaperStore: ObservableObject {
 
     static func fileName(for themeName: String) -> String {
         switch themeName {
+        case "ice": return "chatwall_ice.jpg"
+        case "ice-dark": return "chatwall_ice_dark.jpg"
         case "midnight": return "chatwall_midnight.jpg"
         case "paper": return "chatwall_paper.jpg"
         case "paper-dark": return "chatwall_paper_dark.jpg"
@@ -55,7 +57,8 @@ final class ChatWallpaperStore: ObservableObject {
                 }
             }
         } else if theme.usesWallImage {
-            descriptor = ChatWallpaperDescriptor(source: .asset("ChatWall"))
+            let asset = themeName == "ice" ? "ChatWallIce" : (themeName == "ice-dark" ? "ChatWallIceDark" : "ChatWall")
+            descriptor = ChatWallpaperDescriptor(source: .asset(asset))
         } else {
             descriptor = ChatWallpaperDescriptor(
                 source: .gradient(theme.wallGradient)
