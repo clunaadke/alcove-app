@@ -3,6 +3,60 @@ import PhotosUI
 import Photos
 import AVFoundation
 import UniformTypeIdentifiers
+import UIKit
+
+/// SwiftUI's TextField briefly ends editing on submit.  This wrapper handles
+/// Return at the UITextField delegate boundary and returns false, so the same
+/// responder stays active while the current paragraph is held.
+struct PersistentReturnTextField: UIViewRepresentable {
+    @Binding var text: String
+    var isFocused: FocusState<Bool>.Binding
+    let placeholder: String
+    let onReturn: () -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    func makeUIView(context: Context) -> UITextField {
+        let field = UITextField(frame: .zero)
+        field.delegate = context.coordinator
+        field.font = .systemFont(ofSize: 15.5)
+        field.returnKeyType = .return
+        field.clearButtonMode = .never
+        field.autocorrectionType = .default
+        field.attributedPlaceholder = NSAttributedString(
+            string: placeholder,
+            attributes: [
+                .font: UIFont.italicSystemFont(ofSize: 15.5),
+                .foregroundColor: UIColor.tertiaryLabel
+            ]
+        )
+        field.addTarget(context.coordinator, action: #selector(Coordinator.changed), for: .editingChanged)
+        return field
+    }
+
+    func updateUIView(_ field: UITextField, context: Context) {
+        context.coordinator.parent = self
+        if field.text != text { field.text = text }
+        if isFocused.wrappedValue, !field.isFirstResponder {
+            field.becomeFirstResponder()
+        } else if !isFocused.wrappedValue, field.isFirstResponder {
+            field.resignFirstResponder()
+        }
+    }
+
+    final class Coordinator: NSObject, UITextFieldDelegate {
+        var parent: PersistentReturnTextField
+        init(_ parent: PersistentReturnTextField) { self.parent = parent }
+
+        @objc func changed(_ field: UITextField) { parent.text = field.text ?? "" }
+        func textFieldDidBeginEditing(_ textField: UITextField) { parent.isFocused.wrappedValue = true }
+        func textFieldDidEndEditing(_ textField: UITextField) { parent.isFocused.wrappedValue = false }
+        func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+            parent.onReturn()
+            return false
+        }
+    }
+}
 
 struct ChatView: View {
     @Binding var thinkingEnabled: Bool
@@ -642,21 +696,14 @@ struct ChatView: View {
                     }
                     .padding(.init(top: 16, leading: 14, bottom: 4, trailing: 14))
                 } else {
-                    TextField(
-                        "",
+                    PersistentReturnTextField(
                         text: $draft,
-                        prompt: Text("ring the chime …")
-                            .font(.system(size: 15.5, design: .serif))
-                            .italic()
+                        isFocused: $inputFocused,
+                        placeholder: "ring the chime …",
+                        onReturn: holdCurrentDraft
                     )
-                    .focused($inputFocused)
-                    .lineLimit(1)
-                    .submitLabel(.return)
-                    .onSubmit { holdCurrentDraft() }
-                    .font(.system(size: 15.5, weight: .regular, design: .default))
-                    .tint(Color(uiColor: .systemGray3))
-                    .padding(.init(top: 16, leading: 14, bottom: 12, trailing: 14))
-                    .contentShape(Rectangle())
+                    .frame(height: 47)
+                    .padding(.horizontal, 14)
                 }
                 HStack(spacing: 2) {
                     if recorder.isRecording {
@@ -669,6 +716,9 @@ struct ChatView: View {
                         Spacer()
                     } else {
                         Menu {
+                            Button { showStickers = true } label: {
+                                Label("表情", systemImage: "face.smiling")
+                            }
                             Button { showPhotoPicker = true } label: {
                                 Label("从相册选择", systemImage: "photo.on.rectangle")
                             }
@@ -679,22 +729,11 @@ struct ChatView: View {
                                 Label("选取文件", systemImage: "doc")
                             }
                         } label: {
-                            Image(systemName: "paperclip")
-                                .font(.system(size: 16, weight: .medium))
+                            Image(systemName: "plus")
+                                .font(.system(size: 18, weight: .medium))
                                 .foregroundColor(theme.textDim)
-                                .frame(width: 32, height: 32)
-                        }
-                        Button { showStickers = true } label: {
-                            Image(systemName: "face.smiling")
-                                .font(.system(size: 16, weight: .medium))
-                                .foregroundColor(theme.textDim)
-                                .frame(width: 32, height: 32)
-                        }
-                        Button { recorder.start() } label: {
-                            Image(systemName: "mic")
-                                .font(.system(size: 16, weight: .medium))
-                                .foregroundColor(theme.textDim)
-                                .frame(width: 32, height: 32)
+                                .frame(width: 36, height: 36)
+                                .background(theme.glassTint.opacity(theme.isDark ? 0.64 : 0.82), in: Circle())
                         }
                         if !store.modelLabel.isEmpty {
                             Button {
@@ -707,60 +746,24 @@ struct ChatView: View {
                                     Text(store.modelLabel)
                                     Image(systemName: "chevron.up.chevron.down").font(.system(size: 8))
                                 }
-                                .font(.system(size: 11, weight: .medium))
+                                .font(.system(size: 12, weight: .medium))
                                 .foregroundColor(theme.textLight)
-                                .padding(.horizontal, 9).frame(height: 27)
+                                .padding(.horizontal, 12).frame(height: 36)
                                 .background(theme.glassTint.opacity(theme.isDark ? 0.72 : 0.92),
-                                            in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-                                .overlay(RoundedRectangle(cornerRadius: 11).stroke(theme.glassBorder, lineWidth: 1))
+                                            in: Capsule())
+                                .overlay(Capsule().stroke(theme.glassBorder, lineWidth: 1))
                             }
                             .buttonStyle(.plain)
                             .disabled(switchingModel)
                         }
                         Spacer()
-                        // 攒气泡：空行入库不触发回复（她的 hold 功能）
-                        Button {
-                            holdCurrentDraft()
-                        } label: {
-                            ZStack(alignment: .topTrailing) {
-                                Image(systemName: "arrow.turn.down.left")
-                                    .font(.system(size: 15, weight: .medium))
-                                    .foregroundColor(theme.textDim)
-                                    .frame(width: 32, height: 32)
-                                if store.heldCount > 0 {
-                                    Text("\(store.heldCount)")
-                                        .font(.system(size: 10, weight: .semibold))
-                                        .foregroundColor(.white)
-                                        .padding(.horizontal, 4)
-                                        .frame(minWidth: 15, minHeight: 15)
-                                        .background(theme.sendTop, in: Capsule())
-                                        .offset(x: 3, y: -3)
-                                }
-                            }
-                        }
-                        .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                        .padding(.trailing, 12)
                     }
-                    Button {
-                        if recorder.isRecording {
-                            if let data = recorder.stopAndTake() { store.sendVoice(data: data) }
-                        } else {
-                            let t = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-                            draft = ""
-                            if !pendingImages.isEmpty {
-                                let imgs = pendingImages.map(\.jpeg)
-                                pendingImages = []
-                                store.sendImages(imgs, caption: outgoingText(t))
-                            } else {
-                                store.sendText(outgoingText(t))
-                            }
-                        }
-                    } label: {
-                        Image(systemName: "paperplane.fill")
-                            .font(.system(size: 15, weight: .semibold))
+                    Button(action: performDynamicComposerAction) {
+                        ZStack(alignment: .topTrailing) {
+                            Image(systemName: (canSend || recorder.isRecording) ? "arrow.up" : "waveform")
+                            .font(.system(size: 17, weight: .semibold))
                             .foregroundColor(.white)
-                            .rotationEffect(.degrees(-8))
-                            .frame(width: 36, height: 36)
+                            .frame(width: 40, height: 40)
                             .background(
                                 LinearGradient(
                                     colors: [theme.sendTop, theme.sendBottom],
@@ -768,9 +771,16 @@ struct ChatView: View {
                             .clipShape(Circle())
                             .shadow(color: .black.opacity(0.2),
                                     radius: 4, y: 2)
-                            .opacity(canSend || recorder.isRecording ? 1 : 0.35)
+                            if store.heldCount > 0 && (canSend || recorder.isRecording) {
+                                Text("\(store.heldCount)")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundColor(.white)
+                                    .frame(minWidth: 16, minHeight: 16)
+                                    .background(theme.sendTop, in: Capsule())
+                                    .offset(x: 3, y: -3)
+                            }
+                        }
                     }
-                    .disabled(!canSend && !recorder.isRecording)
                 }
                 .padding(.init(top: 4, leading: 8, bottom: 8, trailing: 8))
             }
@@ -800,7 +810,26 @@ struct ChatView: View {
         draft = ""
         store.sendHold(text)
         inputFocused = true
-        DispatchQueue.main.async { inputFocused = true }
+    }
+
+    private func performDynamicComposerAction() {
+        if recorder.isRecording {
+            if let data = recorder.stopAndTake() { store.sendVoice(data: data) }
+            return
+        }
+        guard canSend else {
+            recorder.start()
+            return
+        }
+        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        draft = ""
+        if !pendingImages.isEmpty {
+            let images = pendingImages.map(\.jpeg)
+            pendingImages = []
+            store.sendImages(images, caption: outgoingText(text))
+        } else {
+            store.sendText(outgoingText(text))
+        }
     }
 
     private func outgoingText(_ body: String) -> String {

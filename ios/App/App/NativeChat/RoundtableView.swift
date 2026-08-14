@@ -750,21 +750,18 @@ struct RoundtableView: View {
                     attachmentControls
                     Spacer()
                 }
-                Button(action: sendComposerContent) {
-                    Image(systemName: "paperplane.fill")
-                        .font(.system(size: 15, weight: .semibold))
+                Button(action: performDynamicComposerAction) {
+                    Image(systemName: (canSend || recorder.isRecording) ? "arrow.up" : "waveform")
+                        .font(.system(size: 17, weight: .semibold))
                         .foregroundColor(.white)
-                        .rotationEffect(.degrees(-8))
-                        .frame(width: 36, height: 36)
+                        .frame(width: 40, height: 40)
                         .background(
                             LinearGradient(colors: [theme.sendTop, theme.sendBottom],
                                            startPoint: .topLeading,
                                            endPoint: .bottomTrailing))
                         .clipShape(Circle())
                         .shadow(color: .black.opacity(0.2), radius: 4, y: 2)
-                        .opacity(canSend || recorder.isRecording ? 1 : 0.35)
                 }
-                .disabled(!canSend && !recorder.isRecording)
             }
             .padding(.init(top: 4, leading: 8, bottom: 8, trailing: 8))
         }
@@ -815,19 +812,20 @@ struct RoundtableView: View {
     }
 
     private var attachmentControls: some View {
-        Group {
-            Menu {
+        Menu {
+                Button { showStickers = true } label: { Label("表情", systemImage: "face.smiling") }
                 Button { showPhotoPicker = true } label: { Label("从相册选择", systemImage: "photo.on.rectangle") }
                 Button { showCamera = true } label: { Label("拍照或录像", systemImage: "camera") }
                 Button { showDocPicker = true } label: { Label("选取文件", systemImage: "doc") }
-            } label: { composerIcon("paperclip") }
-            Button { showStickers = true } label: { composerIcon("face.smiling") }
-            Button { recorder.start() } label: { composerIcon("mic") }
-        }
+        } label: { composerIcon("plus") }
     }
 
     private func composerIcon(_ name: String) -> some View {
-        Image(systemName: name).foregroundColor(theme.textDim).frame(width: 32, height: 32)
+        Image(systemName: name)
+            .font(.system(size: 18, weight: .medium))
+            .foregroundColor(theme.textDim)
+            .frame(width: 36, height: 36)
+            .background(theme.capsuleTint.opacity(theme.isDark ? 0.64 : 0.82), in: Circle())
     }
 
     private func sendComposerContent() {
@@ -864,6 +862,14 @@ struct RoundtableView: View {
                 await store.upload(data, filename: filename, text: caption, group: group,
                                    triggerReply: isLast)
             }
+        }
+    }
+
+    private func performDynamicComposerAction() {
+        if recorder.isRecording || canSend {
+            sendComposerContent()
+        } else {
+            recorder.start()
         }
     }
 
