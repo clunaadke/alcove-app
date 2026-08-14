@@ -182,6 +182,34 @@ enum AlcoveAPI {
         return raw.compactMap(ChatMessage.init(json:))
     }
 
+    static func history(before: String, limit: Int = 300) async throws -> [ChatMessage] {
+        let encoded = before.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? before
+        let obj = try await getJSON("/api/history?limit=\(limit)&before=\(encoded)")
+        return (obj["records"] as? [[String: Any]] ?? []).compactMap(ChatMessage.init(json:))
+    }
+
+    static func history(around ts: String) async throws -> [ChatMessage] {
+        let encoded = ts.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ts
+        let obj = try await getJSON("/api/chat-around?ts=\(encoded)")
+        return (obj["records"] as? [[String: Any]] ?? []).compactMap(ChatMessage.init(json:))
+    }
+
+    static func searchHistory(query: String = "", day: String = "", limit: Int = 500) async throws -> [ChatMessage] {
+        let q = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
+        let d = day.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? day
+        let obj = try await getJSON("/api/chat-search?q=\(q)&day=\(d)&limit=\(limit)")
+        return (obj["records"] as? [[String: Any]] ?? []).compactMap(ChatMessage.init(json:))
+    }
+
+    static func calendarCounts(month: String) async throws -> [String: Int] {
+        let obj = try await getJSON("/api/chat-calendar?month=\(month)")
+        var out: [String: Int] = [:]
+        for row in obj["days"] as? [[String: Any]] ?? [] {
+            if let day = row["day"] as? String { out[day] = (row["count"] as? NSNumber)?.intValue ?? 0 }
+        }
+        return out
+    }
+
     static func poll(since: String?, limit: Int = 100) async throws -> PollResult {
         var path = "/api/poll?limit=\(limit)"
         if let s = since, !s.isEmpty,

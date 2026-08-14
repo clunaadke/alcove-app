@@ -3278,147 +3278,119 @@ private struct ClockworkView: View {
 private struct NativeSearchView: View {
     @State private var query = ""
     @State private var results: [ChatMessage] = []
-    @State private var history: [ChatMessage] = []
     @State private var filterType = "all"
-    @State private var filterDate: Date?
-    @State private var showDatePicker = false
+    @State private var month = Date()
+    @State private var dayCounts: [String: Int] = [:]
+    @State private var searching = false
     @AppStorage("alcoveTheme") private var themeName = "haven"
     @AppStorage("userName") private var userName = "Luna"
     @AppStorage("assistantName") private var assistantName = "陈璟"
     private var theme: AlcoveTheme { .panelNamed(themeName) }
-
-    private let types = [("all", "全部"), ("text", "文字"), ("image", "图片"),
-                         ("audio", "语音"), ("link", "链接")]
+    private let types = [("all", "全部"), ("text", "文字"), ("image", "图片"), ("audio", "语音"), ("link", "链接")]
+    private let columns = Array(repeating: GridItem(.flexible(), spacing: 3), count: 7)
+    private let calendar = Calendar(identifier: .gregorian)
 
     var body: some View {
         VStack(spacing: 0) {
             FoyerPanelTitle(title: "Search", theme: theme)
-            TextField("搜索聊天记录", text: $query)
-                .padding(11)
-                .foyerCard(theme)
-                .padding(.horizontal, 16).padding(.top, 8)
-                .onChange(of: query) { _ in applyFilter() }
+            TextField("搜索 6 月 16 日至今的全部聊天", text: $query)
+                .padding(11).foyerCard(theme).padding(.horizontal, 16).padding(.top, 8)
+                .onSubmit { Task { await search() } }
+                .onChange(of: query) { value in if value.isEmpty { results = [] } }
             HStack(spacing: 6) {
                 ForEach(types, id: \.0) { key, label in
-                    Button {
-                        filterType = key; applyFilter()
-                    } label: {
-                        Text(label)
-                            .font(.system(size: 11))
-                            .padding(.horizontal, 8).padding(.vertical, 4)
-                            .background(filterType == key ? theme.fyAccentSoft.opacity(0.4) : theme.fyCardSub,
-                                        in: Capsule())
+                    Button { filterType = key } label: {
+                        Text(label).font(.system(size: 11)).padding(.horizontal, 8).padding(.vertical, 4)
+                            .background(filterType == key ? theme.fyAccentSoft.opacity(0.4) : theme.fyCardSub, in: Capsule())
                             .foregroundColor(filterType == key ? theme.fyAccent : theme.textDim)
                     }
                 }
                 Spacer()
-                Button {
-                    showDatePicker.toggle()
-                } label: {
-                    Image(systemName: filterDate == nil ? "calendar" : "calendar.badge.checkmark")
-                        .font(.system(size: 13))
-                        .foregroundColor(filterDate == nil ? theme.textDim : theme.fyAccent)
+                Button { Task { await search() } } label: {
+                    if searching { ProgressView().controlSize(.mini) } else { Image(systemName: "magnifyingglass") }
                 }
-            }
-            .padding(.horizontal, 16).padding(.top, 8)
+            }.padding(.horizontal, 16).padding(.top, 8)
 
-            if showDatePicker {
-                DatePicker("日期", selection: Binding(
-                    get: { filterDate ?? Date() },
-                    set: { filterDate = $0; applyFilter() }
-                ), displayedComponents: .date)
-                .datePickerStyle(.compact)
-                .labelsHidden()
-                .padding(.horizontal, 16).padding(.top, 4)
-                HStack {
-                    Spacer()
-                    Button("清除日期") { filterDate = nil; applyFilter() }
-                        .font(.system(size: 11)).foregroundColor(theme.textDim)
-                }
-                .padding(.horizontal, 16)
-            }
             ScrollView(showsIndicators: false) {
-                LazyVStack(spacing: 8) {
-                    ForEach(results) { message in
-                        HStack(alignment: .top, spacing: 0) {
-                            VStack(spacing: 0) {
-                                Rectangle()
-                                    .stroke(style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
-                                    .foregroundColor(theme.fyDash)
-                                    .frame(width: 1)
-                            }
-                            .frame(width: 14)
-                            .overlay(alignment: .top) {
-                                BindingHole(theme: theme, count: 2, spacing: 18)
-                                    .offset(x: -4.5, y: 8)
-                            }
-
-                            VStack(alignment: .leading, spacing: 5) {
-                                HStack {
-                                    Text(message.role == "user" ? userName : assistantName)
-                                        .font(.system(size: 10, weight: .semibold))
-                                        .foregroundColor(theme.fyAccent.opacity(0.9))
-                                    Spacer()
-                                    Text(MessageRow.hm.string(from: message.date))
-                                        .font(.system(size: 9))
-                                        .foregroundColor(theme.textLight)
-                                }
-                                if message.isImage {
-                                    Label("图片", systemImage: "photo").font(.system(size: 12))
-                                        .foregroundColor(theme.textDim)
-                                }
-                                if message.isAudio {
-                                    Label("语音", systemImage: "waveform").font(.system(size: 12))
-                                        .foregroundColor(theme.textDim)
-                                }
-                                if !message.text.isEmpty {
-                                    Text(message.text).font(.system(size: 12)).lineSpacing(3)
-                                }
-                            }
-                            .padding(.vertical, 10)
-                            .padding(.trailing, 14)
-                            .padding(.leading, 10)
-                        }
-                        .foyerCard(theme)
-                        .onTapGesture {
-                            NotificationCenter.default.post(name: .alcoveJumpToMessage, object: message.ts)
+                VStack(spacing: 12) {
+                    calendarCard
+                    LazyVStack(spacing: 8) {
+                        ForEach(filteredResults) { message in searchRow(message) }
+                        if filteredResults.isEmpty && !query.isEmpty && !searching {
+                            Text("没有找到").font(.system(size: 12)).foregroundColor(theme.textDim).padding(24)
                         }
                     }
-                    if results.isEmpty && !query.isEmpty {
-                        Text("没有找到").font(.system(size: 12))
-                            .foregroundColor(theme.textDim).padding(30)
-                    }
-                }
-                .padding(.top, 10)
-                .padding(.horizontal, 16)
-                .padding(.bottom, 18)
+                }.padding(.top, 10).padding(.horizontal, 16).padding(.bottom, 18)
             }
         }
-        .foregroundColor(theme.text)
-        .foyerPanel(theme)
-        .padding(.horizontal, 12).padding(.top, 8)
-        .task { history = (try? await AlcoveAPI.history(limit: 300)) ?? [] }
+        .foregroundColor(theme.text).foyerPanel(theme).padding(.horizontal, 12).padding(.top, 8)
+        .task { await loadMonth() }
     }
 
-    private func applyFilter() {
-        var pool = history
-        if filterType == "image" { pool = pool.filter { $0.isImage } }
-        else if filterType == "audio" { pool = pool.filter { $0.isAudio } }
-        else if filterType == "link" {
-            pool = pool.filter { $0.text.contains("http://") || $0.text.contains("https://") }
-        } else if filterType == "text" {
-            pool = pool.filter { !$0.isImage && !$0.isAudio && !$0.text.isEmpty }
-        }
-        if let d = filterDate {
-            let cal = Calendar.current
-            pool = pool.filter { cal.isDate($0.date, inSameDayAs: d) }
-        }
-        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !q.isEmpty {
-            pool = pool.filter { $0.text.localizedCaseInsensitiveContains(q) }
-        }
-        results = pool
+    private var calendarCard: some View {
+        VStack(spacing: 9) {
+            HStack {
+                Button { changeMonth(-1) } label: { Image(systemName: "chevron.left").frame(width: 36, height: 36) }
+                Spacer()
+                Text(month, format: .dateTime.year().month(.wide)).font(.system(size: 16, weight: .semibold, design: .serif))
+                Spacer()
+                Button { changeMonth(1) } label: { Image(systemName: "chevron.right").frame(width: 36, height: 36) }
+            }
+            LazyVGrid(columns: columns, spacing: 6) {
+                ForEach(["日","一","二","三","四","五","六"], id: \.self) { Text($0).font(.system(size: 9)).foregroundColor(theme.textLight) }
+                ForEach(Array(monthCells.enumerated()), id: \.offset) { _, date in
+                    if let date {
+                        let key = dayKey(date)
+                        Button { Task { await jumpToDay(key) } } label: {
+                            VStack(spacing: 2) {
+                                Text("\(calendar.component(.day, from: date))").font(.system(size: 12, weight: .medium))
+                                Text(dayCounts[key].map { "\($0)条" } ?? " ").font(.system(size: 7.5, design: .rounded)).foregroundColor(theme.textLight)
+                            }.frame(maxWidth: .infinity, minHeight: 35)
+                                .background(dayCounts[key] == nil ? Color.clear : theme.fyAccentSoft.opacity(0.13), in: RoundedRectangle(cornerRadius: 9))
+                        }.buttonStyle(.plain).disabled(dayCounts[key] == nil)
+                    } else { Color.clear.frame(height: 35) }
+                }
+            }
+        }.padding(12).foyerCard(theme)
     }
+
+    private var monthCells: [Date?] {
+        guard let interval = calendar.dateInterval(of: .month, for: month),
+              let days = calendar.range(of: .day, in: .month, for: month) else { return [] }
+        let offset = calendar.component(.weekday, from: interval.start) - 1
+        return Array(repeating: nil, count: offset) + days.compactMap { calendar.date(byAdding: .day, value: $0 - 1, to: interval.start) }.map(Optional.some)
+    }
+
+    private var filteredResults: [ChatMessage] {
+        switch filterType {
+        case "image": return results.filter(\.isImage)
+        case "audio": return results.filter(\.isAudio)
+        case "link": return results.filter { $0.text.contains("http://") || $0.text.contains("https://") }
+        case "text": return results.filter { !$0.isImage && !$0.isAudio && !$0.text.isEmpty }
+        default: return results
+        }
+    }
+
+    private func searchRow(_ message: ChatMessage) -> some View {
+        Button { NotificationCenter.default.post(name: .alcoveJumpToMessage, object: message.ts) } label: {
+            HStack(alignment: .top, spacing: 10) {
+                Circle().fill(theme.fyAccent.opacity(0.65)).frame(width: 6, height: 6).padding(.top, 6)
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack { Text(message.role == "user" ? userName : assistantName).font(.system(size: 10, weight: .semibold)); Spacer(); Text(message.date, format: .dateTime.month().day().hour().minute()).font(.system(size: 9)).foregroundColor(theme.textLight) }
+                    if message.isImage { Label("图片", systemImage: "photo").font(.system(size: 11)) }
+                    if message.isAudio { Label("语音", systemImage: "waveform").font(.system(size: 11)) }
+                    if !message.text.isEmpty { Text(message.text).font(.system(size: 12)).lineLimit(5).frame(maxWidth: .infinity, alignment: .leading) }
+                }
+            }.padding(11).contentShape(Rectangle())
+        }.buttonStyle(.plain).foyerCard(theme)
+    }
+
+    private func monthKey(_ date: Date) -> String { let f=DateFormatter(); f.dateFormat="yyyy-MM"; f.timeZone = .current; return f.string(from: date) }
+    private func dayKey(_ date: Date) -> String { let f=DateFormatter(); f.dateFormat="yyyy-MM-dd"; f.timeZone = .current; return f.string(from: date) }
+    private func changeMonth(_ delta: Int) { if let d=calendar.date(byAdding: .month,value:delta,to:month) { month=d; Task { await loadMonth() } } }
+    @MainActor private func loadMonth() async { dayCounts = (try? await AlcoveAPI.calendarCounts(month: monthKey(month))) ?? [:] }
+    @MainActor private func search() async { let q=query.trimmingCharacters(in:.whitespacesAndNewlines); guard !q.isEmpty else { results=[]; return }; searching=true; defer{searching=false}; results=(try? await AlcoveAPI.searchHistory(query:q,limit:2000)) ?? [] }
+    @MainActor private func jumpToDay(_ day: String) async { guard let first=(try? await AlcoveAPI.searchHistory(day:day,limit:1))?.first else{return}; NotificationCenter.default.post(name:.alcoveJumpToMessage,object:first.ts) }
 }
 
 private struct FavoriteItem: Identifiable {

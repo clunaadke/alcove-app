@@ -192,6 +192,7 @@ struct ChatView: View {
                     LazyVStack(alignment: .leading, spacing: 6) {
                         ForEach(Array(store.messages.enumerated()), id: \.element.id) { idx, msg in
                             chatMessageRow(at: idx, message: msg)
+                                .onAppear { if idx == 0 { store.loadOlder() } }
                         }
                         // 实时预览框已退休；陈璟正在…是独立状态，一根毛不动。
                         if store.isTyping {
@@ -319,10 +320,13 @@ struct ChatView: View {
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: .alcoveJumpToMessage)) { note in
-                if let ts = note.object as? String,
-                   let target = store.messages.first(where: { $0.ts == ts }) {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                        withAnimation { proxy.scrollTo(target.id, anchor: .center) }
+                guard let ts = note.object as? String else { return }
+                Task {
+                    if !store.messages.contains(where: { $0.ts == ts }) { await store.loadAround(ts) }
+                    if let target = store.messages.first(where: { $0.ts == ts }) {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                            withAnimation { proxy.scrollTo(target.id, anchor: .top) }
+                        }
                     }
                 }
             }

@@ -9,6 +9,8 @@ final class ChatStore: ObservableObject {
     @Published var currentTool: String?
     @Published var stickers: [Sticker] = []
     @Published var loading = true
+    @Published var loadingOlder = false
+    @Published var hasOlder = true
     @Published var connectionError = false
     @Published var heldCount = 0
     @Published var modelLabel = ""
@@ -205,6 +207,29 @@ final class ChatStore: ObservableObject {
             loading = false
             connectionError = true
         }
+    }
+
+    func loadOlder() {
+        guard !loadingOlder, hasOlder, let first = messages.first else { return }
+        loadingOlder = true
+        Task {
+            defer { loadingOlder = false }
+            do {
+                let older = try await AlcoveAPI.history(before: first.ts, limit: 300)
+                if older.count < 300 { hasOlder = false }
+                let existing = Set(messages.map(\.ts))
+                messages.insert(contentsOf: older.filter { !existing.contains($0.ts) }, at: 0)
+            } catch { connectionError = true }
+        }
+    }
+
+    func loadAround(_ ts: String) async {
+        do {
+            let page = try await AlcoveAPI.history(around: ts)
+            messages = page
+            lastTs = page.last?.ts
+            hasOlder = true
+        } catch { connectionError = true }
     }
 
     private func consumeLiveStream() async {
