@@ -727,16 +727,16 @@ struct ChatView: View {
                         placeholder: "ring the chime …",
                         onReturn: holdCurrentDraft
                     )
-                    .frame(height: 62)
+                    .frame(height: 54)
                     .padding(.horizontal, 14)
                 }
                 HStack(spacing: 2) {
                     if recorder.isRecording {
                         Button { recorder.cancel() } label: {
                             Image(systemName: "xmark")
-                                .font(.system(size: 14, weight: .light))
+                                .font(.system(size: 15, weight: .light))
                                 .foregroundColor(theme.textDim)
-                                .frame(width: 28, height: 28)
+                                .frame(width: 32, height: 32)
                         }
                         Spacer()
                     } else {
@@ -755,9 +755,9 @@ struct ChatView: View {
                             }
                         } label: {
                             Image(systemName: "plus")
-                                .font(.system(size: 16, weight: .medium))
+                                .font(.system(size: 18, weight: .medium))
                                 .foregroundColor(theme.textDim)
-                                .frame(width: 28, height: 28)
+                                .frame(width: 32, height: 32)
                                 .background(theme.glassTint.opacity(theme.isDark ? 0.64 : 0.82), in: Circle())
                         }
                         if !store.modelLabel.isEmpty {
@@ -771,9 +771,9 @@ struct ChatView: View {
                                     Text(store.modelLabel)
                                     Image(systemName: "chevron.up.chevron.down").font(.system(size: 8))
                                 }
-                                .font(.system(size: 11, weight: .medium))
+                                .font(.system(size: 12, weight: .medium))
                                 .foregroundColor(theme.textLight)
-                                .padding(.horizontal, 9).frame(height: 28)
+                                .padding(.horizontal, 10).frame(height: 32)
                                 .background(theme.glassTint.opacity(theme.isDark ? 0.72 : 0.92),
                                             in: Capsule())
                                 .overlay(Capsule().stroke(theme.glassBorder, lineWidth: 1))
@@ -786,9 +786,9 @@ struct ChatView: View {
                     Button(action: performDynamicComposerAction) {
                         ZStack(alignment: .topTrailing) {
                             Image(systemName: (canSend || recorder.isRecording || store.heldCount > 0) ? "arrow.up" : "waveform")
-                            .font(.system(size: 15, weight: .semibold))
+                            .font(.system(size: 17, weight: .semibold))
                             .foregroundColor(.white)
-                            .frame(width: 32, height: 32)
+                            .frame(width: 36, height: 36)
                             .background(
                                 LinearGradient(
                                     colors: [theme.sendTop, theme.sendBottom],
@@ -807,9 +807,7 @@ struct ChatView: View {
                         }
                     }
                 }
-                // 0814 她要的：按钮排缩小并贴底一点，省出的高度全给打字区
-                // （54→62），外框总高不变
-                .padding(.init(top: 2, leading: 8, bottom: 6, trailing: 8))
+                .padding(.init(top: 4, leading: 8, bottom: 8, trailing: 8))
             }
             .background {
                 RoundedRectangle(cornerRadius: 28, style: .continuous)
