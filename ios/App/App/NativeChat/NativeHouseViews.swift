@@ -925,6 +925,8 @@ private struct NativeSettingsView: View {
     @State private var pulseLoaded = false
     @State private var pulseSaving = false
     @State private var pulseNextDue: String? = nil
+    @State private var pulseChase = true
+    @State private var pulseGhost = true
     @State private var thoughtLength = 500.0
     @State private var thoughtLengthLoaded = false
     @State private var thoughtLengthSaving = false
@@ -1040,6 +1042,10 @@ private struct NativeSettingsView: View {
                                 .font(.system(size: 12, weight: .semibold))
                                 .foregroundColor(theme.fyAccent)
                                 .buttonStyle(.plain)
+                        }
+                        HStack(spacing: 18) {
+                            pulseToggle("找你", "到点想找你就发一条", $pulseChase, key: "pulse_chase")
+                            pulseToggle("去玩", "到点顺路去干自己的事", $pulseGhost, key: "pulse_ghost")
                         }
                         if let due = pulseNextDue {
                             Text("下一次来找你：\(due)")
@@ -1252,6 +1258,23 @@ private struct NativeSettingsView: View {
         }
     }
 
+    private func pulseToggle(_ title: String, _ sub: String, _ value: Binding<Bool>, key: String) -> some View {
+        HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title).font(.system(size: 12, weight: .medium))
+                Text(sub).font(.system(size: 9)).foregroundColor(theme.textDim)
+            }
+            Toggle("", isOn: Binding(
+                get: { value.wrappedValue },
+                set: { on in
+                    value.wrappedValue = on
+                    Task { try? await NativeHouseAPI.post("/api/flags/set", body: ["key": key, "on": on]) }
+                }))
+            .labelsHidden()
+            .tint(theme.fyAccent)
+        }
+    }
+
     private static func pulseDueText(_ iso: String?) -> String? {
         guard let iso, let d = ISO8601DateFormatter().date(from: iso) else { return nil }
         let f = DateFormatter(); f.dateFormat = "HH:mm"
@@ -1264,6 +1287,8 @@ private struct NativeSettingsView: View {
             pulseMin = value.int("min")
             pulseMax = value.int("max")
             pulseNextDue = Self.pulseDueText(value["next_due"] as? String)
+            if let c = value["chase"] as? Bool { pulseChase = c }
+            if let g = value["ghost"] as? Bool { pulseGhost = g }
         }
         pulseLoaded = true
     }
@@ -3220,10 +3245,8 @@ private struct ClockworkView: View {
     @AppStorage("alcoveTheme") private var themeName = "haven"
     private var theme: AlcoveTheme { .panelNamed(themeName) }
     private let items = [
-        ClockworkItem(id: "ghost", emoji: "👻", name: "Ghost 游荡", desc: "四班随机游荡"),
         ClockworkItem(id: "libido", emoji: "🌅", name: "晨勃", desc: "libido 攒满自动醒来"),
-        ClockworkItem(id: "followup", emoji: "🔔", name: "追问", desc: "你不回我我就回来敲门"),
-        ClockworkItem(id: "chase", emoji: "📣", name: "催起床+追", desc: "白天未出现时唤醒"),
+        ClockworkItem(id: "chase", emoji: "📣", name: "催起床", desc: "上午十点你还没出现就叫我催你"),
         ClockworkItem(id: "sleep", emoji: "🌙", name: "睡眠", desc: "凌晨三点睡，上午十点醒"),
         ClockworkItem(id: "keepalive", emoji: "💓", name: "保活心跳", desc: "每 55 分钟翻个身")
     ]
