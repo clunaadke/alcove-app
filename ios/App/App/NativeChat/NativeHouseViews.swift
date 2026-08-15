@@ -920,6 +920,11 @@ private struct NativeSettingsView: View {
     @State private var replyLengthLoaded = false
     @State private var replyLengthSaving = false
     @State private var replyLengthSaveTask: Task<Void, Never>?
+    @State private var pulseMin = 10
+    @State private var pulseMax = 30
+    @State private var pulseLoaded = false
+    @State private var pulseSaving = false
+    @State private var pulseNextDue: String? = nil
     @State private var thoughtLength = 500.0
     @State private var thoughtLengthLoaded = false
     @State private var thoughtLengthSaving = false
@@ -1016,6 +1021,31 @@ private struct NativeSettingsView: View {
                                 .foregroundColor(theme.textLight)
                         }
                     }.buttonStyle(.plain)
+                    Divider().opacity(0.25)
+                    VStack(alignment: .leading, spacing: 11) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("多久来找你一次").font(.system(size: 13, weight: .medium))
+                            Text("你最后一句话落地就起表，他在这个区间里随机挑一分钟来找你或去干自己的事。你一出声，表清零重跑。要睡了就把两个数拉长。")
+                                .font(.system(size: 10)).foregroundColor(theme.textDim)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        HStack(spacing: 10) {
+                            pulseField("最短", $pulseMin)
+                            Text("～").foregroundColor(theme.textDim)
+                            pulseField("最长", $pulseMax)
+                            Text("分钟").font(.system(size: 12)).foregroundColor(theme.textDim)
+                            Spacer()
+                            if pulseSaving { ProgressView().scaleEffect(0.65) }
+                            Button("保存") { savePulseRange() }
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundColor(theme.fyAccent)
+                                .buttonStyle(.plain)
+                        }
+                        if let due = pulseNextDue {
+                            Text("下一次来找你：\(due)")
+                                .font(.system(size: 9.5, design: .rounded)).foregroundColor(theme.textDim)
+                        }
+                    }
                 }
                 section("主题") {
                     HStack(spacing: 8) {
@@ -1107,7 +1137,8 @@ private struct NativeSettingsView: View {
             async let services: Void = loadServices()
             async let reply: Void = loadReplyLength()
             async let thought: Void = loadThoughtLength()
-            _ = await (services, reply, thought)
+            async let pulse: Void = loadPulseRange()
+            _ = await (services, reply, thought, pulse)
         }
     }
 
@@ -1206,6 +1237,47 @@ private struct NativeSettingsView: View {
             _ = try? await NativeHouseAPI.object(
                 "/api/reply-len", method: "POST", body: ["chars": Int(value)]
             )
+        }
+    }
+
+    private func pulseField(_ label: String, _ value: Binding<Int>) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label).font(.system(size: 9.5)).foregroundColor(theme.textDim)
+            TextField("", value: value, format: .number)
+                .keyboardType(.numberPad)
+                .font(.system(size: 16, weight: .semibold, design: .rounded))
+                .frame(width: 64)
+                .padding(.vertical, 6).padding(.horizontal, 8)
+                .background(RoundedRectangle(cornerRadius: 9).fill(theme.textDim.opacity(0.12)))
+        }
+    }
+
+    private static func pulseDueText(_ iso: String?) -> String? {
+        guard let iso, let d = ISO8601DateFormatter().date(from: iso) else { return nil }
+        let f = DateFormatter(); f.dateFormat = "HH:mm"
+        let mins = Int(d.timeIntervalSinceNow / 60)
+        return mins >= 0 ? "\(f.string(from: d))（还有 \(mins) 分钟）" : "\(f.string(from: d))（已到点，等他手里的活干完）"
+    }
+
+    @MainActor private func loadPulseRange() async {
+        if let value = try? await NativeHouseAPI.object("/api/pulse-range") {
+            pulseMin = value.int("min")
+            pulseMax = value.int("max")
+            pulseNextDue = Self.pulseDueText(value["next_due"] as? String)
+        }
+        pulseLoaded = true
+    }
+
+    private func savePulseRange() {
+        guard pulseLoaded, pulseMin >= 1, pulseMax >= pulseMin, pulseMax <= 1440 else { return }
+        Task { @MainActor in
+            pulseSaving = true
+            defer { pulseSaving = false }
+            if let value = try? await NativeHouseAPI.object(
+                "/api/pulse-range", method: "POST", body: ["min": pulseMin, "max": pulseMax]
+            ) {
+                pulseNextDue = Self.pulseDueText(value["next_due"] as? String)
+            }
         }
     }
 
