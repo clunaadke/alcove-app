@@ -7520,6 +7520,7 @@ private struct NativeForgeView: View {
     @State private var forging = false
     @State private var result: String?
     @State private var newSessionId: String?
+    @State private var report: [String: Any] = [:]
     @AppStorage("alcoveTheme") private var themeName = "haven"
     private var theme: AlcoveTheme { .panelNamed(themeName) }
 
@@ -7550,6 +7551,27 @@ private struct NativeForgeView: View {
                         .padding(14)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .foyerCard(theme)
+
+                        Button {
+                            Task { await executeOneClickForge() }
+                        } label: {
+                            HStack {
+                                if forging { ProgressView().scaleEffect(0.8).tint(.white) }
+                                Image(systemName: "hammer.fill").font(.system(size: 13))
+                                Text(forging ? "锻造中..." : "一键锻造（带全本窗＋交接包）")
+                                    .font(.system(size: 14, weight: .semibold))
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 13)
+                            .background(forging ? theme.fyCardSub : theme.fyAccent,
+                                        in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                            .foregroundColor(.white)
+                        }
+                        .disabled(forging)
+
+                        if !report.isEmpty {
+                            forgeReportCard
+                        }
 
                         Picker("锻造方式", selection: $mode) {
                             ForEach(ForgeMode.allCases, id: \.self) { value in
@@ -7835,6 +7857,70 @@ private struct NativeForgeView: View {
         loading = false
     }
 
+    private var forgeReportCard: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("锻造账单").font(.system(size: 12, weight: .semibold))
+                .foregroundColor(theme.fyAccent)
+            reportRow("带走原文", "\((report["retained_rounds"] as? Int) ?? 0) / \((report["total_rounds"] as? Int) ?? 0) 轮，一字不改")
+            if let n = report["shixu_stripped_blocks"] as? Int, n > 0 {
+                reportRow("剥离思绪", "\(n) 块（约 \((report["shixu_stripped_chars"] as? Int) ?? 0) 字，你那边存档不动）")
+            }
+            if let tb = report["tool_blocks_compressed"] as? Int {
+                let kept = (report["tool_blocks_kept"] as? Int) ?? 0
+                let tc = ((report["tool_chars_compressed"] as? Int) ?? 0) / 1000
+                reportRow("工具痕迹", "\(tb) 块（约\(tc)K字）压成占位行，留 \(kept) 块真范本")
+            }
+            if let h = report["handoff"] as? [String: Any] {
+                if (h["included"] as? Bool) == true {
+                    reportRow("交接包", "1 份，陈璟写于 \((h["written_at"] as? String) ?? "?")")
+                } else {
+                    reportRow("交接包", "没有（handoff.md 不在，照旧锻）")
+                }
+            }
+            if let sb = report["source_bytes"] as? Int, let ob = report["output_bytes"] as? Int {
+                reportRow("体积", "\(sb / 1024)KB → \(ob / 1024)KB")
+            }
+            if let et = report["estimated_tokens"] as? Int {
+                reportRow("新窗开局", "约 \(et) token")
+            }
+            if let pm = report["probe_message"] as? String {
+                reportRow((report["probe_ok"] as? Bool) == true ? "探针 ✓" : "探针 ✗", pm)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .foyerCard(theme)
+    }
+
+    private func reportRow(_ label: String, _ value: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Text(label).font(.system(size: 11, weight: .medium))
+                .foregroundColor(theme.textDim)
+                .frame(width: 62, alignment: .leading)
+            Text(value).font(.system(size: 11))
+                .foregroundColor(theme.textLight)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func executeOneClickForge() async {
+        forging = true
+        defer { forging = false }
+        do {
+            let obj = try await NativeHouseAPI.object(
+                "/api/forge", method: "POST", body: ["retain": 9999])
+            report = obj
+            if let sid = obj["new_session_id"] as? String, !sid.isEmpty {
+                newSessionId = sid
+                result = nil
+            } else {
+                result = (obj["error"] as? String) ?? "锻造失败"
+            }
+        } catch {
+            result = "请求失败"
+        }
+    }
+
     private func executeForge() async {
         forging = true
         defer { forging = false }
@@ -7844,6 +7930,7 @@ private struct NativeForgeView: View {
                 : ["retain": Int(retain)]
             let obj = try await NativeHouseAPI.object(
                 "/api/forge", method: "POST", body: body)
+            report = obj
             if let sid = obj["new_session_id"] as? String, !sid.isEmpty {
                 newSessionId = sid
                 result = nil
