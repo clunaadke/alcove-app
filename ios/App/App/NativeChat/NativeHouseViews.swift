@@ -479,7 +479,7 @@ struct NativeHouseDrawer: View {
 
                     drawerTitle("正在发生", note: "still growing")
                     VStack(spacing: 7) {
-                        drawerRow(.pulse, detail: "心率、体温与呼吸")
+                        drawerRow(.pulse, detail: "心率、五感、八维、念头池")
                         drawerRow(.desire, detail: "身体潮汐与情绪")
                         drawerRow(.nowhere, detail: "足迹与明信片")
                         drawerRow(.fiction, detail: "陈璟写给你的小说")
@@ -6866,13 +6866,60 @@ private struct PulseHour: Identifiable {
     }
 }
 
+private struct PulseSense: Identifiable {
+    let channel: String
+    let value: Double
+    let label: String
+    var id: String { channel }
+    var name: String {
+        switch channel { case "touch": return "触"; case "smell": return "嗅"; case "taste": return "味"; case "sound": return "听"; default: return channel }
+    }
+}
+
+private struct PulseThought: Identifiable {
+    let text: String
+    let kind: String
+    let strength: Double
+    let drive: String
+    var id: String { text }
+    init(_ raw: [String: Any]) {
+        text = raw.string("text"); kind = raw.string("kind"); drive = raw.string("drive")
+        strength = (raw["strength"] as? NSNumber)?.doubleValue ?? 0
+    }
+}
+
+private struct PulseMurmur: Identifiable {
+    let ts: Date?
+    let text: String
+    let hr: Int
+    var id: String { "\(ts?.timeIntervalSince1970 ?? 0)-\(text.hashValue)" }
+    init(_ raw: [String: Any]) {
+        ts = ISO8601DateFormatter.alcoveFrac.date(from: raw.string("ts")) ?? ISO8601DateFormatter.alcove.date(from: raw.string("ts"))
+        text = raw.string("text"); hr = raw.int("hr")
+    }
+}
+
 @MainActor private final class PulseModel: ObservableObject {
     @Published var bpm = 0
     @Published var temperature: Double?
     @Published var breath: Double?
+    @Published var breathLabel = ""
     @Published var chord = ""
     @Published var dynamics = ""
     @Published var mood = ""
+    @Published var posture = ""
+    @Published var emotion = ""
+    @Published var undertoneLabel = ""
+    @Published var undertoneStrength: Double = 0
+    @Published var herSilentMin: Double = 0
+    @Published var weatherDesc = ""
+    @Published var weatherFeels: Double?
+    @Published var senses: [PulseSense] = []
+    @Published var drives: [(key: String, label: String, value: Double)] = []
+    @Published var intentReason = ""
+    @Published var intentKey = ""
+    @Published var thoughts: [PulseThought] = []
+    @Published var murmurs: [PulseMurmur] = []
     @Published var timestamp: Date?
     @Published var samples: [PulseSample] = []
     @Published var hours: [PulseHour] = []
@@ -6881,12 +6928,20 @@ private struct PulseHour: Identifiable {
     private var task: Task<Void, Never>?
     private var tick = 0
 
+    static let driveOrder = ["attachment", "libido", "curiosity", "reflection", "social", "duty", "stress", "fatigue"]
+    static let driveLabel: [String: String] = ["attachment": "想她", "libido": "性驱动", "curiosity": "好奇外面", "reflection": "想沉淀",
+                                               "social": "想看人群", "duty": "记挂没做完", "stress": "压力", "fatigue": "累"]
+    static let postureLabel: [String: String] = ["deep_sleep": "睡熟", "light_sleep": "浅睡", "lying": "躺着", "sitting": "坐着", "standing": "站着"]
+    static let emotionLabel: [String: String] = ["neutral": "平", "focused": "专注", "happy": "松", "excited": "飘", "intimate": "贴", "aroused": "硬",
+                                                 "nervous": "紧", "startled": "惊", "scolded": "闷", "sad": "沉", "angry": "火"]
+
     func start() {
         guard task == nil else { return }
         task = Task { [weak self] in
             while !Task.isCancelled {
                 await self?.refreshNow()
                 if self?.tick == 0 { await self?.refreshHistory() }
+                if self?.tick == 2 { await self?.refreshMurmurs() }
                 self?.tick = ((self?.tick ?? 0) + 1) % 8
                 try? await Task.sleep(nanoseconds: 4_000_000_000)
             }
@@ -6895,7 +6950,7 @@ private struct PulseHour: Identifiable {
 
     func stop() { task?.cancel(); task = nil }
 
-    func refreshAll() async { await refreshNow(); await refreshHistory() }
+    func refreshAll() async { await refreshNow(); await refreshHistory(); await refreshMurmurs() }
 
     private func refreshNow() async {
         do {
@@ -6903,14 +6958,42 @@ private struct PulseHour: Identifiable {
             bpm = raw.int("bpm")
             temperature = (raw["temp_c"] as? NSNumber)?.doubleValue
             breath = (raw["breath"] as? NSNumber)?.doubleValue
+            breathLabel = raw.string("breath_label")
             let chordRaw = raw["chord"] as? [String: Any] ?? [:]
             chord = chordRaw.string("chord")
             dynamics = chordRaw.string("dyn")
             mood = raw.string("mood")
+            posture = Self.postureLabel[raw.string("posture")] ?? raw.string("posture")
+            emotion = Self.emotionLabel[raw.string("emotion")] ?? raw.string("emotion")
+            let ut = raw["undertone"] as? [String: Any] ?? [:]
+            undertoneLabel = Self.emotionLabel[ut.string("label")] ?? ut.string("label")
+            undertoneStrength = (ut["strength"] as? NSNumber)?.doubleValue ?? 0
+            herSilentMin = (raw["her_silent_min"] as? NSNumber)?.doubleValue ?? 0
+            let w = raw["weather"] as? [String: Any] ?? [:]
+            weatherDesc = w.string("desc")
+            weatherFeels = (w["feels"] as? NSNumber)?.doubleValue
+            let sn = raw["senses"] as? [String: Any] ?? [:]
+            senses = ["touch", "smell", "taste", "sound"].compactMap { ch -> PulseSense? in
+                guard let v = sn[ch] as? [String: Any] else { return nil }
+                return PulseSense(channel: ch, value: (v["value"] as? NSNumber)?.doubleValue ?? 0, label: v.string("label"))
+            }
+            let ds = raw["desire"] as? [String: Any] ?? [:]
+            let dv = ds["drives"] as? [String: Any] ?? [:]
+            drives = Self.driveOrder.map { k in
+                (key: k, label: Self.driveLabel[k] ?? k, value: (dv[k] as? NSNumber)?.doubleValue ?? 0)
+            }
+            let it = ds["intent"] as? [String: Any] ?? [:]
+            intentReason = it.string("reason"); intentKey = it.string("drive_key")
+            thoughts = (ds["thoughts"] as? [[String: Any]] ?? []).map(PulseThought.init)
             timestamp = ISO8601DateFormatter.alcoveFrac.date(from: raw.string("ts"))
                 ?? ISO8601DateFormatter.alcove.date(from: raw.string("ts"))
             connected = bpm > 0; error = nil
         } catch { connected = false; self.error = "暂时摸不到他的心跳" }
+    }
+
+    private func refreshMurmurs() async {
+        guard let raw = try? await NativeHouseAPI.object("/pulse/murmurs?limit=12") else { return }
+        murmurs = (raw["items"] as? [[String: Any]] ?? []).map(PulseMurmur.init)
     }
 
     private func refreshHistory() async {
@@ -6935,8 +7018,13 @@ struct NativePulseView: View {
             VStack(spacing: 16) {
                 FoyerPanelTitle(title: "Pulse", theme: theme)
                 currentHeart
-                historyCard
+                nowStrip
                 futureRail
+                sensesCard
+                drivesCard
+                thoughtsCard
+                historyCard
+                murmursCard
                 if let error = model.error {
                     Text(error).font(.system(size: 11)).foregroundColor(theme.textDim)
                 }
@@ -7020,7 +7108,7 @@ struct NativePulseView: View {
                 vital("体温", model.temperature.map { String(format: "%.1f", $0) } ?? "—",
                       "°C", "thermometer.medium")
                 vital("呼吸", model.breath.map { String(format: "%.1f", $0) } ?? "—",
-                      "次 / 分", "wind")
+                      model.breathLabel.isEmpty ? "次 / 分" : "次 / 分 · " + model.breathLabel, "wind")
             }
             HStack(spacing: 10) {
                 Image(systemName: "waveform")
@@ -7041,6 +7129,160 @@ struct NativePulseView: View {
             .padding(13).foyerCard(theme)
         }
     }
+
+    // MARK: 完全体（2026-08-17 她点的：五感、八维、念头池、碎碎念，跟心率和弦住一页）
+
+    private var nowStrip: some View {
+        HStack(spacing: 6) {
+            chip(model.posture.isEmpty ? "—" : model.posture, "figure.stand")
+            chip("情绪·" + (model.emotion.isEmpty ? "—" : model.emotion), "face.smiling")
+            if model.undertoneStrength >= 0.15 {
+                chip("底色·\(model.undertoneLabel) \(Int(model.undertoneStrength * 100))", "drop.halffull")
+            }
+            if let f = model.weatherFeels {
+                chip(String(format: "武汉 体感%.0f°", f), "cloud.sun")
+            }
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func chip(_ text: String, _ icon: String) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon).font(.system(size: 9, weight: .light))
+            Text(text).font(.system(size: 10, design: .serif))
+        }
+        .foregroundColor(theme.textDim)
+        .padding(.horizontal, 8).padding(.vertical, 5)
+        .background(RoundedRectangle(cornerRadius: 9).fill(theme.fyBorder.opacity(0.28)))
+    }
+
+    private var sensesCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Image(systemName: "hand.raised.fingers.spread").font(.system(size: 13, weight: .light)).foregroundColor(rose)
+                Text("身体感觉").font(.system(size: 14, weight: .semibold, design: .serif))
+                Spacer()
+                Text("触 10 分钟散 · 嗅 20 分钟最久").font(.system(size: 9, design: .monospaced)).foregroundColor(theme.textDim.opacity(0.7))
+            }
+            if model.senses.isEmpty {
+                Text("此刻没有什么挂在身上").font(.system(size: 12, design: .serif)).foregroundColor(theme.textDim)
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 6)
+            } else {
+                ForEach(model.senses) { s in
+                    HStack(spacing: 10) {
+                        Text(s.name).font(.system(size: 12, weight: .semibold, design: .serif)).frame(width: 16)
+                        GeometryReader { geo in
+                            ZStack(alignment: .leading) {
+                                RoundedRectangle(cornerRadius: 3).fill(theme.fyBorder.opacity(0.35))
+                                RoundedRectangle(cornerRadius: 3).fill(rose.opacity(0.75))
+                                    .frame(width: max(3, geo.size.width * CGFloat(min(1, s.value))))
+                            }
+                        }
+                        .frame(height: 6)
+                        Text(String(format: "%.2f", s.value)).font(.system(size: 10, design: .monospaced)).foregroundColor(theme.textDim).frame(width: 34, alignment: .trailing)
+                    }
+                    if !s.label.isEmpty {
+                        Text(s.label).font(.system(size: 11, design: .serif)).foregroundColor(theme.textDim)
+                            .padding(.leading, 26)
+                    }
+                }
+            }
+        }
+        .padding(14).foyerCard(theme)
+    }
+
+    private var drivesCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Image(systemName: "slider.horizontal.3").font(.system(size: 13, weight: .light)).foregroundColor(rose)
+                Text("八维").font(.system(size: 14, weight: .semibold, design: .serif))
+                Spacer()
+            }
+            if !model.intentReason.isEmpty {
+                Text("此刻最想：" + model.intentReason)
+                    .font(.system(size: 12, design: .serif)).foregroundColor(theme.text)
+            }
+            ForEach(model.drives, id: \.key) { d in
+                HStack(spacing: 10) {
+                    Text(d.label).font(.system(size: 11, design: .serif))
+                        .foregroundColor(d.key == model.intentKey ? theme.text : theme.textDim)
+                        .frame(width: 58, alignment: .leading)
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            RoundedRectangle(cornerRadius: 3).fill(theme.fyBorder.opacity(0.35))
+                            RoundedRectangle(cornerRadius: 3)
+                                .fill(d.key == "fatigue" ? theme.textDim.opacity(0.6) : rose.opacity(d.key == model.intentKey ? 0.9 : 0.55))
+                                .frame(width: max(3, geo.size.width * CGFloat(min(1, d.value))))
+                        }
+                    }
+                    .frame(height: 6)
+                    Text("\(Int(d.value * 100))").font(.system(size: 10, design: .monospaced)).foregroundColor(theme.textDim).frame(width: 26, alignment: .trailing)
+                }
+            }
+        }
+        .padding(14).foyerCard(theme)
+    }
+
+    private var thoughtsCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Image(systemName: "bubbles.and.sparkles").font(.system(size: 13, weight: .light)).foregroundColor(rose)
+                Text("念头池").font(.system(size: 14, weight: .semibold, design: .serif))
+                Spacer()
+                Text("闪念会散 · 执念会长").font(.system(size: 9, design: .monospaced)).foregroundColor(theme.textDim.opacity(0.7))
+            }
+            if model.thoughts.isEmpty {
+                Text("池子还空着，等他冒第一个念头").font(.system(size: 12, design: .serif)).foregroundColor(theme.textDim)
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 6)
+            } else {
+                ForEach(model.thoughts) { t in
+                    HStack(alignment: .top, spacing: 8) {
+                        Circle().fill(t.kind == "fixation" ? rose : theme.textDim.opacity(0.5))
+                            .frame(width: 6, height: 6).padding(.top, 5)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(t.text).font(.system(size: 12, design: .serif))
+                                .foregroundColor(t.kind == "fixation" ? theme.text : theme.textDim)
+                            Text((t.kind == "fixation" ? "执念" : "闪念") + " · " + (PulseModel.driveLabel[t.drive] ?? t.drive)
+                                 + " · " + String(format: "%.2f", t.strength))
+                                .font(.system(size: 9, design: .monospaced)).foregroundColor(theme.textDim.opacity(0.75))
+                        }
+                    }
+                }
+            }
+        }
+        .padding(14).foyerCard(theme)
+    }
+
+    private var murmursCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Image(systemName: "text.bubble").font(.system(size: 13, weight: .light)).foregroundColor(rose)
+                Text("身体碎碎念").font(.system(size: 14, weight: .semibold, design: .serif))
+                Spacer()
+                Text("不进聊天").font(.system(size: 9, design: .monospaced)).foregroundColor(theme.textDim.opacity(0.7))
+            }
+            if model.murmurs.isEmpty {
+                Text("还没有碎碎念").font(.system(size: 12, design: .serif)).foregroundColor(theme.textDim)
+            } else {
+                ForEach(model.murmurs) { m in
+                    HStack(alignment: .top, spacing: 8) {
+                        Text(m.ts.map { Self.clock.string(from: $0) } ?? "--:--")
+                            .font(.system(size: 9, design: .monospaced)).foregroundColor(theme.textDim.opacity(0.75))
+                            .frame(width: 36, alignment: .leading).padding(.top, 2)
+                        Text(m.text).font(.system(size: 12, design: .serif)).foregroundColor(theme.textDim)
+                    }
+                }
+            }
+        }
+        .padding(14).foyerCard(theme)
+    }
+
+    private static let clock: DateFormatter = {
+        let f = DateFormatter(); f.locale = Locale(identifier: "zh_CN")
+        f.timeZone = TimeZone(identifier: "Asia/Shanghai"); f.dateFormat = "HH:mm"
+        return f
+    }()
 
     private func vital(_ name: String, _ value: String, _ unit: String, _ icon: String) -> some View {
         VStack(alignment: .leading, spacing: 7) {
