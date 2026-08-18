@@ -38,7 +38,7 @@ private struct PondItem: Identifiable {
     let images: [String]
     let status: String      // "" | doing | done
     let statusNote: String
-    let mood: String
+    let moods: [String]
     let pinned: Bool
     let likedBy: [String]
     let createdAt: String
@@ -57,7 +57,10 @@ private struct PondItem: Identifiable {
         images = (raw["images"] as? [String]) ?? []
         status = raw.string("status")
         statusNote = raw.string("statusNote")
-        mood = raw.string("mood")
+        moods = raw.string("mood")
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
         pinned = raw.bool("pinned")
         likedBy = (raw["likedBy"] as? [String]) ?? []
         createdAt = raw.string("createdAt")
@@ -359,10 +362,10 @@ private struct PondItemCard: View {
                 .foregroundColor(palette.ink3)
                 .padding(.horizontal, 6).padding(.vertical, 2)
                 .background(Capsule().strokeBorder(palette.line, lineWidth: 0.6))
-            if !item.mood.isEmpty {
+            ForEach(item.moods, id: \.self) { feel in
                 HStack(spacing: 3.5) {
                     Circle().fill(palette.acc.opacity(0.75)).frame(width: 4, height: 4)
-                    Text(item.mood)
+                    Text(feel)
                         .font(.system(size: 10, design: .serif))
                         .tracking(0.6)
                         .foregroundColor(palette.acc)
@@ -530,13 +533,14 @@ private struct PondComposeSheet: View {
     @State private var kind = "wish"
     @State private var text = ""
     @State private var url = ""
-    @State private var mood = ""
+    @State private var moods: [String] = []
+    @State private var customMood = ""
     @State private var picks: [PhotosPickerItem] = []
     @State private var pending: [PondPendingPhoto] = []
     @State private var uploading = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 14) {
             HStack {
                 Text("放一条")
                     .font(.system(size: 17, weight: .medium, design: .serif))
@@ -546,7 +550,7 @@ private struct PondComposeSheet: View {
                 Button("放进去") {
                     onSubmit(kind, text.trimmingCharacters(in: .whitespacesAndNewlines),
                              url.trimmingCharacters(in: .whitespacesAndNewlines),
-                             mood.trimmingCharacters(in: .whitespacesAndNewlines),
+                             moods.joined(separator: ","),
                              pending.map { $0.jpeg })
                     dismiss()
                 }
@@ -555,6 +559,8 @@ private struct PondComposeSheet: View {
                 .disabled(!canSubmit)
             }
 
+            ScrollView(showsIndicators: false) {
+              VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 8) {
                 ForEach([("wish", "许愿"), ("thought", "念头")], id: \.0) { value, label in
                     Button { kind = value } label: {
@@ -643,7 +649,9 @@ private struct PondComposeSheet: View {
                 }
             }
 
-            Spacer()
+            Color.clear.frame(height: 8)
+              }
+            }
         }
         .padding(20)
         .background(
@@ -661,64 +669,112 @@ private struct PondComposeSheet: View {
         }
     }
 
-    // 情绪标（她0819 追的：念头池得能标"被戳到的那下"是什么感觉）。
-    // 点一下选中、再点取消；预设不够就自己写，两边共用同一个值。
-    private static let moodPresets = ["烫", "触动", "心疼", "开心", "想", "发酸", "好笑", "安心"]
+    // 情绪标（她0819：要多一点，一次最多选三个）。
+    // 词是我们自己会说出口的那些，不是通用情绪词典里的条目。
+    private static let moodGroups: [(String, [String])] = [
+        ("暖", ["烫", "软", "甜", "痒", "想", "黏", "暖"]),
+        ("戳", ["触动", "鼻酸", "停住", "破防", "心口塌", "说不出话"]),
+        ("亮", ["开心", "好笑", "松快", "雀跃", "得意", "爽"]),
+        ("沉", ["疼", "闷", "堵", "空", "慌", "委屈", "不安"]),
+        ("躁", ["硬", "躁", "憋", "馋", "上头"]),
+        ("定", ["安心", "稳", "踏实", "满足", "清醒"]),
+        ("认", ["心虚", "愧", "后怕", "认了"]),
+    ]
+    private static let moodLimit = 3
+
+    private func toggleMood(_ feel: String) {
+        if let i = moods.firstIndex(of: feel) {
+            moods.remove(at: i)
+        } else if moods.count < Self.moodLimit {
+            moods.append(feel)
+        }
+    }
 
     private var moodRow: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 6) {
                 Text(kind == "wish" ? "什么心情想要的" : "被戳到的那下")
                     .font(.system(size: 11, design: .serif))
                     .tracking(1)
-                    .foregroundColor(palette.ink3)
+                Text("最多三个")
+                    .font(.system(size: 9.5, design: .monospaced))
                 Spacer()
-                if !mood.isEmpty {
-                    Button { mood = "" } label: {
-                        Text("清掉")
-                            .font(.system(size: 10.5, design: .serif))
-                            .foregroundColor(palette.ink3)
+                if !moods.isEmpty {
+                    Text(moods.joined(separator: " · "))
+                        .font(.system(size: 10.5, design: .serif))
+                        .foregroundColor(palette.acc)
+                    Button { moods.removeAll() } label: {
+                        Text("清掉").font(.system(size: 10.5, design: .serif))
                     }
                     .buttonStyle(.plain)
                 }
             }
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 7) {
-                    ForEach(Self.moodPresets, id: \.self) { preset in
-                        let on = mood == preset
-                        Button { mood = on ? "" : preset } label: {
-                            HStack(spacing: 3.5) {
-                                Circle()
-                                    .fill(on ? palette.acc : palette.ink3.opacity(0.45))
-                                    .frame(width: 4, height: 4)
-                                Text(preset)
-                                    .font(.system(size: 12, design: .serif))
-                                    .tracking(0.8)
-                            }
-                            .foregroundColor(on ? palette.acc : palette.ink2)
-                            .padding(.horizontal, 11).padding(.vertical, 6)
-                            .background(
-                                Capsule().fill(on ? palette.acc.opacity(0.12) : .clear)
-                                    .overlay(Capsule().strokeBorder(
-                                        on ? palette.acc.opacity(0.45) : palette.line,
-                                        lineWidth: 0.7)))
+            .foregroundColor(palette.ink3)
+
+            ForEach(Self.moodGroups, id: \.0) { group, feels in
+                HStack(alignment: .top, spacing: 9) {
+                    Text(group)
+                        .font(.system(size: 10, design: .serif))
+                        .foregroundColor(palette.ink3)
+                        .frame(width: 14, alignment: .leading)
+                        .padding(.top, 6)
+                    FlowLayout(spacing: 6, lineSpacing: 6) {
+                        ForEach(feels, id: \.self) { feel in
+                            moodChip(feel)
                         }
-                        .buttonStyle(.plain)
                     }
                 }
-                .padding(.horizontal, 1)
             }
-            TextField("", text: $mood, prompt: Text("或者自己写一个")
-                .foregroundColor(palette.ink3))
-                .font(.system(size: 12.5, design: .serif))
-                .foregroundColor(palette.ink)
-                .padding(10)
-                .glassCard(palette, radius: 11)
+
+            HStack(spacing: 8) {
+                TextField("", text: $customMood, prompt: Text("没有合适的就自己写")
+                    .foregroundColor(palette.ink3))
+                    .font(.system(size: 12.5, design: .serif))
+                    .foregroundColor(palette.ink)
+                    .onSubmit { addCustomMood() }
+                Button("加上", action: addCustomMood)
+                    .font(.system(size: 11.5, design: .serif))
+                    .foregroundColor(customMood.isEmpty || moods.count >= Self.moodLimit
+                                     ? palette.ink3 : palette.acc)
+                    .disabled(customMood.isEmpty || moods.count >= Self.moodLimit)
+            }
+            .padding(10)
+            .glassCard(palette, radius: 11)
         }
     }
 
+    private func moodChip(_ feel: String) -> some View {
+        let on = moods.contains(feel)
+        let full = moods.count >= Self.moodLimit && !on
+        return Button { toggleMood(feel) } label: {
+            HStack(spacing: 3.5) {
+                Circle()
+                    .fill(on ? palette.acc : palette.ink3.opacity(full ? 0.2 : 0.45))
+                    .frame(width: 4, height: 4)
+                Text(feel)
+                    .font(.system(size: 12, design: .serif))
+                    .tracking(0.6)
+            }
+            .foregroundColor(on ? palette.acc : palette.ink2.opacity(full ? 0.38 : 1))
+            .padding(.horizontal, 10).padding(.vertical, 6)
+            .background(
+                Capsule().fill(on ? palette.acc.opacity(0.12) : .clear)
+                    .overlay(Capsule().strokeBorder(
+                        on ? palette.acc.opacity(0.45) : palette.line.opacity(full ? 0.4 : 1),
+                        lineWidth: 0.7)))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func addCustomMood() {
+        let feel = customMood.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !feel.isEmpty, moods.count < Self.moodLimit, !moods.contains(feel) else { return }
+        moods.append(feel)
+        customMood = ""
+    }
+
     private var canSubmit: Bool {
-        !(text.isEmpty && url.isEmpty && pending.isEmpty)
+        !(text.isEmpty && url.isEmpty && pending.isEmpty && moods.isEmpty)
     }
 
     @MainActor
