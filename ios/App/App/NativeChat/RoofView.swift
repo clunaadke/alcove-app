@@ -95,6 +95,52 @@ private struct RoofLogEntry: Identifiable {
     let createdAt: String
 }
 
+private struct RoofLoot: Identifiable {
+    let id = UUID()
+    let item: String
+    let rarity: String
+
+    var isSpecial: Bool { rarity == "once" || rarity == "rare" }
+    var mark: String {
+        switch rarity {
+        case "once": return "只此一件"
+        case "rare": return "少见"
+        case "uncommon": return "不常有"
+        default: return ""
+        }
+    }
+}
+
+private struct RoofTrip {
+    let id: String
+    let place: String
+    let dueText: String
+    let away: Bool
+    let art: String
+    let seen: Bool
+    let loot: [RoofLoot]
+
+    init(_ raw: [String: Any]) {
+        id = raw.string("id")
+        place = raw.string("place")
+        dueText = raw.string("dueText")
+        away = raw.bool("away")
+        art = raw.string("art")
+        seen = raw.bool("seen")
+        loot = raw.array("loot").map {
+            RoofLoot(item: $0.string("item"), rarity: $0.string("rarity"))
+        }
+    }
+}
+
+private struct StashItem: Identifiable {
+    let id: String
+    let item: String
+    let rarity: String
+    let place: String
+    let count: Int
+}
+
 private struct RoofCat {
     var name = "陈檐"
     var hunger = 70
@@ -111,6 +157,9 @@ private struct RoofCat {
     var lastFedByName = ""
     var lastPetByName = ""
     var log: [RoofLogEntry] = []
+    var away = false
+    var trip: RoofTrip?
+    var lastTrip: RoofTrip?
 
     init() {}
 
@@ -129,6 +178,9 @@ private struct RoofCat {
         petCount = raw.int("petCount")
         lastFedByName = raw.string("lastFedByName")
         lastPetByName = raw.string("lastPetByName")
+        away = raw.bool("away")
+        if let t = raw["trip"] as? [String: Any] { trip = RoofTrip(t) }
+        if let t = raw["lastTrip"] as? [String: Any] { lastTrip = RoofTrip(t) }
         log = raw.array("log").map {
             RoofLogEntry(id: $0.string("id"), whoName: $0.string("whoName"),
                          action: $0.string("action"), detail: $0.string("detail"),
@@ -422,6 +474,7 @@ struct NativeRoofView: View {
     @State private var lastStrokePoint: CGPoint = .zero
     @State private var purring = false
     @State private var showLog = false
+    @State private var showStash = false
 
     private let haptics = RoofHaptics.shared
     private var palette: RoofPalette { .named(themeName) }
@@ -439,14 +492,22 @@ struct NativeRoofView: View {
             ZStack(alignment: .top) {
                 backdrop(geo.size)
                 if !loading && !failed {
-                    catLayer(geo.size)
+                    if cat.away {
+                        emptyNest(geo.size)
+                    } else {
+                        catLayer(geo.size)
+                    }
                 }
                 content
+                if let trip = homecoming {
+                    homecomingCard(trip)
+                }
             }
         }
         .ignoresSafeArea()
         .task { await load() }
         .onAppear { swingTail() }
+        .sheet(isPresented: $showStash) { StashSheet(palette: palette) }
     }
 
     // 天空是画的，瓦是代码画的，下面那片留给 UI
@@ -468,6 +529,34 @@ struct NativeRoofView: View {
                 .frame(height: size.height * Layout.tile)
             palette.deep
         }
+    }
+
+    // 它不在的时候，这儿就该是空的
+    private func emptyNest(_ size: CGSize) -> some View {
+        VStack(spacing: 10) {
+            ZStack {
+                Ellipse()
+                    .fill(Color.black.opacity(palette.isDark ? 0.30 : 0.20))
+                    .frame(width: 96, height: 34)
+                    .blur(radius: 3)
+                Ellipse()
+                    .stroke(palette.warm.opacity(0.22), lineWidth: 1)
+                    .frame(width: 84, height: 27)
+            }
+            Text("不在家")
+                .font(.system(size: 13, weight: .medium, design: .serif))
+                .foregroundColor(palette.onDeep.opacity(0.85))
+            Text(cat.trip.map { $0.dueText } ?? "")
+                .font(.system(size: 11))
+                .foregroundColor(palette.onDeepDim)
+            if let place = cat.trip?.place, !place.isEmpty {
+                Text("去了" + place)
+                    .font(.system(size: 10.5))
+                    .foregroundColor(palette.onDeepDim.opacity(0.75))
+                    .padding(.top, 2)
+            }
+        }
+        .position(x: size.width * 0.5, y: size.height * Layout.foot - 26)
     }
 
     // 猫。图挂了就退回自己画的那只，页面不会空
@@ -497,6 +586,83 @@ struct NativeRoofView: View {
         }
         .animation(.spring(response: 0.55, dampingFraction: 0.78), value: cat.spot)
         .animation(.easeInOut(duration: 0.3), value: cat.asleep)
+    }
+
+    /// 它回来了、东西还没被看过 —— 这张卡压在页面上等她点
+    private var homecoming: RoofTrip? {
+        guard !cat.away, let t = cat.lastTrip, !t.seen, !t.loot.isEmpty else { return nil }
+        return t
+    }
+
+    private func homecomingCard(_ trip: RoofTrip) -> some View {
+        ZStack {
+            Color.black.opacity(0.45).ignoresSafeArea()
+                .onTapGesture { Task { await closeHomecoming(trip) } }
+            VStack(spacing: 0) {
+                if !trip.art.isEmpty {
+                    AsyncImage(url: AlcoveAPI.fullURL("/api/roof/art/trips/" + trip.art)) { phase in
+                        if let image = phase.image {
+                            image.resizable().aspectRatio(contentMode: .fill)
+                        } else {
+                            palette.tile.opacity(0.5)
+                        }
+                    }
+                    .frame(height: 168)
+                    .clipped()
+                }
+                VStack(alignment: .leading, spacing: 9) {
+                    Text("檐檐回来了")
+                        .font(.system(size: 15, weight: .semibold, design: .serif))
+                        .foregroundColor(palette.onDeep)
+                    Text("去了" + trip.place)
+                        .font(.system(size: 11))
+                        .foregroundColor(palette.onDeepDim)
+                    Divider().background(palette.deepLine).padding(.vertical, 2)
+                    ForEach(trip.loot) { loot in
+                        HStack(spacing: 7) {
+                            Circle()
+                                .fill(loot.isSpecial ? palette.warm : palette.onDeepDim)
+                                .frame(width: 5, height: 5)
+                            Text(loot.item)
+                                .font(.system(size: 13,
+                                              weight: loot.isSpecial ? .medium : .regular))
+                                .foregroundColor(palette.onDeep)
+                            if !loot.mark.isEmpty {
+                                Text(loot.mark)
+                                    .font(.system(size: 9))
+                                    .foregroundColor(palette.warm)
+                                    .padding(.horizontal, 5).padding(.vertical, 2)
+                                    .background(Capsule().fill(palette.warm.opacity(0.14)))
+                            }
+                            Spacer(minLength: 0)
+                        }
+                    }
+                    Button {
+                        Task { await closeHomecoming(trip) }
+                    } label: {
+                        Text("收进百宝箱")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(palette.onDeep)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 40)
+                            .background(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(palette.deepGlass))
+                            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .stroke(palette.deepLine, lineWidth: 0.8))
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.top, 4)
+                }
+                .padding(15)
+            }
+            .background(palette.deep)
+            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(palette.deepLine, lineWidth: 0.8))
+            .padding(.horizontal, 26)
+            .shadow(color: .black.opacity(0.5), radius: 26, y: 12)
+        }
+        .transition(.opacity)
     }
 
     private var catArt: String {
@@ -575,6 +741,13 @@ struct NativeRoofView: View {
                     .foregroundColor(palette.ink2)
             }
             Spacer()
+            Button { showStash = true } label: {
+                Image(systemName: "shippingbox")
+                    .font(.system(size: 15, weight: .light))
+                    .foregroundColor(palette.ink2)
+                    .frame(width: 34, height: 34)
+            }
+            .buttonStyle(.plain)
             HStack(spacing: 4) {
                 Image(systemName: "heart.fill").font(.system(size: 9))
                 Text("\(cat.intimacy)").font(.system(size: 12, weight: .medium))
@@ -691,7 +864,9 @@ struct NativeRoofView: View {
                     Task { await sleepToggle() }
                 }
             }
-            Text("撸它 —— 手指在猫身上划")
+            .opacity(cat.away ? 0.4 : 1)
+            .disabled(cat.away)
+            Text(cat.away ? "催不了它，只能等" : "撸它 —— 手指在猫身上划")
                 .font(.system(size: 10))
                 .foregroundColor(palette.onDeepDim.opacity(0.85))
         }
@@ -824,9 +999,136 @@ struct NativeRoofView: View {
         await MainActor.run { apply(raw) }
     }
 
+    private func closeHomecoming(_ trip: RoofTrip) async {
+        try? await NativeHouseAPI.post("/api/roof/trip/seen", body: ["id": trip.id])
+        await load()
+    }
+
     private func sleepToggle() async {
         guard let raw = try? await NativeHouseAPI.object(
             "/api/roof/sleep", method: "POST", body: ["who": me]) else { return }
         await MainActor.run { apply(raw) }
+    }
+}
+
+
+// MARK: - 百宝箱
+
+private struct StashSheet: View {
+    let palette: RoofPalette
+    @Environment(\.dismiss) private var dismiss
+    @State private var items: [StashItem] = []
+    @State private var onceLeft = 0
+    @State private var loading = true
+
+    var body: some View {
+        ZStack {
+            palette.deep.ignoresSafeArea()
+            VStack(spacing: 0) {
+                HStack {
+                    Text("百宝箱")
+                        .font(.system(size: 17, weight: .semibold, design: .serif))
+                        .foregroundColor(palette.onDeep)
+                    Spacer()
+                    Button { dismiss() } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(palette.onDeepDim)
+                            .frame(width: 34, height: 34)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 18)
+                .padding(.top, 20)
+
+                if loading {
+                    Spacer()
+                    ProgressView().tint(palette.onDeepDim)
+                    Spacer()
+                } else if items.isEmpty {
+                    Spacer()
+                    VStack(spacing: 8) {
+                        Text("还是空的")
+                            .font(.system(size: 14))
+                            .foregroundColor(palette.onDeepDim)
+                        Text("等它出门叼东西回来")
+                            .font(.system(size: 11))
+                            .foregroundColor(palette.onDeepDim.opacity(0.7))
+                    }
+                    Spacer()
+                } else {
+                    ScrollView {
+                        LazyVStack(spacing: 9) {
+                            ForEach(items) { it in
+                                row(it)
+                            }
+                            Text("只此一件的还剩 \(onceLeft) 样没被它找着")
+                                .font(.system(size: 10.5))
+                                .foregroundColor(palette.onDeepDim.opacity(0.7))
+                                .padding(.top, 14)
+                        }
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 16)
+                    }
+                }
+            }
+        }
+        .task { await load() }
+    }
+
+    private func row(_ it: StashItem) -> some View {
+        HStack(spacing: 10) {
+            Circle()
+                .fill(color(it.rarity))
+                .frame(width: 7, height: 7)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(it.item)
+                    .font(.system(size: 14, weight: it.rarity == "once" ? .medium : .regular))
+                    .foregroundColor(palette.onDeep)
+                if !it.place.isEmpty {
+                    Text("捡自" + it.place)
+                        .font(.system(size: 10))
+                        .foregroundColor(palette.onDeepDim)
+                }
+            }
+            Spacer(minLength: 0)
+            if it.count > 1 {
+                Text("×\(it.count)")
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundColor(palette.onDeepDim)
+            }
+        }
+        .padding(.horizontal, 13).padding(.vertical, 11)
+        .background(RoundedRectangle(cornerRadius: 14, style: .continuous)
+            .fill(palette.deepGlass))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
+            .stroke(it.rarity == "once" ? palette.warm.opacity(0.45) : palette.deepLine,
+                    lineWidth: 0.8))
+    }
+
+    private func color(_ rarity: String) -> Color {
+        switch rarity {
+        case "once": return palette.warm
+        case "rare": return palette.acc
+        case "uncommon": return palette.onDeep.opacity(0.7)
+        default: return palette.onDeepDim.opacity(0.6)
+        }
+    }
+
+    private func load() async {
+        guard let raw = try? await NativeHouseAPI.object("/api/roof/stash") else {
+            await MainActor.run { loading = false }
+            return
+        }
+        let list = raw.array("items").map {
+            StashItem(id: $0.string("id"), item: $0.string("item"),
+                      rarity: $0.string("rarity"), place: $0.string("place"),
+                      count: $0.int("count"))
+        }
+        await MainActor.run {
+            items = list
+            onceLeft = raw.int("onceLeft")
+            loading = false
+        }
     }
 }
