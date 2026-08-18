@@ -1493,8 +1493,11 @@ struct MessageRow: View {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { onContentChange?() }
             } label: {
                 HStack(spacing: 4) {
-                    Image(systemName: "clock.arrow.circlepath").font(.system(size: 12, weight: .light))
-                    Text(theme.isPaper ? "ThoughtProcess" : thinkingLabel(think))
+                    // 0818 她拿 Claude 那行「Thought process ›」来比：有空格、只首字母大写、
+                    // 图标是带虚线弧的钟。纸页主题照它来。
+                    Image(systemName: theme.isPaper ? "clock.arrow.trianglehead.counterclockwise.rotate.90" : "clock.arrow.circlepath")
+                        .font(.system(size: theme.isPaper ? 13 : 12, weight: .light))
+                    Text(theme.isPaper ? "Thought process" : thinkingLabel(think))
                         .font(theme.isPaper ? .system(size: 13, weight: .medium) : .custom("Georgia", size: 12))
                     Image(systemName: theme.isPaper ? "chevron.right" : (showThinking ? "chevron.up" : "chevron.down"))
                         .font(.system(size: 8))
@@ -1572,7 +1575,7 @@ struct MessageRow: View {
             }
             .background(theme.fyCardSub.ignoresSafeArea())
             .foregroundColor(theme.text)
-            .navigationTitle("ThoughtProcess")
+            .navigationTitle("Thought process")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("关闭") { showThinking = false } } }
         }
