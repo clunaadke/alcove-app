@@ -15,6 +15,7 @@
 		4BF591472FBA6D4215EAE680 /* ChatStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8774650A336AF4502E9F11B /* ChatStore.swift */; };
 		36522A3573B249D5AD75C38D /* LinkCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61E583DC8F8C4FDC96FCC7A0 /* LinkCard.swift */; };
 		7A1C4E9B02F1487CA3D60B11 /* PondView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A1C4E9B02F1487CA3D60B22 /* PondView.swift */; };
+		9F08C9A377CC2A88120E949F /* RoofView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2C0AB9B0FDD869797EAFABD /* RoofView.swift */; };
 		7A1C4E9B02F1487CA3D60D11 /* SearchFavoritesViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A1C4E9B02F1487CA3D60D22 /* SearchFavoritesViews.swift */; };
 		7A1C4E9B02F1487CA3D60C11 /* GlassKit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A1C4E9B02F1487CA3D60C22 /* GlassKit.swift */; };
 		3295C71D0A9547A3BFFBAF2F /* JourneyCards.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BF14B3C1EC14000AF0FEF1A /* JourneyCards.swift */; };
@@ -99,6 +100,7 @@
 		B8774650A336AF4502E9F11B /* ChatStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatStore.swift; sourceTree = "<group>"; };
 		61E583DC8F8C4FDC96FCC7A0 /* LinkCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkCard.swift; sourceTree = "<group>"; };
 		7A1C4E9B02F1487CA3D60B22 /* PondView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PondView.swift; sourceTree = "<group>"; };
+		E2C0AB9B0FDD869797EAFABD /* RoofView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoofView.swift; sourceTree = "<group>"; };
 		7A1C4E9B02F1487CA3D60D22 /* SearchFavoritesViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchFavoritesViews.swift; sourceTree = "<group>"; };
 		7A1C4E9B02F1487CA3D60C22 /* GlassKit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GlassKit.swift; sourceTree = "<group>"; };
 		1BF14B3C1EC14000AF0FEF1A /* JourneyCards.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JourneyCards.swift; sourceTree = "<group>"; };
@@ -204,6 +206,7 @@
 				B8774650A336AF4502E9F11B /* ChatStore.swift */,
 				61E583DC8F8C4FDC96FCC7A0 /* LinkCard.swift */,
 				7A1C4E9B02F1487CA3D60B22 /* PondView.swift */,
+				E2C0AB9B0FDD869797EAFABD /* RoofView.swift */,
 				7A1C4E9B02F1487CA3D60D22 /* SearchFavoritesViews.swift */,
 				7A1C4E9B02F1487CA3D60C22 /* GlassKit.swift */,
 				1BF14B3C1EC14000AF0FEF1A /* JourneyCards.swift */,
@@ -394,6 +397,7 @@
 				4BF591472FBA6D4215EAE680 /* ChatStore.swift in Sources */,
 				36522A3573B249D5AD75C38D /* LinkCard.swift in Sources */,
 				7A1C4E9B02F1487CA3D60B11 /* PondView.swift in Sources */,
+				9F08C9A377CC2A88120E949F /* RoofView.swift in Sources */,
 				7A1C4E9B02F1487CA3D60D11 /* SearchFavoritesViews.swift in Sources */,
 				7A1C4E9B02F1487CA3D60C11 /* GlassKit.swift in Sources */,
 				3295C71D0A9547A3BFFBAF2F /* JourneyCards.swift in Sources */,

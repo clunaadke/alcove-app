@@ -20,6 +20,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
     case home, profile, activityRoom, calendar, digest, wall, usage, workbench, studio
     case memory, dreams, shelf, fiction, desire, nianlun, clockwork, album, portrait, impression, morningPaper, nowhere, pulse
     case pond
+    case roof
     case crosstalk, radio, coread, liao, daddyDay, lab
     case search, favorites, forge, roundtable
 
@@ -50,6 +51,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .desire: return "Eventide"
         case .nianlun: return "年轮"
         case .pond: return "檐下"
+        case .roof: return "檐上"
         case .clockwork: return "发条"
         case .album: return "相册"
         case .portrait: return "Letters"
@@ -73,7 +75,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
     /// 自己铺满、自己做头的页面。她0819：不要透壁纸，要全屏
     var ownsFullScreen: Bool {
         switch self {
-        case .studio, .pond, .search, .favorites: return true
+        case .studio, .pond, .roof, .search, .favorites: return true
         default: return false
         }
     }
@@ -102,6 +104,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .fiction: return "books.vertical"
         case .nianlun: return "circle.hexagongrid"
         case .pond: return "drop.circle"
+        case .roof: return "pawprint.circle"
         case .clockwork: return "clock.arrow.circlepath"
         case .album: return "photo.on.rectangle"
         case .portrait: return "envelope"
@@ -246,6 +249,8 @@ struct NativeHouseSheet: View {
                     NativeOBLettersView()
                 case .pond:
                     NativePondView()
+                case .roof:
+                    NativeRoofView()
                 case .desire:
                     NativeDesireView()
                 case .forge:
@@ -495,6 +500,7 @@ struct NativeHouseDrawer: View {
                     drawerTitle("正在发生", note: "still growing")
                     VStack(spacing: 7) {
                         drawerRow(.pulse, detail: "心率、五感、八维、念头池")
+                        drawerRow(.roof, detail: "陈檐住在这层")
                         drawerRow(.pond, detail: "念头、许愿与朋友圈")
                         drawerRow(.desire, detail: "身体潮汐与情绪")
                         drawerRow(.nowhere, detail: "足迹与明信片")
