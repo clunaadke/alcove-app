@@ -1375,6 +1375,16 @@ struct MessageRow: View {
                         LinkPreviewCard(url: link, theme: theme, isUser: isUser)
                     }
                 }
+                // 0819 活动脚印（她把活动卡片换掉了）：气泡外面一行浅灰斜体，
+                // 「逛了花园 写了念头」，词之间空格隔开。轻到不特意看就滑过去了。
+                if !isUser && !msg.trace.isEmpty {
+                    Text(msg.trace.joined(separator: "  "))
+                        .font(.system(size: 11.5, design: .serif))
+                        .italic()
+                        .foregroundColor(theme.textLight.opacity(0.82))
+                        .padding(.leading, 3)
+                        .padding(.top, 1)
+                }
                 if shouldShowMetaRow {
                     HStack(spacing: theme.isPaper && !isUser ? 14 : 4) {
                         if msg.pending {

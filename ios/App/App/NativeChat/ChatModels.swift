@@ -25,6 +25,8 @@ struct ChatMessage: Identifiable, Equatable {
     var thinkTitle: String?
     // 0730：这一轮的过程记录（思绪/中间说的话/调过的工具），挂在时间戳旁边点开看
     var activity: [ActivityItem] = []
+    // 0819 活动脚印：我干活时掉下来的短语，挂在气泡外面排一行浅灰斜体
+    var trace: [String] = []
     var attachmentUrl: String?
     var attachmentType: String?
     var attachmentFilename: String?
@@ -159,6 +161,9 @@ struct ChatMessage: Identifiable, Equatable {
         self.thinkTitle = (json["think_title"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
         if let arr = json["activity"] as? [[String: Any]] {
             self.activity = arr.compactMap(ActivityItem.init(json:))
+        }
+        if let steps = json["trace"] as? [String] {
+            self.trace = steps.filter { !$0.isEmpty }
         }
     }
 
