@@ -1554,15 +1554,17 @@ struct MessageRow: View {
                         .foregroundColor(theme.textDim.opacity(it.kind == "thinking" ? 0.72 : 0.92))
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 4)
-                    if it.kind == "tool" {
-                        Text("done")
-                            .font(.system(size: 9.5, weight: .medium, design: .monospaced))
-                            .foregroundColor(theme.textDim.opacity(0.55))
-                        Image(systemName: "checkmark")
-                            .font(.system(size: 8, weight: .semibold))
-                            .foregroundColor(theme.textDim.opacity(0.7))
-                    }
                 }
+            }
+            // 她说：每条下面不用 done，留结尾一个就行
+            HStack(spacing: 7) {
+                Image(systemName: "checkmark.circle")
+                    .font(.system(size: 9))
+                    .foregroundColor(theme.textDim.opacity(0.7))
+                    .frame(width: 12)
+                Text("Done")
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundColor(theme.textDim.opacity(0.9))
             }
         }
         .padding(.leading, 2)
@@ -1576,7 +1578,7 @@ struct MessageRow: View {
                         paperTrack(icon: item.icon,
                                    title: item.kind == "tool" ? item.content
                                         : (item.kind == "thinking" ? "Thinking…" : "继续说"),
-                                   detail: item.kind == "tool" ? "done ✓" : item.content)
+                                   detail: item.kind == "tool" ? "" : item.content)
                     }
                     paperTrack(icon: "checkmark.circle", title: "Done", detail: "")
                 }
