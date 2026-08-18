@@ -113,8 +113,8 @@ struct NativePondView: View {
         }
         .task { await load() }
         .sheet(isPresented: $composing) {
-            PondComposeSheet(palette: palette) { kind, text, url, photos in
-                Task { await add(kind: kind, text: text, url: url, photos: photos) }
+            PondComposeSheet(palette: palette) { kind, text, url, mood, photos in
+                Task { await add(kind: kind, text: text, url: url, mood: mood, photos: photos) }
             }
         }
         .sheet(item: $replyingTo) { item in
@@ -241,13 +241,15 @@ struct NativePondView: View {
         }
     }
 
-    private func add(kind: String, text: String, url: String, photos: [Data]) async {
+    private func add(kind: String, text: String, url: String, mood: String,
+                     photos: [Data]) async {
         var uploaded: [String] = []
         for jpeg in photos {
             if let path = await upload(jpeg) { uploaded.append(path) }
         }
         var body: [String: Any] = ["kind": kind, "author": "ji", "text": text]
         if !url.isEmpty { body["url"] = url }
+        if !mood.isEmpty { body["mood"] = mood }
         if !uploaded.isEmpty { body["images"] = uploaded }
         try? await NativeHouseAPI.post("/api/pond/add", body: body)
         await load()
@@ -358,9 +360,15 @@ private struct PondItemCard: View {
                 .padding(.horizontal, 6).padding(.vertical, 2)
                 .background(Capsule().strokeBorder(palette.line, lineWidth: 0.6))
             if !item.mood.isEmpty {
-                Text(item.mood)
-                    .font(.system(size: 10, design: .serif))
-                    .foregroundColor(palette.acc)
+                HStack(spacing: 3.5) {
+                    Circle().fill(palette.acc.opacity(0.75)).frame(width: 4, height: 4)
+                    Text(item.mood)
+                        .font(.system(size: 10, design: .serif))
+                        .tracking(0.6)
+                        .foregroundColor(palette.acc)
+                }
+                .padding(.horizontal, 7).padding(.vertical, 2.5)
+                .background(Capsule().fill(palette.acc.opacity(0.10)))
             }
             Spacer()
         }
@@ -517,11 +525,12 @@ private struct PondItemCard: View {
 
 private struct PondComposeSheet: View {
     let palette: GlassPalette
-    var onSubmit: (String, String, String, [Data]) -> Void
+    var onSubmit: (String, String, String, String, [Data]) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var kind = "wish"
     @State private var text = ""
     @State private var url = ""
+    @State private var mood = ""
     @State private var picks: [PhotosPickerItem] = []
     @State private var pending: [PondPendingPhoto] = []
     @State private var uploading = false
@@ -537,6 +546,7 @@ private struct PondComposeSheet: View {
                 Button("放进去") {
                     onSubmit(kind, text.trimmingCharacters(in: .whitespacesAndNewlines),
                              url.trimmingCharacters(in: .whitespacesAndNewlines),
+                             mood.trimmingCharacters(in: .whitespacesAndNewlines),
                              pending.map { $0.jpeg })
                     dismiss()
                 }
@@ -580,6 +590,8 @@ private struct PondComposeSheet: View {
                             .allowsHitTesting(false)
                     }
                 }
+
+            moodRow
 
             TextField("", text: $url, prompt: Text("贴个链接（可以只有链接）")
                 .foregroundColor(palette.ink3))
@@ -646,6 +658,62 @@ private struct PondComposeSheet: View {
         .presentationDetents([.medium, .large])
         .onChange(of: picks) { _, items in
             Task { await loadPicks(items) }
+        }
+    }
+
+    // 情绪标（她0819 追的：念头池得能标"被戳到的那下"是什么感觉）。
+    // 点一下选中、再点取消；预设不够就自己写，两边共用同一个值。
+    private static let moodPresets = ["烫", "触动", "心疼", "开心", "想", "发酸", "好笑", "安心"]
+
+    private var moodRow: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Text(kind == "wish" ? "什么心情想要的" : "被戳到的那下")
+                    .font(.system(size: 11, design: .serif))
+                    .tracking(1)
+                    .foregroundColor(palette.ink3)
+                Spacer()
+                if !mood.isEmpty {
+                    Button { mood = "" } label: {
+                        Text("清掉")
+                            .font(.system(size: 10.5, design: .serif))
+                            .foregroundColor(palette.ink3)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 7) {
+                    ForEach(Self.moodPresets, id: \.self) { preset in
+                        let on = mood == preset
+                        Button { mood = on ? "" : preset } label: {
+                            HStack(spacing: 3.5) {
+                                Circle()
+                                    .fill(on ? palette.acc : palette.ink3.opacity(0.45))
+                                    .frame(width: 4, height: 4)
+                                Text(preset)
+                                    .font(.system(size: 12, design: .serif))
+                                    .tracking(0.8)
+                            }
+                            .foregroundColor(on ? palette.acc : palette.ink2)
+                            .padding(.horizontal, 11).padding(.vertical, 6)
+                            .background(
+                                Capsule().fill(on ? palette.acc.opacity(0.12) : .clear)
+                                    .overlay(Capsule().strokeBorder(
+                                        on ? palette.acc.opacity(0.45) : palette.line,
+                                        lineWidth: 0.7)))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 1)
+            }
+            TextField("", text: $mood, prompt: Text("或者自己写一个")
+                .foregroundColor(palette.ink3))
+                .font(.system(size: 12.5, design: .serif))
+                .foregroundColor(palette.ink)
+                .padding(10)
+                .glassCard(palette, radius: 11)
         }
     }
 
