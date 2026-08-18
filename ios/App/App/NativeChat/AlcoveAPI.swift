@@ -362,6 +362,14 @@ enum AlcoveAPI {
         _ = try await session.data(for: req)
     }
 
+    /// 给已有的表情补名称/描述/情绪标签（长按格子进编辑）
+    static func updateSticker(id: String, name: String, description: String,
+                              emotionTags: [String]) async throws {
+        _ = try await postJSON("/api/stickers/update", body: [
+            "id": id, "name": name, "description": description, "emotion_tags": emotionTags,
+        ])
+    }
+
     static func deleteMessage(ts: String, textOnly: Bool = false) async throws {
         _ = try await postJSON("/api/chat/delete", body: [
             "ts": ts, "text_only": textOnly

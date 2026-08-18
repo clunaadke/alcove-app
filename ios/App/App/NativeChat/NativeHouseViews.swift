@@ -4430,7 +4430,10 @@ private struct NativeStudioView: View {
                         Text("工作室里的也是我本人，同锚点同记忆，只是换了间屋子干活，不是分身。")
                             .font(.system(size: 11, design: .serif)).foregroundColor(theme.textDim)
                             .padding(.vertical, 12)
-                        ForEach(Array(messages.enumerated()), id: \.offset) { _, message in
+                        // 0818 她截到工作室空屏：以前每 2 秒把整个数组换掉、再连打四次
+                        // scrollTo，LazyVStack 内容高度一抖 contentOffset 停在旧值上，
+                        // 屏幕就白了。现在按 id 稳定身份、只追加新消息、只在真有新消息时滚一次。
+                        ForEach(messages, id: \.studioMessageID) { message in
                             messageBubble(message).id("studio-message-\(message.int("id"))")
                         }
                         if let current = status["current_task"] as? [String: Any] {
@@ -4440,9 +4443,10 @@ private struct NativeStudioView: View {
                         Color.clear.frame(height: 1).id("studio-tail")
                     }.padding(.horizontal, 15).padding(.bottom, 16)
                 }
-                .onAppear { scrollStudioToTail(proxy, delays: [0, 0.08, 0.25, 0.6]) }
-                .onChange(of: messages.count) { _ in scrollStudioToTail(proxy, delays: [0, 0.08, 0.25]) }
-                .onChange(of: messages.last?.int("id") ?? 0) { _ in scrollStudioToTail(proxy, delays: [0, 0.08, 0.25]) }
+                .defaultScrollAnchor(.bottom)
+                .onChange(of: messages.last?.int("id") ?? 0) { _ in
+                    withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo("studio-tail", anchor: .bottom) }
+                }
             }
             inputBar
         }
@@ -4641,13 +4645,6 @@ private struct NativeStudioView: View {
         }.presentationDetents([.medium, .large])
     }
 
-    private func scrollStudioToTail(_ proxy: ScrollViewProxy, delays: [Double]) {
-        for delay in delays {
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                proxy.scrollTo("studio-tail", anchor: .bottom)
-            }
-        }
-    }
 
     private var stateText: String { switch status.string("state") { case "running", "busy": return "工作中"; case "idle": return "待命"; case "dead": return "工作室未开启"; default: return "连接中" } }
     private var stateColor: Color { status.string("state") == "busy" || status.string("state") == "running" ? .orange : status.string("state") == "dead" ? .gray : .green }
@@ -4663,9 +4660,24 @@ private struct NativeStudioView: View {
     }
 
     @MainActor private func refresh() async {
-        async let s = try? NativeHouseAPI.object("/api/work/status"); async let t = try? NativeHouseAPI.object("/api/work/tasks"); async let m = try? NativeHouseAPI.object("/api/work/messages")
+        let lastID = messages.last?.int("id") ?? 0
+        let messagePath = lastID > 0 ? "/api/work/messages?since=\(lastID)" : "/api/work/messages"
+        async let s = try? NativeHouseAPI.object("/api/work/status"); async let t = try? NativeHouseAPI.object("/api/work/tasks"); async let m = try? NativeHouseAPI.object(messagePath)
         let (newStatus, newTasks, newMessages) = await (s, t, m)
-        if let newStatus { status = newStatus }; if let newTasks { tasks = Array(newTasks.array("tasks").reversed()) }; if let newMessages { messages = newMessages.array("messages") }; loading = false
+        if let newStatus { status = newStatus }; if let newTasks { tasks = Array(newTasks.array("tasks").reversed()) }
+        if let newMessages {
+            let incoming = newMessages.array("messages")
+            if lastID == 0 {
+                messages = incoming
+            } else if !incoming.isEmpty {
+                // 只追加没见过的，已经在屏上的一条不动，列表不抖
+                var seen = Set(messages.map { $0.int("id") })
+                for message in incoming where !seen.contains(message.int("id")) {
+                    messages.append(message); seen.insert(message.int("id"))
+                }
+            }
+        }
+        loading = false
     }
     @MainActor private func send() async {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -4739,6 +4751,11 @@ private struct NativeStudioView: View {
         deliveryDraft = nil; await refresh()
     }
     private func compact(_ value: Int) -> String { value >= 1_000_000 ? String(format: "%.1fM", Double(value) / 1_000_000) : value >= 1000 ? String(format: "%.1fK", Double(value) / 1000) : "\(value)" }
+}
+
+private extension Dictionary where Key == String, Value == Any {
+    /// ForEach 要一个稳定身份；工作室消息用后端 id，别用数组下标
+    var studioMessageID: Int { int("id") }
 }
 
 // 工作室看图：点气泡里的图全屏看，点待发条里的缩略图先预览一眼再决定发不发

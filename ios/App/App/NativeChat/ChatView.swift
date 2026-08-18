@@ -621,8 +621,11 @@ struct ChatView: View {
                             .font(.system(size: 11)).foregroundColor(.secondary)
                         Spacer()
                         Button { pendingSticker = nil } label: {
+                            // 图标 22，热区 44：她说叉叉难点到
                             Image(systemName: "xmark.circle.fill")
-                                .font(.system(size: 19)).foregroundColor(.secondary)
+                                .font(.system(size: 22)).foregroundColor(.secondary)
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
                         }.buttonStyle(.plain)
                     }
                     .padding(.horizontal, 14).padding(.top, 8).padding(.bottom, 2)
@@ -646,7 +649,7 @@ struct ChatView: View {
                                             .font(.system(size: 20))
                                             .foregroundColor(.white)
                                             .shadow(radius: 2)
-                                            .frame(width: 32, height: 32)
+                                            .frame(width: 40, height: 40)
                                             .contentShape(Rectangle())
                                     }
                                     .offset(x: 6, y: -6)

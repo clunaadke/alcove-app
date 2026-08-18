@@ -10,6 +10,7 @@ struct StickerSheet: View {
     @State private var tab = "user" // 她的表情她先看到
     @State private var uploadItem: PhotosPickerItem?
     @State private var draft: StickerDraft?
+    @State private var editing: Sticker?      // 长按格子 → 补描述
     @AppStorage("assistantName") private var assistantName = "陈璟"
 
     private var shown: [Sticker] {
@@ -47,6 +48,7 @@ struct StickerSheet: View {
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 3),
                           spacing: 12) {
                     ForEach(shown) { stk in
+                        // 点一下选中；长按进编辑——以前传的那些没法补描述，她 0818 要的
                         Button { onPick(stk) } label: {
                             VStack(spacing: 4) {
                                 AsyncImage(url: AlcoveAPI.stickerURL(stk.url)) { img in
@@ -60,12 +62,16 @@ struct StickerSheet: View {
                                 .clipShape(RoundedRectangle(cornerRadius: 12))
                                 // 没写描述的，陈璟看不懂——在格子上标出来，好补
                                 if stk.description.isEmpty {
-                                    Text("缺描述")
+                                    Text("缺描述 · 长按补")
                                         .font(.system(size: 9, weight: .semibold))
                                         .foregroundColor(.orange)
                                 }
                             }
                         }
+                        .buttonStyle(.plain)
+                        .simultaneousGesture(
+                            LongPressGesture(minimumDuration: 0.45).onEnded { _ in editing = stk }
+                        )
                     }
                 }
                 .padding(.bottom, 20)
@@ -73,11 +79,20 @@ struct StickerSheet: View {
         }
         .padding(.horizontal, 18)
         .sheet(item: $draft) { item in
-            StickerDescribeSheet(draft: item) { name, description, tags in
+            StickerDescribeSheet(preview: .local(item.image), mime: item.mime,
+                                 initialName: "", initialDescription: "", initialTags: []) { name, description, tags in
                 store.uploadSticker(data: item.data, mime: item.mime, owner: item.owner,
                                     name: name, description: description, emotionTags: tags)
                 draft = nil
             } onCancel: { draft = nil }
+        }
+        .sheet(item: $editing) { stk in
+            StickerDescribeSheet(preview: .remote(AlcoveAPI.stickerURL(stk.url)), mime: "",
+                                 initialName: stk.name.hasSuffix(".jpg") || stk.name.hasSuffix(".png") || stk.name.hasSuffix(".gif") ? "" : stk.name,
+                                 initialDescription: stk.description, initialTags: stk.emotionTags) { name, description, tags in
+                store.updateSticker(stk, name: name, description: description, emotionTags: tags)
+                editing = nil
+            } onCancel: { editing = nil }
         }
         .onChange(of: uploadItem) { item in
             guard let item else { return }
@@ -129,13 +144,31 @@ struct StickerDraft: Identifiable {
 }
 
 private struct StickerDescribeSheet: View {
-    let draft: StickerDraft
+    enum Preview {
+        case local(UIImage?)
+        case remote(URL)
+    }
+    let preview: Preview
+    let mime: String
     var onSave: (String, String, [String]) -> Void
     var onCancel: () -> Void
 
-    @State private var name = ""
-    @State private var description = ""
-    @State private var tagText = ""
+    @State private var name: String
+    @State private var description: String
+    @State private var tagText: String
+
+    init(preview: Preview, mime: String,
+         initialName: String, initialDescription: String, initialTags: [String],
+         onSave: @escaping (String, String, [String]) -> Void,
+         onCancel: @escaping () -> Void) {
+        self.preview = preview
+        self.mime = mime
+        self.onSave = onSave
+        self.onCancel = onCancel
+        _name = State(initialValue: initialName)
+        _description = State(initialValue: initialDescription)
+        _tagText = State(initialValue: initialTags.joined(separator: "、"))
+    }
 
     private var tags: [String] {
         tagText.split(whereSeparator: { ",，、 ".contains($0) })
@@ -154,14 +187,23 @@ private struct StickerDescribeSheet: View {
                 Section {
                     HStack {
                         Spacer()
-                        if let image = draft.image {
-                            Image(uiImage: image).resizable().scaledToFit()
-                                .frame(maxHeight: 150)
-                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                        switch preview {
+                        case .local(let image):
+                            if let image {
+                                Image(uiImage: image).resizable().scaledToFit()
+                                    .frame(maxHeight: 150)
+                                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                            }
+                        case .remote(let url):
+                            AsyncImage(url: url) { img in
+                                img.resizable().scaledToFit()
+                            } placeholder: { Color(.systemGray6) }
+                            .frame(maxHeight: 150)
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
                         }
                         Spacer()
                     }
-                    if draft.mime == "image/gif" || draft.mime == "image/webp" {
+                    if mime == "image/gif" || mime == "image/webp" {
                         Text("动图会原样保存，陈璟看到的是第一帧＋你写的描述")
                             .font(.caption).foregroundColor(.secondary)
                     }

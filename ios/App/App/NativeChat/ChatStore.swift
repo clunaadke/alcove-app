@@ -153,6 +153,14 @@ final class ChatStore: ObservableObject {
         }
     }
 
+    func updateSticker(_ stk: Sticker, name: String, description: String, emotionTags: [String]) {
+        Task {
+            try? await AlcoveAPI.updateSticker(id: stk.id, name: name, description: description,
+                                               emotionTags: emotionTags)
+            if let list = try? await AlcoveAPI.stickers() { stickers = list }
+        }
+    }
+
     // 多张图微信式一起发，caption 挂第一张
     func sendImages(_ datas: [Data], caption: String) {
         optimisticTyping()
