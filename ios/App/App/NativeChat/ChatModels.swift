@@ -245,12 +245,23 @@ struct ActivityItem: Identifiable, Equatable {
         switch kind {
         case "thinking": return "circle.dotted"
         case "tool":
-            if content.contains("记忆") || content.contains("OB") { return "brain.head.profile" }
-            if content.contains("日记") || content.contains("信") { return "book.closed" }
-            if content.contains("网页") || content.contains("搜索") || content.contains("上网") { return "globe" }
-            if content.contains("文件") || content.contains("代码") { return "doc.text" }
-            if content.contains("命令") || content.contains("终端") { return "terminal" }
-            if content.contains("图片") || content.contains("照片") { return "photo" }
+            // 0818 名字改成人话之后（tool_names.py），图标按新词认
+            let c = content
+            if c.contains("记忆") || c.contains("OB") || c.contains("记了一笔") || c.contains("备忘") { return "brain.head.profile" }
+            if c.contains("日记") || c.contains("信") || c.contains("情书") { return "book.closed" }
+            if c.contains("图") || c.contains("截") || c.contains("相册") || c.contains("表情") || c.contains("照片") { return "photo" }
+            if c.contains("语音") { return "waveform" }
+            if c.contains("网页") || c.contains("搜") || c.contains("浏览器") || c.contains("小红书") || c.contains("标签") { return "globe" }
+            if c.contains("花园") || c.contains("论坛") || c.contains("社区") || c.contains("帖") || c.contains("漂流瓶") { return "leaf" }
+            if c.contains("丧尸") || c.contains("桌游") || c.contains("大富翁") || c.contains("牌") || c.contains("骰") || c.contains("beside you") { return "gamecontroller" }
+            if c.contains("小镇") || c.contains("乌有乡") || c.contains("明信片") || c.contains("走") || c.contains("门") || c.contains("小院") { return "map" }
+            if c.contains("提交") || c.contains("代码") { return "chevron.left.forwardslash.chevron.right" }
+            if c.contains("服务") || c.contains("机器") || c.contains("容器") { return "gearshape" }
+            if c.contains("接口") || c.contains("消息") || c.contains("聊天") || c.contains("工作室") { return "antenna.radiowaves.left.and.right" }
+            if c.contains("文件") || c.contains("文档") || c.contains("PDF") { return "doc.text" }
+            if c.contains("脚本") || c.contains("命令") || c.contains("终端") || c.contains("测试") { return "terminal" }
+            if c.contains("旅行") { return "airplane" }
+            if c.contains("数据库") { return "cylinder" }
             return "play.fill"
         default: return "quote.closing"
         }

@@ -67,12 +67,23 @@ enum AlcoveAPI {
 
         var icon: String {
             guard kind == "tool" else { return "quote.bubble" }
-            if text.contains("记忆") || text.contains("OB") { return "brain.head.profile" }
-            if text.contains("日记") || text.contains("信") { return "book.closed" }
-            if text.contains("网页") || text.contains("搜索") || text.contains("上网") { return "globe" }
-            if text.contains("文件") || text.contains("代码") { return "doc.text" }
-            if text.contains("命令") || text.contains("终端") { return "terminal" }
-            if text.contains("图片") || text.contains("照片") { return "photo" }
+            // 实时预览那条带子跟落库的轨迹用同一套词（tool_names.py），图标也同一套
+            let c = text
+            if c.contains("记忆") || c.contains("OB") || c.contains("记了一笔") || c.contains("备忘") { return "brain.head.profile" }
+            if c.contains("日记") || c.contains("信") || c.contains("情书") { return "book.closed" }
+            if c.contains("图") || c.contains("截") || c.contains("相册") || c.contains("表情") || c.contains("照片") { return "photo" }
+            if c.contains("语音") { return "waveform" }
+            if c.contains("网页") || c.contains("搜") || c.contains("浏览器") || c.contains("小红书") || c.contains("标签") { return "globe" }
+            if c.contains("花园") || c.contains("论坛") || c.contains("社区") || c.contains("帖") || c.contains("漂流瓶") { return "leaf" }
+            if c.contains("丧尸") || c.contains("桌游") || c.contains("大富翁") || c.contains("牌") || c.contains("骰") || c.contains("beside you") { return "gamecontroller" }
+            if c.contains("小镇") || c.contains("乌有乡") || c.contains("明信片") || c.contains("走") || c.contains("门") || c.contains("小院") { return "map" }
+            if c.contains("提交") || c.contains("代码") { return "chevron.left.forwardslash.chevron.right" }
+            if c.contains("服务") || c.contains("机器") || c.contains("容器") { return "gearshape" }
+            if c.contains("接口") || c.contains("消息") || c.contains("聊天") || c.contains("工作室") { return "antenna.radiowaves.left.and.right" }
+            if c.contains("文件") || c.contains("文档") || c.contains("PDF") { return "doc.text" }
+            if c.contains("脚本") || c.contains("命令") || c.contains("终端") || c.contains("测试") { return "terminal" }
+            if c.contains("旅行") { return "airplane" }
+            if c.contains("数据库") { return "cylinder" }
             return done ? (ok == false ? "xmark.circle" : "checkmark.circle") : "play.circle"
         }
     }
