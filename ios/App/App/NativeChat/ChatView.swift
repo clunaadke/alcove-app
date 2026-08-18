@@ -412,6 +412,56 @@ struct ChatView: View {
     }
 
     @ViewBuilder
+    /// 0818 她要的：思绪永远在我这一轮最上面，动作轨迹挂在思绪下面。
+    /// 「一轮」= 连续的我方消息、中间没有她说话、相邻间隔不超过三分钟
+    /// （表情/卡片是我用 CLI 单独发的，没有 turn_id，只能按这个规矩归到一起）。
+    /// 轮首拿整轮第一段思绪 + 整轮去重后的动作；那段思绪的原主人自己不再显示。
+    private struct Hoist {
+        var thought: String? = nil
+        var activity: [ActivityItem] = []
+        var suppressThought = false
+        var suppressActivity = false
+    }
+
+    private func hoistFor(index: Int) -> Hoist {
+        let msgs = store.messages
+        guard index < msgs.count, msgs[index].role == "assistant" else { return Hoist() }
+        let gap: TimeInterval = 180
+        var head = index
+        while head > 0, msgs[head - 1].role == "assistant",
+              msgs[head].date.timeIntervalSince(msgs[head - 1].date) <= gap { head -= 1 }
+        var tail = index
+        while tail + 1 < msgs.count, msgs[tail + 1].role == "assistant",
+              msgs[tail + 1].date.timeIntervalSince(msgs[tail].date) <= gap { tail += 1 }
+        if head == tail { return Hoist() }          // 单条一轮，照旧
+
+        // 整轮第一段手写思绪是谁的
+        var thoughtOwner: Int? = nil
+        for i in head...tail {
+            if let t = msgs[i].thinking?.trimmingCharacters(in: .whitespacesAndNewlines), !t.isEmpty {
+                thoughtOwner = i; break
+            }
+        }
+        if index == head {
+            var seen = Set<String>()
+            var merged: [ActivityItem] = []
+            for i in head...tail {
+                for item in msgs[i].activity where item.kind == "tool" {
+                    let key = item.content + "@" + String(format: "%.1f", item.t)
+                    if seen.insert(key).inserted { merged.append(item) }
+                }
+            }
+            var h = Hoist()
+            if let owner = thoughtOwner, owner != head { h.thought = msgs[owner].thinking }
+            h.activity = merged
+            return h
+        }
+        var h = Hoist()
+        h.suppressThought = (thoughtOwner == index)
+        h.suppressActivity = true
+        return h
+    }
+
     private func chatMessageRow(at index: Int, message: ChatMessage) -> some View {
         if !isPhotoGroupContinuation(at: index) {
             let previous = index > 0 ? store.messages[index - 1] : nil
@@ -425,6 +475,7 @@ struct ChatView: View {
             if needsDivider(prev: previous, cur: message) {
                 TimeDivider(date: message.date, color: theme.textDim)
             }
+            let hoist = hoistFor(index: index)
             MessageRow(
                 msg: message,
                 sticker: message.stickerId.flatMap(store.sticker(for:)),
@@ -432,6 +483,10 @@ struct ChatView: View {
                 fontSize: chatFontSize,
                 showTime: isGroupTail(cur: store.messages[groupEnd], next: next),
                 recall: recall,
+                hoistedThought: hoist.thought,
+                hoistedActivity: hoist.activity,
+                suppressOwnThought: hoist.suppressThought,
+                suppressOwnActivity: hoist.suppressActivity,
                 photoURLs: photos,
                 photoNamespace: photoTransition,
                 onTapImages: { urls, selectedIndex in
@@ -1157,6 +1212,13 @@ struct MessageRow: View {
     var onResend: ((String) -> Void)? = nil
     var onPlayMusic: ((MusicSong) -> Void)? = nil
     var onContentChange: (() -> Void)? = nil
+    // 0818 她要的：思绪永远在我这一轮的最上面（哪怕这一轮先发了表情/截图），
+    // 思绪下面再挂一条独立的可展开「工具轨迹」。列表那头按连续的我方消息算一轮，
+    // 把整轮的思绪和动作提到轮首这条消息上，其余消息自己的不再重复显示。
+    var hoistedThought: String? = nil
+    var hoistedActivity: [ActivityItem] = []
+    var suppressOwnThought = false
+    var suppressOwnActivity = false
     @State private var showThinking = false
     @State private var showActivity = false   // 0730 过程记录展开
     @State private var showRecall = false
@@ -1169,10 +1231,14 @@ struct MessageRow: View {
         return !msg.text.isEmpty && !msg.isSticker ? 12 : 0
     }
     private var shouldShowMetaRow: Bool {
-        if msg.pending || msg.asleepAtSend || showTime { return true }
-        // 新消息按 turn_id 分轮：activity 已首尾双挂，非轮尾绝不能被它
-        // 重新撑出一条孤儿操作行；无 turn_id 的旧消息仍保留原行为。
-        return (msg.turnID?.isEmpty ?? true) && msg.hasActivity
+        msg.pending || msg.asleepAtSend || showTime
+    }
+
+    /// 这条消息头上要挂的轨迹：轮首拿整轮的，其他消息不挂
+    private var trailItems: [ActivityItem] {
+        if !hoistedActivity.isEmpty { return hoistedActivity.filter { $0.kind == "tool" } }
+        if suppressOwnActivity { return [] }
+        return msg.activity.filter { $0.kind == "tool" }
     }
 
     var body: some View {
@@ -1184,6 +1250,9 @@ struct MessageRow: View {
                     thinkingBlock(think)
                 } else if recall != nil {
                     recallBadge // 没有思绪行时角标单独站一行，和 PWA 一致
+                }
+                if !isUser && !trailItems.isEmpty {
+                    trailBlock
                 }
                 if let paperDate = msg.morningPaperDate {
                     MorningPaperMessageCard(date: paperDate, theme: theme)
@@ -1282,28 +1351,9 @@ struct MessageRow: View {
                             }
                             .buttonStyle(.plain)
                         }
-                        // 0730：这一轮的过程记录，挂在时间戳旁边，点开看他到底干了什么
-                        if msg.hasActivity && !theme.isPaper {
-                            Button {
-                                withAnimation(.easeInOut(duration: 0.15)) { showActivity.toggle() }
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { onContentChange?() }
-                            } label: {
-                                Text(activityChipLabel)
-                                    .font(.system(size: 10, design: .serif))
-                                    .foregroundColor(theme.timestamp)
-                                    .opacity(showActivity ? 1.0 : 0.62)
-                            }
-                            .buttonStyle(.plain)
-                        }
                     }
                     .padding(.leading, isUser ? 0 : timestampTextInset)
                     .padding(.trailing, isUser ? timestampTextInset : 0)
-
-                    if showActivity && msg.hasActivity {
-                        activityPanel
-                            .padding(.leading, isUser ? 0 : timestampTextInset)
-                            .padding(.trailing, isUser ? timestampTextInset : 0)
-                    }
                 }
             }
             if !isUser {
@@ -1335,6 +1385,9 @@ struct MessageRow: View {
     }
 
     private var visibleChatThought: String? {
+        if let hoisted = hoistedThought?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !hoisted.isEmpty { return hoisted }
+        if suppressOwnThought { return nil }
         if let handwritten = msg.thinking?.trimmingCharacters(in: .whitespacesAndNewlines),
            !handwritten.isEmpty { return handwritten }
         if theme.isPaper && !isUser,
@@ -1444,7 +1497,86 @@ struct MessageRow: View {
         return "· " + (bits.isEmpty ? "\(msg.activity.count)步" : bits.joined(separator: " "))
     }
 
-    // 0730 过程记录：展开后的时间线
+    /// 思绪下面那条：工具轨迹。纸页主题跟 Thought process 一样点开是面板，
+    /// 其他主题原地展开。每条一个动作 + ✓ done。
+    private var trailBlock: some View {
+        VStack(alignment: .leading, spacing: showActivity ? 7 : 0) {
+            Button {
+                if theme.isPaper { showActivity = true }
+                else { withAnimation(.easeInOut(duration: 0.15)) { showActivity.toggle() } }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { onContentChange?() }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "wrench.and.screwdriver")
+                        .font(.system(size: theme.isPaper ? 12 : 11, weight: .light))
+                    Text(theme.isPaper ? "Tool trail" : "过程 · \(trailItems.count)个动作")
+                        .font(theme.isPaper ? .system(size: 13, weight: .medium) : .custom("Georgia", size: 12))
+                    Image(systemName: theme.isPaper ? "chevron.right" : (showActivity ? "chevron.up" : "chevron.down"))
+                        .font(.system(size: 8))
+                }
+                .font(.system(size: 12))
+                .foregroundColor(.secondary)
+            }
+            if showActivity && !theme.isPaper {
+                trailList
+            }
+        }
+        .padding(.leading, theme.isPaper ? 0 : 10)
+        .sheet(isPresented: Binding(get: { theme.isPaper && showActivity }, set: { showActivity = $0 })) {
+            paperTrailPanel
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(theme.fyCardSub)
+        }
+    }
+
+    private var trailList: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            ForEach(trailItems) { it in
+                HStack(alignment: .top, spacing: 7) {
+                    Image(systemName: it.icon)
+                        .font(.system(size: 9))
+                        .foregroundColor(theme.textDim.opacity(0.7))
+                        .frame(width: 12)
+                        .padding(.top, 2)
+                    Text(it.content)
+                        .font(.system(size: 11.5))
+                        .foregroundColor(theme.textDim.opacity(0.92))
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 4)
+                    Text("done")
+                        .font(.system(size: 9.5, weight: .medium, design: .monospaced))
+                        .foregroundColor(theme.textDim.opacity(0.55))
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 8, weight: .semibold))
+                        .foregroundColor(theme.textDim.opacity(0.7))
+                }
+            }
+        }
+        .padding(.leading, 2)
+    }
+
+    private var paperTrailPanel: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(trailItems) { item in
+                        paperTrack(icon: item.icon, title: item.content, detail: "done ✓")
+                    }
+                    paperTrack(icon: "checkmark.circle", title: "Done", detail: "")
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 22).padding(.bottom, 30)
+            }
+            .background(theme.fyCardSub.ignoresSafeArea())
+            .foregroundColor(theme.text)
+            .navigationTitle("Tool trail")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("关闭") { showActivity = false } } }
+        }
+    }
+
+    // 0730 过程记录：展开后的时间线（旧的时间戳旁面板，留着给别处用）
     private var activityPanel: some View {
         VStack(alignment: .leading, spacing: 3) {
             ForEach(msg.activity) { it in
@@ -1557,17 +1689,9 @@ struct MessageRow: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    if msg.activity.isEmpty {
-                        paperTrack(icon: "quote.bubble", title: "Thinking…",
-                                   detail: (msg.thinking?.isEmpty == false) ? (msg.thinking ?? "") : cuteThinkingPlaceholder)
-                        paperTrack(icon: "minus.circle", title: "这轮没动工具", detail: "")
-                    } else {
-                        ForEach(msg.activity) { item in
-                            paperTrack(icon: item.icon,
-                                       title: item.kind == "tool" ? item.content : (item.kind == "thinking" ? "Thinking…" : "继续说"),
-                                       detail: item.kind == "tool" ? "" : item.content)
-                        }
-                    }
+                    // 0818 她定的：这里只放思绪，动作在下面那条 Tool trail 里
+                    paperTrack(icon: "quote.bubble", title: "Thinking…",
+                               detail: visibleChatThought ?? cuteThinkingPlaceholder)
                     paperTrack(icon: "checkmark.circle", title: "Done", detail: "")
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
