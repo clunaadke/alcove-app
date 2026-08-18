@@ -74,6 +74,14 @@ extension ChatMessage {
         return s
     }
 
+    /// 气泡里的正文：有卡片的话把那行链接藏掉（卡就在下面），别的字照旧
+    var textWithoutLink: String {
+        guard let link = firstLinkURL else { return displayText }
+        let stripped = displayText.replacingOccurrences(of: link, with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return stripped.isEmpty ? displayText : stripped
+    }
+
     /// 整条正文就只是一个链接——那就只留卡，不再吐一个光秃秃的链接气泡
     var isBareLink: Bool {
         guard let link = firstLinkURL else { return false }

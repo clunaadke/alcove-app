@@ -22,6 +22,8 @@ struct ChatView: View {
     @State private var pendingImages: [(thumb: UIImage, jpeg: Data)] = []
     // 选表情不立刻飞出去：先进待发区，还能继续打字或者撤掉（教程坑 1）
     @State private var pendingSticker: Sticker?
+    // 0818 她要的：链接一贴进打字框就自动抽出来变成待发卡片，她还能接着打字一起发
+    @State private var pendingLink: String?
     @State private var photoViewer: PhotoViewerSelection?
     @StateObject private var recorder = VoiceRecorder()
     @State private var atBottom = true
@@ -624,7 +626,7 @@ struct ChatView: View {
 
     private var canSend: Bool {
         !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            || !pendingImages.isEmpty || pendingSticker != nil
+            || !pendingImages.isEmpty || pendingSticker != nil || pendingLink != nil
     }
 
     // PWA .chat-input-capsule 同款：大胶囊两行，粉描边，透底毛玻璃
@@ -666,6 +668,23 @@ struct ChatView: View {
                     .padding(.top, 9)
                     .padding(.bottom, 5)
                     Divider().opacity(0.35).padding(.horizontal, 12)
+                }
+                // 待发链接卡：贴进来的链接在这儿预览，✕ 就把链接原样塞回打字框
+                if let link = pendingLink {
+                    HStack(alignment: .top, spacing: 6) {
+                        LinkPreviewCard(url: link, theme: theme, isUser: true)
+                        Button {
+                            pendingLink = nil
+                            draft = draft.isEmpty ? link : draft + " " + link
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 22)).foregroundColor(.secondary)
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
+                        }.buttonStyle(.plain)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, 12).padding(.top, 8).padding(.bottom, 2)
                 }
                 // 待发表情：一张就够，再点一次面板会换掉它
                 if let stk = pendingSticker {
@@ -850,6 +869,23 @@ struct ChatView: View {
     }
 
     private func handleDraftChange(_ value: String) {
+        // 贴进来一个链接：抽出去做成待发卡，打字框留给她说话
+        if pendingLink == nil, value.contains("http"),
+           let range = value.range(of: #"https?://[^\s<>"'）)]+"#, options: .regularExpression) {
+            var link = String(value[range])
+            while let last = link.last, ".,;:!?，。！？、".contains(last) { link.removeLast() }
+            if link.count > 12 {
+                pendingLink = link
+                LinkCardStore.shared.load(link)
+                let rest = value.replacingOccurrences(of: link, with: "")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                handlingReturn = true
+                draft = rest
+                previousDraft = rest
+                DispatchQueue.main.async { handlingReturn = false }
+                return
+            }
+        }
         guard !handlingReturn else {
             previousDraft = value
             return
@@ -887,8 +923,13 @@ struct ChatView: View {
             recorder.start()
             return
         }
-        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        var text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         draft = ""
+        if let link = pendingLink {
+            // 她说的话在前、链接另起一行在后：气泡里是话，卡片长在下面
+            pendingLink = nil
+            text = text.isEmpty ? link : text + "\n" + link
+        }
         if let stk = pendingSticker {
             pendingSticker = nil
             store.sendSticker(stk, text: outgoingText(text))
@@ -1459,7 +1500,7 @@ struct MessageRow: View {
                 .foregroundColor(theme.textDim.opacity(0.78))
             }
             SelectableMessageText(
-                text: msg.displayText,
+                text: msg.textWithoutLink,
                 fontSize: CGFloat(fontSize),
                 lineSpacing: theme.isPaper ? 7 : 5,
                 color: UIColor(msg.asleepAtSend ? theme.textDim : theme.text),
