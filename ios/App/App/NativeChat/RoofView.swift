@@ -30,6 +30,11 @@ private struct RoofPalette {
     let skyMid: Color
     let skyBottom: Color
     let tile: Color         // 瓦
+    let deep: Color         // 瓦底下那片，UI 坐在上面
+    let onDeep: Color       // 坐在 deep 上的字
+    let onDeepDim: Color
+    let deepGlass: Color
+    let deepLine: Color
     let cat: Color
     let catDark: Color
 
@@ -49,7 +54,12 @@ private struct RoofPalette {
         skyTop: Color(red: 0xFD/255, green: 0xF6/255, blue: 0xEC/255),
         skyMid: Color(red: 0xF8/255, green: 0xE7/255, blue: 0xD2/255),
         skyBottom: Color(red: 0xEE/255, green: 0xCF/255, blue: 0xB0/255),
-        tile: Color(red: 0xA8/255, green: 0x6F/255, blue: 0x53/255),
+        tile: Color(red: 0x6E/255, green: 0x72/255, blue: 0x78/255),
+        deep: Color(red: 0x2B/255, green: 0x28/255, blue: 0x2A/255),
+        onDeep: Color(red: 0xF2/255, green: 0xEB/255, blue: 0xE3/255),
+        onDeepDim: Color(red: 0xA8/255, green: 0x9E/255, blue: 0x96/255),
+        deepGlass: Color.white.opacity(0.09),
+        deepLine: Color.white.opacity(0.15),
         cat: Color(red: 0x8C/255, green: 0x6B/255, blue: 0x56/255),
         catDark: Color(red: 0x5E/255, green: 0x45/255, blue: 0x36/255))
 
@@ -65,7 +75,12 @@ private struct RoofPalette {
         skyTop: Color(red: 0x2A/255, green: 0x22/255, blue: 0x2E/255),
         skyMid: Color(red: 0x3E/255, green: 0x2C/255, blue: 0x30/255),
         skyBottom: Color(red: 0x5A/255, green: 0x38/255, blue: 0x30/255),
-        tile: Color(red: 0x4A/255, green: 0x33/255, blue: 0x2A/255),
+        tile: Color(red: 0x39/255, green: 0x3F/255, blue: 0x52/255),
+        deep: Color(red: 0x15/255, green: 0x17/255, blue: 0x22/255),
+        onDeep: Color(red: 0xE9/255, green: 0xE3/255, blue: 0xD9/255),
+        onDeepDim: Color(red: 0x8E/255, green: 0x8A/255, blue: 0x84/255),
+        deepGlass: Color.white.opacity(0.07),
+        deepLine: Color.white.opacity(0.12),
         cat: Color(red: 0xB4/255, green: 0x8E/255, blue: 0x72/255),
         catDark: Color(red: 0x7A/255, green: 0x5C/255, blue: 0x48/255))
 }
@@ -346,34 +361,48 @@ private struct RoofTiles: View {
     var body: some View {
         GeometryReader { geo in
             let w = geo.size.width
-            let h = geo.size.height
             ZStack(alignment: .top) {
-                // 瓦面
-                Path { p in
-                    p.move(to: CGPoint(x: 0, y: h * 0.32))
-                    p.addLine(to: CGPoint(x: w, y: h * 0.32))
-                    p.addLine(to: CGPoint(x: w, y: h))
-                    p.addLine(to: CGPoint(x: 0, y: h))
-                    p.closeSubpath()
-                }
-                .fill(LinearGradient(colors: [palette.tile, palette.tile.opacity(0.82)],
-                                     startPoint: .top, endPoint: .bottom))
+                LinearGradient(
+                    colors: [palette.tile, palette.deep],
+                    startPoint: .top, endPoint: .bottom)
                 // 瓦垄
-                HStack(spacing: w / 13) {
-                    ForEach(0..<12, id: \.self) { _ in
-                        Rectangle()
-                            .fill(Color.black.opacity(palette.isDark ? 0.16 : 0.09))
-                            .frame(width: 1.4)
-                    }
+                ForEach(1..<11, id: \.self) { i in
+                    Rectangle()
+                        .fill(Color.black.opacity(palette.isDark ? 0.26 : 0.17))
+                        .frame(width: 1.6, height: geo.size.height)
+                        .offset(x: w * CGFloat(i) / 11 - w / 2)
                 }
-                .padding(.top, h * 0.32)
-                // 檐口那道亮边
-                Rectangle()
-                    .fill(palette.warm.opacity(palette.isDark ? 0.30 : 0.55))
-                    .frame(height: 2.5)
-                    .offset(y: h * 0.32)
+                // 横向搭接，一行错开半格
+                ForEach(0..<7, id: \.self) { row in
+                    HStack(spacing: 0) {
+                        ForEach(0..<11, id: \.self) { _ in
+                            TileArc()
+                                .stroke(Color.black.opacity(palette.isDark ? 0.22 : 0.14),
+                                        lineWidth: 1.4)
+                                .frame(width: w / 11, height: 13)
+                        }
+                    }
+                    .offset(x: row % 2 == 0 ? 0 : w / 22, y: 22 + CGFloat(row) * 26)
+                }
             }
+            .overlay(alignment: .top) {
+                // 檐口那道被夕阳照亮的边
+                Rectangle()
+                    .fill(palette.warm.opacity(palette.isDark ? 0.42 : 0.80))
+                    .frame(height: 3)
+            }
+            .clipped()
         }
+    }
+}
+
+private struct TileArc: Shape {
+    func path(in rect: CGRect) -> Path {
+        var p = Path()
+        p.move(to: CGPoint(x: rect.minX, y: rect.maxY))
+        p.addQuadCurve(to: CGPoint(x: rect.maxX, y: rect.maxY),
+                       control: CGPoint(x: rect.midX, y: rect.minY - rect.height * 0.6))
+        return p
     }
 }
 
@@ -399,53 +428,135 @@ struct NativeRoofView: View {
     /// 她是 ji。这一页从 app 上按下去的每一下都记在她名下
     private let me = "ji"
 
+    private enum Layout {
+        static let sky: CGFloat = 0.545     // 天空到这儿
+        static let tile: CGFloat = 0.245    // 瓦这么厚
+        static let foot: CGFloat = 0.705    // 猫的脚踩在这个高度
+    }
+
     var body: some View {
-        ZStack {
-            sky
-            content
+        GeometryReader { geo in
+            ZStack(alignment: .top) {
+                backdrop(geo.size)
+                if !loading && !failed {
+                    catLayer(geo.size)
+                }
+                content
+            }
         }
+        .ignoresSafeArea()
         .task { await load() }
         .onAppear { swingTail() }
     }
 
-    private var sky: some View {
-        LinearGradient(colors: [palette.skyTop, palette.skyMid, palette.skyBottom],
-                       startPoint: .top, endPoint: .bottom)
-            .ignoresSafeArea()
-            .overlay(
-                Circle()
-                    .fill(palette.warm.opacity(palette.isDark ? 0.18 : 0.34))
-                    .frame(width: 190, height: 190)
-                    .blur(radius: 46)
-                    .offset(x: 96, y: -180)
-            )
+    // 天空是画的，瓦是代码画的，下面那片留给 UI
+    private func backdrop(_ size: CGSize) -> some View {
+        VStack(spacing: 0) {
+            AsyncImage(url: AlcoveAPI.fullURL(
+                "/api/roof/art/" + (palette.isDark ? "sky_night" : "sky_day") + ".jpg")
+            ) { phase in
+                if let image = phase.image {
+                    image.resizable().aspectRatio(contentMode: .fill)
+                } else {
+                    LinearGradient(colors: [palette.skyTop, palette.skyMid, palette.skyBottom],
+                                   startPoint: .top, endPoint: .bottom)
+                }
+            }
+            .frame(width: size.width, height: size.height * Layout.sky)
+            .clipped()
+            RoofTiles(palette: palette)
+                .frame(height: size.height * Layout.tile)
+            palette.deep
+        }
+    }
+
+    // 猫。图挂了就退回自己画的那只，页面不会空
+    private func catLayer(_ size: CGSize) -> some View {
+        let w = size.width * catWidth
+        let h = w * catAspect
+        return ZStack {
+            if cat.hunger < 30 {
+                bowl.position(x: size.width * (catX > 0.5 ? 0.26 : 0.74),
+                              y: size.height * Layout.foot - 8)
+            }
+            AsyncImage(url: AlcoveAPI.fullURL("/api/roof/art/" + catArt + ".png")) { phase in
+                if let image = phase.image {
+                    image.resizable().aspectRatio(contentMode: .fit)
+                } else {
+                    CatShape(palette: palette, asleep: cat.asleep, squish: squish,
+                             tailPhase: tailPhase, turnedAway: cat.spot == "ridge")
+                }
+            }
+            .frame(width: w, height: h)
+            .scaleEffect(x: 1 + squish * 0.05, y: 1 - squish * 0.08, anchor: .bottom)
+            .shadow(color: .black.opacity(palette.isDark ? 0.45 : 0.30), radius: 12, y: 8)
+            .position(x: size.width * catX, y: size.height * Layout.foot - h / 2)
+            .gesture(petGesture)
+            speech.position(x: size.width * catX,
+                            y: size.height * Layout.foot - h - 18)
+        }
+        .animation(.spring(response: 0.55, dampingFraction: 0.78), value: cat.spot)
+        .animation(.easeInOut(duration: 0.3), value: cat.asleep)
+    }
+
+    private var catArt: String {
+        if cat.asleep { return "cat_curled" }
+        switch cat.spot {
+        case "ridge": return "cat_back"
+        case "bowl": return "cat_sit"
+        default: return "cat_lying"
+        }
+    }
+
+    private var catAspect: CGFloat {
+        switch catArt {
+        case "cat_curled": return 1.09
+        case "cat_sit": return 1.08
+        case "cat_back": return 0.99
+        default: return 0.84
+        }
+    }
+
+    private var catWidth: CGFloat {
+        switch catArt {
+        case "cat_curled": return 0.40
+        case "cat_sit": return 0.34
+        case "cat_back": return 0.36
+        default: return 0.46
+        }
+    }
+
+    private var catX: CGFloat {
+        switch cat.spot {
+        case "ridge": return 0.74      // 爬远了，够不着
+        case "bowl": return 0.32
+        default: return 0.50
+        }
     }
 
     private var content: some View {
         VStack(spacing: 0) {
             header
+            Spacer(minLength: 0)
             if loading {
-                Spacer()
-                ProgressView().tint(palette.ink3)
-                Spacer()
+                ProgressView().tint(palette.onDeepDim)
+                Spacer(minLength: 0)
             } else if failed {
-                Spacer()
                 Text("没连上，下拉再试一次")
                     .font(.system(size: 13))
-                    .foregroundColor(palette.ink3)
-                Spacer()
+                    .foregroundColor(palette.onDeepDim)
+                Spacer(minLength: 0)
             } else {
-                stage
                 statusRow
                 buttons
                 if showLog { logList } else { logHint }
-                Spacer(minLength: 8)
             }
+            Spacer(minLength: 16)
         }
         .padding(.bottom, 22)
     }
 
-    // 自己做头（ownsFullScreen）
+    // 自己做头（ownsFullScreen）。这一条压在天空上，用天空那套字色
     private var header: some View {
         HStack(spacing: 10) {
             Button { dismiss() } label: {
@@ -459,9 +570,9 @@ struct NativeRoofView: View {
                 Text("檐上")
                     .font(.system(size: 19, weight: .semibold, design: .serif))
                     .foregroundColor(palette.ink)
-                Text(cat.mood.isEmpty ? "雨停了，猫爬上来了" : "\(cat.name) · \(cat.mood)")
+                Text(cat.mood.isEmpty ? "雨停了，猫爬上来了" : cat.name + " · " + cat.mood)
                     .font(.system(size: 10.5))
-                    .foregroundColor(palette.ink3)
+                    .foregroundColor(palette.ink2)
             }
             Spacer()
             HStack(spacing: 4) {
@@ -478,48 +589,15 @@ struct NativeRoofView: View {
         .padding(.bottom, 6)
     }
 
-    // 猫待的那块地方
-    private var stage: some View {
-        ZStack(alignment: .bottom) {
-            RoofTiles(palette: palette)
-                .frame(height: 168)
-            CatShape(palette: palette,
-                     asleep: cat.asleep,
-                     squish: squish,
-                     tailPhase: tailPhase,
-                     turnedAway: cat.spot == "ridge")
-                .frame(width: 132, height: 132)
-                .offset(x: catOffsetX, y: -34)
-                .animation(.spring(response: 0.5, dampingFraction: 0.72), value: cat.spot)
-                .gesture(petGesture)
-            // 空碗
-            if cat.hunger < 30 {
-                bowl.offset(x: -108, y: -12)
-            }
-        }
-        .frame(height: 220)
-        .padding(.top, 4)
-        .overlay(alignment: .top) { speech }
-    }
-
-    private var catOffsetX: CGFloat {
-        switch cat.spot {
-        case "ridge": return 74      // 爬远了
-        case "bowl": return -72
-        case "lap": return 0
-        default: return 12
-        }
-    }
-
     private var bowl: some View {
         ZStack {
             Ellipse()
-                .fill(palette.ink3.opacity(0.5))
-                .frame(width: 40, height: 15)
+                .fill(palette.deep.opacity(0.75))
+                .frame(width: 44, height: 17)
             Ellipse()
-                .fill(palette.skyBottom)
-                .frame(width: 30, height: 8)
-                .offset(y: -2)
+                .fill(palette.tile)
+                .frame(width: 33, height: 9)
+                .offset(y: -3)
         }
     }
 
@@ -530,7 +608,6 @@ struct NativeRoofView: View {
             .padding(.horizontal, 12).padding(.vertical, 7)
             .background(Capsule().fill(palette.glass))
             .overlay(Capsule().stroke(palette.line, lineWidth: 0.7))
-            .padding(.top, 2)
             .animation(.easeOut(duration: 0.25), value: cat.says)
     }
 
@@ -581,12 +658,12 @@ struct NativeRoofView: View {
                 Image(systemName: icon).font(.system(size: 9))
                 Text(label).font(.system(size: 10))
             }
-            .foregroundColor(palette.ink3)
+            .foregroundColor(palette.onDeepDim)
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
-                    Capsule().fill(palette.ink3.opacity(0.18))
+                    Capsule().fill(palette.onDeepDim.opacity(0.18))
                     Capsule()
-                        .fill(value < 25 ? palette.acc : palette.warm)
+                        .fill(value < 25 ? palette.warm : palette.warm)
                         .frame(width: max(3, geo.size.width * CGFloat(value) / 100))
                 }
             }
@@ -595,9 +672,9 @@ struct NativeRoofView: View {
         }
         .padding(.horizontal, 10).padding(.vertical, 9)
         .frame(maxWidth: .infinity)
-        .background(RoundedRectangle(cornerRadius: 13, style: .continuous).fill(palette.glass))
+        .background(RoundedRectangle(cornerRadius: 13, style: .continuous).fill(palette.deepGlass))
         .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous)
-            .stroke(palette.line, lineWidth: 0.7))
+            .stroke(palette.deepLine, lineWidth: 0.7))
     }
 
     private var buttons: some View {
@@ -605,7 +682,7 @@ struct NativeRoofView: View {
             if !note.isEmpty {
                 Text(note)
                     .font(.system(size: 11.5))
-                    .foregroundColor(palette.ink3)
+                    .foregroundColor(palette.onDeepDim)
                     .transition(.opacity)
             }
             HStack(spacing: 9) {
@@ -616,7 +693,7 @@ struct NativeRoofView: View {
             }
             Text("撸它 —— 手指在猫身上划")
                 .font(.system(size: 10))
-                .foregroundColor(palette.ink3.opacity(0.85))
+                .foregroundColor(palette.onDeepDim.opacity(0.85))
         }
         .padding(.horizontal, 14)
         .padding(.top, 12)
@@ -631,12 +708,12 @@ struct NativeRoofView: View {
                 Image(systemName: icon).font(.system(size: 13))
                 Text(title).font(.system(size: 13.5, weight: .medium))
             }
-            .foregroundColor(palette.ink)
+            .foregroundColor(palette.onDeep)
             .frame(maxWidth: .infinity)
             .frame(height: 44)
-            .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(palette.glass))
+            .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(palette.deepGlass))
             .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(palette.line, lineWidth: 0.8))
+                .stroke(palette.deepLine, lineWidth: 0.8))
         }
         .buttonStyle(.plain)
     }
@@ -648,7 +725,7 @@ struct NativeRoofView: View {
                     .font(.system(size: 11))
                 Image(systemName: "chevron.down").font(.system(size: 8))
             }
-            .foregroundColor(palette.ink3)
+            .foregroundColor(palette.onDeepDim)
         }
         .buttonStyle(.plain)
         .padding(.top, 14)
@@ -667,7 +744,7 @@ struct NativeRoofView: View {
                     Text("谁管过它").font(.system(size: 11, weight: .medium))
                     Image(systemName: "chevron.up").font(.system(size: 8))
                 }
-                .foregroundColor(palette.ink3)
+                .foregroundColor(palette.onDeepDim)
             }
             .buttonStyle(.plain)
             .padding(.bottom, 6)
@@ -677,14 +754,14 @@ struct NativeRoofView: View {
                         HStack(spacing: 7) {
                             Text(entry.whoName)
                                 .font(.system(size: 11, weight: .medium))
-                                .foregroundColor(entry.whoName == "陈霁" ? palette.acc : palette.ink2)
+                                .foregroundColor(entry.whoName == "陈霁" ? palette.warm : palette.onDeep)
                             Text(entry.detail)
                                 .font(.system(size: 11))
-                                .foregroundColor(palette.ink2)
+                                .foregroundColor(palette.onDeep)
                             Spacer(minLength: 0)
                             Text(shortTime(entry.createdAt))
                                 .font(.system(size: 9.5, design: .monospaced))
-                                .foregroundColor(palette.ink3)
+                                .foregroundColor(palette.onDeepDim)
                         }
                     }
                 }
