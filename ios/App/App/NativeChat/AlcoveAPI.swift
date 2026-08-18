@@ -332,17 +332,29 @@ enum AlcoveAPI {
         return obj["held"] as? Int ?? 0
     }
 
-    static func uploadSticker(data: Data, mime: String, owner: String) async throws {
+    static func uploadSticker(data: Data, mime: String, owner: String,
+                              name: String = "", description: String = "",
+                              emotionTags: [String] = []) async throws {
         let boundary = "----alcove\(UUID().uuidString)"
         var req = URLRequest(url: fullURL("/api/stickers/upload"))
         req.httpMethod = "POST"
         req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-        let ext = mime == "image/png" ? "png" : mime == "image/gif" ? "gif" : "jpg"
+        // 动图必须原样上传：转码成 JPEG 就把动的那部分弄没了
+        let ext = mime == "image/png" ? "png"
+            : mime == "image/gif" ? "gif"
+            : mime == "image/webp" ? "webp" : "jpg"
         var body = Data()
         func field(_ name: String, _ value: String) {
             body.append("--\(boundary)\r\nContent-Disposition: form-data; name=\"\(name)\"\r\n\r\n\(value)\r\n".data(using: .utf8)!)
         }
         field("owner", owner)
+        field("name", name)
+        field("description", description)
+        // 没有描述的表情，对我来说就是一张看不懂的图
+        if let tags = try? JSONSerialization.data(withJSONObject: emotionTags),
+           let json = String(data: tags, encoding: .utf8) {
+            field("emotion_tags", json)
+        }
         body.append("--\(boundary)\r\nContent-Disposition: form-data; name=\"file\"; filename=\"sticker.\(ext)\"\r\nContent-Type: \(mime)\r\n\r\n".data(using: .utf8)!)
         body.append(data)
         body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)

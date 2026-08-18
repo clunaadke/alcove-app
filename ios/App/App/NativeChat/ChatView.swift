@@ -20,6 +20,8 @@ struct ChatView: View {
     @State private var showStickers = false
     @State private var photoItems: [PhotosPickerItem] = []
     @State private var pendingImages: [(thumb: UIImage, jpeg: Data)] = []
+    // 选表情不立刻飞出去：先进待发区，还能继续打字或者撤掉（教程坑 1）
+    @State private var pendingSticker: Sticker?
     @State private var photoViewer: PhotoViewerSelection?
     @StateObject private var recorder = VoiceRecorder()
     @State private var atBottom = true
@@ -563,7 +565,8 @@ struct ChatView: View {
     }
 
     private var canSend: Bool {
-        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !pendingImages.isEmpty
+        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !pendingImages.isEmpty || pendingSticker != nil
     }
 
     // PWA .chat-input-capsule 同款：大胶囊两行，粉描边，透底毛玻璃
@@ -605,6 +608,24 @@ struct ChatView: View {
                     .padding(.top, 9)
                     .padding(.bottom, 5)
                     Divider().opacity(0.35).padding(.horizontal, 12)
+                }
+                // 待发表情：一张就够，再点一次面板会换掉它
+                if let stk = pendingSticker {
+                    HStack(spacing: 8) {
+                        AsyncImage(url: AlcoveAPI.stickerURL(stk.url)) { img in
+                            img.resizable().scaledToFit()
+                        } placeholder: { Color(.systemGray6) }
+                        .frame(width: 54, height: 54)
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                        Text(stk.name.isEmpty ? "表情" : stk.name)
+                            .font(.system(size: 11)).foregroundColor(.secondary)
+                        Spacer()
+                        Button { pendingSticker = nil } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 19)).foregroundColor(.secondary)
+                        }.buttonStyle(.plain)
+                    }
+                    .padding(.horizontal, 14).padding(.top, 8).padding(.bottom, 2)
                 }
                 // PWA .chat-preview 同款：待发图片叠加条，可单张删除
                 if !pendingImages.isEmpty {
@@ -807,6 +828,11 @@ struct ChatView: View {
         }
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         draft = ""
+        if let stk = pendingSticker {
+            pendingSticker = nil
+            store.sendSticker(stk, text: outgoingText(text))
+            return
+        }
         if !pendingImages.isEmpty {
             let images = pendingImages.map(\.jpeg)
             pendingImages = []
@@ -999,7 +1025,7 @@ struct ChatView: View {
     private var stickerSheet: some View {
         StickerSheet(store: store) { stk in
             showStickers = false
-            store.sendSticker(stk)
+            pendingSticker = stk
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)

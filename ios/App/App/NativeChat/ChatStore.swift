@@ -142,9 +142,13 @@ final class ChatStore: ObservableObject {
         }
     }
 
-    func uploadSticker(data: Data, mime: String, owner: String) {
+    func uploadSticker(data: Data, mime: String, owner: String,
+                       name: String = "", description: String = "",
+                       emotionTags: [String] = []) {
         Task {
-            try? await AlcoveAPI.uploadSticker(data: data, mime: mime, owner: owner)
+            try? await AlcoveAPI.uploadSticker(data: data, mime: mime, owner: owner,
+                                               name: name, description: description,
+                                               emotionTags: emotionTags)
             if let stk = try? await AlcoveAPI.stickers() { stickers = stk }
         }
     }
@@ -604,7 +608,14 @@ final class ChatStore: ObservableObject {
         }
     }
 
-    func sendSticker(_ stk: Sticker) {
+    /// 一次发送可以同时带文字和表情：它们是同一轮（共享 turn_id）的两条消息。
+    /// 文字照旧走气泡，表情不带气泡只显示图本身（教程第 1、3 节）。
+    func sendSticker(_ stk: Sticker, text: String? = nil) {
+        if let text, !text.isEmpty {
+            var typed = ChatMessage(localText: text)
+            typed.pending = true
+            messages.append(typed)
+        }
         var local = ChatMessage(localText: stk.descForAI)
         local.msgType = "sticker"
         local.stickerId = stk.id
@@ -612,7 +623,7 @@ final class ChatStore: ObservableObject {
         optimisticTyping()
         Task {
             do {
-                try await AlcoveAPI.sendSticker(stk, text: nil)
+                try await AlcoveAPI.sendSticker(stk, text: text)
                 if let idx = messages.lastIndex(where: { $0.uid == local.uid }) {
                     messages[idx].pending = false
                 }
