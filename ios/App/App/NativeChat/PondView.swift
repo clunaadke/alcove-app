@@ -11,50 +11,6 @@ import UIKit
 // 强噪点、光从下面照上来、衬线标题＋等宽元信息。这套配色暂时只活在这一页，
 // 没进主题引擎——她说了新主题先不动。
 
-// MARK: - 这一页自己的配色
-
-private struct PondPalette {
-    let isDark: Bool
-    let ink: Color          // 正文
-    let ink2: Color         // 次要
-    let ink3: Color         // 三级/元信息
-    let acc: Color          // 强调蓝
-    let gold: Color         // 许愿成了的那个金
-    let glass: Color        // 玻璃填充
-    let line: Color         // 玻璃描边（内高光）
-    let bgTop: Color
-    let bgMid: Color
-    let bgBottom: Color
-    let glow: Color         // 底部那团光
-
-    static let light = PondPalette(
-        isDark: false,
-        ink: Color(red: 0x0A/255, green: 0x1E/255, blue: 0x42/255),
-        ink2: Color(red: 0x3D/255, green: 0x57/255, blue: 0x88/255),
-        ink3: Color(red: 0x7D/255, green: 0x92/255, blue: 0xB5/255),
-        acc: Color(red: 0x2A/255, green: 0x6B/255, blue: 0xB0/255),
-        gold: Color(red: 0xC9/255, green: 0xA8/255, blue: 0x6A/255),
-        glass: Color.white.opacity(0.40),
-        line: Color.white.opacity(0.74),
-        bgTop: Color(red: 0xFA/255, green: 0xFC/255, blue: 0xFE/255),
-        bgMid: Color(red: 0xEC/255, green: 0xF1/255, blue: 0xF7/255),
-        bgBottom: Color(red: 0xCF/255, green: 0xDA/255, blue: 0xE8/255),
-        glow: Color(red: 0x9E/255, green: 0xC2/255, blue: 0xEC/255).opacity(0.42))
-
-    static let dark = PondPalette(
-        isDark: true,
-        ink: Color(red: 0xE0/255, green: 0xE6/255, blue: 0xF2/255),
-        ink2: Color(red: 0xAD/255, green: 0xB8/255, blue: 0xD0/255),
-        ink3: Color(red: 0x7E/255, green: 0x90/255, blue: 0xB2/255),
-        acc: Color(red: 0x72/255, green: 0xA8/255, blue: 0xD8/255),
-        gold: Color(red: 0xD0/255, green: 0xA4/255, blue: 0x4E/255),
-        glass: Color(red: 20/255, green: 28/255, blue: 52/255).opacity(0.46),
-        line: Color(red: 165/255, green: 188/255, blue: 230/255).opacity(0.26),
-        bgTop: Color(red: 0x4A/255, green: 0x4E/255, blue: 0x56/255),
-        bgMid: Color(red: 0x1A/255, green: 0x1D/255, blue: 0x24/255),
-        bgBottom: Color(red: 0x12/255, green: 0x1B/255, blue: 0x33/255),
-        glow: Color(red: 0x1E/255, green: 0x5F/255, blue: 0xD0/255).opacity(0.55))
-}
 
 // MARK: - 数据
 
@@ -131,114 +87,8 @@ private enum PondFilter: String, CaseIterable {
     var query: String { self == .all ? "" : rawValue }
 }
 
-// MARK: - 玻璃珠头像（参考图里那颗蓝珠子，不用图片资源，直接画）
 
-private struct GlassBead: View {
-    let isHers: Bool
-    let palette: PondPalette
-    var size: CGFloat = 38
 
-    private var core: Color {
-        isHers
-            ? Color(red: 0xE8/255, green: 0xC6/255, blue: 0xD2/255)   // 她：暖粉珠
-            : Color(red: 0x3C/255, green: 0x74/255, blue: 0xC8/255)   // 我：蓝珠
-    }
-
-    var body: some View {
-        ZStack {
-            Circle()
-                .fill(
-                    RadialGradient(
-                        colors: [core.opacity(0.30), core, core.opacity(0.72)],
-                        center: UnitPoint(x: 0.34, y: 0.28),
-                        startRadius: size * 0.04,
-                        endRadius: size * 0.72))
-            // 底部反光：光从下面照上来，跟整页光源一致
-            Circle()
-                .fill(
-                    RadialGradient(
-                        colors: [Color.white.opacity(isHers ? 0.55 : 0.42), .clear],
-                        center: UnitPoint(x: 0.62, y: 0.86),
-                        startRadius: 0,
-                        endRadius: size * 0.42))
-            // 顶部高光
-            Ellipse()
-                .fill(Color.white.opacity(0.72))
-                .frame(width: size * 0.34, height: size * 0.22)
-                .offset(x: -size * 0.13, y: -size * 0.26)
-                .blur(radius: size * 0.045)
-            Circle().strokeBorder(Color.white.opacity(0.42), lineWidth: 0.6)
-        }
-        .frame(width: size, height: size)
-        .shadow(color: core.opacity(0.35), radius: size * 0.16, y: size * 0.08)
-    }
-}
-
-// MARK: - 噪点（参考图那层胶片颗粒，把渐变的台阶打碎）
-
-private struct PondGrain: View {
-    var opacity: Double = 0.055
-    var body: some View {
-        Canvas { context, size in
-            var seed: UInt64 = 0x9E3779B97F4A7C15
-            func next() -> Double {
-                seed ^= seed << 13; seed ^= seed >> 7; seed ^= seed << 17
-                return Double(seed % 1000) / 1000.0
-            }
-            let step: CGFloat = 2
-            var y: CGFloat = 0
-            while y < size.height {
-                var x: CGFloat = 0
-                while x < size.width {
-                    let v = next()
-                    if v > 0.55 {
-                        context.fill(
-                            Path(CGRect(x: x, y: y, width: step, height: step)),
-                            with: .color(.white.opacity(v * 0.5)))
-                    } else if v < 0.16 {
-                        context.fill(
-                            Path(CGRect(x: x, y: y, width: step, height: step)),
-                            with: .color(.black.opacity(0.35)))
-                    }
-                    x += step
-                }
-                y += step
-            }
-        }
-        .opacity(opacity)
-        .blendMode(.overlay)
-        .allowsHitTesting(false)
-    }
-}
-
-// MARK: - 玻璃卡背景
-
-private struct PondGlass: ViewModifier {
-    let palette: PondPalette
-    var radius: CGFloat = 18
-    func body(content: Content) -> some View {
-        content
-            .background(
-                RoundedRectangle(cornerRadius: radius, style: .continuous)
-                    .fill(.ultraThinMaterial)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: radius, style: .continuous)
-                            .fill(palette.glass))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: radius, style: .continuous)
-                            .strokeBorder(palette.line, lineWidth: 0.7))
-                    .shadow(color: palette.isDark
-                            ? Color.black.opacity(0.32)
-                            : Color(red: 90/255, green: 120/255, blue: 170/255).opacity(0.14),
-                            radius: 12, y: 5))
-    }
-}
-
-private extension View {
-    func pondGlass(_ palette: PondPalette, radius: CGFloat = 18) -> some View {
-        modifier(PondGlass(palette: palette, radius: radius))
-    }
-}
 
 // MARK: - 主页面
 
@@ -253,9 +103,7 @@ struct NativePondView: View {
     @State private var composing = false
     @State private var replyingTo: PondItem?
 
-    private var palette: PondPalette {
-        AlcoveTheme.named(themeName).isDark ? .dark : .light
-    }
+    private var palette: GlassPalette { .named(themeName) }
 
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
@@ -276,20 +124,7 @@ struct NativePondView: View {
         }
     }
 
-    // 光从下面照上来：浅色底部压灰，深色底部烧一团蓝
-    private var background: some View {
-        ZStack {
-            LinearGradient(
-                colors: [palette.bgTop, palette.bgMid, palette.bgBottom],
-                startPoint: .top, endPoint: .bottom)
-            RadialGradient(
-                colors: [palette.glow, .clear],
-                center: UnitPoint(x: 0.5, y: 1.05),
-                startRadius: 10, endRadius: 420)
-            PondGrain(opacity: palette.isDark ? 0.05 : 0.075)
-        }
-        .ignoresSafeArea()
-    }
+    private var background: some View { GlassBackdrop(palette: palette) }
 
     private var content: some View {
         VStack(spacing: 0) {
@@ -330,29 +165,8 @@ struct NativePondView: View {
         }
     }
 
-    // 0819 全屏：房子的顶栏会透出后面的壁纸，接缝很明显，所以这一页自己做头
     private var header: some View {
-        HStack(spacing: 0) {
-            Button { dismiss() } label: {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 17, weight: .light))
-                    .foregroundColor(palette.ink2)
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("返回")
-            Spacer()
-            Text("檐下")
-                .font(.system(size: 18, weight: .medium, design: .serif))
-                .tracking(7)
-                .foregroundColor(palette.ink)
-                .padding(.leading, 7)   // 抵掉字距在右边多出来的那一格
-            Spacer()
-            Color.clear.frame(width: 44, height: 44)
-        }
-        .padding(.horizontal, 8)
-        .padding(.top, 54)
+        GlassHeader(title: "檐下", palette: palette, onBack: { dismiss() })
     }
 
     private var filterBar: some View {
@@ -485,7 +299,7 @@ struct NativePondView: View {
 
 private struct PondItemCard: View {
     let item: PondItem
-    let palette: PondPalette
+    let palette: GlassPalette
     var onReply: () -> Void
     var onLike: () -> Void
     var onStatus: (String) -> Void
@@ -501,7 +315,7 @@ private struct PondItemCard: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 11) {
-            GlassBead(isHers: item.isHers, palette: palette)
+            GlassBead(isHers: item.isHers)
             VStack(alignment: .leading, spacing: 8) {
                 header
                 if !item.text.isEmpty {
@@ -520,7 +334,7 @@ private struct PondItemCard: View {
         }
         .padding(13)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .pondGlass(palette)
+        .glassCard(palette)
         .overlay(alignment: .topTrailing) {
             if item.pinned {
                 Image(systemName: "pin.fill")
@@ -702,7 +516,7 @@ private struct PondItemCard: View {
 // MARK: - 放一条
 
 private struct PondComposeSheet: View {
-    let palette: PondPalette
+    let palette: GlassPalette
     var onSubmit: (String, String, String, [Data]) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var kind = "wish"
@@ -756,7 +570,7 @@ private struct PondComposeSheet: View {
                 .scrollContentBackground(.hidden)
                 .frame(height: 120)
                 .padding(10)
-                .pondGlass(palette, radius: 14)
+                .glassCard(palette, radius: 14)
                 .overlay(alignment: .topLeading) {
                     if text.isEmpty {
                         Text(kind == "wish" ? "想要什么，不写字也行" : "刚被戳到的那下")
@@ -774,7 +588,7 @@ private struct PondComposeSheet: View {
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .padding(11)
-                .pondGlass(palette, radius: 12)
+                .glassCard(palette, radius: 12)
 
             HStack(spacing: 10) {
                 PhotosPicker(selection: $picks, maxSelectionCount: 9, matching: .images) {
@@ -827,7 +641,7 @@ private struct PondComposeSheet: View {
                 RadialGradient(colors: [palette.glow, .clear],
                                center: UnitPoint(x: 0.5, y: 1.05),
                                startRadius: 10, endRadius: 380)
-                PondGrain(opacity: palette.isDark ? 0.05 : 0.07)
+                GlassGrain(opacity: palette.isDark ? 0.05 : 0.07)
             }.ignoresSafeArea())
         .presentationDetents([.medium, .large])
         .onChange(of: picks) { _, items in
@@ -864,7 +678,7 @@ private struct PondPendingPhoto: Identifiable {
 // MARK: - 回一句
 
 private struct PondReplySheet: View {
-    let palette: PondPalette
+    let palette: GlassPalette
     let item: PondItem
     var onSubmit: (String) -> Void
     @Environment(\.dismiss) private var dismiss
@@ -898,16 +712,11 @@ private struct PondReplySheet: View {
                 .scrollContentBackground(.hidden)
                 .frame(height: 100)
                 .padding(10)
-                .pondGlass(palette, radius: 14)
+                .glassCard(palette, radius: 14)
             Spacer()
         }
         .padding(20)
-        .background(
-            ZStack {
-                LinearGradient(colors: [palette.bgTop, palette.bgMid, palette.bgBottom],
-                               startPoint: .top, endPoint: .bottom)
-                PondGrain(opacity: palette.isDark ? 0.05 : 0.07)
-            }.ignoresSafeArea())
+        .background(GlassBackdrop(palette: palette))
         .presentationDetents([.medium])
     }
 }

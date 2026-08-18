@@ -41,6 +41,8 @@ struct ChatView: View {
     @State private var switchingModel = false
     @State private var modelSwitchError = ""
     @State private var showMiniTerminal = false
+    // 0819 她点名的跳转高亮：从搜索/收藏跳过来的那条闪一下再退
+    @State private var flashTS: String?
     @State private var paragraphSelectionMode = false
     @State private var selectedParagraphIDs: Set<UUID> = []
     @State private var showParagraphDeleteConfirmation = false
@@ -199,6 +201,12 @@ struct ChatView: View {
                     LazyVStack(alignment: .leading, spacing: 6) {
                         ForEach(Array(store.messages.enumerated()), id: \.element.id) { idx, msg in
                             chatMessageRow(at: idx, message: msg)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 15, style: .continuous)
+                                        .fill(theme.fyAccent.opacity(flashTS == msg.ts ? 0.17 : 0))
+                                        .padding(.horizontal, -7)
+                                        .padding(.vertical, -3)
+                                        .animation(.easeInOut(duration: 0.42), value: flashTS))
                                 .onAppear {
                                     guard idx == 0, olderPagingArmed else { return }
                                     olderPagingArmed = false
@@ -346,6 +354,10 @@ struct ChatView: View {
                     if let target = store.messages.first(where: { $0.ts == ts }) {
                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
                             withAnimation { proxy.scrollTo(target.id, anchor: .top) }
+                            flashTS = ts
+                        }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 2.6) {
+                            if flashTS == ts { flashTS = nil }
                         }
                     }
                 }

@@ -205,10 +205,12 @@ enum AlcoveAPI {
         return (obj["records"] as? [[String: Any]] ?? []).compactMap(ChatMessage.init(json:))
     }
 
-    static func searchHistory(query: String = "", day: String = "", limit: Int = 500) async throws -> [ChatMessage] {
+    static func searchHistory(query: String = "", day: String = "", type: String = "",
+                              limit: Int = 500) async throws -> [ChatMessage] {
         let q = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
         let d = day.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? day
-        let obj = try await getJSON("/api/chat-search?q=\(q)&day=\(d)&limit=\(limit)")
+        let t = type == "all" ? "" : type
+        let obj = try await getJSON("/api/chat-search?q=\(q)&day=\(d)&type=\(t)&limit=\(limit)")
         return (obj["records"] as? [[String: Any]] ?? []).compactMap(ChatMessage.init(json:))
     }
 
@@ -391,9 +393,27 @@ enum AlcoveAPI {
         _ = try await postJSON("/api/favorites/add", body: ["ts": ts, "text": text, "role": role])
     }
 
-    static func favorites() async throws -> [[String: Any]] {
-        let obj = try await getJSON("/api/favorites")
+    static func favorites(kind: String = "", type: String = "") async throws -> [[String: Any]] {
+        let k = kind == "all" ? "" : kind
+        let t = type == "all" ? "" : type
+        let obj = try await getJSON("/api/favorites?kind=\(k)&type=\(t)")
         return obj["items"] as? [[String: Any]] ?? []
+    }
+
+    /// 0819 她要的：多选几条就收成一段聊天记录，选一条还是单条
+    static func favoriteAdd(_ messages: [ChatMessage], title: String = "") async throws {
+        let items: [[String: Any]] = messages.map {
+            ["ts": $0.ts, "text": $0.displayText, "role": $0.role,
+             "attachment_url": $0.attachmentUrl ?? "",
+             "attachment_type": $0.attachmentType ?? ""]
+        }
+        var body: [String: Any] = ["items": items]
+        if !title.isEmpty { body["title"] = title }
+        _ = try await postJSON("/api/favorites/add", body: body)
+    }
+
+    static func favoriteRemove(id: Int) async throws {
+        _ = try await postJSON("/api/favorites/remove", body: ["id": id])
     }
 
     static func upload(data: Data, filename: String, caption: String, group: String? = nil) async throws -> ChatMessage? {

@@ -609,14 +609,12 @@ final class ChatStore: ObservableObject {
         }
     }
 
+    /// 0819 她要的：多选几条就收成一段聊天记录（收藏页点开逐条排），
+    /// 只选一条还是单条。
     func favoriteMessages(_ selected: [ChatMessage]) {
-        Task {
-            for msg in selected {
-                try? await AlcoveAPI.favoriteMessage(
-                    ts: msg.ts, text: msg.displayText, role: msg.role
-                )
-            }
-        }
+        let ordered = selected.sorted { $0.ts < $1.ts }
+        guard !ordered.isEmpty else { return }
+        Task { try? await AlcoveAPI.favoriteAdd(ordered) }
     }
 
     /// 一次发送可以同时带文字和表情：它们是同一轮（共享 turn_id）的两条消息。

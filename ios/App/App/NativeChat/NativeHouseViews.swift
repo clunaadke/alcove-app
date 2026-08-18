@@ -70,6 +70,14 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         }
     }
 
+    /// 自己铺满、自己做头的页面。她0819：不要透壁纸，要全屏
+    var ownsFullScreen: Bool {
+        switch self {
+        case .studio, .pond, .search, .favorites: return true
+        default: return false
+        }
+    }
+
     var icon: String {
         switch self {
         case .home: return "house"
@@ -181,7 +189,7 @@ struct NativeHouseSheet: View {
             FoyerGlassContainer(spacing: 8, paper: theme.isPaper) {
                 VStack(spacing: 0) {
                     // 0819 她说顶栏透出后面的壁纸：池子跟工作室一样自己铺满、自己做头
-                    if route != .studio && route != .pond { houseHeader(safeTop: root.safeAreaInsets.top) }
+                    if !route.ownsFullScreen { houseHeader(safeTop: root.safeAreaInsets.top) }
                     Group {
                 switch route {
                 case .sidebar:
@@ -213,9 +221,9 @@ struct NativeHouseSheet: View {
                 case .clockwork:
                     ClockworkView()
                 case .search:
-                    NativeSearchView()
+                    GlassSearchView()
                 case .favorites:
-                    NativeFavoritesView()
+                    GlassFavoritesView()
                 case .usage:
                     NativeUsageView()
                 case .workbench:
@@ -3358,211 +3366,6 @@ private struct ClockworkView: View {
                let raw = obj["flags"] as? [String: Any] {
                 flags = raw.mapValues { ($0 as? Bool) ?? true }
             }
-        }
-    }
-}
-
-private struct NativeSearchView: View {
-    @State private var query = ""
-    @State private var results: [ChatMessage] = []
-    @State private var filterType = "all"
-    @State private var month = Date()
-    @State private var dayCounts: [String: Int] = [:]
-    @State private var searching = false
-    @AppStorage("alcoveTheme") private var themeName = "haven"
-    @AppStorage("userName") private var userName = "Luna"
-    @AppStorage("assistantName") private var assistantName = "陈璟"
-    private var theme: AlcoveTheme { .panelNamed(themeName) }
-    private let types = [("all", "全部"), ("text", "文字"), ("image", "图片"), ("audio", "语音"), ("link", "链接")]
-    private let columns = Array(repeating: GridItem(.flexible(), spacing: 3), count: 7)
-    private let calendar = Calendar(identifier: .gregorian)
-
-    var body: some View {
-        VStack(spacing: 0) {
-            FoyerPanelTitle(title: "Search", theme: theme)
-            TextField("搜索 6 月 16 日至今的全部聊天", text: $query)
-                .padding(11).foyerCard(theme).padding(.horizontal, 16).padding(.top, 8)
-                .onSubmit { Task { await search() } }
-                .onChange(of: query) { value in if value.isEmpty { results = [] } }
-            HStack(spacing: 6) {
-                ForEach(types, id: \.0) { key, label in
-                    Button { filterType = key } label: {
-                        Text(label).font(.system(size: 11)).padding(.horizontal, 8).padding(.vertical, 4)
-                            .background(filterType == key ? theme.fyAccentSoft.opacity(0.4) : theme.fyCardSub, in: Capsule())
-                            .foregroundColor(filterType == key ? theme.fyAccent : theme.textDim)
-                    }
-                }
-                Spacer()
-                Button { Task { await search() } } label: {
-                    if searching { ProgressView().controlSize(.mini) } else { Image(systemName: "magnifyingglass") }
-                }
-            }.padding(.horizontal, 16).padding(.top, 8)
-
-            ScrollView(showsIndicators: false) {
-                VStack(spacing: 12) {
-                    calendarCard
-                    LazyVStack(spacing: 8) {
-                        ForEach(filteredResults) { message in searchRow(message) }
-                        if filteredResults.isEmpty && !query.isEmpty && !searching {
-                            Text("没有找到").font(.system(size: 12)).foregroundColor(theme.textDim).padding(24)
-                        }
-                    }
-                }.padding(.top, 10).padding(.horizontal, 16).padding(.bottom, 18)
-            }
-        }
-        .foregroundColor(theme.text).foyerPanel(theme).padding(.horizontal, 12).padding(.top, 8)
-        .task { await loadMonth() }
-    }
-
-    private var calendarCard: some View {
-        VStack(spacing: 9) {
-            HStack {
-                Button { changeMonth(-1) } label: { Image(systemName: "chevron.left").frame(width: 36, height: 36) }
-                Spacer()
-                Text(month, format: .dateTime.year().month(.wide)).font(.system(size: 16, weight: .semibold, design: .serif))
-                Spacer()
-                Button { changeMonth(1) } label: { Image(systemName: "chevron.right").frame(width: 36, height: 36) }
-            }
-            LazyVGrid(columns: columns, spacing: 6) {
-                ForEach(["日","一","二","三","四","五","六"], id: \.self) { Text($0).font(.system(size: 9)).foregroundColor(theme.textLight) }
-                ForEach(Array(monthCells.enumerated()), id: \.offset) { _, date in
-                    if let date {
-                        let key = dayKey(date)
-                        Button { Task { await jumpToDay(key) } } label: {
-                            VStack(spacing: 2) {
-                                Text("\(calendar.component(.day, from: date))").font(.system(size: 12, weight: .medium))
-                                Text(dayCounts[key].map { "\($0)条" } ?? " ").font(.system(size: 7.5, design: .rounded)).foregroundColor(theme.textLight)
-                            }.frame(maxWidth: .infinity, minHeight: 35)
-                                .background(dayCounts[key] == nil ? Color.clear : theme.fyAccentSoft.opacity(0.13), in: RoundedRectangle(cornerRadius: 9))
-                        }.buttonStyle(.plain).disabled(dayCounts[key] == nil)
-                    } else { Color.clear.frame(height: 35) }
-                }
-            }
-        }.padding(12).foyerCard(theme)
-    }
-
-    private var monthCells: [Date?] {
-        guard let interval = calendar.dateInterval(of: .month, for: month),
-              let days = calendar.range(of: .day, in: .month, for: month) else { return [] }
-        let offset = calendar.component(.weekday, from: interval.start) - 1
-        return Array(repeating: nil, count: offset) + days.compactMap { calendar.date(byAdding: .day, value: $0 - 1, to: interval.start) }.map(Optional.some)
-    }
-
-    private var filteredResults: [ChatMessage] {
-        switch filterType {
-        case "image": return results.filter(\.isImage)
-        case "audio": return results.filter(\.isAudio)
-        case "link": return results.filter { $0.text.contains("http://") || $0.text.contains("https://") }
-        case "text": return results.filter { !$0.isImage && !$0.isAudio && !$0.text.isEmpty }
-        default: return results
-        }
-    }
-
-    private func searchRow(_ message: ChatMessage) -> some View {
-        Button { NotificationCenter.default.post(name: .alcoveJumpToMessage, object: message.ts) } label: {
-            HStack(alignment: .top, spacing: 10) {
-                Circle().fill(theme.fyAccent.opacity(0.65)).frame(width: 6, height: 6).padding(.top, 6)
-                VStack(alignment: .leading, spacing: 5) {
-                    HStack { Text(message.role == "user" ? userName : assistantName).font(.system(size: 10, weight: .semibold)); Spacer(); Text(message.date, format: .dateTime.month().day().hour().minute()).font(.system(size: 9)).foregroundColor(theme.textLight) }
-                    if message.isImage { Label("图片", systemImage: "photo").font(.system(size: 11)) }
-                    if message.isAudio { Label("语音", systemImage: "waveform").font(.system(size: 11)) }
-                    if !message.text.isEmpty { Text(message.text).font(.system(size: 12)).lineLimit(5).frame(maxWidth: .infinity, alignment: .leading) }
-                }
-            }.padding(11).contentShape(Rectangle())
-        }.buttonStyle(.plain).foyerCard(theme)
-    }
-
-    private func monthKey(_ date: Date) -> String { let f=DateFormatter(); f.dateFormat="yyyy-MM"; f.timeZone = .current; return f.string(from: date) }
-    private func dayKey(_ date: Date) -> String { let f=DateFormatter(); f.dateFormat="yyyy-MM-dd"; f.timeZone = .current; return f.string(from: date) }
-    private func changeMonth(_ delta: Int) { if let d=calendar.date(byAdding: .month,value:delta,to:month) { month=d; Task { await loadMonth() } } }
-    @MainActor private func loadMonth() async { dayCounts = (try? await AlcoveAPI.calendarCounts(month: monthKey(month))) ?? [:] }
-    @MainActor private func search() async { let q=query.trimmingCharacters(in:.whitespacesAndNewlines); guard !q.isEmpty else { results=[]; return }; searching=true; defer{searching=false}; results=(try? await AlcoveAPI.searchHistory(query:q,limit:2000)) ?? [] }
-    @MainActor private func jumpToDay(_ day: String) async { guard let first=(try? await AlcoveAPI.searchHistory(day:day,limit:1))?.first else{return}; NotificationCenter.default.post(name:.alcoveJumpToMessage,object:first.ts) }
-}
-
-private struct FavoriteItem: Identifiable {
-    let id: String
-    let text: String
-    let role: String
-    let ts: String
-    init(_ json: [String: Any]) {
-        id = json.string("ts", "id")
-        text = json.string("text")
-        role = json.string("role")
-        ts = json.string("ts", "created")
-    }
-}
-
-private struct NativeFavoritesView: View {
-    @State private var items: [FavoriteItem] = []
-    @State private var loading = true
-    @AppStorage("alcoveTheme") private var themeName = "haven"
-    @AppStorage("userName") private var userName = "Luna"
-    @AppStorage("assistantName") private var assistantName = "陈璟"
-    private var theme: AlcoveTheme { .panelNamed(themeName) }
-
-    var body: some View {
-        VStack(spacing: 0) {
-            FoyerPanelTitle(title: "Favorites", theme: theme)
-            if loading {
-                Spacer(); ProgressView().tint(theme.fyAccent); Spacer()
-            } else {
-                ScrollView(showsIndicators: false) {
-                    LazyVStack(spacing: 9) {
-                        ForEach(items) { item in
-                            HStack(alignment: .top, spacing: 0) {
-                                VStack(spacing: 0) {
-                                    Rectangle()
-                                        .stroke(style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
-                                        .foregroundColor(theme.fyDash)
-                                        .frame(width: 1)
-                                }
-                                .frame(width: 14)
-                                .overlay(alignment: .top) {
-                                    BindingHole(theme: theme, count: 2, spacing: 22)
-                                        .offset(x: -4.5, y: 10)
-                                }
-
-                                VStack(alignment: .leading, spacing: 5) {
-                                    HStack {
-                                        Text(item.role == "user" ? userName : assistantName)
-                                            .font(.system(size: 10, weight: .semibold))
-                                            .foregroundColor(theme.fyAccent.opacity(0.9))
-                                        Spacer()
-                                        if !item.ts.isEmpty {
-                                            Text(String(item.ts.prefix(10)))
-                                                .font(.system(size: 9))
-                                                .foregroundColor(theme.textLight)
-                                        }
-                                    }
-                                    Text(item.text).font(.system(size: 12)).lineSpacing(3)
-                                        .textSelection(.enabled)
-                                }
-                                .padding(.vertical, 11)
-                                .padding(.trailing, 14)
-                                .padding(.leading, 10)
-                            }
-                            .foyerCard(theme)
-                        }
-                        if items.isEmpty {
-                            Text("还没有收藏").font(.system(size: 12))
-                                .foregroundColor(theme.textDim).padding(40)
-                        }
-                    }
-                    .padding(.top, 12)
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 18)
-                }
-            }
-        }
-        .foregroundColor(theme.text)
-        .foyerPanel(theme)
-        .padding(.horizontal, 12).padding(.top, 8)
-        .task {
-            if let raw = try? await AlcoveAPI.favorites() {
-                items = raw.map(FavoriteItem.init)
-            }
-            loading = false
         }
     }
 }
