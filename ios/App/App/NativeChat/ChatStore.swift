@@ -565,7 +565,10 @@ final class ChatStore: ObservableObject {
 
     func deleteMessage(_ msg: ChatMessage) {
         deletedMessageTs.insert(msg.ts)
+        // 0818 她说删我第一句会把 thought 一起删掉——思绪不是那句话的一部分，是这一轮的。
+        // 带附件的只清正文留壳，带思绪的一样：清正文，思绪留着。
         let keepsAttachment = !(msg.attachmentUrl ?? "").isEmpty
+            || !(msg.thinking ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         if keepsAttachment, let index = messages.firstIndex(where: { $0.uid == msg.uid }) {
             messages[index].text = ""
         } else {
@@ -587,20 +590,20 @@ final class ChatStore: ObservableObject {
 
     func deleteMessages(_ selected: [ChatMessage]) {
         selected.forEach { deletedMessageTs.insert($0.ts) }
-        let removeIDs = Set(selected.compactMap {
-            ($0.attachmentUrl ?? "").isEmpty ? $0.uid : nil
-        })
+        func keepsShell(_ m: ChatMessage) -> Bool {
+            !(m.attachmentUrl ?? "").isEmpty
+                || !(m.thinking ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        let removeIDs = Set(selected.compactMap { keepsShell($0) ? nil : $0.uid })
         messages.removeAll { removeIDs.contains($0.uid) }
-        let clearIDs = Set(selected.compactMap {
-            ($0.attachmentUrl ?? "").isEmpty ? nil : $0.uid
-        })
+        let clearIDs = Set(selected.compactMap { keepsShell($0) ? $0.uid : nil })
         for index in messages.indices where clearIDs.contains(messages[index].uid) {
             messages[index].text = ""
         }
         Task {
             for msg in selected {
                 try? await AlcoveAPI.deleteMessage(
-                    ts: msg.ts, textOnly: !(msg.attachmentUrl ?? "").isEmpty
+                    ts: msg.ts, textOnly: keepsShell(msg)
                 )
             }
         }

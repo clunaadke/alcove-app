@@ -13,6 +13,7 @@
 		39671499582C96157471DA5D /* TerminalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B38F2E6CDFDA317AA6E2457 /* TerminalView.swift */; };
 		3F92AD591DAA424958B5F1C3 /* ClawdView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34F66C325070B92D4F9F9758 /* ClawdView.swift */; };
 		4BF591472FBA6D4215EAE680 /* ChatStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8774650A336AF4502E9F11B /* ChatStore.swift */; };
+		36522A3573B249D5AD75C38D /* LinkCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61E583DC8F8C4FDC96FCC7A0 /* LinkCard.swift */; };
 		3295C71D0A9547A3BFFBAF2F /* JourneyCards.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BF14B3C1EC14000AF0FEF1A /* JourneyCards.swift */; };
 		50379B232058CBB4000EE86E /* capacitor.config.json in Resources */ = {isa = PBXBuildFile; fileRef = 50379B222058CBB4000EE86E /* capacitor.config.json */; };
 		504EC3081FED79650016851F /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 504EC3071FED79650016851F /* AppDelegate.swift */; };
@@ -93,6 +94,7 @@
 		AF277DCFFFF123FFC6DF26C7 /* Pods_App.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_App.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		AF51FD2D460BCFE21FA515B2 /* Pods-App.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-App.release.xcconfig"; path = "Pods/Target Support Files/Pods-App/Pods-App.release.xcconfig"; sourceTree = "<group>"; };
 		B8774650A336AF4502E9F11B /* ChatStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatStore.swift; sourceTree = "<group>"; };
+		61E583DC8F8C4FDC96FCC7A0 /* LinkCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkCard.swift; sourceTree = "<group>"; };
 		1BF14B3C1EC14000AF0FEF1A /* JourneyCards.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JourneyCards.swift; sourceTree = "<group>"; };
 		BF2000000000000000000001 /* BubbleGlassStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BubbleGlassStyle.swift; sourceTree = "<group>"; };
 		BF2000000000000000000002 /* BubbleGlassBackground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BubbleGlassBackground.swift; sourceTree = "<group>"; };
@@ -194,6 +196,7 @@
 				A3013F89C6DE0E44B26E9DB7 /* ChatModels.swift */,
 				0003258CF790522AD36EC318 /* AlcoveAPI.swift */,
 				B8774650A336AF4502E9F11B /* ChatStore.swift */,
+				61E583DC8F8C4FDC96FCC7A0 /* LinkCard.swift */,
 				1BF14B3C1EC14000AF0FEF1A /* JourneyCards.swift */,
 				F340C96B2615315FA0F9A88D /* ChatView.swift */,
 				3741E52E6A20447091CC4E7A /* RoundtableView.swift */,
@@ -380,6 +383,7 @@
 				B1BDCAE6D8014E5ECC1F3AF6 /* ChatModels.swift in Sources */,
 				F86F377DEB7B406E7D7A3E9C /* AlcoveAPI.swift in Sources */,
 				4BF591472FBA6D4215EAE680 /* ChatStore.swift in Sources */,
+				36522A3573B249D5AD75C38D /* LinkCard.swift in Sources */,
 				3295C71D0A9547A3BFFBAF2F /* JourneyCards.swift in Sources */,
 				85D4F2FA9F9B3E53BD5F3230 /* ChatView.swift in Sources */,
 				5FE3B65571604292AE1DA7EA /* RoundtableView.swift in Sources */,

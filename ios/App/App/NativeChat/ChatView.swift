@@ -1296,7 +1296,7 @@ struct MessageRow: View {
                     }
                     if let song = msg.musicCard {
                         MusicMessageCard(song: song, theme: theme, isUser: isUser) { onPlayMusic?(song) }
-                    } else if !msg.displayText.isEmpty && !(msg.isSticker) {
+                    } else if !msg.displayText.isEmpty && !(msg.isSticker) && !msg.isBareLink {
                         if paragraphSelectionMode && !isUser {
                             HStack(alignment: .top, spacing: 9) {
                                 Button { onToggleParagraphSelection?() } label: {
@@ -1316,6 +1316,10 @@ struct MessageRow: View {
                         } else {
                             bubble
                         }
+                    }
+                    // 正文里有链接：气泡下面长一张小卡片（只有链接的话就只留卡）
+                    if let link = msg.firstLinkURL, msg.musicCard == nil, !msg.isSticker {
+                        LinkPreviewCard(url: link, theme: theme, isUser: isUser)
                     }
                 }
                 if shouldShowMetaRow {
