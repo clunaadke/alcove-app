@@ -1166,6 +1166,8 @@ struct MessageRow: View {
                     ReadingShareMessageCard(card: reading, theme: theme)
                 } else if let work = msg.workCard {
                     WorkDeliveryMessageCard(card: work, theme: theme)
+                } else if let journey = msg.journeyCard {
+                    JourneyMessageCard(ref: journey, theme: theme)
                 } else if msg.isSticker {
                     stickerBody
                 } else {

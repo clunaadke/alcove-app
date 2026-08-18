@@ -81,6 +81,15 @@ struct ChatMessage: Identifiable, Equatable {
         return try? JSONDecoder().decode(WorkDeliveryCard.self, from: data)
     }
 
+    // 旅行卡片：正文里只有一个 id，整趟数据走 /api/journeys/<id> 现取。
+    var journeyCard: JourneyCardRef? {
+        guard let raw = Self.taggedBody(text, tag: "JOURNEY_CARD"),
+              let data = raw.data(using: .utf8),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let id = obj["id"] as? String, !id.isEmpty else { return nil }
+        return JourneyCardRef(id: id)
+    }
+
     // 陈璟每天只需投递这一枚日期标记；正文由归档接口按日期读取。
     var morningPaperDate: String? {
         Self.taggedBody(text, tag: "MORNING_PAPER")
