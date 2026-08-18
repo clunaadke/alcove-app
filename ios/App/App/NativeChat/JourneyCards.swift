@@ -137,7 +137,8 @@ struct JourneyMessageCard: View {
             }
             card
         }
-        .frame(maxWidth: 330, alignment: .leading)
+        .frame(maxWidth: 340)
+        .frame(maxWidth: .infinity)          // 整行居中
         .onAppear { store.load(ref.id) }
         .fullScreenCover(isPresented: $open) {
             if let journey {
@@ -211,10 +212,10 @@ struct JourneyMessageCard: View {
     }
 }
 
-/// 一排竖条照片。参考实现里那套磁力放大只给真鼠标开（触屏没有 hover），
-/// 但作者自己 app 的真机截图上手机端是有放大的 —— 所以这里改成滚动位置驱动：
-/// 排在最前面的那张长大、露出地名，后一张次之，再后面是窄条。
-/// 放大那张**故意顶出卡片、被左边缘切掉半张**，暗示"还有更多"，这是要的效果。
+/// 一排竖条照片。她 0818 定的：**在中间放大**，而且**首尾相接循环**——
+/// 以前锚在左边，最右那张永远拉不到锚点、放不大，就顶到头了。
+/// 做法：把 stops 复制三份铺开，滚动位置锚在视口正中；一旦落到头尾那两份里，
+/// 无动画地跳回中间那份的同一张——手感上就是无限循环。
 private struct JourneyPhotoRail: View {
     let stops: [JourneyStop]
     var onPick: (Int) -> Void
@@ -229,19 +230,34 @@ private struct JourneyPhotoRail: View {
     private let midH: CGFloat = 214
     private let liftH: CGFloat = 262
     private let gap: CGFloat = 8
+    private let copies = 3
 
-    @State private var leading: String?
+    private struct Slot: Identifiable {
+        let id: String        // "\(copy)-\(stopID)"
+        let copy: Int
+        let index: Int        // 在 stops 里的下标
+        let stop: JourneyStop
+    }
 
-    private var leadIndex: Int {
-        stops.firstIndex { $0.id == leading } ?? 0
+    @State private var centered: String?
+
+    private var slots: [Slot] {
+        guard !stops.isEmpty else { return [] }
+        return (0..<copies).flatMap { copy in
+            stops.enumerated().map { i, s in Slot(id: "\(copy)-\(s.id)", copy: copy, index: i, stop: s) }
+        }
+    }
+
+    private var centeredSlot: Slot? {
+        slots.first { $0.id == centered } ?? slots.first { $0.copy == 1 && $0.index == 0 }
     }
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(alignment: .center, spacing: gap) {
-                ForEach(Array(stops.enumerated()), id: \.element.id) { index, stop in
-                    bar(stop, tier: tier(for: index))
-                        .id(stop.id)
+                ForEach(slots) { slot in
+                    bar(slot, tier: tier(for: slot))
+                        .id(slot.id)
                 }
             }
             .padding(.horizontal, 14)
@@ -249,31 +265,48 @@ private struct JourneyPhotoRail: View {
             .scrollTargetLayout()
         }
         .frame(height: liftH + 18)
-        .scrollPosition(id: $leading, anchor: .leading)
+        // 锚在正中：手一松就吸到离中间最近的那张
+        .scrollTargetBehavior(.viewAligned)
+        .scrollPosition(id: $centered, anchor: .center)
         // SwiftUI 的 ScrollView 默认把超出边界的内容裁干净。不关掉裁剪，
-        // 那张放大的既顶不出卡片、也不会被左边缘切半张，效果直接废掉。
+        // 那张放大的既顶不出卡片、也不会被边缘切半张，效果直接废掉。
         .scrollClipDisabled()
-        .animation(.spring(response: 0.35, dampingFraction: 0.82), value: leadIndex)
+        .animation(.spring(response: 0.35, dampingFraction: 0.82), value: centered)
+        .onAppear {
+            if centered == nil, let first = stops.first {
+                centered = "1-\(first.id)"      // 从中间那份开始，两边都有得滚
+            }
+        }
+        .onChange(of: centered) { _, now in
+            // 滚到头尾那两份 → 无动画跳回中间那份的同一张，循环就成了
+            guard let now, let slot = slots.first(where: { $0.id == now }), slot.copy != 1 else { return }
+            var t = Transaction(); t.disablesAnimations = true
+            withTransaction(t) { centered = "1-\(slot.stop.id)" }
+        }
     }
 
-    /// 0 = 最前面那张（放大），1 = 紧跟着的那张（中号），2 = 其余窄条
-    private func tier(for index: Int) -> Int {
-        let lead = leadIndex
-        if index == lead { return 0 }
-        if index == lead + 1 { return 1 }
+    /// 0 = 正中那张（放大），1 = 左右邻居（中号），2 = 其余窄条。按环上的距离算，
+    /// 头尾相邻也算邻居。
+    private func tier(for slot: Slot) -> Int {
+        guard let c = centeredSlot else { return 2 }
+        let n = stops.count
+        // 三份铺开后的绝对位置差
+        let d = abs((slot.copy * n + slot.index) - (c.copy * n + c.index))
+        if d == 0 { return 0 }
+        if d == 1 { return 1 }
         return 2
     }
 
-    private func bar(_ stop: JourneyStop, tier: Int) -> some View {
+    private func bar(_ slot: Slot, tier: Int) -> some View {
         let w = tier == 0 ? liftW : (tier == 1 ? midW : restW)
         let h = tier == 0 ? liftH : (tier == 1 ? midH : restH)
-        return Button { onPick(stops.firstIndex { $0.id == stop.id } ?? 0) } label: {
+        return Button { onPick(slot.index) } label: {
             ZStack(alignment: .bottomLeading) {
-                JourneyPhoto(url: stop.photoURL)
+                JourneyPhoto(url: slot.stop.photoURL)
                 if tier == 0 {
                     LinearGradient(colors: [.clear, .black.opacity(0.6)],
                                    startPoint: .center, endPoint: .bottom)
-                    Text(stop.place)
+                    Text(slot.stop.place)
                         .font(.system(size: 12.5, weight: .semibold, design: .serif))
                         .foregroundColor(.white)
                         .shadow(color: .black.opacity(0.9), radius: 2, y: 1)

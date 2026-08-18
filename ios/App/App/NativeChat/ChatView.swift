@@ -1266,6 +1266,7 @@ struct MessageRow: View {
                     WorkDeliveryMessageCard(card: work, theme: theme)
                 } else if let journey = msg.journeyCard {
                     JourneyMessageCard(ref: journey, theme: theme)
+                        .frame(maxWidth: .infinity)   // 她要卡片在聊天页正中间
                 } else if msg.isSticker {
                     stickerBody
                 } else {
@@ -1357,10 +1358,11 @@ struct MessageRow: View {
                 }
             }
             if !isUser {
-                Spacer(minLength: msg.morningPaperDate != nil ? 0 : (theme.isPaper ? 15 : 48))
+                // 晨报和旅行卡片是整行居中的东西，不吃我这边气泡的右侧留白
+                Spacer(minLength: (msg.morningPaperDate != nil || msg.journeyCard != nil) ? 0 : (theme.isPaper ? 15 : 48))
             }
         }
-        .padding(.leading, theme.isPaper && !isUser && msg.morningPaperDate == nil ? 12 : 0)
+        .padding(.leading, theme.isPaper && !isUser && msg.morningPaperDate == nil && msg.journeyCard == nil ? 12 : 0)
         .padding(.top, 2)
         .padding(.bottom, showTime ? 12 : 5)
         .sheet(isPresented: Binding(get: { theme.isPaper && showThinking }, set: { showThinking = $0 })) {
