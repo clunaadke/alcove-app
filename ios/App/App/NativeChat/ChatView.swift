@@ -444,12 +444,15 @@ struct ChatView: View {
         if index == head {
             var seen = Set<String>()
             var merged: [ActivityItem] = []
+            // 整条时间线都要：动作、中间说的话、中间的思绪——她说以前合在一起时
+            // 不会漏掉我跑任务中间说过的话，分开之后这些不能丢。
             for i in head...tail {
-                for item in msgs[i].activity where item.kind == "tool" {
-                    let key = item.content + "@" + String(format: "%.1f", item.t)
+                for item in msgs[i].activity {
+                    let key = item.kind + "|" + item.content + "@" + String(format: "%.1f", item.t)
                     if seen.insert(key).inserted { merged.append(item) }
                 }
             }
+            merged.sort { $0.t < $1.t }
             var h = Hoist()
             if let owner = thoughtOwner, owner != head { h.thought = msgs[owner].thinking }
             h.activity = merged
@@ -1234,12 +1237,16 @@ struct MessageRow: View {
         msg.pending || msg.asleepAtSend || showTime
     }
 
-    /// 这条消息头上要挂的轨迹：轮首拿整轮的，其他消息不挂
+    /// 这条消息头上要挂的轨迹：轮首拿整轮的，其他消息不挂。
+    /// 整条时间线（动作 / 中间说的话 / 中间的思绪）按时间排，一个不丢。
     private var trailItems: [ActivityItem] {
-        if !hoistedActivity.isEmpty { return hoistedActivity.filter { $0.kind == "tool" } }
+        if !hoistedActivity.isEmpty { return hoistedActivity }
         if suppressOwnActivity { return [] }
-        return msg.activity.filter { $0.kind == "tool" }
+        return msg.activity
     }
+    private var trailToolCount: Int { trailItems.filter { $0.kind == "tool" }.count }
+    /// 只有话没有动作的轮次不挂轨迹行（那些话本来就在气泡里）
+    private var trailWorthShowing: Bool { trailToolCount > 0 }
 
     var body: some View {
         HStack(alignment: .bottom, spacing: 0) {
@@ -1251,7 +1258,7 @@ struct MessageRow: View {
                 } else if recall != nil {
                     recallBadge // 没有思绪行时角标单独站一行，和 PWA 一致
                 }
-                if !isUser && !trailItems.isEmpty {
+                if !isUser && trailWorthShowing {
                     trailBlock
                 }
                 if let paperDate = msg.morningPaperDate {
@@ -1511,7 +1518,7 @@ struct MessageRow: View {
                 HStack(spacing: 4) {
                     Image(systemName: "wrench.and.screwdriver")
                         .font(.system(size: theme.isPaper ? 12 : 11, weight: .light))
-                    Text(theme.isPaper ? "Tool trail" : "过程 · \(trailItems.count)个动作")
+                    Text(theme.isPaper ? "Tool trail" : "过程 · \(trailToolCount)个动作")
                         .font(theme.isPaper ? .system(size: 13, weight: .medium) : .custom("Georgia", size: 12))
                     Image(systemName: theme.isPaper ? "chevron.right" : (showActivity ? "chevron.up" : "chevron.down"))
                         .font(.system(size: 8))
@@ -1541,17 +1548,20 @@ struct MessageRow: View {
                         .foregroundColor(theme.textDim.opacity(0.7))
                         .frame(width: 12)
                         .padding(.top, 2)
-                    Text(it.content)
-                        .font(.system(size: 11.5))
-                        .foregroundColor(theme.textDim.opacity(0.92))
+                    // 动作：正体 + done ✓；中间说的话：引号；中间的思绪：斜体
+                    Text(it.kind == "text" ? "「\(it.content)」" : it.content)
+                        .font(it.kind == "thinking" ? .system(size: 11.5).italic() : .system(size: 11.5))
+                        .foregroundColor(theme.textDim.opacity(it.kind == "thinking" ? 0.72 : 0.92))
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 4)
-                    Text("done")
-                        .font(.system(size: 9.5, weight: .medium, design: .monospaced))
-                        .foregroundColor(theme.textDim.opacity(0.55))
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 8, weight: .semibold))
-                        .foregroundColor(theme.textDim.opacity(0.7))
+                    if it.kind == "tool" {
+                        Text("done")
+                            .font(.system(size: 9.5, weight: .medium, design: .monospaced))
+                            .foregroundColor(theme.textDim.opacity(0.55))
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 8, weight: .semibold))
+                            .foregroundColor(theme.textDim.opacity(0.7))
+                    }
                 }
             }
         }
@@ -1563,7 +1573,10 @@ struct MessageRow: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(trailItems) { item in
-                        paperTrack(icon: item.icon, title: item.content, detail: "done ✓")
+                        paperTrack(icon: item.icon,
+                                   title: item.kind == "tool" ? item.content
+                                        : (item.kind == "thinking" ? "Thinking…" : "继续说"),
+                                   detail: item.kind == "tool" ? "done ✓" : item.content)
                     }
                     paperTrack(icon: "checkmark.circle", title: "Done", detail: "")
                 }
