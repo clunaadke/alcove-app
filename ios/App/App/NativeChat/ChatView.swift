@@ -411,7 +411,6 @@ struct ChatView: View {
         leaveParagraphSelection()
     }
 
-    @ViewBuilder
     /// 0818 她要的：思绪永远在我这一轮最上面，动作轨迹挂在思绪下面。
     /// 「一轮」= 连续的我方消息、中间没有她说话、相邻间隔不超过三分钟
     /// （表情/卡片是我用 CLI 单独发的，没有 turn_id，只能按这个规矩归到一起）。
@@ -462,6 +461,7 @@ struct ChatView: View {
         return h
     }
 
+    @ViewBuilder
     private func chatMessageRow(at index: Int, message: ChatMessage) -> some View {
         if !isPhotoGroupContinuation(at: index) {
             let previous = index > 0 ? store.messages[index - 1] : nil
@@ -1198,6 +1198,13 @@ struct MessageRow: View {
     var fontSize: Int = 14
     var showTime: Bool = true
     var recall: RecallItem? = nil
+    // 0818 她要的：思绪永远在我这一轮的最上面（哪怕这一轮先发了表情/截图），
+    // 思绪下面再挂一条独立的可展开「工具轨迹」。列表那头按连续的我方消息算一轮，
+    // 把整轮的思绪和动作提到轮首这条消息上，其余消息自己的不再重复显示。
+    var hoistedThought: String? = nil
+    var hoistedActivity: [ActivityItem] = []
+    var suppressOwnThought = false
+    var suppressOwnActivity = false
     var photoURLs: [URL] = []
     var photoNamespace: Namespace.ID
     var onTapImages: ([URL], Binding<Int>) -> Void
@@ -1212,13 +1219,6 @@ struct MessageRow: View {
     var onResend: ((String) -> Void)? = nil
     var onPlayMusic: ((MusicSong) -> Void)? = nil
     var onContentChange: (() -> Void)? = nil
-    // 0818 她要的：思绪永远在我这一轮的最上面（哪怕这一轮先发了表情/截图），
-    // 思绪下面再挂一条独立的可展开「工具轨迹」。列表那头按连续的我方消息算一轮，
-    // 把整轮的思绪和动作提到轮首这条消息上，其余消息自己的不再重复显示。
-    var hoistedThought: String? = nil
-    var hoistedActivity: [ActivityItem] = []
-    var suppressOwnThought = false
-    var suppressOwnActivity = false
     @State private var showThinking = false
     @State private var showActivity = false   // 0730 过程记录展开
     @State private var showRecall = false
