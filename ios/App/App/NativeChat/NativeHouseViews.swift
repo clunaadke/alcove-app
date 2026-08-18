@@ -1,5 +1,6 @@
 import SwiftUI
 import PhotosUI
+import UIKit
 import AVFoundation
 import MediaPlayer
 import WebKit
@@ -4407,7 +4408,11 @@ private struct NativeStudioView: View {
     @State private var studioNotice = ""
     @State private var showStudioNotice = false
     @State private var expandedThoughts: Set<Int> = []
-    @State private var photoItem: PhotosPickerItem?
+    // 0818 她说工作室发图不能多选、没有预览。这三样跟主聊天对齐：
+    // 选完先进待发条（可单张删），跟文字一起发，一次最多九张。
+    @State private var pendingImages: [(thumb: UIImage, jpeg: Data)] = []
+    @State private var previewImage: UIImage?
+    @State private var photoViewer: StudioPhotoTarget?
     @State private var showPhotoPicker = false
     @State private var showFilePicker = false
     @Environment(\.dismiss) private var dismiss
@@ -4446,14 +4451,23 @@ private struct NativeStudioView: View {
         .overlay { if loading { ProgressView().tint(theme.fyAccent) } }
         .fullScreenCover(isPresented: $showTerminal) { TerminalView(initialSession: "work", availableSessions: ["work"]) }
         .sheet(isPresented: Binding(get: { deliveryDraft != nil }, set: { if !$0 { deliveryDraft = nil } })) { deliveryPreview }
-        .photosPicker(isPresented: $showPhotoPicker, selection: $photoItem, matching: .images)
+        .sheet(isPresented: $showPhotoPicker) {
+            PhotoLibraryPicker(maxCount: 9) { images in
+                for image in images {
+                    if let prepared = UploadImage.prepare(image) { pendingImages.append(prepared) }
+                }
+            }
+        }
         .fileImporter(isPresented: $showFilePicker, allowedContentTypes: [.item]) { result in
             guard case .success(let url) = result else { return }
             Task { await uploadFile(url) }
         }
-        .onChange(of: photoItem) { item in
-            guard let item else { return }
-            Task { if let data = try? await item.loadTransferable(type: Data.self) { await upload(data, filename: "studio-photo-\(Int(Date().timeIntervalSince1970)).jpg") }; photoItem = nil }
+        .fullScreenCover(item: $photoViewer) { target in
+            StudioPhotoViewer(url: target.url) { photoViewer = nil }
+        }
+        .fullScreenCover(item: Binding(get: { previewImage.map { StudioLocalPhoto(image: $0) } },
+                                       set: { if $0 == nil { previewImage = nil } })) { local in
+            StudioLocalPhotoViewer(image: local.image) { previewImage = nil }
         }
         .alert("工作室", isPresented: $showStudioNotice) { Button("知道了", role: .cancel) {} } message: { Text(studioNotice) }
         .confirmationDialog("工作室操作", isPresented: $showActions, titleVisibility: .visible) {
@@ -4496,7 +4510,6 @@ private struct NativeStudioView: View {
         return HStack(alignment: .bottom) {
             if mine { Spacer(minLength: 52) }
             VStack(alignment: mine ? .trailing : .leading, spacing: 5) {
-                Text(mine ? "陈霁" : "陈璟").font(.system(size: 9, weight: .semibold)).foregroundColor(theme.textDim)
                 if !mine && !thought.isEmpty {
                     Button {
                         withAnimation(.easeInOut(duration: 0.18)) {
@@ -4511,10 +4524,10 @@ private struct NativeStudioView: View {
                                 Spacer()
                                 Image(systemName: expandedThoughts.contains(messageID) ? "chevron.up" : "chevron.down").font(.system(size: 8))
                             }
+                            // 收起态只留一行标签，跟主聊天一样——思绪是点开才看的东西，
+                            // 不是挂在气泡上的摘要
                             if expandedThoughts.contains(messageID) {
                                 Text(thought).font(.system(size: 11, design: .serif)).lineSpacing(4).multilineTextAlignment(.leading)
-                            } else {
-                                Text(thought).font(.system(size: 10, design: .serif)).lineLimit(1)
                             }
                         }
                         .foregroundColor(theme.textDim.opacity(0.86))
@@ -4524,13 +4537,30 @@ private struct NativeStudioView: View {
                     }.buttonStyle(.plain)
                 }
                 if !message.string("attachment_url").isEmpty {
-                    Label(message.string("attachment_filename").isEmpty ? "附件" : message.string("attachment_filename"), systemImage: message.string("attachment_type") == "image" ? "photo" : "doc")
-                        .font(.system(size: 11, weight: .medium)).padding(9).background(.white.opacity(0.34), in: RoundedRectangle(cornerRadius: 11))
+                    let attachmentURL = AlcoveAPI.fullURL(message.string("attachment_url"))
+                    if message.string("attachment_type") == "image" {
+                        // 以前这儿只挂一个文件名标签，她发过来的图自己看不见。
+                        AsyncImage(url: attachmentURL) { image in
+                            image.resizable().scaledToFit()
+                        } placeholder: {
+                            ZStack { Color.black.opacity(0.06); ProgressView() }.frame(width: 150, height: 150)
+                        }
+                        .frame(maxWidth: 220, maxHeight: 300)
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                        .onTapGesture { photoViewer = StudioPhotoTarget(url: attachmentURL) }
+                    } else {
+                        Label(message.string("attachment_filename").isEmpty ? "附件" : message.string("attachment_filename"), systemImage: "doc")
+                            .font(.system(size: 11, weight: .medium)).padding(9)
+                            .background(.white.opacity(0.34), in: RoundedRectangle(cornerRadius: 11))
+                    }
                 }
-                Text(alcoveMarkdown(message.string("text"))).font(.system(size: 14, design: .serif)).lineSpacing(5).textSelection(.enabled)
-                    .padding(.horizontal, 14).padding(.vertical, 11)
-                    .background(mine ? theme.fyAccent.opacity(0.15) : Color.white.opacity(0.52), in: RoundedRectangle(cornerRadius: 18))
-                    .frame(maxWidth: 300, alignment: mine ? .trailing : .leading)
+                // 只有图没有字的时候不要再吐一个空气泡出来
+                if !message.string("text").isEmpty {
+                    Text(alcoveMarkdown(message.string("text"))).font(.system(size: 14, design: .serif)).lineSpacing(5).textSelection(.enabled)
+                        .padding(.horizontal, 14).padding(.vertical, 11)
+                        .background(mine ? theme.bubbleUser : theme.bubbleAI, in: RoundedRectangle(cornerRadius: 18))
+                        .frame(maxWidth: 300, alignment: mine ? .trailing : .leading)
+                }
                 if !message.string("tool_log").isEmpty { DisclosureGroup("终端记录") { Text(message.string("tool_log")).font(.system(size: 9, design: .monospaced)).textSelection(.enabled) }.font(.system(size: 9)).foregroundColor(theme.textDim) }
             }
             if !mine { Spacer(minLength: 52) }
@@ -4538,6 +4568,37 @@ private struct NativeStudioView: View {
     }
 
     private var inputBar: some View {
+        VStack(spacing: 0) {
+            // 待发图片叠加条，可单张删——跟主聊天同款
+            if !pendingImages.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(Array(pendingImages.enumerated()), id: \.offset) { index, item in
+                            ZStack(alignment: .topTrailing) {
+                                Image(uiImage: item.thumb).resizable().scaledToFill()
+                                    .frame(width: 64, height: 64)
+                                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                                    .onTapGesture { previewImage = item.thumb }
+                                Button { pendingImages.remove(at: index) } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .font(.system(size: 19)).foregroundColor(.white)
+                                        .shadow(radius: 2).frame(width: 30, height: 30)
+                                        .contentShape(Rectangle())
+                                }.buttonStyle(.plain).offset(x: 6, y: -6)
+                            }
+                        }
+                    }.padding(.init(top: 8, leading: 12, bottom: 2, trailing: 12))
+                }
+            }
+            inputRow
+        }.background(.ultraThinMaterial)
+    }
+
+    private var canSend: Bool {
+        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !pendingImages.isEmpty
+    }
+
+    private var inputRow: some View {
         HStack(alignment: .bottom, spacing: 9) {
             Menu {
                 Button { showPhotoPicker = true } label: { Label("图片", systemImage: "photo") }
@@ -4546,8 +4607,8 @@ private struct NativeStudioView: View {
             TextField("在工作室里和他说……", text: $draft, axis: .vertical).lineLimit(1...6).focused($inputFocused)
                 .padding(.horizontal, 14).padding(.vertical, 10).background(.white.opacity(0.58), in: RoundedRectangle(cornerRadius: 19))
             Button { Task { await send() } } label: { Image(systemName: "arrow.up").font(.system(size: 15, weight: .bold)).foregroundColor(.white).frame(width: 38, height: 38).background(theme.fyAccent, in: Circle()) }
-                .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-        }.padding(.horizontal, 12).padding(.top, 8).padding(.bottom, 18).background(.ultraThinMaterial)
+                .disabled(!canSend)
+        }.padding(.horizontal, 12).padding(.top, 8).padding(.bottom, 18)
     }
 
     private var deliveryPreview: some View {
@@ -4607,7 +4668,23 @@ private struct NativeStudioView: View {
         if let newStatus { status = newStatus }; if let newTasks { tasks = Array(newTasks.array("tasks").reversed()) }; if let newMessages { messages = newMessages.array("messages") }; loading = false
     }
     @MainActor private func send() async {
-        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines); guard !text.isEmpty else { return }
+        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !pendingImages.isEmpty {
+            let images = pendingImages.map(\.jpeg)
+            pendingImages = []; draft = ""; inputFocused = false
+            // 同一次发的九张串成一组：后端只在最后一张收齐时叫我一次，
+            // 把整组路径一起递给我，不会被同一件事叫醒九遍
+            let group = UUID().uuidString
+            let stamp = Int(Date().timeIntervalSince1970)
+            for (index, data) in images.enumerated() {
+                await upload(data, filename: "studio-photo-\(stamp)-\(index + 1).jpg",
+                             caption: index == 0 ? text : "", group: group,
+                             index: index + 1, total: images.count)
+            }
+            await refresh()
+            return
+        }
+        guard !text.isEmpty else { return }
         draft = ""; inputFocused = false
         let title = String(text.prefix(28))
         guard (try? await NativeHouseAPI.object("/api/work/task", method: "POST", body: ["title": title, "prompt": text])) != nil else { draft = text; return }
@@ -4617,9 +4694,17 @@ private struct NativeStudioView: View {
         let access = url.startAccessingSecurityScopedResource(); defer { if access { url.stopAccessingSecurityScopedResource() } }
         guard let data = try? Data(contentsOf: url) else { return }; await upload(data, filename: url.lastPathComponent)
     }
-    @MainActor private func upload(_ data: Data, filename: String) async {
+    @MainActor private func upload(_ data: Data, filename: String, caption: String = "",
+                                   group: String? = nil, index: Int = 1, total: Int = 1) async {
         var components = URLComponents(url: AlcoveAPI.fullURL("/api/work/upload"), resolvingAgainstBaseURL: false)!
-        components.queryItems = [URLQueryItem(name: "filename", value: filename)]
+        var items = [URLQueryItem(name: "filename", value: filename)]
+        if !caption.isEmpty { items.append(URLQueryItem(name: "text", value: caption)) }
+        if let group {
+            items.append(URLQueryItem(name: "group", value: group))
+            items.append(URLQueryItem(name: "index", value: String(index)))
+            items.append(URLQueryItem(name: "total", value: String(total)))
+        }
+        components.queryItems = items
         var request = URLRequest(url: components.url!); request.httpMethod = "POST"; request.httpBody = data
         request.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
         guard let (data, _) = try? await URLSession.shared.data(for: request),
@@ -4654,6 +4739,56 @@ private struct NativeStudioView: View {
         deliveryDraft = nil; await refresh()
     }
     private func compact(_ value: Int) -> String { value >= 1_000_000 ? String(format: "%.1fM", Double(value) / 1_000_000) : value >= 1000 ? String(format: "%.1fK", Double(value) / 1000) : "\(value)" }
+}
+
+// 工作室看图：点气泡里的图全屏看，点待发条里的缩略图先预览一眼再决定发不发
+private struct StudioPhotoTarget: Identifiable {
+    let id = UUID()
+    let url: URL
+}
+
+private struct StudioLocalPhoto: Identifiable {
+    let id = UUID()
+    let image: UIImage
+}
+
+private struct StudioPhotoViewer: View {
+    let url: URL
+    var onClose: () -> Void
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            AsyncImage(url: url) { image in
+                image.resizable().scaledToFit()
+            } placeholder: {
+                ProgressView().tint(.white)
+            }
+            VStack {
+                HStack {
+                    Spacer()
+                    Button(action: onClose) {
+                        Image(systemName: "xmark").font(.system(size: 15, weight: .semibold))
+                            .foregroundColor(.white).padding(11)
+                            .background(.black.opacity(0.35), in: Circle())
+                    }.buttonStyle(.plain)
+                }.padding(.horizontal, 18).padding(.top, 10)
+                Spacer()
+            }
+        }
+        .onTapGesture(perform: onClose)
+    }
+}
+
+private struct StudioLocalPhotoViewer: View {
+    let image: UIImage
+    var onClose: () -> Void
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            Image(uiImage: image).resizable().scaledToFit()
+        }
+        .onTapGesture(perform: onClose)
+    }
 }
 
 // MARK: - Workbench
