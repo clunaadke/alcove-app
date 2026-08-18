@@ -1,4 +1,6 @@
 import SwiftUI
+import PhotosUI
+import UIKit
 
 // 池子（2026-08-18 七夕她立的项）——念头＋许愿＋朋友圈同一条时间线。
 //
@@ -34,10 +36,10 @@ private struct PondPalette {
         gold: Color(red: 0xC9/255, green: 0xA8/255, blue: 0x6A/255),
         glass: Color.white.opacity(0.40),
         line: Color.white.opacity(0.74),
-        bgTop: Color(red: 0xF4/255, green: 0xF7/255, blue: 0xFB/255),
-        bgMid: Color(red: 0xD9/255, green: 0xDF/255, blue: 0xE7/255),
-        bgBottom: Color(red: 0xA8/255, green: 0xAF/255, blue: 0xB8/255),
-        glow: Color(red: 0x8F/255, green: 0xAE/255, blue: 0xD8/255).opacity(0.34))
+        bgTop: Color(red: 0xFA/255, green: 0xFC/255, blue: 0xFE/255),
+        bgMid: Color(red: 0xEC/255, green: 0xF1/255, blue: 0xF7/255),
+        bgBottom: Color(red: 0xCF/255, green: 0xDA/255, blue: 0xE8/255),
+        glow: Color(red: 0x9E/255, green: 0xC2/255, blue: 0xEC/255).opacity(0.42))
 
     static let dark = PondPalette(
         isDark: true,
@@ -82,6 +84,7 @@ private struct PondItem: Identifiable {
     let statusNote: String
     let mood: String
     let pinned: Bool
+    let likedBy: [String]
     let createdAt: String
     let card: PondCard?
     let replies: [PondReply]
@@ -100,6 +103,7 @@ private struct PondItem: Identifiable {
         statusNote = raw.string("statusNote")
         mood = raw.string("mood")
         pinned = raw.bool("pinned")
+        likedBy = (raw["likedBy"] as? [String]) ?? []
         createdAt = raw.string("createdAt")
         let c = raw.object("card")
         card = c.isEmpty ? nil : PondCard(
@@ -239,6 +243,7 @@ private extension View {
 // MARK: - 主页面
 
 struct NativePondView: View {
+    @Environment(\.dismiss) private var dismiss
     @AppStorage("alcoveTheme") private var themeName = "haven"
 
     @State private var items: [PondItem] = []
@@ -260,8 +265,8 @@ struct NativePondView: View {
         }
         .task { await load() }
         .sheet(isPresented: $composing) {
-            PondComposeSheet(palette: palette) { kind, text, url in
-                Task { await add(kind: kind, text: text, url: url) }
+            PondComposeSheet(palette: palette) { kind, text, url, photos in
+                Task { await add(kind: kind, text: text, url: url, photos: photos) }
             }
         }
         .sheet(item: $replyingTo) { item in
@@ -288,6 +293,7 @@ struct NativePondView: View {
 
     private var content: some View {
         VStack(spacing: 0) {
+            header
             filterBar
             if loading {
                 Spacer()
@@ -309,6 +315,7 @@ struct NativePondView: View {
                         ForEach(items) { item in
                             PondItemCard(item: item, palette: palette,
                                          onReply: { replyingTo = item },
+                                         onLike: { Task { await like(item.id) } },
                                          onStatus: { status in
                                              Task { await setStatus(item.id, status) }
                                          })
@@ -321,6 +328,31 @@ struct NativePondView: View {
                 .refreshable { await load() }
             }
         }
+    }
+
+    // 0819 全屏：房子的顶栏会透出后面的壁纸，接缝很明显，所以这一页自己做头
+    private var header: some View {
+        HStack(spacing: 0) {
+            Button { dismiss() } label: {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 17, weight: .light))
+                    .foregroundColor(palette.ink2)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("返回")
+            Spacer()
+            Text("檐下")
+                .font(.system(size: 18, weight: .medium, design: .serif))
+                .tracking(7)
+                .foregroundColor(palette.ink)
+                .padding(.leading, 7)   // 抵掉字距在右边多出来的那一格
+            Spacer()
+            Color.clear.frame(width: 44, height: 44)
+        }
+        .padding(.horizontal, 8)
+        .padding(.top, 54)
     }
 
     private var filterBar: some View {
@@ -395,16 +427,44 @@ struct NativePondView: View {
         }
     }
 
-    private func add(kind: String, text: String, url: String) async {
+    private func add(kind: String, text: String, url: String, photos: [Data]) async {
+        var uploaded: [String] = []
+        for jpeg in photos {
+            if let path = await upload(jpeg) { uploaded.append(path) }
+        }
         var body: [String: Any] = ["kind": kind, "author": "ji", "text": text]
         if !url.isEmpty { body["url"] = url }
+        if !uploaded.isEmpty { body["images"] = uploaded }
         try? await NativeHouseAPI.post("/api/pond/add", body: body)
         await load()
+    }
+
+    /// 图走 raw body，跟工作室发图一个路子，回来是 /attachments/xxx.jpg
+    private func upload(_ jpeg: Data) async -> String? {
+        guard var comps = URLComponents(
+            url: AlcoveAPI.fullURL("/api/pond/upload"), resolvingAgainstBaseURL: false)
+        else { return nil }
+        comps.queryItems = [URLQueryItem(name: "filename", value: "pond.jpg")]
+        guard let url = comps.url else { return nil }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.httpBody = jpeg
+        request.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
+        guard let (data, _) = try? await AlcoveAPI.session.data(for: request),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              object["ok"] as? Bool == true
+        else { return nil }
+        return object["url"] as? String
     }
 
     private func reply(to id: String, text: String) async {
         try? await NativeHouseAPI.post(
             "/api/pond/reply", body: ["item_id": id, "author": "ji", "text": text])
+        await load()
+    }
+
+    private func like(_ id: String) async {
+        try? await NativeHouseAPI.post("/api/pond/like", body: ["item_id": id, "author": "ji"])
         await load()
     }
 
@@ -427,6 +487,7 @@ private struct PondItemCard: View {
     let item: PondItem
     let palette: PondPalette
     var onReply: () -> Void
+    var onLike: () -> Void
     var onStatus: (String) -> Void
 
     private var stamp: String {
@@ -450,6 +511,7 @@ private struct PondItemCard: View {
                         .lineSpacing(4)
                         .fixedSize(horizontal: false, vertical: true)
                 }
+                if !item.images.isEmpty { imageWall }
                 if item.card != nil || !item.url.isEmpty { linkCard }
                 if item.isWish { statusRow }
                 if !item.replies.isEmpty { repliesBlock }
@@ -487,6 +549,30 @@ private struct PondItemCard: View {
                     .foregroundColor(palette.acc)
             }
             Spacer()
+        }
+    }
+
+    // 一张就铺开，多张走两列
+    private var imageWall: some View {
+        let columns = item.images.count == 1
+            ? [GridItem(.flexible())]
+            : [GridItem(.flexible(), spacing: 5), GridItem(.flexible(), spacing: 5)]
+        return LazyVGrid(columns: columns, spacing: 5) {
+            ForEach(item.images, id: \.self) { path in
+                AsyncImage(url: AlcoveAPI.attachmentURL(path)) { phase in
+                    if let image = phase.image {
+                        image.resizable().aspectRatio(contentMode: .fill)
+                    } else {
+                        Rectangle().fill(palette.glass)
+                    }
+                }
+                .frame(height: item.images.count == 1 ? 178 : 104)
+                .frame(maxWidth: .infinity)
+                .clipped()
+                .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .strokeBorder(palette.line.opacity(0.5), lineWidth: 0.6))
+            }
         }
     }
 
@@ -590,6 +676,18 @@ private struct PondItemCard: View {
                 .tracking(0.4)
                 .foregroundColor(palette.ink3)
             Spacer()
+            Button(action: onLike) {
+                HStack(spacing: 4) {
+                    Image(systemName: item.likedBy.isEmpty ? "heart" : "heart.fill")
+                        .font(.system(size: 11.5, weight: .light))
+                    if item.likedBy.count > 1 {
+                        Text("2").font(.system(size: 9.5, design: .monospaced))
+                    }
+                }
+                .foregroundColor(item.likedBy.isEmpty ? palette.ink3 : palette.acc)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
             Button(action: onReply) {
                 Image(systemName: "bubble.right")
                     .font(.system(size: 11, weight: .light))
@@ -605,11 +703,14 @@ private struct PondItemCard: View {
 
 private struct PondComposeSheet: View {
     let palette: PondPalette
-    var onSubmit: (String, String, String) -> Void
+    var onSubmit: (String, String, String, [Data]) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var kind = "wish"
     @State private var text = ""
     @State private var url = ""
+    @State private var picks: [PhotosPickerItem] = []
+    @State private var pending: [PondPendingPhoto] = []
+    @State private var uploading = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -621,12 +722,13 @@ private struct PondComposeSheet: View {
                 Spacer()
                 Button("放进去") {
                     onSubmit(kind, text.trimmingCharacters(in: .whitespacesAndNewlines),
-                             url.trimmingCharacters(in: .whitespacesAndNewlines))
+                             url.trimmingCharacters(in: .whitespacesAndNewlines),
+                             pending.map { $0.jpeg })
                     dismiss()
                 }
                 .font(.system(size: 13, weight: .medium, design: .serif))
-                .foregroundColor(text.isEmpty && url.isEmpty ? palette.ink3 : palette.acc)
-                .disabled(text.isEmpty && url.isEmpty)
+                .foregroundColor(canSubmit ? palette.acc : palette.ink3)
+                .disabled(!canSubmit)
             }
 
             HStack(spacing: 8) {
@@ -674,6 +776,47 @@ private struct PondComposeSheet: View {
                 .padding(11)
                 .pondGlass(palette, radius: 12)
 
+            HStack(spacing: 10) {
+                PhotosPicker(selection: $picks, maxSelectionCount: 9, matching: .images) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "photo.on.rectangle.angled")
+                            .font(.system(size: 13, weight: .light))
+                        Text(pending.isEmpty ? "加图" : "\(pending.count) 张")
+                            .font(.system(size: 12, design: .serif)).tracking(1)
+                    }
+                    .foregroundColor(palette.ink2)
+                    .padding(.horizontal, 14).padding(.vertical, 8)
+                    .background(Capsule().strokeBorder(palette.line, lineWidth: 0.7))
+                }
+                if uploading { ProgressView().scaleEffect(0.7).tint(palette.ink3) }
+                Spacer()
+            }
+
+            if !pending.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(pending) { photo in
+                            Image(uiImage: photo.thumb)
+                                .resizable().aspectRatio(contentMode: .fill)
+                                .frame(width: 62, height: 62)
+                                .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                                .overlay(alignment: .topTrailing) {
+                                    Button {
+                                        pending.removeAll { $0.id == photo.id }
+                                    } label: {
+                                        Image(systemName: "xmark.circle.fill")
+                                            .font(.system(size: 14))
+                                            .foregroundStyle(.white, .black.opacity(0.45))
+                                            .padding(2)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                        }
+                    }
+                    .padding(.vertical, 1)
+                }
+            }
+
             Spacer()
         }
         .padding(20)
@@ -687,7 +830,35 @@ private struct PondComposeSheet: View {
                 PondGrain(opacity: palette.isDark ? 0.05 : 0.07)
             }.ignoresSafeArea())
         .presentationDetents([.medium, .large])
+        .onChange(of: picks) { _, items in
+            Task { await loadPicks(items) }
+        }
     }
+
+    private var canSubmit: Bool {
+        !(text.isEmpty && url.isEmpty && pending.isEmpty)
+    }
+
+    @MainActor
+    private func loadPicks(_ items: [PhotosPickerItem]) async {
+        uploading = true
+        var out: [PondPendingPhoto] = []
+        for item in items {
+            if let data = try? await item.loadTransferable(type: Data.self),
+               let image = UIImage(data: data),
+               let jpeg = image.jpegData(compressionQuality: 0.82) {
+                out.append(PondPendingPhoto(thumb: image, jpeg: jpeg))
+            }
+        }
+        pending = out
+        uploading = false
+    }
+}
+
+private struct PondPendingPhoto: Identifiable {
+    let id = UUID()
+    let thumb: UIImage
+    let jpeg: Data
 }
 
 // MARK: - 回一句

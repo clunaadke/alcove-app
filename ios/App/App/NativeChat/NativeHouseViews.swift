@@ -180,7 +180,8 @@ struct NativeHouseSheet: View {
         GeometryReader { root in
             FoyerGlassContainer(spacing: 8, paper: theme.isPaper) {
                 VStack(spacing: 0) {
-                    if route != .studio { houseHeader(safeTop: root.safeAreaInsets.top) }
+                    // 0819 她说顶栏透出后面的壁纸：池子跟工作室一样自己铺满、自己做头
+                    if route != .studio && route != .pond { houseHeader(safeTop: root.safeAreaInsets.top) }
                     Group {
                 switch route {
                 case .sidebar:
