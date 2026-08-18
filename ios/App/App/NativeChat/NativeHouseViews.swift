@@ -19,6 +19,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
     case sidebar, chat, terminal, settings, bubbleAppearance, checklist, music
     case home, profile, activityRoom, calendar, digest, wall, usage, workbench, studio
     case memory, dreams, shelf, fiction, desire, nianlun, clockwork, album, portrait, impression, morningPaper, nowhere, pulse
+    case pond
     case crosstalk, radio, coread, liao, daddyDay, lab
     case search, favorites, forge, roundtable
 
@@ -48,6 +49,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .fiction: return "书房"
         case .desire: return "Eventide"
         case .nianlun: return "年轮"
+        case .pond: return "檐下"
         case .clockwork: return "发条"
         case .album: return "相册"
         case .portrait: return "Letters"
@@ -91,6 +93,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .shelf: return "bird"
         case .fiction: return "books.vertical"
         case .nianlun: return "circle.hexagongrid"
+        case .pond: return "drop.circle"
         case .clockwork: return "clock.arrow.circlepath"
         case .album: return "photo.on.rectangle"
         case .portrait: return "envelope"
@@ -232,6 +235,8 @@ struct NativeHouseSheet: View {
                     NativeOBMemoryView()
                 case .portrait:
                     NativeOBLettersView()
+                case .pond:
+                    NativePondView()
                 case .desire:
                     NativeDesireView()
                 case .forge:
@@ -481,6 +486,7 @@ struct NativeHouseDrawer: View {
                     drawerTitle("正在发生", note: "still growing")
                     VStack(spacing: 7) {
                         drawerRow(.pulse, detail: "心率、五感、八维、念头池")
+                        drawerRow(.pond, detail: "念头、许愿与朋友圈")
                         drawerRow(.desire, detail: "身体潮汐与情绪")
                         drawerRow(.nowhere, detail: "足迹与明信片")
                         drawerRow(.fiction, detail: "陈璟写给你的小说")
@@ -701,8 +707,8 @@ private struct NativeSidebarView: View {
     private var theme: AlcoveTheme { .panelNamed(themeName) }
 
     private let foyer: [HouseDestination] = [
-        .memory, .dreams, .shelf, .desire, .nianlun, .clockwork, .album, .portrait, .impression,
-        .morningPaper, .nowhere, .pulse
+        .memory, .dreams, .shelf, .pond, .desire, .nianlun, .clockwork, .album, .portrait,
+        .impression, .morningPaper, .nowhere, .pulse
     ]
     // Pipe Lab remains compiled for rollback, but the -p experiment is paused and
     // must not appear as a normal household destination.
