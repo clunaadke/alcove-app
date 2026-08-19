@@ -252,11 +252,20 @@ struct ActivityItem: Identifiable, Equatable {
     let kind: String
     let content: String
     let t: Double
+    /// 0820 她要的：原始工具名（同类合并计数用）+ 我敲命令时手写的那句人话说明。
+    /// 以前只送一句揉好的「跑了条命令」过来，说明在路上被扔了，
+    /// 她那边只看得见一个总数，看不见我到底干了啥。
+    let toolName: String
+    let desc: String
 
     init?(json: [String: Any]) {
         guard let k = json["kind"] as? String,
               let c = json["content"] as? String, !c.isEmpty else { return nil }
         self.kind = k
+        self.toolName = (json["name"] as? String) ?? ""
+        self.desc = ((json["desc"] as? String) ?? "")
+            .replacingOccurrences(of: "\n", with: " ")
+            .trimmingCharacters(in: .whitespaces)
         // 这是过程记录不是聊天正文，markdown 标记留着只会变成一串星号
         self.content = c
             .replacingOccurrences(of: "**", with: "")

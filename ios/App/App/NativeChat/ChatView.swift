@@ -1298,7 +1298,26 @@ struct MessageRow: View {
         if suppressOwnActivity { return [] }
         return msg.activity
     }
-    private var trailToolCount: Int { trailItems.filter { $0.kind == "tool" }.count }
+    /// 0820 她定的：跑命令那栏只放命令，思绪归思绪栏，两边彻底分开
+    private var trailTools: [ActivityItem] { trailItems.filter { $0.kind == "tool" } }
+    private var trailToolCount: Int { trailTools.count }
+
+    /// 入口那行的字：同类合并计数（她要的「Ran 2 commands」那种，但说法用我们自己的）
+    private var trailEntryLabel: String {
+        var order: [String] = []
+        var bucket: [String: Int] = [:]
+        for it in trailTools {
+            let key = it.content.isEmpty ? "干了点什么" : it.content
+            if bucket[key] == nil { order.append(key) }
+            bucket[key, default: 0] += 1
+        }
+        let parts = order.prefix(2).map { k -> String in
+            let n = bucket[k] ?? 0
+            return n > 1 ? "\(k) ×\(n)" : k
+        }
+        if order.count > 2 { return parts.joined(separator: " · ") + " 等 \(trailToolCount) 件" }
+        return parts.joined(separator: " · ")
+    }
     /// 只有话没有动作的轮次不挂轨迹行（那些话本来就在气泡里）
     private var trailWorthShowing: Bool { trailToolCount > 0 }
 
@@ -1442,7 +1461,7 @@ struct MessageRow: View {
         .padding(.leading, theme.isPaper && !isUser && msg.morningPaperDate == nil && msg.journeyCard == nil ? 12 : 0)
         .padding(.top, 2)
         .padding(.bottom, showTime ? 12 : 5)
-        .sheet(isPresented: Binding(get: { theme.isPaper && showThinking }, set: { showThinking = $0 })) {
+        .sheet(isPresented: $showThinking) {
             paperThinkingPanel
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
@@ -1566,42 +1585,30 @@ struct MessageRow: View {
         return "\(name)\(pool[seed])\(secs)"
     }
 
-    // 0730 过程记录：chip 上那行小字
-    private var activityChipLabel: String {
-        let nTool = msg.activity.filter { $0.kind == "tool" }.count
-        let nSay = msg.activity.filter { $0.kind == "text" }.count
-        var bits: [String] = []
-        if nTool > 0 { bits.append("\(nTool)个动作") }
-        if nSay > 1 { bits.append("\(nSay)段") }
-        return "· " + (bits.isEmpty ? "\(msg.activity.count)步" : bits.joined(separator: " "))
-    }
 
     /// 思绪下面那条：工具轨迹。纸页主题跟 Thought process 一样点开是面板，
     /// 其他主题原地展开。每条一个动作 + ✓ done。
     private var trailBlock: some View {
         VStack(alignment: .leading, spacing: showActivity ? 7 : 0) {
             Button {
-                if theme.isPaper { showActivity = true }
-                else { withAnimation(.easeInOut(duration: 0.15)) { showActivity.toggle() } }
+                showActivity = true
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { onContentChange?() }
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "wrench.and.screwdriver")
                         .font(.system(size: theme.isPaper ? 12 : 11, weight: .light))
-                    Text(theme.isPaper ? "Tool trail" : "过程 · \(trailToolCount)个动作")
+                    Text(trailEntryLabel)
                         .font(theme.isPaper ? .system(size: 13, weight: .medium) : .custom("Georgia", size: 12))
-                    Image(systemName: theme.isPaper ? "chevron.right" : (showActivity ? "chevron.up" : "chevron.down"))
+                        .lineLimit(1)
+                    Image(systemName: "chevron.right")
                         .font(.system(size: 8))
                 }
                 .font(.system(size: 12))
                 .foregroundColor(.secondary)
             }
-            if showActivity && !theme.isPaper {
-                trailList
-            }
         }
         .padding(.leading, theme.isPaper ? 0 : 10)
-        .sheet(isPresented: Binding(get: { theme.isPaper && showActivity }, set: { showActivity = $0 })) {
+        .sheet(isPresented: $showActivity) {
             paperTrailPanel
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
@@ -1609,55 +1616,42 @@ struct MessageRow: View {
         }
     }
 
-    private var trailList: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            ForEach(trailItems) { it in
-                HStack(alignment: .top, spacing: 7) {
-                    Image(systemName: it.icon)
-                        .font(.system(size: 9))
-                        .foregroundColor(theme.textDim.opacity(0.7))
-                        .frame(width: 12)
-                        .padding(.top, 2)
-                    // 动作：正体 + done ✓；中间说的话：引号；中间的思绪：斜体
-                    Text(it.kind == "text" ? "「\(it.content)」" : it.content)
-                        .font(it.kind == "thinking" ? .system(size: 11.5).italic() : .system(size: 11.5))
-                        .foregroundColor(theme.textDim.opacity(it.kind == "thinking" ? 0.72 : 0.92))
-                        .fixedSize(horizontal: false, vertical: true)
-                    Spacer(minLength: 4)
-                }
-            }
-            // 她说：每条下面不用 done，留结尾一个就行
-            HStack(spacing: 7) {
-                Image(systemName: "checkmark.circle")
-                    .font(.system(size: 9))
-                    .foregroundColor(theme.textDim.opacity(0.7))
-                    .frame(width: 12)
-                Text("Done")
-                    .font(.system(size: 11.5, weight: .medium))
-                    .foregroundColor(theme.textDim.opacity(0.9))
-            }
-        }
-        .padding(.leading, 2)
-    }
 
     private var paperTrailPanel: some View {
         NavigationStack {
             ScrollView {
+                // 0820：只列命令，思绪不进这儿。每条底下是我敲命令时手写的那句说明。
                 VStack(alignment: .leading, spacing: 0) {
-                    ForEach(trailItems) { item in
-                        paperTrack(icon: item.icon,
-                                   title: item.kind == "tool" ? item.content
-                                        : (item.kind == "thinking" ? "Thinking…" : "继续说"),
-                                   detail: item.kind == "tool" ? "" : item.content)
+                    ForEach(trailTools) { item in
+                        HStack(alignment: .top, spacing: 11) {
+                            Image(systemName: item.icon)
+                                .font(.system(size: 11, weight: .light))
+                                .foregroundColor(theme.fyAccent)
+                                .frame(width: 18)
+                                .padding(.top, 2)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(item.content)
+                                    .font(.system(size: 13.5, weight: .medium))
+                                    .foregroundColor(theme.text)
+                                if !item.desc.isEmpty {
+                                    Text(item.desc)
+                                        .font(.system(size: 12))
+                                        .foregroundColor(theme.textDim)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+                            Spacer(minLength: 0)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.vertical, 9)
                     }
-                    paperTrack(icon: "checkmark.circle", title: "Done", detail: "")
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 22).padding(.bottom, 30)
             }
             .background(theme.fyCardSub.ignoresSafeArea())
             .foregroundColor(theme.text)
-            .navigationTitle("Tool trail")
+            .navigationTitle("干了这些")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("关闭") { showActivity = false } } }
         }
@@ -1706,19 +1700,19 @@ struct MessageRow: View {
 
     private func thinkingBlock(_ think: String) -> some View {
         VStack(alignment: .leading, spacing: showThinking ? 7 : 0) {
+            // 0820 她定的：三个主题统一成「点一下开面板」，不再原地展开。
+            // 入口的字保留我们自己那套（带秒数），没跟着官方改成 Thought process ——
+            // 统一的是布局，不是说法。
             Button {
-                if theme.isPaper { showThinking = true }
-                else { withAnimation(.easeInOut(duration: 0.15)) { showThinking.toggle() } }
+                showThinking = true
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { onContentChange?() }
             } label: {
                 HStack(spacing: 4) {
-                    // 0818 她拿 Claude 那行「Thought process ›」来比：有空格、只首字母大写、
-                    // 图标是带虚线弧的钟。纸页主题照它来。
-                    Image(systemName: theme.isPaper ? "clock.arrow.trianglehead.counterclockwise.rotate.90" : "clock.arrow.circlepath")
+                    Image(systemName: "clock.arrow.trianglehead.counterclockwise.rotate.90")
                         .font(.system(size: theme.isPaper ? 13 : 12, weight: .light))
-                    Text(theme.isPaper ? "Thought process" : thinkingLabel(think))
+                    Text(thinkingLabel(think))
                         .font(theme.isPaper ? .system(size: 13, weight: .medium) : .custom("Georgia", size: 12))
-                    Image(systemName: theme.isPaper ? "chevron.right" : (showThinking ? "chevron.up" : "chevron.down"))
+                    Image(systemName: "chevron.right")
                         .font(.system(size: 8))
                     if recall != nil {
                         recallBadge.padding(.leading, 6)
@@ -1726,18 +1720,6 @@ struct MessageRow: View {
                 }
                 .font(.system(size: 12))
                 .foregroundColor(.secondary)
-            }
-            if showThinking && !theme.isPaper {
-                Text(think)
-                    .font(.system(size: max(12, CGFloat(fontSize) - 1)))
-                    .italic()
-                    .lineSpacing(4)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .foregroundColor(theme.textDim)
-                    .onTapGesture {
-                        withAnimation(.easeInOut(duration: 0.15)) { showThinking = false }
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { onContentChange?() }
-                    }
             }
         }
         .padding(.leading, theme.isPaper ? 0 : 10)
@@ -1775,36 +1757,28 @@ struct MessageRow: View {
     private var paperThinkingPanel: some View {
         NavigationStack {
             ScrollView {
+                // 0820 她定的：跟命令栏剥开之后就不需要那条竖线了 ——
+                // 这里只剩一段话，跟官方那个面板一样干净。
                 VStack(alignment: .leading, spacing: 0) {
-                    // 0818 她定的：这里只放思绪，动作在下面那条 Tool trail 里
-                    paperTrack(icon: "quote.bubble", title: "Thinking…",
-                               detail: visibleChatThought ?? cuteThinkingPlaceholder)
-                    paperTrack(icon: "checkmark.circle", title: "Done", detail: "")
+                    Text(visibleChatThought ?? cuteThinkingPlaceholder)
+                        .font(.system(size: max(13, CGFloat(fontSize) - 1)))
+                        .lineSpacing(6)
+                        .foregroundColor(theme.text)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.top, 6)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 22).padding(.bottom, 30)
             }
             .background(theme.fyCardSub.ignoresSafeArea())
             .foregroundColor(theme.text)
-            .navigationTitle("Thought process")
+            .navigationTitle("当时在想")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("关闭") { showThinking = false } } }
         }
     }
 
-    private func paperTrack(icon: String, title: String, detail: String) -> some View {
-        HStack(alignment: .top, spacing: 13) {
-            VStack(spacing: 0) {
-                Image(systemName: icon).font(.system(size: 12, weight: .light)).foregroundColor(theme.fyAccent).frame(width: 22, height: 22)
-                Rectangle().fill(theme.fyBorder).frame(width: 1).frame(minHeight: detail.isEmpty ? 18 : 52)
-            }
-            VStack(alignment: .leading, spacing: 8) {
-                Text(title).font(.system(size: 13, weight: .medium))
-                if !detail.isEmpty { Text(detail).font(.system(size: 13)).lineSpacing(5).foregroundColor(theme.textDim).fixedSize(horizontal: false, vertical: true) }
-            }.padding(.bottom, 14)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
 
     private var recallBadge: some View {
         Button {
