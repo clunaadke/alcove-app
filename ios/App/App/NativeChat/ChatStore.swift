@@ -640,13 +640,12 @@ final class ChatStore: ObservableObject {
     /// 一次发送可以同时带文字和表情：它们是同一轮（共享 turn_id）的两条消息。
     /// 文字照旧走气泡，表情不带气泡只显示图本身（教程第 1、3 节）。
     func sendSticker(_ stk: Sticker, text: String? = nil) {
-        // 0819 她报的：跟表情一起发的字会被吞。文字那条插进来时 pending=true，
-        // 但下面只把表情那条转正，文字就一直卡在 pending 里。记下 uid 一起转。
-        var typedUid: UUID? = nil
+        // 0819 傍晚：我曾在这儿把文字那条也提前转正，结果 poll 回来找不到
+        // pending 占位可替换，同一句话画了两遍。撤回——占位就该等服务器认领。
+        // 「跟表情一起发的字被吞」她说的是我那边收不到，病灶在后端注入，已修。
         if let text, !text.isEmpty {
             var typed = ChatMessage(localText: text)
             typed.pending = true
-            typedUid = typed.uid
             messages.append(typed)
         }
         var local = ChatMessage(localText: stk.descForAI)
@@ -658,10 +657,6 @@ final class ChatStore: ObservableObject {
             do {
                 try await AlcoveAPI.sendSticker(stk, text: text)
                 if let idx = messages.lastIndex(where: { $0.uid == local.uid }) {
-                    messages[idx].pending = false
-                }
-                if let tu = typedUid,
-                   let idx = messages.lastIndex(where: { $0.uid == tu }) {
                     messages[idx].pending = false
                 }
             } catch { connectionError = true }
