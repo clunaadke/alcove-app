@@ -1278,6 +1278,9 @@ struct MessageRow: View {
     var onContentChange: (() -> Void)? = nil
     @State private var showThinking = false
     @State private var showActivity = false   // 0730 过程记录展开
+    // 0820 按时间线摆之后，点开的是「这一段」，不是整轮那一坨
+    @State private var openedThink: String? = nil
+    @State private var openedTools: [ActivityItem]? = nil
     @State private var showRecall = false
     @State private var showPulse = false
     @Environment(\.bubbleGlassStyle) private var bubbleGlassStyle
@@ -1302,21 +1305,46 @@ struct MessageRow: View {
     private var trailTools: [ActivityItem] { trailItems.filter { $0.kind == "tool" } }
     private var trailToolCount: Int { trailTools.count }
 
-    /// 入口那行的字：同类合并计数（她要的「Ran 2 commands」那种，但说法用我们自己的）
-    private var trailEntryLabel: String {
-        var order: [String] = []
-        var bucket: [String: Int] = [:]
-        for it in trailTools {
-            let key = it.content.isEmpty ? "干了点什么" : it.content
-            if bucket[key] == nil { order.append(key) }
-            bucket[key, default: 0] += 1
+    /// 入口那行的字。0820 她定的：外面照官方那腔（用了几个工具、跑了几条命令），
+    /// **点进去还是我们自己的中文名**。以前把中文名摆在外面，一行挤不下。
+    private func trailLabel(_ items: [ActivityItem]) -> String {
+        let cmds = items.filter { $0.toolName == "Bash" }.count
+        let rest = items.count - cmds
+        var bits: [String] = []
+        if cmds == 1 { bits.append("跑了条命令") }
+        else if cmds > 1 { bits.append("跑了 \(cmds) 条命令") }
+        if rest == 1 { bits.append("用了个工具") }
+        else if rest > 1 { bits.append("用了 \(rest) 个工具") }
+        return bits.isEmpty ? "干了点什么" : bits.joined(separator: "，")
+    }
+    private var trailEntryLabel: String { trailLabel(trailTools) }
+
+    /// 0820 她要的：一段思绪一个折叠面板，跟命令行按发生顺序交替排。
+    /// 把时间线切成一块块 —— 连着的命令归一行，每段思绪自己一个面板。
+    private enum TurnBlock: Identifiable {
+        case think(String, Int)
+        case tools([ActivityItem], Int)
+        var id: String {
+            switch self {
+            case .think(_, let i): return "t\(i)"
+            case .tools(_, let i): return "k\(i)"
+            }
         }
-        let parts = order.prefix(2).map { k -> String in
-            let n = bucket[k] ?? 0
-            return n > 1 ? "\(k) ×\(n)" : k
+    }
+    private var turnBlocks: [TurnBlock] {
+        var out: [TurnBlock] = []
+        var buf: [ActivityItem] = []
+        var n = 0
+        for it in msg.segments {
+            if it.kind == "think" || it.kind == "thinking" {
+                if !buf.isEmpty { out.append(.tools(buf, n)); n += 1; buf = [] }
+                if !it.content.isEmpty { out.append(.think(it.content, n)); n += 1 }
+            } else if it.kind == "tool" {
+                buf.append(it)
+            }
         }
-        if order.count > 2 { return parts.joined(separator: " · ") + " 等 \(trailToolCount) 件" }
-        return parts.joined(separator: " · ")
+        if !buf.isEmpty { out.append(.tools(buf, n)) }
+        return out
     }
     /// 只有话没有动作的轮次不挂轨迹行（那些话本来就在气泡里）
     private var trailWorthShowing: Bool { trailToolCount > 0 }
@@ -1326,13 +1354,27 @@ struct MessageRow: View {
             if isUser { Spacer(minLength: 48) }
             VStack(alignment: isUser ? .trailing : .leading,
                    spacing: theme.isPaper && !isUser ? 10 : 7) {
-                if let think = visibleChatThought {
-                    thinkingBlock(think)
-                } else if recall != nil {
-                    recallBadge // 没有思绪行时角标单独站一行，和 PWA 一致
-                }
-                if !isUser && trailWorthShowing {
-                    trailBlock
+                // 0820：有时间线就照发生顺序摆 —— 想一段出一个面板，
+                // 中间干的活收成一行。没时间线（老消息）走原来那套。
+                if !isUser && !turnBlocks.isEmpty {
+                    ForEach(turnBlocks) { blk in
+                        switch blk {
+                        case .think(let text, let i):
+                            thinkPanelRow(text, index: i)
+                        case .tools(let items, let i):
+                            toolRow(items, index: i)
+                        }
+                    }
+                    if recall != nil { recallBadge }
+                } else {
+                    if let think = visibleChatThought {
+                        thinkingBlock(think)
+                    } else if recall != nil {
+                        recallBadge // 没有思绪行时角标单独站一行，和 PWA 一致
+                    }
+                    if !isUser && trailWorthShowing {
+                        trailBlock
+                    }
                 }
                 if let paperDate = msg.morningPaperDate {
                     MorningPaperMessageCard(date: paperDate, theme: theme)
@@ -1461,6 +1503,66 @@ struct MessageRow: View {
         .padding(.leading, theme.isPaper && !isUser && msg.morningPaperDate == nil && msg.journeyCard == nil ? 12 : 0)
         .padding(.top, 2)
         .padding(.bottom, showTime ? 12 : 5)
+        .sheet(item: Binding(get: { openedThink.map { OneThought(text: $0) } },
+                             set: { openedThink = $0?.text })) { one in
+            NavigationStack {
+                ScrollView {
+                    Text(one.text)
+                        .font(.system(size: max(13, CGFloat(fontSize) - 1)))
+                        .lineSpacing(6)
+                        .foregroundColor(theme.text)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 22).padding(.top, 6).padding(.bottom, 30)
+                }
+                .background(theme.fyCardSub.ignoresSafeArea())
+                .navigationTitle("当时在想")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("关闭") { openedThink = nil } } }
+            }
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+            .presentationBackground(theme.fyCardSub)
+        }
+        .sheet(item: Binding(get: { openedTools.map { OneTrail(items: $0) } },
+                             set: { openedTools = $0?.items })) { one in
+            NavigationStack {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(one.items) { item in
+                            HStack(alignment: .top, spacing: 11) {
+                                Image(systemName: item.icon)
+                                    .font(.system(size: 11, weight: .light))
+                                    .foregroundColor(theme.fyAccent)
+                                    .frame(width: 18).padding(.top, 2)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(item.content)
+                                        .font(.system(size: 13.5, weight: .medium))
+                                        .foregroundColor(theme.text)
+                                    if !item.desc.isEmpty {
+                                        Text(item.desc)
+                                            .font(.system(size: 12))
+                                            .foregroundColor(theme.textDim)
+                                            .fixedSize(horizontal: false, vertical: true)
+                                    }
+                                }
+                                Spacer(minLength: 0)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.vertical, 9)
+                        }
+                    }
+                    .padding(.horizontal, 22).padding(.bottom, 30)
+                }
+                .background(theme.fyCardSub.ignoresSafeArea())
+                .navigationTitle("干了这些")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("关闭") { openedTools = nil } } }
+            }
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+            .presentationBackground(theme.fyCardSub)
+        }
         .sheet(isPresented: $showThinking) {
             paperThinkingPanel
                 .presentationDetents([.medium, .large])
@@ -1696,6 +1798,46 @@ struct MessageRow: View {
                 .padding(.vertical, 2)
         }
         .padding(.top, 2)
+    }
+
+    // ── 0820 按时间线摆的两种行 ─────────────────────────────
+    // 她要的：一轮里想了三次就出现三个思绪面板，中间干的活收成一行计数。
+    // 点开还是各自的面板，样式跟原来那套一模一样，只是数量和顺序变了。
+
+    private func thinkPanelRow(_ text: String, index: Int) -> some View {
+        Button {
+            openedThink = text
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { onContentChange?() }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "clock.arrow.trianglehead.counterclockwise.rotate.90")
+                    .font(.system(size: theme.isPaper ? 13 : 12, weight: .light))
+                Text(thinkingLabel(text))
+                    .font(theme.isPaper ? .system(size: 13, weight: .medium) : .custom("Georgia", size: 12))
+                    .lineLimit(1)
+                Image(systemName: "chevron.right").font(.system(size: 8))
+            }
+            .foregroundColor(.secondary)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func toolRow(_ items: [ActivityItem], index: Int) -> some View {
+        Button {
+            openedTools = items
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { onContentChange?() }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "wrench.and.screwdriver")
+                    .font(.system(size: theme.isPaper ? 12 : 11, weight: .light))
+                Text(trailLabel(items))
+                    .font(theme.isPaper ? .system(size: 13, weight: .medium) : .custom("Georgia", size: 12))
+                    .lineLimit(1)
+                Image(systemName: "chevron.right").font(.system(size: 8))
+            }
+            .foregroundColor(.secondary)
+        }
+        .buttonStyle(.plain)
     }
 
     private func thinkingBlock(_ think: String) -> some View {

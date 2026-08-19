@@ -25,6 +25,11 @@ struct ChatMessage: Identifiable, Equatable {
     var thinkTitle: String?
     // 0730：这一轮的过程记录（思绪/中间说的话/调过的工具），挂在时间戳旁边点开看
     var activity: [ActivityItem] = []
+    // 0820 她要的：一轮里「想什么/干什么」的完整顺序。
+    // 一段思绪一个折叠面板，跟命令行按发生顺序交替排 ——
+    // 她原话「一轮里我想了三次，就出现三个思绪面板」。
+    // thinking 那个字段装不下三段各自成面板，所以另开这一条。
+    var segments: [ActivityItem] = []
     // 0819 活动脚印：我干活时掉下来的短语，挂在气泡外面排一行浅灰斜体
     var trace: [String] = []
     var attachmentUrl: String?
@@ -167,6 +172,9 @@ struct ChatMessage: Identifiable, Equatable {
         self.msgType = json["msg_type"] as? String
         self.stickerId = json["sticker_id"] as? String
         self.thinkTitle = (json["think_title"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let arr = json["segments"] as? [[String: Any]] {
+            self.segments = arr.compactMap(ActivityItem.init(json:))
+        }
         if let arr = json["activity"] as? [[String: Any]] {
             self.activity = arr.compactMap(ActivityItem.init(json:))
         }
@@ -279,7 +287,7 @@ struct ActivityItem: Identifiable, Equatable {
 
     var icon: String {
         switch kind {
-        case "thinking": return "circle.dotted"
+        case "thinking", "think": return "circle.dotted"
         case "tool":
             // 0818 名字改成人话之后（tool_names.py），图标按新词认
             let c = content
@@ -391,4 +399,15 @@ extension ISO8601DateFormatter {
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         return f
     }()
+}
+
+/// 0820：sheet(item:) 要 Identifiable，给「点开的那一段思绪 / 那一组命令」各包一层
+struct OneThought: Identifiable {
+    let text: String
+    var id: String { text }
+}
+
+struct OneTrail: Identifiable {
+    let items: [ActivityItem]
+    var id: String { items.map(\.id.uuidString).joined() }
 }
