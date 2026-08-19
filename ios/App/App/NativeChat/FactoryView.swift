@@ -44,6 +44,8 @@ struct NativeFactoryView: View {
     @State private var groups: [FactoryGroup] = []
     @State private var loading = true
     @State private var opened: FactoryFile?
+    @State private var pendingDelete: FactoryFile?
+    @State private var note = ""
 
     private var palette: GlassPalette { .named(themeName) }
 
@@ -57,9 +59,11 @@ struct NativeFactoryView: View {
                 } else {
                     ScrollView {
                         LazyVStack(alignment: .leading, spacing: 0) {
-                            Text("改坏了最多他说话变怪，右上角能翻回上一版")
+                            Text(note.isEmpty
+                                 ? "改坏了最多他说话变怪，右上角能翻回上一版。记忆那些长按能删"
+                                 : note)
                                 .font(.system(size: 10.5))
-                                .foregroundColor(palette.ink3)
+                                .foregroundColor(note.isEmpty ? palette.ink3 : palette.gold)
                                 .padding(.bottom, 12)
                             ForEach(groups) { g in
                                 Text(g.group.uppercased())
@@ -68,7 +72,18 @@ struct NativeFactoryView: View {
                                     .foregroundColor(palette.acc.opacity(0.85))
                                     .padding(.top, 14).padding(.bottom, 8)
                                 ForEach(g.items) { f in
-                                    row(f).onTapGesture { opened = f }
+                                    row(f)
+                                        .onTapGesture { opened = f }
+                                        .contextMenu {
+                                            // memory 才给删，锚点少一份他就缺一块
+                                            if f.key.hasPrefix("mem") && f.name.uppercased() != "MEMORY.MD" {
+                                                Button(role: .destructive) {
+                                                    pendingDelete = f
+                                                } label: {
+                                                    Label("删掉这条", systemImage: "trash")
+                                                }
+                                            }
+                                        }
                                 }
                             }
                         }
@@ -79,6 +94,19 @@ struct NativeFactoryView: View {
             }
         }
         .task { await load() }
+        .confirmationDialog(
+            pendingDelete.map { "删掉「\($0.title)」？" } ?? "",
+            isPresented: Binding(get: { pendingDelete != nil },
+                                 set: { if !$0 { pendingDelete = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button("删掉", role: .destructive) {
+                if let f = pendingDelete { Task { await remove(f) } }
+            }
+            Button("算了", role: .cancel) { pendingDelete = nil }
+        } message: {
+            Text("备份留着能捞回来，索引里那行指针也会一起清掉")
+        }
         .sheet(item: $opened) { f in
             if f.key == "heartbeat" {
                 // 心跳走专用的：整条 prompt 摆出来，代码算的锁住给她看，
@@ -115,6 +143,17 @@ struct NativeFactoryView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .glassCard(palette, radius: 14)
         .padding(.bottom, 8)
+    }
+
+    private func remove(_ f: FactoryFile) async {
+        let raw = (try? await NativeHouseAPI.object(
+            "/api/files/delete", method: "POST",
+            body: ["key": f.key, "name": f.name])) ?? [:]
+        await MainActor.run {
+            note = raw.bool("ok") ? "「\(f.title)」\(raw.string("note"))" : raw.string("error")
+            pendingDelete = nil
+        }
+        await load()
     }
 
     private func load() async {
