@@ -473,8 +473,8 @@ struct NativeRoofView: View {
     @State private var strokes = 0
     @State private var lastStrokePoint: CGPoint = .zero
     @State private var purring = false
-    @State private var showLog = false
     @State private var showStash = false
+    @State private var showTimeline = false
 
     private let haptics = RoofHaptics.shared
     private var palette: RoofPalette { .named(themeName) }
@@ -482,9 +482,11 @@ struct NativeRoofView: View {
     private let me = "ji"
 
     private enum Layout {
-        static let sky: CGFloat = 0.545     // 天空到这儿
-        static let tile: CGFloat = 0.245    // 瓦这么厚
-        static let foot: CGFloat = 0.705    // 猫的脚踩在这个高度
+        // 0819 她装上第一眼提的：进度条压在猫身上。病根不是数字，是 content
+        // 那个 VStack 没撑满高度，Spacer 推不动，整条 UI 悬在半空正好盖住猫。
+        static let sky: CGFloat = 0.475     // 天空到这儿
+        static let tile: CGFloat = 0.205    // 瓦这么厚
+        static let foot: CGFloat = 0.665    // 猫的脚踩在这个高度
     }
 
     var body: some View {
@@ -498,7 +500,7 @@ struct NativeRoofView: View {
                         catLayer(geo.size)
                     }
                 }
-                content
+                content(geo.size)
                 if let trip = homecoming {
                     homecomingCard(trip)
                 }
@@ -508,6 +510,7 @@ struct NativeRoofView: View {
         .task { await load() }
         .onAppear { swingTail() }
         .sheet(isPresented: $showStash) { StashSheet(palette: palette) }
+        .sheet(isPresented: $showTimeline) { TimelineSheet(palette: palette) }
     }
 
     // 天空是画的，瓦是代码画的，下面那片留给 UI
@@ -582,7 +585,7 @@ struct NativeRoofView: View {
             .position(x: size.width * catX, y: size.height * Layout.foot - h / 2)
             .gesture(petGesture)
             speech.position(x: size.width * catX,
-                            y: size.height * Layout.foot - h - 18)
+                            y: max(size.height * 0.28, size.height * Layout.foot - h - 22))
         }
         .animation(.spring(response: 0.55, dampingFraction: 0.78), value: cat.spot)
         .animation(.easeInOut(duration: 0.3), value: cat.asleep)
@@ -674,21 +677,23 @@ struct NativeRoofView: View {
         }
     }
 
+    // 0819 换成黑猫之后重量的：她说「哥哥你之前说檐檐是黑猫啊」——我 0812
+    // 亲口定的「黑猫，坏脾气」，画图那轮却在工作室里自作主张画了灰白虎斑。
     private var catAspect: CGFloat {
         switch catArt {
-        case "cat_curled": return 1.09
-        case "cat_sit": return 1.08
+        case "cat_curled": return 0.97
+        case "cat_sit": return 0.92
         case "cat_back": return 0.99
-        default: return 0.84
+        default: return 1.15
         }
     }
 
     private var catWidth: CGFloat {
         switch catArt {
-        case "cat_curled": return 0.40
+        case "cat_curled": return 0.44
         case "cat_sit": return 0.34
         case "cat_back": return 0.36
-        default: return 0.46
+        default: return 0.44
         }
     }
 
@@ -700,7 +705,7 @@ struct NativeRoofView: View {
         }
     }
 
-    private var content: some View {
+    private func content(_ size: CGSize) -> some View {
         VStack(spacing: 0) {
             header
             Spacer(minLength: 0)
@@ -715,11 +720,11 @@ struct NativeRoofView: View {
             } else {
                 statusRow
                 buttons
-                if showLog { logList } else { logHint }
+                logHint
             }
-            Spacer(minLength: 16)
         }
-        .padding(.bottom, 22)
+        .frame(width: size.width, height: size.height, alignment: .top)
+        .padding(.bottom, 26)
     }
 
     // 自己做头（ownsFullScreen）。这一条压在天空上，用天空那套字色
@@ -741,6 +746,13 @@ struct NativeRoofView: View {
                     .foregroundColor(palette.ink2)
             }
             Spacer()
+            Button { showTimeline = true } label: {
+                Image(systemName: "clock.arrow.circlepath")
+                    .font(.system(size: 15, weight: .light))
+                    .foregroundColor(palette.ink2)
+                    .frame(width: 32, height: 34)
+            }
+            .buttonStyle(.plain)
             Button { showStash = true } label: {
                 Image(systemName: "shippingbox")
                     .font(.system(size: 15, weight: .light))
@@ -894,11 +906,11 @@ struct NativeRoofView: View {
     }
 
     private var logHint: some View {
-        Button { withAnimation { showLog = true } } label: {
+        Button { showTimeline = true } label: {
             HStack(spacing: 5) {
                 Text(lastCareLine)
                     .font(.system(size: 11))
-                Image(systemName: "chevron.down").font(.system(size: 8))
+                Image(systemName: "chevron.right").font(.system(size: 8))
             }
             .foregroundColor(palette.onDeepDim)
         }
@@ -910,41 +922,6 @@ struct NativeRoofView: View {
         if !cat.lastFedByName.isEmpty { return "上一顿是\(cat.lastFedByName)喂的" }
         if !cat.lastPetByName.isEmpty { return "\(cat.lastPetByName)刚撸过它" }
         return "还没人管过它"
-    }
-
-    private var logList: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Button { withAnimation { showLog = false } } label: {
-                HStack(spacing: 5) {
-                    Text("谁管过它").font(.system(size: 11, weight: .medium))
-                    Image(systemName: "chevron.up").font(.system(size: 8))
-                }
-                .foregroundColor(palette.onDeepDim)
-            }
-            .buttonStyle(.plain)
-            .padding(.bottom, 6)
-            ScrollView {
-                VStack(alignment: .leading, spacing: 7) {
-                    ForEach(cat.log) { entry in
-                        HStack(spacing: 7) {
-                            Text(entry.whoName)
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundColor(entry.whoName == "陈霁" ? palette.warm : palette.onDeep)
-                            Text(entry.detail)
-                                .font(.system(size: 11))
-                                .foregroundColor(palette.onDeep)
-                            Spacer(minLength: 0)
-                            Text(shortTime(entry.createdAt))
-                                .font(.system(size: 9.5, design: .monospaced))
-                                .foregroundColor(palette.onDeepDim)
-                        }
-                    }
-                }
-            }
-            .frame(maxHeight: 150)
-        }
-        .padding(.horizontal, 14)
-        .padding(.top, 12)
     }
 
     private func shortTime(_ iso: String) -> String {
@@ -1130,5 +1107,124 @@ private struct StashSheet: View {
             onceLeft = raw.int("onceLeft")
             loading = false
         }
+    }
+}
+
+
+// MARK: - 时间线（她0819要的：谁在什么时候喂了、撸了，猫什么时候回的家）
+
+private struct TimelineEntry: Identifiable {
+    let id: String
+    let whoName: String
+    let detail: String
+    let icon: String
+    let day: String
+    let time: String
+    let isCat: Bool
+    let isHers: Bool
+}
+
+private struct TimelineSheet: View {
+    let palette: RoofPalette
+    @Environment(\.dismiss) private var dismiss
+    @State private var items: [TimelineEntry] = []
+    @State private var loading = true
+
+    var body: some View {
+        ZStack {
+            palette.deep.ignoresSafeArea()
+            VStack(spacing: 0) {
+                HStack {
+                    Text("谁管过它")
+                        .font(.system(size: 17, weight: .semibold, design: .serif))
+                        .foregroundColor(palette.onDeep)
+                    Spacer()
+                    Button { dismiss() } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(palette.onDeepDim)
+                            .frame(width: 34, height: 34)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 18)
+                .padding(.top, 20)
+
+                if loading {
+                    Spacer(); ProgressView().tint(palette.onDeepDim); Spacer()
+                } else if items.isEmpty {
+                    Spacer()
+                    Text("还没人管过它")
+                        .font(.system(size: 13))
+                        .foregroundColor(palette.onDeepDim)
+                    Spacer()
+                } else {
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 0) {
+                            ForEach(Array(items.enumerated()), id: \.element.id) { idx, e in
+                                if idx == 0 || items[idx - 1].day != e.day {
+                                    Text(e.day)
+                                        .font(.system(size: 11, weight: .medium, design: .serif))
+                                        .tracking(1.5)
+                                        .foregroundColor(palette.warm.opacity(0.85))
+                                        .padding(.top, idx == 0 ? 6 : 18)
+                                        .padding(.bottom, 8)
+                                }
+                                row(e)
+                            }
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 28)
+                    }
+                }
+            }
+        }
+        .task { await load() }
+    }
+
+    private func row(_ e: TimelineEntry) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            VStack(spacing: 0) {
+                Circle()
+                    .fill(e.isCat ? palette.warm : (e.isHers ? palette.acc : palette.onDeepDim))
+                    .frame(width: 7, height: 7)
+                Rectangle()
+                    .fill(palette.deepLine)
+                    .frame(width: 1)
+                    .frame(maxHeight: .infinity)
+            }
+            .frame(height: 40)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Image(systemName: e.icon)
+                        .font(.system(size: 9))
+                        .foregroundColor(palette.onDeepDim)
+                    Text(e.whoName)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(e.isCat ? palette.warm
+                                         : (e.isHers ? palette.acc : palette.onDeep))
+                    Text(e.detail)
+                        .font(.system(size: 12))
+                        .foregroundColor(palette.onDeep)
+                        .lineLimit(2)
+                    Spacer(minLength: 0)
+                    Text(e.time)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundColor(palette.onDeepDim)
+                }
+            }
+            .padding(.bottom, 12)
+        }
+    }
+
+    private func load() async {
+        let raw = (try? await NativeHouseAPI.object("/api/roof/timeline?limit=120")) ?? [:]
+        let list = raw.array("items").map {
+            TimelineEntry(id: $0.string("id"), whoName: $0.string("whoName"),
+                          detail: $0.string("detail"), icon: $0.string("icon"),
+                          day: $0.string("day"), time: $0.string("time"),
+                          isCat: $0.bool("isCat"), isHers: $0.bool("isHers"))
+        }
+        await MainActor.run { items = list; loading = false }
     }
 }
