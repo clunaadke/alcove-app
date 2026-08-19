@@ -254,6 +254,16 @@ enum AlcoveLiveActivityController {
                 pushType: nil
             )
             ensurePulseUpdates()
+            // 0819 她点刷新一路显示「已开启」，锁屏和灵动岛却都是空的。
+            // request 不抛错 ≠ 系统真的收下了：配额满、僵尸活动占位的时候
+            // 它照样安静返回。ensureRunning() 那条路早就不信这个返回值了
+            // （会回头读 activities 再补试），手点刷新这条却一直在说假话。
+            // 回头看一眼真实的活动列表再开口。
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            if Activity<AlcoveLabAttributes>.activities.isEmpty {
+                scheduleRetry()
+                return "系统收下了请求，但活动没出现——正在补试三次。还是不出来的话：先把这个开关关掉等两秒再开，仍然没有就重启一次手机。"
+            }
             return "灵动岛已开启。"
         } catch {
             return "灵动岛启动失败：\(error.localizedDescription)"
