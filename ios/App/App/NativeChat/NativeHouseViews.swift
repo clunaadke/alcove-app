@@ -951,6 +951,10 @@ private struct NativeSettingsView: View {
     @State private var thoughtLengthLoaded = false
     @State private var thoughtLengthSaving = false
     @State private var thoughtLengthSaveTask: Task<Void, Never>?
+    @State private var herStatus = ""
+    @State private var herStatusLine = ""
+    @State private var herStatusLoaded = false
+    @State private var herStatusSaveTask: Task<Void, Never>?
     @Environment(\.houseOwnsHeader) private var houseOwnsHeader
     private var theme: AlcoveTheme { .panelNamed(themeName) }
 
@@ -958,6 +962,17 @@ private struct NativeSettingsView: View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 14) {
                 panelTitle("设置")
+                // 她自己填此刻在干嘛，心跳 prompt 开头就写这句（0819 她要的）。
+                // 带时效：六小时后自动淡掉，不然「正在看短剧」会一直挂着变成假话。
+                section("我此刻") {
+                    settingRow("在干嘛",
+                               herStatusLine.isEmpty ? "填了他心跳里就写这句" : herStatusLine) {
+                        TextField("比如：看短剧", text: $herStatus)
+                            .multilineTextAlignment(.trailing)
+                            .frame(width: 132)
+                            .onChange(of: herStatus) { value in scheduleHerStatusSave(value) }
+                    }
+                }
                 section("聊天") {
                     settingRow("我的名字", "聊天气泡和推送显示") {
                         TextField("Luna", text: $userName).multilineTextAlignment(.trailing).frame(width: 105)
@@ -1164,7 +1179,8 @@ private struct NativeSettingsView: View {
             async let reply: Void = loadReplyLength()
             async let thought: Void = loadThoughtLength()
             async let pulse: Void = loadPulseRange()
-            _ = await (services, reply, thought, pulse)
+            async let her: Void = loadHerStatus()
+            _ = await (services, reply, thought, pulse, her)
         }
     }
 
@@ -1250,6 +1266,25 @@ private struct NativeSettingsView: View {
             replyLength = Double(value.int("chars"))
         }
         replyLengthLoaded = true
+    }
+
+    @MainActor private func loadHerStatus() async {
+        let raw = (try? await NativeHouseAPI.object("/api/status/her")) ?? [:]
+        herStatus = raw.string("text")
+        herStatusLine = raw.string("line")
+        herStatusLoaded = true
+    }
+
+    private func scheduleHerStatusSave(_ value: String) {
+        guard herStatusLoaded else { return }
+        herStatusSaveTask?.cancel()
+        herStatusSaveTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 600_000_000)
+            guard !Task.isCancelled else { return }
+            let raw = (try? await NativeHouseAPI.object(
+                "/api/status/her", method: "POST", body: ["text": value])) ?? [:]
+            herStatusLine = raw.string("line")
+        }
     }
 
     private func scheduleReplyLengthSave(_ value: Double) {
