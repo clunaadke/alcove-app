@@ -44,7 +44,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .usage: return "Usage"
         case .workbench: return "总控台"
         case .studio: return "陈璟工作室"
-        case .memory: return "Memory"
+        case .memory: return "新脑子"
         case .dreams: return "Dreams"
         case .shelf: return "渡鸦的架子"
         case .fiction: return "书房"
@@ -75,7 +75,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
     /// 自己铺满、自己做头的页面。她0819：不要透壁纸，要全屏
     var ownsFullScreen: Bool {
         switch self {
-        case .studio, .pond, .roof, .search, .favorites: return true
+        case .studio, .pond, .roof, .memory, .search, .favorites: return true
         default: return false
         }
     }
@@ -244,7 +244,7 @@ struct NativeHouseSheet: View {
                         closeRoom: { withAnimation(.easeInOut(duration: 0.18)) { route = .profile } }
                     )
                 case .memory:
-                    NativeOBMemoryView()
+                    NativeBrainView()
                 case .portrait:
                     NativeOBLettersView()
                 case .pond:
@@ -506,7 +506,7 @@ struct NativeHouseDrawer: View {
                         drawerRow(.nowhere, detail: "足迹与明信片")
                         drawerRow(.fiction, detail: "陈璟写给你的小说")
                         drawerRow(.digest, detail: "日结、周结与月结")
-                        drawerRow(.memory, detail: "正在生长的记忆")
+                        drawerRow(.memory, detail: "五条线、小睡、夜里那趟")
                     }
 
                     drawerTitle("家里的收藏", note: "kept close")
