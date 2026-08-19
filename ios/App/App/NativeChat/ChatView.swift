@@ -1,4 +1,5 @@
 import SwiftUI
+import WebKit
 import PhotosUI
 import Photos
 import AVFoundation
@@ -1320,6 +1321,8 @@ struct MessageRow: View {
                     InsideMessageCard(text: inside, date: msg.date, theme: theme)
                 } else if let ghost = msg.ghostCard {
                     GhostActivityMessageCard(card: ghost, theme: theme)
+                } else if let play = msg.playCard {
+                    PlayPageMessageCard(card: play, theme: theme)
                 } else if let reading = msg.readingCard {
                     ReadingShareMessageCard(card: reading, theme: theme)
                 } else if let work = msg.workCard {
@@ -1861,6 +1864,90 @@ struct MessageRow: View {
         f.dateFormat = "HH:mm"
         return f
     }()
+}
+
+/// 陈璟端上来的一页：点一下全屏打开，不跳浏览器。
+private struct PlayPageMessageCard: View {
+    let card: PlayPageCard
+    let theme: AlcoveTheme
+    @State private var open = false
+
+    var body: some View {
+        Button { open = true } label: {
+            HStack(spacing: 12) {
+                Text(card.emoji ?? "✦")
+                    .font(.system(size: 26))
+                    .frame(width: 46, height: 46)
+                    .background(theme.fyCardSub.opacity(0.62), in: RoundedRectangle(cornerRadius: 13))
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(card.title)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(theme.text)
+                        .lineLimit(1)
+                    if !card.subtitle.isEmpty {
+                        Text(card.subtitle)
+                            .font(.system(size: 11.5))
+                            .foregroundColor(theme.textDim)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+                    }
+                }
+                Spacer(minLength: 4)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(theme.textDim.opacity(0.7))
+            }
+            .padding(13)
+            .frame(maxWidth: 300, alignment: .leading)
+            .background(theme.fyCard.opacity(0.94), in: RoundedRectangle(cornerRadius: 18))
+            .overlay(RoundedRectangle(cornerRadius: 18).stroke(theme.fyBorder.opacity(0.7), lineWidth: 0.7))
+        }
+        .buttonStyle(.plain)
+        .fullScreenCover(isPresented: $open) {
+            if let u = card.url {
+                PlayPageSheet(url: u, title: card.title) { open = false }
+            }
+        }
+    }
+}
+
+private struct PlayPageSheet: View {
+    let url: URL
+    let title: String
+    var dismiss: () -> Void
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            PlainWebView(url: url).ignoresSafeArea()
+            Button {
+                dismiss()
+            } label: {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 15, weight: .medium))
+                    .foregroundColor(Color(red: 0.42, green: 0.40, blue: 0.41))
+                    .frame(width: 34, height: 34)
+                    .background(.ultraThinMaterial, in: Circle())
+                    .overlay(Circle().stroke(Color(red: 210/255, green: 210/255, blue: 218/255).opacity(0.3), lineWidth: 1))
+            }
+            .padding(.leading, 14)
+            .padding(.top, 6)
+        }
+    }
+}
+
+/// 独立的一块 WebView，不碰 WebHouse 那个常驻 PWA 实例。
+private struct PlainWebView: UIViewRepresentable {
+    let url: URL
+
+    func makeUIView(context: Context) -> WKWebView {
+        let cfg = WKWebViewConfiguration()
+        cfg.allowsInlineMediaPlayback = true
+        let wv = WKWebView(frame: .zero, configuration: cfg)
+        wv.load(URLRequest(url: url))
+        return wv
+    }
+
+    func updateUIView(_ uiView: WKWebView, context: Context) {}
 }
 
 private struct ReadingShareMessageCard: View {

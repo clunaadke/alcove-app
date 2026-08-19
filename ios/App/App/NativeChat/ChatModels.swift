@@ -77,6 +77,14 @@ struct ChatMessage: Identifiable, Equatable {
         return try? JSONDecoder().decode(ReadingShareCard.self, from: data)
     }
 
+    // 0819 她要的：我做个网页给她玩，聊天页直接长出一张卡，点开就在 app 里开，
+    // 不跳浏览器（今天那个 http 链接整行被吞的坑也一起绕过去了）。
+    var playCard: PlayPageCard? {
+        guard let raw = Self.taggedBody(text, tag: "PLAY_CARD"),
+              let data = raw.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(PlayPageCard.self, from: data)
+    }
+
     var workCard: WorkDeliveryCard? {
         guard let raw = Self.taggedBody(text, tag: "WORK_CARD"),
               let data = raw.data(using: .utf8) else { return nil }
@@ -176,6 +184,20 @@ struct ChatMessage: Identifiable, Equatable {
         self.text = localText
         self.asleepAtSend = false
         self.pending = true
+    }
+}
+
+/// 陈璟现做的一页，她点一下在 app 里全屏打开。
+/// page 是 alcove.ob-memory.uk 下的文件名（qixi.html 这种），不写全 URL。
+struct PlayPageCard: Decodable, Equatable {
+    let title: String
+    let subtitle: String
+    let page: String
+    let emoji: String?
+
+    var url: URL? {
+        if page.hasPrefix("http") { return URL(string: page) }
+        return URL(string: "https://alcove.ob-memory.uk/" + page)
     }
 }
 
