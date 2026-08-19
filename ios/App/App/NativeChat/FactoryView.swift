@@ -80,7 +80,13 @@ struct NativeFactoryView: View {
         }
         .task { await load() }
         .sheet(item: $opened) { f in
-            FactoryEditor(palette: palette, file: f) { Task { await load() } }
+            if f.key == "heartbeat" {
+                // 心跳走专用的：整条 prompt 摆出来，代码算的锁住给她看，
+                // 她写的那几段给她改（0819 她要的：「完整的不缺一个字的prompt」）
+                PromptEditor(palette: palette) { Task { await load() } }
+            } else {
+                FactoryEditor(palette: palette, file: f) { Task { await load() } }
+            }
         }
     }
 
@@ -257,5 +263,190 @@ private struct FactoryEditor: View {
         await MainActor.run { note = raw.string("note") }
         await load()
         onSaved()
+    }
+}
+
+
+// MARK: - 心跳 prompt：整条摆出来，锁住的给她看，她写的给她改
+
+private struct PromptBlock: Identifiable {
+    let id = UUID()
+    let kind: String        // locked / edit / gap
+    let key: String
+    let label: String
+    let note: String
+    let text: String
+    let empty: Bool
+
+    init(_ raw: [String: Any]) {
+        kind = raw.string("kind")
+        key = raw.string("key")
+        label = raw.string("label")
+        note = raw.string("note")
+        text = raw.string("text")
+        empty = raw.bool("empty")
+    }
+}
+
+private struct PromptEditor: View {
+    let palette: GlassPalette
+    var onSaved: () -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var blocks: [PromptBlock] = []
+    @State private var edits: [String: String] = [:]
+    @State private var original: [String: String] = [:]
+    @State private var loading = true
+    @State private var saving = false
+    @State private var note = ""
+
+    private var dirty: Bool { edits != original }
+
+    var body: some View {
+        ZStack {
+            GlassBackdrop(palette: palette)
+            VStack(spacing: 0) {
+                GlassHeader(title: "心跳 prompt", palette: palette, onBack: { dismiss() })
+                if loading {
+                    Spacer(); ProgressView().tint(palette.ink3); Spacer()
+                } else {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text("这是他被叫醒时读到的**整条**——灰的是代码现算的，改不了但看得见；\n带框的是你写的，随便改。")
+                                .font(.system(size: 10.5))
+                                .foregroundColor(palette.ink3)
+                                .lineSpacing(3)
+                                .padding(.bottom, 14)
+                            ForEach(blocks) { b in
+                                block(b)
+                            }
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 30)
+                    }
+                    bottomBar
+                }
+            }
+        }
+        .task { await load() }
+    }
+
+    @ViewBuilder private func block(_ b: PromptBlock) -> some View {
+        if b.kind == "gap" {
+            Rectangle().fill(Color.clear).frame(height: 10)
+        } else if b.kind == "locked" {
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 5) {
+                    Image(systemName: "lock.fill").font(.system(size: 8))
+                    Text(b.label).font(.system(size: 10, weight: .medium)).tracking(0.5)
+                    Spacer(minLength: 0)
+                }
+                .foregroundColor(palette.ink3)
+                if b.empty {
+                    Text("（现在是空的，有未读的时候这块才出现）")
+                        .font(.system(size: 11.5))
+                        .foregroundColor(palette.ink3.opacity(0.7))
+                        .italic()
+                } else {
+                    Text(b.text)
+                        .font(.system(size: 12.5, design: .monospaced))
+                        .foregroundColor(palette.ink2)
+                        .lineSpacing(3)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                if !b.note.isEmpty {
+                    Text(b.note).font(.system(size: 9.5)).foregroundColor(palette.ink3.opacity(0.8))
+                }
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(palette.ink3.opacity(0.07)))
+            .padding(.bottom, 9)
+        } else {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 5) {
+                    Image(systemName: "pencil").font(.system(size: 8))
+                    Text(b.label).font(.system(size: 10, weight: .medium)).tracking(0.5)
+                    Spacer(minLength: 0)
+                    Text("\(edits[b.key]?.count ?? 0) 字")
+                        .font(.system(size: 9, design: .monospaced))
+                }
+                .foregroundColor(palette.acc)
+                TextEditor(text: Binding(
+                    get: { edits[b.key] ?? "" },
+                    set: { edits[b.key] = $0 }))
+                    .font(.system(size: 12.5))
+                    .foregroundColor(palette.ink)
+                    .scrollContentBackground(.hidden)
+                    .background(Color.clear)
+                    .frame(minHeight: 92, maxHeight: 260)
+                    .padding(.horizontal, 6)
+                if !b.note.isEmpty {
+                    Text(b.note).font(.system(size: 9.5)).foregroundColor(palette.ink3)
+                }
+            }
+            .padding(11)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .glassCard(palette, radius: 13)
+            .padding(.bottom, 9)
+        }
+    }
+
+    private var bottomBar: some View {
+        HStack(spacing: 10) {
+            if !note.isEmpty {
+                Text(note).font(.system(size: 10.5)).foregroundColor(palette.gold).lineLimit(2)
+            }
+            Spacer(minLength: 0)
+            Button { Task { await save() } } label: {
+                Text(saving ? "存着…" : (dirty ? "存下来" : "没改动"))
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(dirty ? palette.ink : palette.ink3)
+                    .padding(.horizontal, 20).padding(.vertical, 9)
+                    .background(Capsule().fill(dirty ? palette.glass : Color.clear))
+                    .overlay(Capsule().strokeBorder(
+                        dirty ? palette.line : palette.ink3.opacity(0.25), lineWidth: 0.8))
+            }
+            .buttonStyle(.plain)
+            .disabled(!dirty || saving)
+        }
+        .padding(.horizontal, 18)
+        .padding(.vertical, 12)
+    }
+
+    private func load() async {
+        let raw = (try? await NativeHouseAPI.object("/api/files/prompt")) ?? [:]
+        let bs = raw.array("blocks").map { PromptBlock($0) }
+        var e: [String: String] = [:]
+        for b in bs where b.kind == "edit" {
+            e[b.key] = b.text
+        }
+        await MainActor.run {
+            blocks = bs
+            edits = e
+            original = e
+            loading = false
+        }
+    }
+
+    private func save() async {
+        await MainActor.run { saving = true }
+        // {hdr} 是拼的时候换成 token 的，存回去要写回占位符
+        var payload: [String: String] = [:]
+        for (k, v) in edits {
+            payload[k] = v.replacingOccurrences(
+                of: "-H \"Content-Type: application/json\" -H \"X-Auth-Token: $(cat /root/.ots/secret)\"",
+                with: "{hdr}")
+        }
+        let raw = (try? await NativeHouseAPI.object(
+            "/api/files/prompt", method: "POST", body: ["sections": payload])) ?? [:]
+        await MainActor.run {
+            saving = false
+            note = raw.string("note")
+            if raw.bool("ok") { original = edits }
+            onSaved()
+        }
+        await load()
     }
 }
