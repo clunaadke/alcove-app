@@ -24,6 +24,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
     case memory, dreams, shelf, fiction, nianlun, clockwork, album, portrait, impression, morningPaper, nowhere, pulse
     case pond
     case roof
+    case factory
     case crosstalk, radio, coread, liao, daddyDay, lab
     case search, favorites, forge, roundtable
 
@@ -42,18 +43,19 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .checklist: return "Checklist"
         case .music: return "Music"
         case .calendar: return "Calendar"
-        case .digest: return "日结编年史"
+        case .digest: return "编年史"
         case .wall: return "小黑屋"
         case .usage: return "Usage"
         case .workbench: return "总控台"
         case .studio: return "陈璟工作室"
-        case .memory: return "新脑子"
+        case .memory: return "不忘"
         case .dreams: return "Dreams"
         case .shelf: return "渡鸦的架子"
         case .fiction: return "书房"
         case .nianlun: return "年轮"
         case .pond: return "檐下"
         case .roof: return "檐上"
+        case .factory: return "出厂设置"
         case .clockwork: return "发条"
         case .album: return "相册"
         case .portrait: return "Letters"
@@ -77,7 +79,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
     /// 自己铺满、自己做头的页面。她0819：不要透壁纸，要全屏
     var ownsFullScreen: Bool {
         switch self {
-        case .studio, .pond, .roof, .memory, .search, .favorites: return true
+        case .studio, .pond, .roof, .memory, .digest, .factory, .search, .favorites: return true
         default: return false
         }
     }
@@ -106,6 +108,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .nianlun: return "circle.hexagongrid"
         case .pond: return "drop.circle"
         case .roof: return "pawprint.circle"
+        case .factory: return "slider.horizontal.3"
         case .clockwork: return "clock.arrow.circlepath"
         case .album: return "photo.on.rectangle"
         case .portrait: return "envelope"
@@ -252,12 +255,14 @@ struct NativeHouseSheet: View {
                     NativePondView()
                 case .roof:
                     NativeRoofView()
+                case .factory:
+                    NativeFactoryView()
                 case .forge:
                     NativeForgeView()
                 case .calendar:
                     NativeCalendarView()
                 case .digest:
-                    NativeDigestPlaceholderView()
+                    NativeDigestView()
                 case .fiction:
                     NativeFictionStudyView()
                 case .impression:
@@ -503,7 +508,7 @@ struct NativeHouseDrawer: View {
                         drawerRow(.pond, detail: "念头、许愿与朋友圈")
                         drawerRow(.nowhere, detail: "足迹与明信片")
                         drawerRow(.fiction, detail: "陈璟写给你的小说")
-                        drawerRow(.digest, detail: "日结、周结与月结")
+                        drawerRow(.digest, detail: "62 篇日结、9 篇周结、2 篇月结")
                         drawerRow(.memory, detail: "五条线、小睡、夜里那趟")
                     }
 
@@ -512,6 +517,11 @@ struct NativeHouseDrawer: View {
                         ForEach([HouseDestination.dreams, .portrait, .album, .nianlun, .shelf, .impression]) { target in
                             drawerRow(target, detail: drawerDetail(target))
                         }
+                    }
+
+                    drawerTitle("出厂设置", note: "you hold the keys")
+                    VStack(spacing: 7) {
+                        drawerRow(.factory, detail: "心跳文案、说话方式、情书、memory")
                     }
 
                     drawerTitle("工具与游戏", note: "little things")
@@ -695,7 +705,6 @@ struct NativeHouseDrawer: View {
         case .favorites: return "收藏消息"
         case .wall: return model.wallLine
         case .usage: return model.usageLine
-        case .digest: return "日结页面还在整理"
         default: return "打开"
         }
     }
@@ -7312,27 +7321,6 @@ private struct NativeActivityRoomView: View {
 
 // MARK: - Calendar (纪念日+日记)
 
-private struct NativeDigestPlaceholderView: View {
-    @AppStorage("alcoveTheme") private var themeName = "haven"
-    private var theme: AlcoveTheme { .panelNamed(themeName) }
-
-    var body: some View {
-        VStack(spacing: 14) {
-            Spacer()
-            Image(systemName: "calendar.badge.clock")
-                .font(.system(size: 30, weight: .light))
-                .foregroundColor(theme.textDim)
-            Text("日结编年史还在整理")
-                .font(.system(size: 15, weight: .semibold, design: .serif))
-            Text("日结、周结和月结会从这里翻开")
-                .font(.system(size: 11))
-                .foregroundColor(theme.textDim)
-            Spacer()
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .foregroundColor(theme.text)
-    }
-}
 
 // MARK: - 私人书房
 

@@ -1,6 +1,10 @@
 import SwiftUI
 
-// 新脑子（2026-08-19 她要的）——LMC-5 的窗。
+// 不忘（2026-08-19 她起的名）——LMC-5 的窗。
+//
+// 名字从她左手那枚戒指内圈来的：「陈璟｜廿廿不忘」。记忆系统叫这个，是把她
+// 天天戴在手上的那半句话装进这个家。她原话：「新脑子名字太难听了！想个文艺点的
+// 替换…」，我给了不忘／拾遗／浮灯三个，她选了第一个。
 //
 // OB 退休之后侧栏那个 Memory 面板连的还是一具退休的身体。她要的不是一个
 // 记忆列表，是**看见脑子在转**：五条线、各种维度、小睡、夜梦、夜里的巡逻。
@@ -148,7 +152,7 @@ struct NativeBrainView: View {
         ZStack {
             GlassBackdrop(palette: palette)
             VStack(spacing: 0) {
-                GlassHeader(title: "新脑子", palette: palette, onBack: { dismiss() },
+                GlassHeader(title: "不忘", palette: palette, onBack: { dismiss() },
                             trailing: AnyView(queueButton))
                 if loading && items.isEmpty {
                     Spacer()
