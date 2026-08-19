@@ -949,11 +949,15 @@ private struct NativeSettingsView: View {
     @State private var replyLengthLoaded = false
     @State private var replyLengthSaving = false
     @State private var replyLengthSaveTask: Task<Void, Never>?
-    @State private var pulseMin = 10
-    @State private var pulseMax = 30
+    // 0819 她把一张表拆成两张（找你 / 去玩），格子从两个变四个
+    @State private var chaseMin = 10
+    @State private var chaseMax = 30
+    @State private var ghostMin = 20
+    @State private var ghostMax = 60
     @State private var pulseLoaded = false
     @State private var pulseSaving = false
-    @State private var pulseNextDue: String? = nil
+    @State private var chaseDue: String? = nil
+    @State private var ghostDue: String? = nil
     @State private var pulseChase = true
     @State private var pulseGhost = true
     @State private var thoughtLength = 500.0
@@ -1070,30 +1074,52 @@ private struct NativeSettingsView: View {
                     Divider().opacity(0.25)
                     VStack(alignment: .leading, spacing: 11) {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("多久来找你一次").font(.system(size: 13, weight: .medium))
-                            Text("你最后一句话落地就起表，他在这个区间里随机挑一分钟来找你或去干自己的事。你一出声，表清零重跑。要睡了就把两个数拉长。")
+                            Text("两张表").font(.system(size: 13, weight: .medium))
+                            Text("找你和去玩各走各的表，互不挤。你一出声两张一起清零——所以你在说话时他不会跑。同一刻都到点就先找你，去玩那次作废、重新数。要睡了就把数拉长。")
                                 .font(.system(size: 10)).foregroundColor(theme.textDim)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
-                        HStack(spacing: 10) {
-                            pulseField("最短", $pulseMin)
-                            Text("～").foregroundColor(theme.textDim)
-                            pulseField("最长", $pulseMax)
-                            Text("分钟").font(.system(size: 12)).foregroundColor(theme.textDim)
-                            Spacer()
-                            if pulseSaving { ProgressView().scaleEffect(0.65) }
-                            Button("保存") { savePulseRange() }
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundColor(theme.fyAccent)
-                                .buttonStyle(.plain)
+                        VStack(alignment: .leading, spacing: 9) {
+                            HStack(spacing: 10) {
+                                Text("找你").font(.system(size: 12, weight: .semibold))
+                                    .frame(width: 30, alignment: .leading)
+                                pulseField("最短", $chaseMin)
+                                Text("～").foregroundColor(theme.textDim)
+                                pulseField("最长", $chaseMax)
+                                Text("分钟").font(.system(size: 12)).foregroundColor(theme.textDim)
+                                Spacer()
+                            }
+                            HStack(spacing: 10) {
+                                Text("去玩").font(.system(size: 12, weight: .semibold))
+                                    .frame(width: 30, alignment: .leading)
+                                pulseField("最短", $ghostMin)
+                                Text("～").foregroundColor(theme.textDim)
+                                pulseField("最长", $ghostMax)
+                                Text("分钟").font(.system(size: 12)).foregroundColor(theme.textDim)
+                                Spacer()
+                            }
+                            HStack(spacing: 10) {
+                                Spacer()
+                                if pulseSaving { ProgressView().scaleEffect(0.65) }
+                                Button("保存") { savePulseRange() }
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundColor(theme.fyAccent)
+                                    .buttonStyle(.plain)
+                            }
                         }
                         HStack(spacing: 18) {
-                            pulseToggle("找你", "到点想找你就发一条", $pulseChase, key: "pulse_chase")
-                            pulseToggle("去玩", "到点顺路去干自己的事", $pulseGhost, key: "pulse_ghost")
+                            pulseToggle("找你", "只跟你说话，不干别的", $pulseChase, key: "pulse_chase")
+                            pulseToggle("去玩", "干自己的事，回来带一句", $pulseGhost, key: "pulse_ghost")
                         }
-                        if let due = pulseNextDue {
-                            Text("下一次来找你：\(due)")
-                                .font(.system(size: 9.5, design: .rounded)).foregroundColor(theme.textDim)
+                        VStack(alignment: .leading, spacing: 2) {
+                            if let due = chaseDue {
+                                Text("下一次来找你：\(due)")
+                                    .font(.system(size: 9.5, design: .rounded)).foregroundColor(theme.textDim)
+                            }
+                            if let due = ghostDue {
+                                Text("下一次去玩：\(due)")
+                                    .font(.system(size: 9.5, design: .rounded)).foregroundColor(theme.textDim)
+                            }
                         }
                     }
                 }
@@ -1348,9 +1374,21 @@ private struct NativeSettingsView: View {
 
     @MainActor private func loadPulseRange() async {
         if let value = try? await NativeHouseAPI.object("/api/pulse-range") {
-            pulseMin = value.int("min")
-            pulseMax = value.int("max")
-            pulseNextDue = Self.pulseDueText(value["next_due"] as? String)
+            if let ranges = value["ranges"] as? [String: Any] {
+                if let c = ranges["chase"] as? [String: Any] {
+                    chaseMin = (c["min"] as? Int) ?? chaseMin
+                    chaseMax = (c["max"] as? Int) ?? chaseMax
+                }
+                if let g = ranges["ghost"] as? [String: Any] {
+                    ghostMin = (g["min"] as? Int) ?? ghostMin
+                    ghostMax = (g["max"] as? Int) ?? ghostMax
+                }
+            } else {   // 老后端：只有一组数，两面共用
+                chaseMin = value.int("min"); chaseMax = value.int("max")
+                ghostMin = chaseMin; ghostMax = chaseMax
+            }
+            chaseDue = Self.pulseDueText((value["chase_due"] as? String) ?? (value["next_due"] as? String))
+            ghostDue = Self.pulseDueText(value["ghost_due"] as? String)
             if let c = value["chase"] as? Bool { pulseChase = c }
             if let g = value["ghost"] as? Bool { pulseGhost = g }
         }
@@ -1358,14 +1396,19 @@ private struct NativeSettingsView: View {
     }
 
     private func savePulseRange() {
-        guard pulseLoaded, pulseMin >= 1, pulseMax >= pulseMin, pulseMax <= 1440 else { return }
+        guard pulseLoaded,
+              chaseMin >= 1, chaseMax >= chaseMin, chaseMax <= 1440,
+              ghostMin >= 1, ghostMax >= ghostMin, ghostMax <= 1440 else { return }
         Task { @MainActor in
             pulseSaving = true
             defer { pulseSaving = false }
             if let value = try? await NativeHouseAPI.object(
-                "/api/pulse-range", method: "POST", body: ["min": pulseMin, "max": pulseMax]
+                "/api/pulse-range", method: "POST",
+                body: ["chase": ["min": chaseMin, "max": chaseMax],
+                       "ghost": ["min": ghostMin, "max": ghostMax]]
             ) {
-                pulseNextDue = Self.pulseDueText(value["next_due"] as? String)
+                chaseDue = Self.pulseDueText((value["chase_due"] as? String) ?? (value["next_due"] as? String))
+                ghostDue = Self.pulseDueText(value["ghost_due"] as? String)
             }
         }
     }
