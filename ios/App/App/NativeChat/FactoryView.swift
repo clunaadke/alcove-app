@@ -327,12 +327,33 @@ private struct PromptBlock: Identifiable {
     }
 }
 
+/// 0819 她拆表之后：找你那轮和去玩那轮读到的 prompt 已经不一样了
+/// （找你那轮没有工具段和收尾段），所以面板也摆两条，各是各的真身。
+private struct PromptTable: Identifiable {
+    let id = UUID()
+    let kind: String
+    let title: String
+    let note: String
+    let blocks: [PromptBlock]
+
+    init(_ raw: [String: Any]) {
+        kind = raw.string("kind")
+        title = raw.string("title")
+        note = raw.string("note")
+        blocks = raw.array("blocks").map { PromptBlock($0) }
+    }
+
+    init(kind: String, title: String, note: String, blocks: [PromptBlock]) {
+        self.kind = kind; self.title = title; self.note = note; self.blocks = blocks
+    }
+}
+
 private struct PromptEditor: View {
     let palette: GlassPalette
     var onSaved: () -> Void
     @Environment(\.dismiss) private var dismiss
 
-    @State private var blocks: [PromptBlock] = []
+    @State private var tables: [PromptTable] = []
     @State private var edits: [String: String] = [:]
     @State private var original: [String: String] = [:]
     @State private var loading = true
@@ -351,13 +372,40 @@ private struct PromptEditor: View {
                 } else {
                     ScrollView {
                         VStack(alignment: .leading, spacing: 0) {
-                            Text("这是他被叫醒时读到的**整条**——灰的是代码现算的，改不了但看得见；\n带框的是你写的，随便改。")
+                            Text("他被叫醒时读到的**整条**，两轮各一份——灰的是代码现算的，改不了但看得见；\n带框的是你写的，随便改。两张表各走各的，读到的东西不一样。")
                                 .font(.system(size: 10.5))
                                 .foregroundColor(palette.ink3)
                                 .lineSpacing(3)
                                 .padding(.bottom, 14)
-                            ForEach(blocks) { b in
-                                block(b)
+                            ForEach(Array(tables.enumerated()), id: \.element.id) { idx, t in
+                                VStack(alignment: .leading, spacing: 3) {
+                                    HStack(spacing: 5) {
+                                        Image(systemName: t.kind == "ghost"
+                                              ? "figure.walk" : "bubble.left.fill")
+                                            .font(.system(size: 9))
+                                        Text(t.title)
+                                            .font(.system(size: 13, weight: .semibold))
+                                            .tracking(0.5)
+                                        Spacer(minLength: 0)
+                                    }
+                                    .foregroundColor(palette.acc)
+                                    if !t.note.isEmpty {
+                                        Text(t.note)
+                                            .font(.system(size: 9.5))
+                                            .foregroundColor(palette.ink3)
+                                            .fixedSize(horizontal: false, vertical: true)
+                                    }
+                                }
+                                .padding(.bottom, 10)
+                                ForEach(t.blocks) { b in
+                                    block(b)
+                                }
+                                if idx < tables.count - 1 {
+                                    Rectangle()
+                                        .fill(palette.ink3.opacity(0.18))
+                                        .frame(height: 1)
+                                        .padding(.top, 6).padding(.bottom, 18)
+                                }
                             }
                         }
                         .padding(.horizontal, 16)
@@ -456,13 +504,19 @@ private struct PromptEditor: View {
 
     private func load() async {
         let raw = (try? await NativeHouseAPI.object("/api/files/prompt")) ?? [:]
-        let bs = raw.array("blocks").map { PromptBlock($0) }
+        var ts = raw.array("tables").map { PromptTable($0) }
+        if ts.isEmpty {   // 老后端只给一条合并版
+            ts = [PromptTable(kind: "all", title: "整条 prompt", note: "",
+                              blocks: raw.array("blocks").map { PromptBlock($0) })]
+        }
+        // 两张表里的可改段互不重名（chase 在找你那张，tools/ghost/tail 在去玩那张），
+        // 收进同一个 edits 一起存
         var e: [String: String] = [:]
-        for b in bs where b.kind == "edit" {
-            e[b.key] = b.text
+        for t in ts {
+            for b in t.blocks where b.kind == "edit" { e[b.key] = b.text }
         }
         await MainActor.run {
-            blocks = bs
+            tables = ts
             edits = e
             original = e
             loading = false
