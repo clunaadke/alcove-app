@@ -3528,7 +3528,7 @@ private struct NativeCoreadRoomView: View {
     var body: some View {
         GeometryReader { geo in
             ZStack {
-                CoreadPetalBackground(isNight: isNight).ignoresSafeArea()
+                CoreadYanxiaBackground(isNight: isNight).ignoresSafeArea()
 
                 if let (book, chapter) = reading {
                     CoreadReaderView(book: book, chapter: chapter) { reading = nil }
@@ -3544,7 +3544,7 @@ private struct NativeCoreadRoomView: View {
                     Button { dismiss() } label: {
                         Image(systemName: "chevron.left")
                             .font(.system(size: 15, weight: .semibold))
-                            .foregroundColor(isNight ? Color(red: 0.94, green: 0.84, blue: 0.87) : Color(red: 0.35, green: 0.28, blue: 0.31))
+                            .foregroundColor(isNight ? Color(red: 0.70, green: 0.75, blue: 0.80) : Color(red: 0.290, green: 0.322, blue: 0.361))
                             .frame(width: 44, height: 44)
                             .background(isNight ? Color.white.opacity(0.08) : Color.white.opacity(0.64), in: Circle())
                     }
@@ -3559,55 +3559,78 @@ private struct NativeCoreadRoomView: View {
     }
 
     @ViewBuilder private func shelf(_ geo: GeometryProxy) -> some View {
+        let pal = YanxiaPal(night: isNight)
         let pages = max(1, Int(ceil(Double(books.count) / 9.0)))
         VStack(spacing: 0) {
+            // 顶栏只留统计入口（返回箭头挂在外层 ZStack 上，位置没动）
             HStack {
                 Spacer()
-                VStack(spacing: 2) {
-                    Text("共读室").font(.system(size: 21, weight: .semibold, design: .serif))
-                    Text("慢慢翻，慢慢读").font(.system(size: 10, design: .serif)).opacity(0.62)
-                }
-                Spacer()
                 Button { showWorkbench = true } label: {
-                    Image(systemName: "chart.bar.xaxis").frame(width: 44, height: 44)
-                        .background(isNight ? Color.white.opacity(0.08) : Color.white.opacity(0.62), in: Circle())
-                }.buttonStyle(.plain).accessibilityLabel("DeepSeek 工作台")
+                    Image(systemName: "chart.bar.xaxis")
+                        .font(.system(size: 13.5, weight: .light))
+                        .foregroundColor(pal.ink2)
+                        .frame(width: 38, height: 38)
+                        .background(Circle().fill(pal.card))
+                        .overlay(Circle().strokeBorder(pal.line, lineWidth: 0.5))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("DeepSeek 工作台")
             }
-            .foregroundColor(isNight ? Color(red: 0.94, green: 0.84, blue: 0.87) : Color(red: 0.34, green: 0.27, blue: 0.30))
-            .padding(.top, max(geo.safeAreaInsets.top + 10, 26)).padding(.horizontal, 18)
-            Spacer().frame(height: 18)
-            if loading { ProgressView().tint(.pink.opacity(0.7)) }
-            else if !error.isEmpty { Text(error).font(.system(size: 12)).foregroundColor(.secondary) }
-            else {
+            .padding(.top, max(geo.safeAreaInsets.top + 8, 24))
+            .padding(.horizontal, 18)
+
+            YanxiaDateLine(pal: pal).padding(.top, 4)
+            YanxiaEmboss(text: "共读室", size: 38, pal: pal).padding(.top, 7)
+            Text("慢慢翻，慢慢读")
+                .font(.system(size: 10.5, design: .serif))
+                .tracking(2)
+                .foregroundColor(pal.ink3)
+                .padding(.top, 4)
+
+            Spacer().frame(height: 22)
+
+            if loading {
+                ProgressView().tint(pal.accent)
+            } else if !error.isEmpty {
+                Text(error).font(.system(size: 12, design: .serif)).foregroundColor(pal.ink3)
+            } else {
                 TabView(selection: $page) {
                     ForEach(0..<pages, id: \.self) { pageIndex in
-                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 13), count: 3), spacing: 17) {
+                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 13), count: 3),
+                                  spacing: 16) {
                             ForEach(Array(books.dropFirst(pageIndex * 9).prefix(9))) { book in
                                 Button { selected = book } label: { CoreadBookSlot(book: book, isNight: isNight) }
                                     .buttonStyle(CoreadPressStyle())
                             }
                         }
-                        .padding(.horizontal, 24).padding(.vertical, 4)
+                        .padding(.horizontal, 22)
+                        .padding(.top, 2)
+                        .frame(maxHeight: .infinity, alignment: .top)
                         .tag(pageIndex)
                     }
                 }
                 .tabViewStyle(.page(indexDisplayMode: .never))
                 .frame(maxHeight: .infinity)
-                Text("\(page + 1) / \(pages)")
-                    .font(.system(size: 10, weight: .medium, design: .rounded))
-                    .foregroundColor(Color(red: 0.47, green: 0.39, blue: 0.43).opacity(0.7))
-                    .padding(.top, 3)
+
+                if pages > 1 {
+                    Text("\(page + 1) / \(pages)")
+                        .font(.system(size: 9.5, design: .monospaced))
+                        .tracking(1.5)
+                        .foregroundColor(pal.ink3)
+                        .padding(.top, 4)
+                }
             }
-            Spacer()
-            HStack(spacing: 34) {
-                coreadAction("正在共读", "person.2.fill") {
+
+            Spacer(minLength: 8)
+            HStack(spacing: 12) {
+                coreadAction("正在共读", "person.2") {
                     if let book = books.first(where: { $0.id == activeBookID }) {
                         reading = (book, min(activeChapter, max(0, book.chapters - 1)))
                     } else if let book = books.first {
                         reading = (book, min(book.currentChapter, max(0, book.chapters - 1)))
                     }
                 }
-                coreadAction("随机抽一本", "dice.fill") {
+                coreadAction("随机抽一本", "die.face.5") {
                     if let book = books.randomElement() { selected = book }
                 }
             }
@@ -3616,13 +3639,20 @@ private struct NativeCoreadRoomView: View {
     }
 
     private func coreadAction(_ title: String, _ icon: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Label(title, systemImage: icon)
-                .font(.system(size: 12, weight: .semibold, design: .rounded))
-                .foregroundColor(isNight ? Color(red: 0.94, green: 0.84, blue: 0.87) : Color(red: 0.37, green: 0.29, blue: 0.33))
-                .padding(.horizontal, 14).frame(height: 42)
-                .background(isNight ? Color.white.opacity(0.08) : Color.white.opacity(0.66), in: Capsule())
-        }.buttonStyle(CoreadPressStyle())
+        let pal = YanxiaPal(night: isNight)
+        return Button(action: action) {
+            HStack(spacing: 7) {
+                Image(systemName: icon).font(.system(size: 13, weight: .light))
+                Text(title).font(.system(size: 12, design: .serif)).tracking(1)
+            }
+            .foregroundColor(pal.ink2)
+            .padding(.horizontal, 18)
+            .frame(height: 44)
+            .background(Capsule().fill(pal.card))
+            .overlay(Capsule().strokeBorder(pal.line, lineWidth: 0.5))
+            .shadow(color: Color.black.opacity(isNight ? 0.22 : 0.08), radius: 9, y: 3)
+        }
+        .buttonStyle(CoreadPressStyle())
     }
 
     @MainActor private func loadBooks() async {
@@ -3641,47 +3671,129 @@ private struct CoreadPressStyle: ButtonStyle {
     }
 }
 
-private struct CoreadPetalBackground: View {
+// MARK: - 檐下（2026-08-19 她给的皮：雾面 · 冷灰蓝 · 噪点 · 浮雕）
+// 她原话「就是檐下的风格」。参考八张图，同一个作者：六张阅读器 + 两张桌面端。
+// 三件套缺一不可 —— 整页大渐变（顶亮底暗）· 水痕亮斑 · 噪点。
+// 少了噪点就是普通毛玻璃，整张脸会平掉，这条是看图看出来的第一条。
+
+private struct YanxiaPal {
+    let night: Bool
+    var ink: Color    { night ? Color(red: 0.90, green: 0.93, blue: 0.95) : Color(red: 0.165, green: 0.185, blue: 0.212) }
+    var ink2: Color   { night ? Color(red: 0.70, green: 0.75, blue: 0.80) : Color(red: 0.290, green: 0.322, blue: 0.361) }
+    var ink3: Color   { night ? Color(red: 0.50, green: 0.55, blue: 0.61) : Color(red: 0.475, green: 0.510, blue: 0.553) }
+    var accent: Color { night ? Color(red: 0.50, green: 0.65, blue: 0.83) : Color(red: 0.353, green: 0.498, blue: 0.659) }
+    var card: Color   { night ? Color.white.opacity(0.070) : Color.white.opacity(0.42) }
+    var card2: Color  { night ? Color.white.opacity(0.045) : Color.white.opacity(0.26) }
+    var line: Color   { night ? Color.white.opacity(0.100) : Color.white.opacity(0.50) }
+
+    /// 整页渐变四段：顶亮 → 底暗。夜里底下那两段偏湿蓝，不是电子蓝。
+    var ramp: [Color] {
+        night
+        ? [Color(red: 0.137, green: 0.153, blue: 0.173), Color(red: 0.169, green: 0.192, blue: 0.220),
+           Color(red: 0.118, green: 0.200, blue: 0.333), Color(red: 0.086, green: 0.161, blue: 0.290)]
+        : [Color(red: 0.984, green: 0.988, blue: 0.992), Color(red: 0.910, green: 0.925, blue: 0.937),
+           Color(red: 0.725, green: 0.761, blue: 0.788), Color(red: 0.553, green: 0.592, blue: 0.624)]
+    }
+    /// 浮雕三件：字面跟雾同色，靠一亮一暗两道阴影从雾里凸出来
+    var embossFace: Color { night ? Color(red: 0.204, green: 0.243, blue: 0.298).opacity(0.55)
+                                  : Color(red: 0.886, green: 0.910, blue: 0.933).opacity(0.92) }
+    var embossHi: Color   { night ? Color(red: 0.588, green: 0.686, blue: 0.804).opacity(0.30) : Color.white.opacity(0.95) }
+    var embossLo: Color   { night ? Color.black.opacity(0.55) : Color(red: 0.376, green: 0.439, blue: 0.502).opacity(0.42) }
+}
+
+/// 噪点。一次生成一张 128×128 的图平铺 ——
+/// ‼️不能用 Canvas 每帧现算：随机数每次重绘都变，整页会闪。
+private enum YanxiaGrain {
+    static let tile: UIImage = {
+        let side = 128
+        let fmt = UIGraphicsImageRendererFormat.default()
+        fmt.scale = 1
+        fmt.opaque = false
+        return UIGraphicsImageRenderer(size: CGSize(width: side, height: side), format: fmt).image { ctx in
+            var seed: UInt64 = 0x9E3779B97F4A7C15
+            for y in 0..<side {
+                for x in 0..<side {
+                    seed ^= seed << 13; seed ^= seed >> 7; seed ^= seed << 17
+                    let v = Double(seed % 1000) / 1000.0
+                    guard v > 0.55 else { continue }
+                    let white = (seed >> 20) % 2 == 0
+                    UIColor(white: white ? 1 : 0, alpha: (v - 0.55) * 0.38).setFill()
+                    ctx.fill(CGRect(x: x, y: y, width: 1, height: 1))
+                }
+            }
+        }
+    }()
+}
+
+private struct CoreadYanxiaBackground: View {
     let isNight: Bool
-    private let petals: [(CGFloat, CGFloat, CGFloat, Double)] = [
-        (0.10, 0.16, 7, -24), (0.83, 0.12, 5, 31), (0.72, 0.29, 6, -12),
-        (0.18, 0.39, 5, 42), (0.91, 0.52, 7, 18), (0.08, 0.67, 6, -38),
-        (0.78, 0.75, 5, 26), (0.27, 0.88, 7, 11), (0.94, 0.92, 4, -19)
+    private var pal: YanxiaPal { YanxiaPal(night: isNight) }
+    /// x, y, 半径系数, 强度
+    private static let drops: [(CGFloat, CGFloat, CGFloat, Double)] = [
+        (0.18, 0.12, 0.42, 0.55), (0.86, 0.26, 0.34, 0.38),
+        (0.62, 0.68, 0.48, 0.30), (0.12, 0.82, 0.30, 0.26)
     ]
     var body: some View {
         GeometryReader { geo in
             ZStack {
-                (isNight
-                 ? Color(red: 0.16, green: 0.12, blue: 0.14)
-                 : Color(red: 0.985, green: 0.955, blue: 0.962))
-                RadialGradient(colors: [
-                    (isNight ? Color(red: 0.35, green: 0.23, blue: 0.28) : Color.white).opacity(0.24),
-                    .clear
-                ], center: .topTrailing, startRadius: 5, endRadius: geo.size.width * 0.9)
-                ForEach(Array(petals.enumerated()), id: \.offset) { _, item in
-                    CoreadPetal()
-                        .fill(isNight ? Color(red: 0.69, green: 0.43, blue: 0.51).opacity(0.20)
-                                      : Color(red: 0.82, green: 0.58, blue: 0.65).opacity(0.20))
-                        .frame(width: item.2, height: item.2 * 1.55)
-                        .rotationEffect(.degrees(item.3))
-                        .position(x: geo.size.width * item.0, y: geo.size.height * item.1)
+                LinearGradient(stops: [
+                    .init(color: pal.ramp[0], location: 0.00),
+                    .init(color: pal.ramp[1], location: 0.34),
+                    .init(color: pal.ramp[2], location: 0.76),
+                    .init(color: pal.ramp[3], location: 1.00)
+                ], startPoint: .top, endPoint: .bottom)
+
+                // 水痕：几团散开的亮斑。有它雾才是「结了水汽的玻璃」，没它就是一团糊。
+                ForEach(Array(Self.drops.enumerated()), id: \.offset) { _, d in
+                    let r = geo.size.width * d.2
+                    RadialGradient(
+                        colors: [(isNight ? Color(red: 0.59, green: 0.76, blue: 1.0) : Color.white)
+                                    .opacity(isNight ? d.3 * 0.5 : d.3), .clear],
+                        center: .center, startRadius: 0, endRadius: r)
+                        .frame(width: r * 2, height: r * 2)
+                        .position(x: geo.size.width * d.0, y: geo.size.height * d.1)
+                        .blendMode(.plusLighter)
                 }
+
+                Image(uiImage: YanxiaGrain.tile)
+                    .resizable(resizingMode: .tile)
+                    .blendMode(.overlay)
+                    .opacity(isNight ? 0.34 : 0.55)
+                    .allowsHitTesting(false)
             }
         }
     }
 }
 
-private struct CoreadPetal: Shape {
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        path.move(to: CGPoint(x: rect.midX, y: rect.minY))
-        path.addCurve(to: CGPoint(x: rect.midX, y: rect.maxY),
-                      control1: CGPoint(x: rect.maxX, y: rect.height * 0.28),
-                      control2: CGPoint(x: rect.maxX, y: rect.height * 0.76))
-        path.addCurve(to: CGPoint(x: rect.midX, y: rect.minY),
-                      control1: CGPoint(x: rect.minX, y: rect.height * 0.76),
-                      control2: CGPoint(x: rect.minX, y: rect.height * 0.28))
-        return path
+/// 浮雕标题 —— 她第二组参考里那个大时钟的手法：字不是白的，是从雾里凸出来的
+private struct YanxiaEmboss: View {
+    let text: String
+    var size: CGFloat = 40
+    let pal: YanxiaPal
+    var body: some View {
+        Text(text)
+            .font(.system(size: size, weight: .semibold, design: .serif))
+            .tracking(size * 0.10)
+            .foregroundColor(pal.embossFace)
+            .shadow(color: pal.embossHi, radius: 1, x: -1.5, y: -1.5)
+            .shadow(color: pal.embossLo, radius: 4, x: 2, y: 2.5)
+    }
+}
+
+/// 日期条 —— 等宽、全大写、字距拉开。一行小字就把气质定住了。
+private struct YanxiaDateLine: View {
+    let pal: YanxiaPal
+    private static let fmt: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "MMMM d, yyyy  |  EEEE"
+        return f
+    }()
+    var body: some View {
+        Text(Self.fmt.string(from: Date()).uppercased())
+            .font(.system(size: 9.5, design: .monospaced))
+            .tracking(2.6)
+            .foregroundColor(pal.ink3)
     }
 }
 
@@ -3695,13 +3807,13 @@ private struct CoreadWorkbenchView: View {
     private var totals: [String: Any] { apiLog["totals"] as? [String: Any] ?? [:] }
     private var recent: [[String: Any]] { apiLog["recent"] as? [[String: Any]] ?? [] }
     private var books: [[String: Any]] { dashboard["books"] as? [[String: Any]] ?? [] }
-    private var foreground: Color { isNight ? Color(red: 0.94, green: 0.86, blue: 0.88) : Color(red: 0.31, green: 0.25, blue: 0.28) }
+    private var foreground: Color { isNight ? Color(red: 0.90, green: 0.93, blue: 0.95) : Color(red: 0.165, green: 0.185, blue: 0.212) }
 
     var body: some View {
         NavigationStack {
             ZStack {
-                CoreadPetalBackground(isNight: isNight).ignoresSafeArea()
-                if loading { ProgressView().tint(.pink) }
+                CoreadYanxiaBackground(isNight: isNight).ignoresSafeArea()
+                if loading { ProgressView().tint(Color(red: 0.353, green: 0.498, blue: 0.659)) }
                 else {
                     ScrollView {
                         VStack(spacing: 16) {
@@ -3726,7 +3838,9 @@ private struct CoreadWorkbenchView: View {
                                             .fontWeight(.semibold)
                                     }
                                     .font(.system(size: 11, design: .serif)).padding(11)
-                                    .background(cardColor, in: RoundedRectangle(cornerRadius: 12))
+                                    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(cardColor))
+                                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                        .strokeBorder(lineColor, lineWidth: 0.5))
                                 }
                             }
                         }.padding(18)
@@ -3744,12 +3858,27 @@ private struct CoreadWorkbenchView: View {
         }
     }
 
-    private var cardColor: Color { isNight ? Color.white.opacity(0.07) : Color.white.opacity(0.62) }
+    private var cardColor: Color { isNight ? Color.white.opacity(0.045) : Color.white.opacity(0.26) }
+    private var lineColor: Color { isNight ? Color.white.opacity(0.10) : Color.white.opacity(0.50) }
+    /// 参考图里的数字卡：小标签在上、衬线大数字在下、一道细描边，卡片自己不发光
     private func stat(_ title: String, _ value: String) -> some View {
-        VStack(spacing: 5) {
-            Text(value).font(.system(size: 17, weight: .semibold, design: .rounded)).minimumScaleFactor(0.75)
-            Text(title).font(.system(size: 9, design: .rounded)).foregroundColor(foreground.opacity(0.58))
-        }.frame(maxWidth: .infinity).frame(height: 66).background(cardColor, in: RoundedRectangle(cornerRadius: 14))
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.system(size: 9.5))
+                .tracking(0.5)
+                .foregroundColor(foreground.opacity(0.55))
+            Text(value)
+                .font(.system(size: 17, weight: .semibold, design: .serif))
+                .tracking(0.5)
+                .minimumScaleFactor(0.7)
+                .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 12)
+        .frame(height: 62)
+        .background(RoundedRectangle(cornerRadius: 13, style: .continuous).fill(cardColor))
+        .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous)
+            .strokeBorder(lineColor, lineWidth: 0.5))
     }
     private func token(_ value: Int) -> String { value >= 10_000 ? String(format: "%.1fk", Double(value) / 1000) : "\(value)" }
     private func number(_ row: [String: Any], _ key: String) -> Double {
@@ -3762,26 +3891,70 @@ private struct CoreadWorkbenchView: View {
 private struct CoreadBookSlot: View {
     let book: CoreadBook
     var isNight = false
-    private let colors: [[Color]] = [
-        [Color(red: 0.76, green: 0.65, blue: 0.70), Color(red: 0.92, green: 0.84, blue: 0.86)],
-        [Color(red: 0.58, green: 0.65, blue: 0.69), Color(red: 0.81, green: 0.85, blue: 0.84)],
-        [Color(red: 0.69, green: 0.64, blue: 0.76), Color(red: 0.87, green: 0.82, blue: 0.89)]
-    ]
+    private var pal: YanxiaPal { YanxiaPal(night: isNight) }
+    /// 没封面图时的底色：冷灰蓝三档，按 id 稳定分配（同一本书每次进来颜色一样）
+    private var ramp: [Color] {
+        let sets: [[Color]] = isNight
+        ? [[Color(red: 0.240, green: 0.373, blue: 0.549), Color(red: 0.106, green: 0.184, blue: 0.302)],
+           [Color(red: 0.290, green: 0.384, blue: 0.502), Color(red: 0.133, green: 0.204, blue: 0.298)],
+           [Color(red: 0.220, green: 0.333, blue: 0.471), Color(red: 0.094, green: 0.157, blue: 0.259)]]
+        : [[Color(red: 0.561, green: 0.651, blue: 0.741), Color(red: 0.310, green: 0.408, blue: 0.514)],
+           [Color(red: 0.659, green: 0.706, blue: 0.761), Color(red: 0.388, green: 0.471, blue: 0.561)],
+           [Color(red: 0.596, green: 0.678, blue: 0.729), Color(red: 0.329, green: 0.435, blue: 0.494)]]
+        return sets[abs(book.id.hashValue) % sets.count]
+    }
+    private var progress: CGFloat {
+        guard book.chapters > 0 else { return 0 }
+        return min(1, CGFloat(book.currentChapter + 1) / CGFloat(book.chapters))
+    }
     var body: some View {
         VStack(spacing: 6) {
             ZStack {
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(LinearGradient(colors: colors[abs(book.id.hashValue) % colors.count], startPoint: .topLeading, endPoint: .bottomTrailing))
-                Image(systemName: "book.closed.fill").font(.system(size: 22, weight: .light)).foregroundColor(.white.opacity(0.5))
-                Text(book.title).font(.system(size: 11, weight: .semibold, design: .serif))
-                    .foregroundColor(.white).multilineTextAlignment(.center).lineLimit(4).padding(8)
+                LinearGradient(colors: ramp, startPoint: .topLeading, endPoint: .bottomTrailing)
+                if let raw = book.coverURL, let url = URL(string: raw) {
+                    AsyncImage(url: url) { image in
+                        image.resizable().aspectRatio(contentMode: .fill)
+                    } placeholder: {
+                        Color.clear
+                    }
+                } else {
+                    Text(book.title)
+                        .font(.system(size: 10.5, weight: .medium, design: .serif))
+                        .tracking(0.5)
+                        .foregroundColor(.white.opacity(0.95))
+                        .multilineTextAlignment(.center)
+                        .lineLimit(4)
+                        .padding(8)
+                        .shadow(color: .black.opacity(0.35), radius: 3, y: 1)
+                }
+                // 玻璃高光：让封面像压在一层水汽底下，而不是贴上去的一块色板
+                LinearGradient(stops: [
+                    .init(color: .white.opacity(0.42), location: 0.00),
+                    .init(color: .clear,               location: 0.44),
+                    .init(color: .white.opacity(0.10), location: 1.00)
+                ], startPoint: .topLeading, endPoint: .bottomTrailing)
+                .allowsHitTesting(false)
             }
-            .aspectRatio(0.70, contentMode: .fit)
-            .shadow(color: .black.opacity(0.09), radius: 3, y: 2)
-            Text(book.title).font(.system(size: 9, weight: .medium, design: .serif))
-                .foregroundColor(isNight ? Color(red: 0.91, green: 0.82, blue: 0.85) : Color(red: 0.32, green: 0.27, blue: 0.29)).lineLimit(1)
-            ProgressView(value: book.chapters == 0 ? 0 : Double(book.currentChapter + 1) / Double(book.chapters))
-                .tint(Color(red: 0.75, green: 0.47, blue: 0.55)).scaleEffect(y: 0.55)
+            .aspectRatio(0.72, contentMode: .fit)
+            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .strokeBorder(pal.line, lineWidth: 0.5))
+            .shadow(color: .black.opacity(isNight ? 0.34 : 0.13), radius: 6, y: 3)
+
+            Text(book.title)
+                .font(.system(size: 10.5, design: .serif))
+                .foregroundColor(pal.ink2)
+                .lineLimit(1)
+
+            // 进度：1.5pt 的细线，参考图里那种几乎看不见的一道
+            GeometryReader { g in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(pal.ink3.opacity(0.22))
+                    Capsule().fill(pal.accent.opacity(0.8))
+                        .frame(width: max(0, g.size.width * progress))
+                }
+            }
+            .frame(height: 1.5)
         }
     }
 }
@@ -3792,29 +3965,95 @@ private struct CoreadDetailView: View {
     let open: (Int) -> Void
     @Environment(\.colorScheme) private var colorScheme
     private var isNight: Bool { colorScheme == .dark }
+    private var pal: YanxiaPal { YanxiaPal(night: isNight) }
+
     var body: some View {
-        VStack(spacing: 18) {
-            HStack { Button(action: onBack) { Image(systemName: "chevron.left").frame(width: 44, height: 44) }; Spacer() }
-            .padding(.top, 48).padding(.horizontal, 14)
-            CoreadBookSlot(book: book, isNight: isNight).frame(width: 128)
-            Text(book.title).font(.system(size: 22, weight: .semibold, design: .serif)).multilineTextAlignment(.center)
+        VStack(spacing: 0) {
+            HStack {
+                Button(action: onBack) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(pal.ink2)
+                        .frame(width: 38, height: 38)
+                        .background(Circle().fill(pal.card))
+                        .overlay(Circle().strokeBorder(pal.line, lineWidth: 0.5))
+                }
+                .buttonStyle(.plain)
+                Spacer()
+            }
+            .padding(.top, 52)
+            .padding(.horizontal, 16)
+
+            CoreadBookSlot(book: book, isNight: isNight)
+                .frame(width: 116)
+                .padding(.top, 10)
+
+            Text(book.title)
+                .font(.system(size: 19, weight: .semibold, design: .serif))
+                .tracking(1)
+                .foregroundColor(pal.ink)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 30)
+                .padding(.top, 14)
+
             Text("共 \(book.chapters) 章 · 已读到第 \(min(book.currentChapter + 1, book.chapters)) 章")
-                .font(.system(size: 12)).foregroundColor(.secondary)
+                .font(.system(size: 10, design: .monospaced))
+                .tracking(1.2)
+                .foregroundColor(pal.ink3)
+                .padding(.top, 6)
+
             Button { open(min(book.currentChapter, max(0, book.chapters - 1))) } label: {
-                Label("继续读下去", systemImage: "book.pages.fill").frame(maxWidth: .infinity).frame(height: 48)
-            }.buttonStyle(.borderedProminent).tint(Color(red: 0.67, green: 0.43, blue: 0.51)).padding(.horizontal, 46)
+                HStack(spacing: 8) {
+                    Image(systemName: "book.pages").font(.system(size: 14, weight: .light))
+                    Text("继续读下去").font(.system(size: 13.5, design: .serif)).tracking(2)
+                }
+                .foregroundColor(pal.ink)
+                .frame(maxWidth: .infinity)
+                .frame(height: 46)
+                .background(Capsule().fill(pal.card))
+                .overlay(Capsule().strokeBorder(pal.line, lineWidth: 0.5))
+                .shadow(color: .black.opacity(isNight ? 0.24 : 0.09), radius: 9, y: 3)
+            }
+            .buttonStyle(CoreadPressStyle())
+            .padding(.horizontal, 44)
+            .padding(.top, 18)
+
             ScrollView {
-                LazyVStack(spacing: 9) {
+                LazyVStack(spacing: 7) {
                     ForEach(0..<book.chapters, id: \.self) { index in
                         Button { open(index) } label: {
-                            HStack { Text(book.chapterTitles.indices.contains(index) ? book.chapterTitles[index] : "第 \(index + 1) 章"); Spacer(); Image(systemName: "chevron.right") }
-                                .font(.system(size: 13, design: .serif)).padding(14)
-                                .background(isNight ? Color.white.opacity(0.07) : Color.white.opacity(0.64), in: RoundedRectangle(cornerRadius: 13))
-                        }.buttonStyle(.plain)
+                            HStack(spacing: 10) {
+                                Text(String(format: "%02d", index + 1))
+                                    .font(.system(size: 10.5, design: .monospaced))
+                                    .foregroundColor(pal.ink3)
+                                Text(book.chapterTitles.indices.contains(index)
+                                     ? book.chapterTitles[index] : "第 \(index + 1) 章")
+                                    .font(.system(size: 13, design: .serif))
+                                    .foregroundColor(pal.ink2)
+                                    .lineLimit(1)
+                                Spacer(minLength: 4)
+                                if index == book.currentChapter {
+                                    Text("读到这儿")
+                                        .font(.system(size: 9))
+                                        .tracking(1)
+                                        .foregroundColor(pal.accent)
+                                }
+                            }
+                            .padding(.horizontal, 14)
+                            .frame(height: 46)
+                            .background(RoundedRectangle(cornerRadius: 13, style: .continuous)
+                                .fill(index == book.currentChapter ? pal.card : pal.card2))
+                            .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous)
+                                .strokeBorder(pal.line, lineWidth: 0.5))
+                        }
+                        .buttonStyle(CoreadPressStyle())
                     }
-                }.padding(.horizontal, 24)
+                }
+                .padding(.horizontal, 22)
+                .padding(.top, 18)
+                .padding(.bottom, 34)
             }
-        }.foregroundColor(isNight ? Color(red: 0.94, green: 0.85, blue: 0.88) : Color(red: 0.29, green: 0.24, blue: 0.27))
+        }
     }
 }
 
@@ -3833,26 +4072,68 @@ private struct CoreadReaderView: View {
     @AppStorage("coreadActiveChapter") private var activeChapter = 0
     private var isNight: Bool { colorScheme == .dark }
     var body: some View {
+        let pal = YanxiaPal(night: isNight)
         VStack(spacing: 0) {
-            HStack {
-                Button(action: onBack) { Image(systemName: "chevron.left").frame(width: 44, height: 44) }
-                Text(title.isEmpty ? book.title : title).font(.system(size: 14, weight: .semibold, design: .serif)).lineLimit(1)
-                Spacer()
-                if samePage { Label("同页", systemImage: "person.2.fill").font(.system(size: 10, weight: .medium)).foregroundColor(.pink) }
-                Button { Task { await knock() } } label: { Image(systemName: knocked ? "hand.wave.fill" : "hand.wave") }.frame(width: 44, height: 44)
-                Button { openChat() } label: { Image(systemName: "bubble.left.and.bubble.right.fill") }.frame(width: 44, height: 44)
-            }.padding(.top, 44).padding(.horizontal, 8)
-                .background(isNight ? Color(red: 0.20, green: 0.15, blue: 0.17).opacity(0.96) : Color.white.opacity(0.77))
+            HStack(spacing: 2) {
+                Button(action: onBack) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 14, weight: .medium))
+                        .frame(width: 42, height: 42)
+                }
+                Text(title.isEmpty ? book.title : title)
+                    .font(.system(size: 13.5, weight: .medium, design: .serif))
+                    .tracking(0.5)
+                    .lineLimit(1)
+                Spacer(minLength: 4)
+                if samePage {
+                    HStack(spacing: 3) {
+                        Image(systemName: "person.2").font(.system(size: 9.5, weight: .light))
+                        Text("同页").font(.system(size: 9.5)).tracking(1)
+                    }
+                    .foregroundColor(pal.accent)
+                    .padding(.horizontal, 9)
+                    .frame(height: 24)
+                    .background(Capsule().fill(pal.accent.opacity(0.13)))
+                }
+                Button { Task { await knock() } } label: {
+                    Image(systemName: knocked ? "hand.wave.fill" : "hand.wave")
+                        .font(.system(size: 14, weight: .light))
+                        .frame(width: 42, height: 42)
+                }
+                Button { openChat() } label: {
+                    Image(systemName: "bubble.left.and.bubble.right")
+                        .font(.system(size: 14, weight: .light))
+                        .frame(width: 42, height: 42)
+                }
+            }
+            .foregroundColor(pal.ink2)
+            .padding(.top, 44)
+            .padding(.horizontal, 6)
+            .background {
+                ZStack {
+                    Rectangle().fill(.ultraThinMaterial)
+                    (isNight ? Color(red: 0.106, green: 0.125, blue: 0.149) : Color.white)
+                        .opacity(isNight ? 0.55 : 0.45)
+                }
+            }
+            .overlay(Rectangle().fill(pal.line).frame(height: 0.5), alignment: .bottom)
+
             ScrollView {
                 CoreadSelectableText(text: content, isNight: isNight) { quote in
                     quotedText = quote
                     openChat()
                     Task { await saveHighlight(quote) }
                 }
-                .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 24).padding(.vertical, 24)
-            }.background(isNight ? Color(red: 0.15, green: 0.115, blue: 0.13) : Color(red: 0.985, green: 0.965, blue: 0.965))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 24)
+                .padding(.vertical, 26)
+            }
+            // 读字的地方要素净：这一屏不铺噪点也不铺渐变，只留一层贴近纸的底。
+            // 噪点压在正文底下会硌眼睛 —— 皮再好看也不能妨碍她读书。
+            .background(isNight ? Color(red: 0.086, green: 0.102, blue: 0.125)
+                                : Color(red: 0.973, green: 0.980, blue: 0.984))
         }
-        .foregroundColor(isNight ? Color(red: 0.93, green: 0.86, blue: 0.88) : Color(red: 0.27, green: 0.23, blue: 0.25))
+        .foregroundColor(pal.ink)
         .task { await load(); await heartbeat() }
         .sheet(isPresented: $showChat) {
             CoreadChatSheet(book: book, chapter: chapter, pageText: String(content.prefix(1800)), quotedText: $quotedText)
@@ -3906,7 +4187,7 @@ private struct CoreadSelectableText: UIViewRepresentable {
         paragraph.paragraphSpacing = 12
         view.attributedText = NSAttributedString(string: text, attributes: [
             .font: UIFont.systemFont(ofSize: 17),
-            .foregroundColor: isNight ? UIColor(red: 0.93, green: 0.86, blue: 0.88, alpha: 1) : UIColor(red: 0.27, green: 0.23, blue: 0.25, alpha: 1),
+            .foregroundColor: isNight ? UIColor(red: 0.86, green: 0.89, blue: 0.92, alpha: 1) : UIColor(red: 0.165, green: 0.185, blue: 0.212, alpha: 1),
             .paragraphStyle: paragraph
         ])
         view.onQuote = onQuote
@@ -3950,7 +4231,7 @@ private struct CoreadChatSheet: View {
                 ScrollView {
                     LazyVStack(spacing: 10) {
                         ForEach(Array(messages.enumerated()), id: \.offset) { _, item in
-                            HStack { if item.string("actor") == "陈霁" { Spacer() }; Text(item.string("text")).font(.system(size: 14)).foregroundColor(isNight ? Color(red: 0.95, green: 0.88, blue: 0.90) : Color(red: 0.28, green: 0.22, blue: 0.25)).padding(12).background(item.string("actor") == "陈霁" ? Color.pink.opacity(isNight ? 0.24 : 0.2) : (isNight ? Color.white.opacity(0.08) : Color.white.opacity(0.8)), in: RoundedRectangle(cornerRadius: 14)); if item.string("actor") != "陈霁" { Spacer() } }
+                            HStack { if item.string("actor") == "陈霁" { Spacer() }; Text(item.string("text")).font(.system(size: 14)).foregroundColor(isNight ? Color(red: 0.90, green: 0.93, blue: 0.95) : Color(red: 0.165, green: 0.185, blue: 0.212)).padding(12).background(item.string("actor") == "陈霁" ? Color(red: 0.353, green: 0.498, blue: 0.659).opacity(isNight ? 0.24 : 0.2) : (isNight ? Color.white.opacity(0.08) : Color.white.opacity(0.8)), in: RoundedRectangle(cornerRadius: 14)); if item.string("actor") != "陈霁" { Spacer() } }
                         }
                     }.padding(14)
                 }
