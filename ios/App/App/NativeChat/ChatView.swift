@@ -489,7 +489,9 @@ struct ChatView: View {
     private func chatMessageRow(at index: Int, message: ChatMessage) -> some View {
         if !isPhotoGroupContinuation(at: index) {
             let previous = index > 0 ? store.messages[index - 1] : nil
-            let photos = chatPhotoGroup(startingAt: index)
+            let photos = message.inlineImages.isEmpty
+                ? chatPhotoGroup(startingAt: index)
+                : message.inlineImages.map(AlcoveAPI.attachmentURL)
             let groupEnd = index + max(photos.count, 1) - 1
             let next = groupEnd + 1 < store.messages.count ? store.messages[groupEnd + 1] : nil
             let recall = message.role == "assistant" && previous?.role == "user"
@@ -1528,7 +1530,7 @@ struct MessageRow: View {
                 } else if msg.isSticker {
                     stickerBody
                 } else {
-                    if photoURLs.count > 1 {
+                    if !photoURLs.isEmpty {
                         OfficialPhotoGridMessageView(urls: photoURLs, messageID: "chat-\(msg.id)",
                                                      onOpen: onTapImages)
                             .matchedTransitionSource(id: "chat-\(msg.id)", in: photoNamespace)
@@ -2704,7 +2706,7 @@ struct OfficialPhotoGridMessageView: View {
 
     @State private var currentIndex = 0
     @State private var isExpanded = false
-    private let side: CGFloat = 136
+    private let side: CGFloat = 124
     private let gap: CGFloat = 8
 
     var body: some View {

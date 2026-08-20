@@ -30,6 +30,7 @@ struct ChatMessage: Identifiable, Equatable {
     // 她原话「一轮里我想了三次，就出现三个思绪面板」。
     // thinking 那个字段装不下三段各自成面板，所以另开这一条。
     var segments: [ActivityItem] = []
+    var inlineImages: [String] = []
     // 0819 活动脚印：我干活时掉下来的短语，挂在气泡外面排一行浅灰斜体
     var trace: [String] = []
     var attachmentUrl: String?
@@ -177,6 +178,9 @@ struct ChatMessage: Identifiable, Equatable {
         }
         if let arr = json["activity"] as? [[String: Any]] {
             self.activity = arr.compactMap(ActivityItem.init(json:))
+        }
+        if let arr = json["inline_images"] as? [[String: Any]] {
+            self.inlineImages = arr.compactMap { $0["url"] as? String }.filter { !$0.isEmpty }
         }
         if let steps = json["trace"] as? [String] {
             self.trace = steps.filter { !$0.isEmpty }
