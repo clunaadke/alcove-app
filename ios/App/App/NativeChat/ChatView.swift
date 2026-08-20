@@ -2739,15 +2739,15 @@ struct OfficialPhotoGridMessageView: View {
     private var strip: some View {
         Group {
             if urls.count > 2 {
-                ScrollView(.horizontal, showsIndicators: false) { photoRow }
+                ScrollView(.horizontal, showsIndicators: false) { lazyPhotoRow }
                     .frame(width: side * 2 + gap)
             } else {
-                photoRow
+                HStack(spacing: gap) { photos }
             }
         }
     }
 
-    private var photoRow: some View {
+    private var lazyPhotoRow: some View {
         LazyHStack(spacing: gap) {
             photos
         }
