@@ -1623,8 +1623,8 @@ struct MessageRow: View {
             NavigationStack {
                 ScrollView {
                     Text(one.text)
-                        .font(.system(size: 17))
-                        .lineSpacing(10)
+                        .font(.system(size: 15))
+                        .lineSpacing(7)
                         .foregroundColor(theme.text)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -2046,8 +2046,8 @@ struct MessageRow: View {
                 // 这里只剩一段话，跟官方那个面板一样干净。
                 VStack(alignment: .leading, spacing: 0) {
                     Text(visibleChatThought ?? cuteThinkingPlaceholder)
-                        .font(.system(size: 17))
-                        .lineSpacing(10)
+                        .font(.system(size: 15))
+                        .lineSpacing(7)
                         .foregroundColor(theme.text)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
