@@ -43,6 +43,8 @@ struct ChatView: View {
     @State private var modelSwitchError = ""
     @State private var showMiniTerminal = false
     @State private var showSDKShadow = false
+    @State private var showChannelPanel = false
+    @State private var activeChatChannel = "cli"
     // 0819 她点名的跳转高亮：从搜索/收藏跳过来的那条闪一下再退
     @State private var flashTS: String?
     @State private var paragraphSelectionMode = false
@@ -120,6 +122,11 @@ struct ChatView: View {
         .sheet(isPresented: $showSDKShadow) {
             SDKShadowChatView()
         }
+        .sheet(isPresented: $showChannelPanel) {
+            ChatChannelPanel(activeChannel: $activeChatChannel)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
         .sheet(isPresented: $showCamera) {
             CameraView { image in
                 if let prepared = UploadImage.prepare(image) {
@@ -162,6 +169,11 @@ struct ChatView: View {
             )
             store.start()
             music.startRemotePolling()
+            Task {
+                if let obj = try? await AlcoveAPI.getRaw("/api/sdk-shadow/status") {
+                    activeChatChannel = obj["channel"] as? String ?? "cli"
+                }
+            }
         }
         .onChange(of: themeName) { newThemeName in
             wallpaperStore.refresh(
@@ -793,9 +805,6 @@ struct ChatView: View {
                         Spacer()
                     } else {
                         Menu {
-                            Button { showSDKShadow = true } label: {
-                                Label("SDK 影子", systemImage: "person.crop.circle.dashed")
-                            }
                             Button { showStickers = true } label: {
                                 Label("表情", systemImage: "face.smiling")
                             }
@@ -836,6 +845,21 @@ struct ChatView: View {
                             .buttonStyle(.plain)
                             .disabled(switchingModel)
                         }
+                        Button { showChannelPanel = true } label: {
+                            HStack(spacing: 5) {
+                                Image(systemName: "arrow.left.arrow.right")
+                                    .font(.system(size: 10, weight: .semibold))
+                                Text(activeChatChannel.uppercased())
+                                    .font(.system(size: 11, weight: .semibold))
+                            }
+                            .foregroundColor(theme.textLight)
+                            .padding(.horizontal, 10)
+                            .frame(height: 36)
+                            .background(theme.glassTint.opacity(theme.isDark ? 0.72 : 0.92), in: Capsule())
+                            .overlay(Capsule().stroke(theme.glassBorder, lineWidth: 1))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("切换 CLI 或 SDK 通道，当前 \(activeChatChannel.uppercased())")
                         Spacer()
                     }
                     Button(action: performDynamicComposerAction) {
@@ -1155,6 +1179,225 @@ struct ChatView: View {
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
+    }
+}
+
+private struct ChatChannelPanel: View {
+    @Binding var activeChannel: String
+    @Environment(\.dismiss) private var dismiss
+    @State private var panel = "cli"
+    @State private var handoffTurns = 12
+    @State private var toolMode = "disabled"
+    @State private var sdkPrompt = ""
+    @State private var sdkIdentity = ""
+    @State private var sdkStyle = ""
+    @State private var cliCapabilities: [String] = []
+    @State private var sdkCapabilities: [String] = []
+    @State private var cliMCP: [String] = []
+    @State private var sdkMCP: [String] = []
+    @State private var loading = true
+    @State private var working = false
+    @State private var message = ""
+    @State private var confirmSync = false
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    Picker("通道", selection: $panel) {
+                        Text("CLI").tag("cli")
+                        Text("SDK").tag("sdk")
+                    }
+                    .pickerStyle(.segmented)
+
+                    channelHeader
+                    if panel == "cli" { cliPanel } else { sdkPanel }
+
+                    if !message.isEmpty {
+                        Text(message)
+                            .font(.system(size: 12))
+                            .foregroundStyle(message.contains("失败") ? .red : .secondary)
+                    }
+                }
+                .padding(20)
+            }
+            .navigationTitle("陈璟的通道")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("完成") { dismiss() } } }
+            .task { await load() }
+            .alert("从 CLI 重新复制锚点？", isPresented: $confirmSync) {
+                Button("取消", role: .cancel) {}
+                Button("覆盖 SDK", role: .destructive) { Task { await syncAnchors() } }
+            } message: { Text("SDK 里自己修改过的两份锚点会被当前 CLI 版本覆盖。") }
+        }
+    }
+
+    private var channelHeader: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(activeChannel == panel ? "当前正在使用" : "当前未使用")
+                    .font(.system(size: 12)).foregroundStyle(.secondary)
+                Text(panel.uppercased())
+                    .font(.system(size: 24, weight: .semibold, design: .rounded))
+            }
+            Spacer()
+            if activeChannel != panel {
+                Button { Task { await switchChannel() } } label: {
+                    if working { ProgressView().controlSize(.small) }
+                    else { Text("切到这里") }
+                }
+                .buttonStyle(.borderedProminent).disabled(working)
+            } else {
+                Label("已连接", systemImage: "checkmark.circle.fill")
+                    .font(.system(size: 13, weight: .medium)).foregroundStyle(.green)
+            }
+        }
+        .padding(16)
+        .background(Color(uiColor: .secondarySystemBackground),
+                    in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+    }
+
+    private var cliPanel: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            sectionTitle("当前能力")
+            capabilityWrap(cliCapabilities)
+            sectionTitle("MCP")
+            capabilityWrap(cliMCP)
+            Text("CLI 使用现役锚点、hooks、工具和 MCP。这里不提供修改入口，原来的出厂设置继续管它。")
+                .font(.system(size: 13)).foregroundStyle(.secondary)
+            handoffControl
+        }
+    }
+
+    private var sdkPanel: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            sectionTitle("当前能力")
+            capabilityWrap(sdkCapabilities)
+            sectionTitle("MCP")
+            if sdkMCP.isEmpty {
+                Text("还没有给 SDK 配 MCP").font(.system(size: 13)).foregroundStyle(.secondary)
+            } else { capabilityWrap(sdkMCP) }
+            Picker("工具权限", selection: $toolMode) {
+                Text("关闭").tag("disabled")
+                Text("只读").tag("readonly")
+                Text("完整").tag("full")
+            }
+            .pickerStyle(.segmented)
+
+            handoffControl
+            editor("SDK 专用 Prompt", text: $sdkPrompt, height: 110)
+            editor("SDK · CLAUDE.md", text: $sdkIdentity, height: 220)
+            editor("SDK · Output Style", text: $sdkStyle, height: 260)
+            HStack {
+                Button("从 CLI 重新复制") { confirmSync = true }
+                    .buttonStyle(.bordered)
+                Spacer()
+                Button("保存并应用") { Task { await saveSDK() } }
+                    .buttonStyle(.borderedProminent).disabled(working)
+            }
+            Text("LMC-5 不复制：CLI 和 SDK 始终从同一个脑子召回。SDK 默认只读召回。")
+                .font(.system(size: 12)).foregroundStyle(.secondary)
+        }
+    }
+
+    private var handoffControl: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            sectionTitle("切换时带多少轮纯对话")
+            Stepper("\(handoffTurns) 轮", value: $handoffTurns, in: 1...50)
+            Text("一轮按你一句＋他一轮正文回复计算，不带 Thought process、工具调用和工具结果。")
+                .font(.system(size: 12)).foregroundStyle(.secondary)
+        }
+    }
+
+    private func sectionTitle(_ text: String) -> some View {
+        Text(text).font(.system(size: 14, weight: .semibold))
+    }
+
+    private func capabilityWrap(_ items: [String]) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 7) {
+                ForEach(items, id: \.self) { item in
+                    Text(item).font(.system(size: 12, weight: .medium))
+                        .padding(.horizontal, 10).frame(height: 30)
+                        .background(Color(uiColor: .tertiarySystemFill), in: Capsule())
+                }
+            }
+        }
+    }
+
+    private func editor(_ title: String, text: Binding<String>, height: CGFloat) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            sectionTitle(title)
+            TextEditor(text: text)
+                .font(.system(size: 13, design: .monospaced))
+                .frame(minHeight: height)
+                .padding(8)
+                .background(Color(uiColor: .secondarySystemBackground),
+                            in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+    }
+
+    @MainActor private func load() async {
+        loading = true
+        do {
+            let obj = try await AlcoveAPI.getRaw("/api/sdk-shadow/status")
+            activeChannel = obj["channel"] as? String ?? "cli"
+            panel = activeChannel
+            let cfg = obj["config"] as? [String: Any] ?? [:]
+            handoffTurns = (cfg["handoff_turns"] as? NSNumber)?.intValue ?? 12
+            toolMode = cfg["tool_mode"] as? String ?? "disabled"
+            sdkPrompt = cfg["sdk_prompt"] as? String ?? ""
+            let anchors = obj["anchors"] as? [String: Any] ?? [:]
+            sdkIdentity = anchors["identity"] as? String ?? ""
+            sdkStyle = anchors["style"] as? String ?? ""
+            cliCapabilities = obj["cli_capabilities"] as? [String] ?? []
+            sdkCapabilities = obj["sdk_capabilities"] as? [String] ?? []
+            cliMCP = obj["cli_mcp"] as? [String] ?? []
+            sdkMCP = obj["sdk_mcp"] as? [String] ?? []
+            message = ""
+        } catch { message = "加载失败：\(error.localizedDescription)" }
+        loading = false
+    }
+
+    @MainActor private func saveSDK() async {
+        working = true
+        do {
+            _ = try await AlcoveAPI.postRaw("/api/sdk-shadow/config", body: [
+                "handoff_turns": handoffTurns, "tool_mode": toolMode,
+                "sdk_prompt": sdkPrompt, "identity": sdkIdentity, "style": sdkStyle
+            ])
+            await load()
+            message = "已保存，从下一句话开始生效"
+        } catch { message = "保存失败：\(error.localizedDescription)" }
+        working = false
+    }
+
+    @MainActor private func syncAnchors() async {
+        working = true
+        do {
+            let obj = try await AlcoveAPI.postRaw("/api/sdk-shadow/sync-anchors", body: [:])
+            let anchors = obj["anchors"] as? [String: Any] ?? [:]
+            sdkIdentity = anchors["identity"] as? String ?? sdkIdentity
+            sdkStyle = anchors["style"] as? String ?? sdkStyle
+            message = "已从 CLI 重新复制，只改了 SDK 副本"
+        } catch { message = "同步失败：\(error.localizedDescription)" }
+        working = false
+    }
+
+    @MainActor private func switchChannel() async {
+        working = true; message = ""
+        do {
+            let obj = try await AlcoveAPI.postRaw("/api/sdk-shadow/switch", body: [
+                "channel": panel, "handoff_turns": handoffTurns
+            ])
+            guard obj["ok"] as? Bool == true else {
+                throw NSError(domain: "Channel", code: 1,
+                              userInfo: [NSLocalizedDescriptionKey: obj["error"] as? String ?? "切换失败"])
+            }
+            activeChannel = obj["channel"] as? String ?? panel
+            message = "已切到 \(activeChannel.uppercased())"
+        } catch { message = "切换失败：\(error.localizedDescription)" }
+        working = false
     }
 }
 
