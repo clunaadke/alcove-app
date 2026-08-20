@@ -28,6 +28,7 @@ struct ChatView: View {
     @State private var photoViewer: PhotoViewerSelection?
     @StateObject private var recorder = VoiceRecorder()
     @State private var atBottom = true
+    @State private var followLiveOutput = true
     @State private var olderPagingArmed = false
     @State private var showCamera = false
     @State private var showDocPicker = false
@@ -256,6 +257,11 @@ struct ChatView: View {
                 }
                 .scrollDismissesKeyboard(.interactively)
                 .onTapGesture { inputFocused = false }
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 4).onChanged { _ in
+                        if store.live?.active == true { followLiveOutput = false }
+                    }
+                )
                 .mask(edgeFadeMask)
 
                 if paragraphSelectionMode {
@@ -273,6 +279,7 @@ struct ChatView: View {
 
                 if !atBottom {
                     Button {
+                        followLiveOutput = true
                         withAnimation { proxy.scrollTo("tail", anchor: .bottom) }
                     } label: {
                         Image(systemName: "chevron.down")
@@ -341,9 +348,14 @@ struct ChatView: View {
                 }
             }
             .onChange(of: store.isTyping) { t in
+                if t { followLiveOutput = atBottom || inputFocused }
                 if atBottom || inputFocused {
                     scrollToTail(proxy, delays: [0, 0.2, 0.5], animated: true)
                 }
+            }
+            .onChange(of: liveLayoutKey) { _ in
+                guard followLiveOutput || inputFocused else { return }
+                scrollToTail(proxy, delays: [0], animated: false)
             }
             .onChange(of: inputBarHeight) { _ in
                 if atBottom || inputFocused {
@@ -393,6 +405,11 @@ struct ChatView: View {
         } message: {
             Text("删除后这些段落会从聊天记录中消失。")
         }
+    }
+
+    private var liveLayoutKey: String {
+        guard let live = store.live else { return "" }
+        return "\(live.turnID)\u{1f}\(live.say)\u{1f}\(live.pendingSay)\u{1f}\(live.timeline.count)"
     }
 
     private var paragraphSelectionToolbar: some View {
@@ -3132,9 +3149,9 @@ struct StreamingAssistantRow: View {
                         .accessibilityHidden(true)
                 }
             }
-            .padding(.leading, 12)
+            .padding(.leading, theme.isPaper ? 12 : 0)
             .frame(maxWidth: .infinity, alignment: .leading)
-            Spacer(minLength: 48)
+            Spacer(minLength: theme.isPaper ? 15 : 48)
         }
         .padding(.top, 2).padding(.bottom, 5)
         .accessibilityElement(children: .combine)
