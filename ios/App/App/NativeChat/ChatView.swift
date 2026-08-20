@@ -235,7 +235,7 @@ struct ChatView: View {
                                 }
                         }
                         if let live = store.live, (live.active || live.finishing), !live.isEmpty {
-                            StreamingAssistantRow(state: live, theme: theme)
+                            StreamingAssistantRow(state: live, theme: theme, fontSize: chatFontSize)
                                 .id("live-\(live.turnID)")
                         }
                         if store.isTyping {
@@ -3077,6 +3077,8 @@ struct LiveSayBand: View {
 struct StreamingAssistantRow: View {
     let state: AlcoveAPI.LiveState
     let theme: AlcoveTheme
+    let fontSize: Int
+    @State private var showThought = false
 
     private var bodyText: String {
         [state.say, state.pendingSay].filter { !$0.isEmpty }.joined(separator: "")
@@ -3089,14 +3091,17 @@ struct StreamingAssistantRow: View {
         HStack(alignment: .bottom, spacing: 0) {
             VStack(alignment: .leading, spacing: 10) {
                 if !state.thinking.isEmpty {
-                    HStack(spacing: 5) {
-                        Image(systemName: "clock.arrow.trianglehead.counterclockwise.rotate.90")
-                            .font(.system(size: 13, weight: .light))
-                        Text("Thought process")
-                            .font(.system(size: 13, weight: .medium))
-                        Image(systemName: "chevron.right").font(.system(size: 8))
+                    Button { showThought = true } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: "clock.arrow.trianglehead.counterclockwise.rotate.90")
+                                .font(.system(size: 13, weight: .light))
+                            Text("Thought process")
+                                .font(.system(size: 13, weight: .medium))
+                            Image(systemName: "chevron.right").font(.system(size: 8))
+                        }
+                        .foregroundStyle(.secondary)
                     }
-                    .foregroundStyle(.secondary)
+                    .buttonStyle(.plain)
                     .accessibilityLabel("Thought process 正在生成")
                 }
                 if !liveTools.isEmpty {
@@ -3114,11 +3119,11 @@ struct StreamingAssistantRow: View {
                     }
                 }
                 if !bodyText.isEmpty {
-                    Text(bodyText)
-                        .font(.system(size: 15.5))
-                        .foregroundColor(theme.text)
-                        .lineSpacing(5)
-                        .fixedSize(horizontal: false, vertical: true)
+                    SelectableMessageText(
+                        text: bodyText, fontSize: CGFloat(fontSize),
+                        lineSpacing: theme.isPaper ? 7 : 5,
+                        color: UIColor(theme.text), maximumNumberOfLines: 0,
+                        onTruncationChange: { _ in }, onAsk: { _ in }, onCopyTurn: {})
                 }
                 if state.active && !state.finishing {
                     Capsule().fill(theme.textDim.opacity(0.65))
@@ -3133,6 +3138,24 @@ struct StreamingAssistantRow: View {
         }
         .padding(.top, 2).padding(.bottom, 5)
         .accessibilityElement(children: .combine)
+        .sheet(isPresented: $showThought) {
+            NavigationStack {
+                ScrollView {
+                    Text(state.thinking)
+                        .font(.system(size: 15))
+                        .lineSpacing(7)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(22)
+                }
+                .navigationTitle("Thought process")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar { ToolbarItem(placement: .topBarTrailing) {
+                    Button("关闭") { showThought = false }
+                }}
+            }
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+        }
     }
 }
 
