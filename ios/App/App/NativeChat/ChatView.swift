@@ -444,13 +444,15 @@ struct ChatView: View {
     private func hoistFor(index: Int) -> Hoist {
         let msgs = store.messages
         guard index < msgs.count, msgs[index].role == "assistant" else { return Hoist() }
-        let gap: TimeInterval = 180
+        // 新时间线已经把 think / tool 精确挂回原段落，绝不能再走旧的“提到轮首”。
+        if !msgs[index].segments.isEmpty { return Hoist() }
+        guard let turnID = msgs[index].turnID, !turnID.isEmpty else { return Hoist() }
         var head = index
         while head > 0, msgs[head - 1].role == "assistant",
-              msgs[head].date.timeIntervalSince(msgs[head - 1].date) <= gap { head -= 1 }
+              msgs[head - 1].turnID == turnID { head -= 1 }
         var tail = index
         while tail + 1 < msgs.count, msgs[tail + 1].role == "assistant",
-              msgs[tail + 1].date.timeIntervalSince(msgs[tail].date) <= gap { tail += 1 }
+              msgs[tail + 1].turnID == turnID { tail += 1 }
         if head == tail { return Hoist() }          // 单条一轮，照旧
 
         // 整轮第一段手写思绪是谁的
@@ -1418,14 +1420,31 @@ struct MessageRow: View {
     private var trailToolCount: Int { trailTools.count }
 
     private func trailLabel(_ items: [ActivityItem]) -> String {
-        let cmds = items.filter { $0.toolName == "Bash" }.count
-        let rest = items.count - cmds
-        var bits: [String] = []
-        if cmds == 1 { bits.append("Ran a command") }
-        else if cmds > 1 { bits.append("Ran \(cmds) commands") }
-        if rest == 1 { bits.append("Used a tool") }
-        else if rest > 1 { bits.append("Used \(rest) tools") }
-        return bits.isEmpty ? "Used a tool" : bits.joined(separator: " · ")
+        enum Kind: Hashable { case command, read, tool }
+        func kind(_ item: ActivityItem) -> Kind {
+            if item.toolName == "Bash" { return .command }
+            if item.toolName == "Read" { return .read }
+            return .tool
+        }
+        var order: [Kind] = []
+        var counts: [Kind: Int] = [:]
+        for item in items {
+            let k = kind(item)
+            if counts[k] == nil { order.append(k) }
+            counts[k, default: 0] += 1
+        }
+        let bits = order.enumerated().map { offset, k -> String in
+            let n = counts[k, default: 0]
+            let phrase: String
+            switch k {
+            case .command: phrase = n == 1 ? "Ran a command" : "Ran \(n) commands"
+            case .read: phrase = n == 1 ? "Read a file" : "Read \(n) files"
+            case .tool: phrase = n == 1 ? "Used a tool" : "Used \(n) tools"
+            }
+            guard offset > 0 else { return phrase }
+            return phrase.prefix(1).lowercased() + phrase.dropFirst()
+        }
+        return bits.isEmpty ? "Used a tool" : bits.joined(separator: ", ")
     }
     private var trailEntryLabel: String { trailLabel(trailTools) }
 
@@ -2677,31 +2696,80 @@ struct PhotoViewerSelection: Identifiable {
     let sourceID: String
 }
 
-// 主聊天按 Claude 官方的多图排版：两列方图，顺序直接可见；圆桌仍保留叠牌。
+// 主聊天双方共用：少图横排；多图横滑，左侧可展开为两列全览。圆桌仍保留叠牌。
 struct OfficialPhotoGridMessageView: View {
     let urls: [URL]
     let messageID: String
     let onOpen: ([URL], Binding<Int>) -> Void
 
     @State private var currentIndex = 0
+    @State private var isExpanded = false
     private let side: CGFloat = 136
     private let gap: CGFloat = 8
 
     var body: some View {
-        LazyVGrid(columns: [
-            GridItem(.fixed(side), spacing: gap),
-            GridItem(.fixed(side), spacing: gap)
-        ], alignment: .leading, spacing: gap) {
-            ForEach(Array(urls.enumerated()), id: \.offset) { index, url in
-                photo(url)
-                    .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    .onTapGesture { open(at: index) }
-                    .accessibilityLabel("照片 \(index + 1)，共 \(urls.count) 张")
-                    .accessibilityAddTraits(.isButton)
+        HStack(alignment: .top, spacing: gap) {
+            if urls.count > 2 {
+                Button {
+                    withAnimation(.spring(response: 0.32, dampingFraction: 0.84)) {
+                        isExpanded.toggle()
+                    }
+                } label: {
+                    VStack(spacing: 3) {
+                        Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                        Text(isExpanded ? "收起" : "展开")
+                    }
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(Color.secondary)
+                    .frame(width: 44, height: 44)
+                    .background(Color(uiColor: .systemGray5).opacity(0.78), in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(isExpanded ? "收起全部照片" : "展开全部照片")
+            }
+            if isExpanded {
+                grid
+            } else {
+                strip
             }
         }
-        .frame(width: side * 2 + gap, alignment: .leading)
         .id(messageID)
+    }
+
+    private var strip: some View {
+        Group {
+            if urls.count > 2 {
+                ScrollView(.horizontal, showsIndicators: false) { photoRow }
+                    .frame(width: side * 2 + gap)
+            } else {
+                photoRow
+            }
+        }
+    }
+
+    private var photoRow: some View {
+        LazyHStack(spacing: gap) {
+            photos
+        }
+    }
+
+    private var grid: some View {
+        LazyVGrid(columns: [GridItem(.fixed(side), spacing: gap),
+                            GridItem(.fixed(side), spacing: gap)],
+                  alignment: .leading, spacing: gap) {
+            photos
+        }
+        .frame(width: side * 2 + gap, alignment: .leading)
+    }
+
+    @ViewBuilder private var photos: some View {
+        ForEach(Array(urls.enumerated()), id: \.offset) { index, url in
+            photo(url)
+                .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .onTapGesture { open(at: index) }
+                .accessibilityLabel("照片 \(index + 1)，共 \(urls.count) 张")
+                .accessibilityAddTraits(.isButton)
+        }
     }
 
     private func open(at index: Int) {
