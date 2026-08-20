@@ -42,6 +42,7 @@ struct ChatView: View {
     @State private var switchingModel = false
     @State private var modelSwitchError = ""
     @State private var showMiniTerminal = false
+    @State private var showSDKShadow = false
     // 0819 她点名的跳转高亮：从搜索/收藏跳过来的那条闪一下再退
     @State private var flashTS: String?
     @State private var paragraphSelectionMode = false
@@ -115,6 +116,9 @@ struct ChatView: View {
                 .presentationDetents([.fraction(0.72), .large])
                 .presentationDragIndicator(.visible)
                 .presentationBackground(.ultraThinMaterial)
+        }
+        .sheet(isPresented: $showSDKShadow) {
+            SDKShadowChatView()
         }
         .sheet(isPresented: $showCamera) {
             CameraView { image in
@@ -785,6 +789,9 @@ struct ChatView: View {
                         Spacer()
                     } else {
                         Menu {
+                            Button { showSDKShadow = true } label: {
+                                Label("SDK 影子", systemImage: "person.crop.circle.dashed")
+                            }
                             Button { showStickers = true } label: {
                                 Label("表情", systemImage: "face.smiling")
                             }
@@ -1144,6 +1151,110 @@ struct ChatView: View {
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
+    }
+}
+
+private struct SDKShadowMessage: Identifiable {
+    let id: String
+    let role: String
+    let text: String
+    let at: String
+
+    init?(_ json: [String: Any], index: Int) {
+        guard let role = json["role"] as? String,
+              let text = json["text"] as? String else { return nil }
+        self.role = role
+        self.text = text
+        self.at = json["at"] as? String ?? ""
+        self.id = "\(at)-\(index)-\(role)"
+    }
+}
+
+private struct SDKShadowChatView: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var messages: [SDKShadowMessage] = []
+    @State private var draft = ""
+    @State private var loading = true
+    @State private var sending = false
+    @State private var error = ""
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(spacing: 12) {
+                            if loading { ProgressView().padding(.top, 30) }
+                            ForEach(messages) { message in
+                                HStack {
+                                    if message.role == "user" { Spacer(minLength: 42) }
+                                    Text(message.text)
+                                        .font(.system(size: 15.5))
+                                        .foregroundStyle(message.role == "user" ? .white : .primary)
+                                        .padding(.horizontal, 14).padding(.vertical, 10)
+                                        .background(message.role == "user" ? Color.indigo : Color(uiColor: .secondarySystemBackground),
+                                                    in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                                    if message.role != "user" { Spacer(minLength: 42) }
+                                }
+                                .id(message.id)
+                            }
+                            if sending {
+                                HStack { ProgressView(); Text("陈璟正在影子里想…").font(.footnote).foregroundStyle(.secondary); Spacer() }
+                            }
+                        }
+                        .padding()
+                    }
+                    .onChange(of: messages.count) { _ in
+                        if let last = messages.last { withAnimation { proxy.scrollTo(last.id, anchor: .bottom) } }
+                    }
+                }
+                if !error.isEmpty {
+                    Text(error).font(.footnote).foregroundStyle(.red).padding(.horizontal).padding(.top, 6)
+                }
+                HStack(alignment: .bottom, spacing: 10) {
+                    TextField("在影子里和陈璟说话", text: $draft, axis: .vertical)
+                        .focused($focused).lineLimit(1...5)
+                        .padding(.horizontal, 14).padding(.vertical, 10)
+                        .background(Color(uiColor: .secondarySystemBackground), in: RoundedRectangle(cornerRadius: 18))
+                    Button { Task { await send() } } label: {
+                        Image(systemName: "arrow.up").fontWeight(.semibold).foregroundStyle(.white)
+                            .frame(width: 38, height: 38).background(Color.indigo, in: Circle())
+                    }
+                    .disabled(sending || draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+                .padding()
+            }
+            .navigationTitle("SDK 影子")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .topBarLeading) { Button("关闭") { dismiss() } } }
+            .task { await load() }
+        }
+    }
+
+    @MainActor private func load() async {
+        do {
+            let obj = try await AlcoveAPI.getRaw("/api/sdk-shadow/history")
+            let raw = obj["messages"] as? [[String: Any]] ?? []
+            messages = raw.enumerated().compactMap { SDKShadowMessage($0.element, index: $0.offset) }
+            error = ""
+        } catch { self.error = "影子历史暂时没接上" }
+        loading = false
+    }
+
+    @MainActor private func send() async {
+        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, !sending else { return }
+        draft = ""; sending = true; error = ""
+        do {
+            let obj = try await AlcoveAPI.postRaw("/api/sdk-shadow/send", body: ["text": text])
+            if obj["ok"] as? Bool != true {
+                throw NSError(domain: "SDKShadow", code: 1,
+                              userInfo: [NSLocalizedDescriptionKey: obj["error"] as? String ?? "回复失败"])
+            }
+            await load()
+        } catch { self.error = error.localizedDescription }
+        sending = false
     }
 }
 
