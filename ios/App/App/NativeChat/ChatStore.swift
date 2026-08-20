@@ -367,6 +367,18 @@ final class ChatStore: ObservableObject {
         state.lastSeq = seq
         let content = event.content?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         switch kind {
+        case "thinking_delta":
+            guard !content.isEmpty else { return }
+            state.thinking += content
+            if let i = state.timeline.indices.last, state.timeline[i].kind == "thinking" {
+                state.timeline[i].text += content
+            } else {
+                state.timeline.append(.init(id: "thinking-\(seq)", kind: "thinking", text: content))
+            }
+        case "text_delta":
+            guard !content.isEmpty else { return }
+            state.say += content
+            state.tool = ""
         case "thinking_para":
             guard !content.isEmpty else { return }
             if !state.pendingSay.isEmpty {
