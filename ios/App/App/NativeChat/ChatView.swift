@@ -234,10 +234,9 @@ struct ChatView: View {
                                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { olderPagingArmed = true }
                                 }
                         }
-                        if let live = store.live, live.active, !live.isEmpty {
-                            LiveSayBand(state: live, theme: theme)
+                        if let live = store.live, (live.active || live.finishing), !live.isEmpty {
+                            StreamingAssistantRow(state: live, theme: theme)
                                 .id("live-\(live.turnID)")
-                                .transition(.opacity.combined(with: .move(edge: .bottom)))
                         }
                         if store.isTyping {
                             TypingIndicator(tool: store.currentTool,
@@ -3045,6 +3044,70 @@ struct LiveSayBand: View {
         .padding(.horizontal, 16)
         .padding(.top, 4)
         .padding(.bottom, 6)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+// SDK/CLI 正式流式行：占住最终回复的位置，正文在这里直接长出来；
+// finish 后 ChatStore 先拉正式消息，再同一拍撤掉这一行，不做预览卡替换动画。
+struct StreamingAssistantRow: View {
+    let state: AlcoveAPI.LiveState
+    let theme: AlcoveTheme
+
+    private var bodyText: String {
+        [state.say, state.pendingSay].filter { !$0.isEmpty }.joined(separator: "")
+    }
+    private var liveTools: [AlcoveAPI.LiveProcessItem] {
+        state.timeline.filter { $0.kind == "tool" }
+    }
+
+    var body: some View {
+        HStack(alignment: .bottom, spacing: 0) {
+            VStack(alignment: .leading, spacing: 10) {
+                if !state.thinking.isEmpty {
+                    HStack(spacing: 5) {
+                        Image(systemName: "clock.arrow.trianglehead.counterclockwise.rotate.90")
+                            .font(.system(size: 13, weight: .light))
+                        Text("Thought process")
+                            .font(.system(size: 13, weight: .medium))
+                        Image(systemName: "chevron.right").font(.system(size: 8))
+                    }
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel("Thought process 正在生成")
+                }
+                if !liveTools.isEmpty {
+                    VStack(alignment: .leading, spacing: 5) {
+                        ForEach(liveTools) { tool in
+                            HStack(spacing: 6) {
+                                Image(systemName: tool.done
+                                      ? (tool.ok == false ? "xmark.circle" : "checkmark.circle")
+                                      : "gearshape.2")
+                                Text(tool.text).lineLimit(1)
+                            }
+                            .font(.system(size: 12.5, weight: .medium))
+                            .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                if !bodyText.isEmpty {
+                    Text(bodyText)
+                        .font(.system(size: 15.5))
+                        .foregroundColor(theme.text)
+                        .lineSpacing(5)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if state.active && !state.finishing {
+                    Capsule().fill(theme.textDim.opacity(0.65))
+                        .frame(width: 14, height: 2)
+                        .opacity(0.9)
+                        .accessibilityHidden(true)
+                }
+            }
+            .padding(.leading, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Spacer(minLength: 48)
+        }
+        .padding(.top, 2).padding(.bottom, 5)
         .accessibilityElement(children: .combine)
     }
 }

@@ -413,11 +413,12 @@ final class ChatStore: ObservableObject {
             state.timeline.append(.init(id: "tool-\(seq)", kind: "tool",
                                         text: display, done: true))
         case "turn_end":
-            // 她定的收口：最后一段结束就整条直播立即死亡，正式气泡随后接替。
+            // 正式流式：先保留原位置，再拉落库消息；同一拍撤掉临时行，避免闪烁换位。
+            state.active = false
+            state.finishing = true
+            live = state
+            await pollOnce()
             live = nil
-            await pollOnce()
-            try? await Task.sleep(nanoseconds: 350_000_000)
-            await pollOnce()
             return
         default:
             return
