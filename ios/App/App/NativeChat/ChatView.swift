@@ -1204,6 +1204,10 @@ private struct ChatChannelPanel: View {
     @State private var confirmSync = false
     @State private var confirmClearSession = false
     @State private var sdkSessionActive = false
+    @State private var cliContextUsed = 0
+    @State private var cliContextWindow = 1_000_000
+    @State private var sdkContextUsed = 0
+    @State private var sdkContextWindow = 1_000_000
     @State private var showSDKForge = false
 
     var body: some View {
@@ -1260,6 +1264,9 @@ private struct ChatChannelPanel: View {
                     .font(.system(size: 12)).foregroundStyle(.secondary)
                 Text(panel.uppercased())
                     .font(.system(size: 24, weight: .semibold, design: .rounded))
+                Text(contextLine)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(.secondary)
             }
             Spacer()
             if activeChannel != panel {
@@ -1288,6 +1295,17 @@ private struct ChatChannelPanel: View {
                 .font(.system(size: 13)).foregroundStyle(.secondary)
             handoffControl
         }
+    }
+
+    private var contextLine: String {
+        let used = panel == "cli" ? cliContextUsed : sdkContextUsed
+        let window = panel == "cli" ? cliContextWindow : sdkContextWindow
+        let pct = window > 0 ? Double(used) / Double(window) * 100 : 0
+        func compact(_ value: Int) -> String {
+            value >= 1_000_000 ? String(format: "%.1fM", Double(value) / 1_000_000)
+                : String(format: "%.1fK", Double(value) / 1_000)
+        }
+        return "上下文 \(compact(used)) / \(compact(window)) · \(String(format: "%.1f", pct))%"
     }
 
     private var sdkPanel: some View {
@@ -1387,6 +1405,12 @@ private struct ChatChannelPanel: View {
             sdkCapabilities = obj["sdk_capabilities"] as? [String] ?? []
             cliMCP = obj["cli_mcp"] as? [String] ?? []
             sdkMCP = obj["sdk_mcp"] as? [String] ?? []
+            let cliContext = obj["cli_context"] as? [String: Any] ?? [:]
+            cliContextUsed = (cliContext["used"] as? NSNumber)?.intValue ?? 0
+            cliContextWindow = (cliContext["window"] as? NSNumber)?.intValue ?? 1_000_000
+            let sdkContext = obj["sdk_context"] as? [String: Any] ?? [:]
+            sdkContextUsed = (sdkContext["used"] as? NSNumber)?.intValue ?? 0
+            sdkContextWindow = (sdkContext["window"] as? NSNumber)?.intValue ?? 1_000_000
             message = ""
         } catch { message = "加载失败：\(error.localizedDescription)" }
         loading = false
