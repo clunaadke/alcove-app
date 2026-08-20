@@ -265,6 +265,9 @@ struct ActivityItem: Identifiable, Equatable {
     /// 她那边只看得见一个总数，看不见我到底干了啥。
     let toolName: String
     let desc: String
+    let command: String
+    let output: String
+    let isError: Bool
 
     init?(json: [String: Any]) {
         guard let k = json["kind"] as? String,
@@ -274,6 +277,9 @@ struct ActivityItem: Identifiable, Equatable {
         self.desc = ((json["desc"] as? String) ?? "")
             .replacingOccurrences(of: "\n", with: " ")
             .trimmingCharacters(in: .whitespaces)
+        self.command = (json["command"] as? String) ?? ""
+        self.output = (json["output"] as? String) ?? ""
+        self.isError = (json["is_error"] as? Bool) ?? false
         // 这是过程记录不是聊天正文，markdown 标记留着只会变成一串星号
         self.content = c
             .replacingOccurrences(of: "**", with: "")
