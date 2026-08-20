@@ -1557,7 +1557,7 @@ private struct SDKForgeSheet: View {
             rounds = (obj["rounds"] as? [[String: Any]] ?? []).map(SDKForgeRound.init)
             if retain > Double(max(rounds.count, 1)) { retain = Double(max(rounds.count, 1)) }
             error = ""
-        } catch { error = "预览失败：\(error.localizedDescription)" }
+        } catch { self.error = "预览失败：\(error.localizedDescription)" }
     }
 
     @MainActor private func previewPicked() async {
@@ -1565,7 +1565,7 @@ private struct SDKForgeSheet: View {
             preview = try await AlcoveAPI.postRaw("/api/sdk-shadow/forge-preview",
                                                   body: ["pick": picked.sorted()])
             error = ""
-        } catch { error = "预览失败：\(error.localizedDescription)" }
+        } catch { self.error = "预览失败：\(error.localizedDescription)" }
     }
 
     @MainActor private func forge() async {
