@@ -1295,6 +1295,8 @@ private struct ChatChannelPanel: View {
             if sdkMCP.isEmpty {
                 Text("还没有给 SDK 配 MCP").font(.system(size: 13)).foregroundStyle(.secondary)
             } else { capabilityWrap(sdkMCP) }
+            Button("从 CLI 复制 MCP 配置") { Task { await syncMCP() } }
+                .buttonStyle(.bordered).disabled(working)
             Picker("工具权限", selection: $toolMode) {
                 Text("关闭").tag("disabled")
                 Text("只读").tag("readonly")
@@ -1409,6 +1411,17 @@ private struct ChatChannelPanel: View {
             sdkStyle = anchors["style"] as? String ?? sdkStyle
             message = "已从 CLI 重新复制，只改了 SDK 副本"
         } catch { message = "同步失败：\(error.localizedDescription)" }
+        working = false
+    }
+
+    @MainActor private func syncMCP() async {
+        working = true
+        do {
+            let obj = try await AlcoveAPI.postRaw("/api/sdk-shadow/sync-mcp", body: [:])
+            sdkMCP = obj["sdk_mcp"] as? [String] ?? []
+            sdkSessionActive = false
+            message = "已复制 \(sdkMCP.count) 个 MCP，下一句话建立新 SDK session"
+        } catch { message = "MCP 同步失败：\(error.localizedDescription)" }
         working = false
     }
 
