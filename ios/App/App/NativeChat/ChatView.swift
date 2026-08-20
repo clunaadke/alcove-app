@@ -234,7 +234,11 @@ struct ChatView: View {
                                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { olderPagingArmed = true }
                                 }
                         }
-                        // 实时预览框已退休；陈璟正在…是独立状态，一根毛不动。
+                        if let live = store.live, live.active, !live.isEmpty {
+                            LiveSayBand(state: live, theme: theme)
+                                .id("live-\(live.turnID)")
+                                .transition(.opacity.combined(with: .move(edge: .bottom)))
+                        }
                         if store.isTyping {
                             TypingIndicator(tool: store.currentTool,
                                             line: store.typingLine,
