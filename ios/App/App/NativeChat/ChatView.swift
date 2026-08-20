@@ -1199,6 +1199,8 @@ private struct ChatChannelPanel: View {
     @State private var working = false
     @State private var message = ""
     @State private var confirmSync = false
+    @State private var confirmClearSession = false
+    @State private var sdkSessionActive = false
 
     var body: some View {
         NavigationStack {
@@ -1229,6 +1231,13 @@ private struct ChatChannelPanel: View {
                 Button("取消", role: .cancel) {}
                 Button("覆盖 SDK", role: .destructive) { Task { await syncAnchors() } }
             } message: { Text("SDK 里自己修改过的两份锚点会被当前 CLI 版本覆盖。") }
+            .confirmationDialog("完全新开 SDK 窗口？", isPresented: $confirmClearSession,
+                                titleVisibility: .visible) {
+                Button("清空最近对话并新开", role: .destructive) {
+                    Task { await newSDKSession(keepMessages: false) }
+                }
+                Button("取消", role: .cancel) {}
+            } message: { Text("SDK 锚点和共用 LMC-5 不动，只清空 SDK 最近对话和 session。") }
         }
     }
 
@@ -1285,6 +1294,15 @@ private struct ChatChannelPanel: View {
             .pickerStyle(.segmented)
 
             handoffControl
+            HStack {
+                Button("换 SDK 窗口") { Task { await newSDKSession(keepMessages: true) } }
+                    .buttonStyle(.bordered)
+                Button("完全新开", role: .destructive) { confirmClearSession = true }
+                    .buttonStyle(.bordered)
+                Spacer()
+                Text(sdkSessionActive ? "session 已建立" : "下一句建立 session")
+                    .font(.system(size: 11)).foregroundStyle(.secondary)
+            }
             editor("SDK 专用 Prompt", text: $sdkPrompt, height: 110)
             editor("SDK · CLAUDE.md", text: $sdkIdentity, height: 220)
             editor("SDK · Output Style", text: $sdkStyle, height: 260)
@@ -1347,6 +1365,7 @@ private struct ChatChannelPanel: View {
             handoffTurns = (cfg["handoff_turns"] as? NSNumber)?.intValue ?? 12
             toolMode = cfg["tool_mode"] as? String ?? "disabled"
             sdkPrompt = cfg["sdk_prompt"] as? String ?? ""
+            sdkSessionActive = !((cfg["sdk_session_id"] as? String) ?? "").isEmpty
             let anchors = obj["anchors"] as? [String: Any] ?? [:]
             sdkIdentity = anchors["identity"] as? String ?? ""
             sdkStyle = anchors["style"] as? String ?? ""
@@ -1397,6 +1416,20 @@ private struct ChatChannelPanel: View {
             activeChannel = obj["channel"] as? String ?? panel
             message = "已切到 \(activeChannel.uppercased())"
         } catch { message = "切换失败：\(error.localizedDescription)" }
+        working = false
+    }
+
+    @MainActor private func newSDKSession(keepMessages: Bool) async {
+        working = true; message = ""
+        do {
+            _ = try await AlcoveAPI.postRaw("/api/sdk-shadow/new-session", body: [
+                "keep_messages": keepMessages, "handoff_turns": handoffTurns
+            ])
+            sdkSessionActive = false
+            message = keepMessages
+                ? "SDK 窗口已换，下一句带最近 \(handoffTurns) 轮建立新 session"
+                : "SDK 已完全新开，下一句建立空白 session"
+        } catch { message = "换窗失败：\(error.localizedDescription)" }
         working = false
     }
 }
