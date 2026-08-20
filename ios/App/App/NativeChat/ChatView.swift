@@ -1510,8 +1510,8 @@ struct MessageRow: View {
                     stickerBody
                 } else {
                     if photoURLs.count > 1 {
-                        PhotoStackMessageView(urls: photoURLs, messageID: "chat-\(msg.id)",
-                                              onOpen: onTapImages)
+                        OfficialPhotoGridMessageView(urls: photoURLs, messageID: "chat-\(msg.id)",
+                                                     onOpen: onTapImages)
                             .matchedTransitionSource(id: "chat-\(msg.id)", in: photoNamespace)
                     } else if msg.isImage, let raw = msg.attachmentUrl {
                         imageBody(raw)
@@ -2675,6 +2675,64 @@ struct PhotoViewerSelection: Identifiable {
     let urls: [URL]
     let index: Binding<Int>
     let sourceID: String
+}
+
+// 主聊天按 Claude 官方的多图排版：两列方图，顺序直接可见；圆桌仍保留叠牌。
+struct OfficialPhotoGridMessageView: View {
+    let urls: [URL]
+    let messageID: String
+    let onOpen: ([URL], Binding<Int>) -> Void
+
+    @State private var currentIndex = 0
+    private let side: CGFloat = 136
+    private let gap: CGFloat = 8
+
+    var body: some View {
+        LazyVGrid(columns: [
+            GridItem(.fixed(side), spacing: gap),
+            GridItem(.fixed(side), spacing: gap)
+        ], alignment: .leading, spacing: gap) {
+            ForEach(Array(urls.enumerated()), id: \.offset) { index, url in
+                photo(url)
+                    .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .onTapGesture { open(at: index) }
+                    .accessibilityLabel("照片 \(index + 1)，共 \(urls.count) 张")
+                    .accessibilityAddTraits(.isButton)
+            }
+        }
+        .frame(width: side * 2 + gap, alignment: .leading)
+        .id(messageID)
+    }
+
+    private func open(at index: Int) {
+        currentIndex = min(max(index, 0), urls.count - 1)
+        onOpen(urls, Binding(
+            get: { currentIndex },
+            set: { currentIndex = min(max($0, 0), urls.count - 1) }
+        ))
+    }
+
+    private func photo(_ url: URL) -> some View {
+        let previewURL: URL = {
+            guard let range = url.path.range(of: "/attachments/") else { return url }
+            return AlcoveAPI.attachmentThumbnailURL(
+                "/attachments/" + String(url.path[range.upperBound...]))
+        }()
+        return AsyncImage(url: previewURL, transaction: Transaction(animation: nil)) { phase in
+            switch phase {
+            case .success(let image): image.resizable().scaledToFill()
+            case .failure: Color(.tertiarySystemFill).overlay(Image(systemName: "photo"))
+            default: Color(.tertiarySystemFill).overlay(ProgressView())
+            }
+        }
+        .frame(width: side, height: side)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .contextMenu {
+            Button {
+                Task { await PhotoLibrarySaver.save(url) }
+            } label: { Label("保存到相册", systemImage: "square.and.arrow.down") }
+        }
+    }
 }
 
 // 一条消息只保留三张可见卡。翻牌只改轻量几何状态，AsyncImage 的 URL 身份不变，
