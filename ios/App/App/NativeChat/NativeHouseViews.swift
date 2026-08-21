@@ -968,11 +968,6 @@ private struct NativeSettingsView: View {
     @State private var herStatusLine = ""
     @State private var herStatusLoaded = false
     @State private var herStatusSaveTask: Task<Void, Never>?
-    // 0821 她要的图片缓存面板（照微信存储页）：大小、按日期清、只留三天、全清
-    @State private var cacheBytes: Int64 = 0
-    @State private var cacheCount = 0
-    @State private var cacheCutoff = Calendar.current.date(byAdding: .day, value: -3, to: Date()) ?? Date()
-    @State private var cacheJustFreed: Int64? = nil
     @Environment(\.houseOwnsHeader) private var houseOwnsHeader
     private var theme: AlcoveTheme { .panelNamed(themeName) }
 
@@ -991,34 +986,6 @@ private struct NativeSettingsView: View {
                             .onChange(of: herStatus) { value in scheduleHerStatusSave(value) }
                     }
                 }
-                section("存储") {
-                    settingRow("图片缓存",
-                               cacheCount == 0 ? "看过的图存在手机里，下次秒开，不占服务器"
-                                               : "\(cacheCount) 张 · 存在手机里，不占服务器") {
-                        Text(ImageDiskCache.format(cacheBytes))
-                            .font(.system(size: 14, weight: .medium, design: .rounded))
-                    }
-                    Divider().opacity(0.25)
-                    settingRow("清掉这天之前的", "这天以后看过的留着") {
-                        HStack(spacing: 8) {
-                            DatePicker("", selection: $cacheCutoff, in: ...Date(), displayedComponents: .date)
-                                .labelsHidden().datePickerStyle(.compact)
-                            Button("清理") { purgeCache(before: cacheCutoff) }
-                                .font(.system(size: 13, weight: .medium))
-                        }
-                    }
-                    Divider().opacity(0.25)
-                    settingRow("只留最近三天", "更早的一次扫掉") {
-                        Button("清理") { purgeCache(before: Calendar.current.date(byAdding: .day, value: -3, to: Date())) }
-                            .font(.system(size: 13, weight: .medium))
-                    }
-                    Divider().opacity(0.25)
-                    settingRow("全部清空", cacheJustFreed.map { "刚腾出 " + ImageDiskCache.format($0) } ?? "再看的时候会重新拉一次") {
-                        Button("清空", role: .destructive) { purgeCache(before: nil) }
-                            .font(.system(size: 13, weight: .medium))
-                    }
-                }
-                .onAppear { refreshCacheStats() }
                 section("聊天") {
                     settingRow("我的名字", "聊天气泡和推送显示") {
                         TextField("Luna", text: $userName).multilineTextAlignment(.trailing).frame(width: 105)
@@ -1250,20 +1217,6 @@ private struct NativeSettingsView: View {
             async let her: Void = loadHerStatus()
             _ = await (services, reply, thought, pulse, her)
         }
-    }
-
-    private func refreshCacheStats() {
-        let c = ImageDiskCache.shared
-        DispatchQueue.global(qos: .utility).async {
-            let b = c.totalBytes(), n = c.fileCount()
-            DispatchQueue.main.async { cacheBytes = b; cacheCount = n }
-        }
-    }
-
-    private func purgeCache(before date: Date?) {
-        let freed = ImageDiskCache.shared.clear(before: date)
-        withAnimation { cacheJustFreed = freed }
-        refreshCacheStats()
     }
 
     @ViewBuilder private func panelTitle(_ text: String) -> some View {

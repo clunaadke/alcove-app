@@ -42,7 +42,6 @@
 		BF1000000000000000000003 /* BubbleGlassShader.metal in Sources */ = {isa = PBXBuildFile; fileRef = BF2000000000000000000003 /* BubbleGlassShader.metal */; };
 		C3390367B9C7EF2C5CEC1265 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D0101790978C3955D31EB1E /* RootView.swift */; };
 		C3524DA5B6D6F1BA5319F756 /* CapabilityLabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05AE4790B0A789C3ABEED1B2 /* CapabilityLabView.swift */; };
-		7A1C0821E0F1A2B3C4D5E6F2 /* ImageDiskCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A1C0821E0F1A2B3C4D5E6F1 /* ImageDiskCache.swift */; };
 		CA0000000000000000000026 /* AlcoveLabAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = CA0000000000000000000012 /* AlcoveLabAttributes.swift */; };
 		C4CD19DA8E74F8992D7E1C30 /* SensorReporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = D12D98086598F349D1863F76 /* SensorReporter.swift */; };
 		F86F377DEB7B406E7D7A3E9C /* AlcoveAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0003258CF790522AD36EC318 /* AlcoveAPI.swift */; };
@@ -78,7 +77,6 @@
 /* Begin PBXFileReference section */
 		0003258CF790522AD36EC318 /* AlcoveAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlcoveAPI.swift; sourceTree = "<group>"; };
 		05AE4790B0A789C3ABEED1B2 /* CapabilityLabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = CapabilityLabView.swift; path = App/NativeChat/CapabilityLabView.swift; sourceTree = SOURCE_ROOT; };
-		7A1C0821E0F1A2B3C4D5E6F1 /* ImageDiskCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ImageDiskCache.swift; path = App/NativeChat/ImageDiskCache.swift; sourceTree = SOURCE_ROOT; };
 		0D0101790978C3955D31EB1E /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		141B61BBC3ADE771BDF6329B /* WebViewPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebViewPage.swift; sourceTree = "<group>"; };
 		2FAD9762203C412B000D30F8 /* config.xml */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = config.xml; sourceTree = "<group>"; };
@@ -167,7 +165,6 @@
 				7F8756D8B27F46E3366F6CEA /* Pods */,
 				27E2DDA53C4D2A4D1A88CE4A /* Frameworks */,
 				05AE4790B0A789C3ABEED1B2 /* CapabilityLabView.swift */,
-				7A1C0821E0F1A2B3C4D5E6F1 /* ImageDiskCache.swift */,
 				CA0000000000000000000033 /* CapabilityExtensions */,
 			);
 			sourceTree = "<group>";
@@ -434,7 +431,6 @@
 				6ECECFA96ACA1E7FCB6EC4C9 /* VoiceRecorder.swift in Sources */,
 				2239D73AB32FB5FF31969C0B /* SplashView.swift in Sources */,
 				C3524DA5B6D6F1BA5319F756 /* CapabilityLabView.swift in Sources */,
-				7A1C0821E0F1A2B3C4D5E6F2 /* ImageDiskCache.swift in Sources */,
 				CA0000000000000000000026 /* AlcoveLabAttributes.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
