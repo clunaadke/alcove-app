@@ -534,10 +534,20 @@ struct ChatView: View {
                 ? store.recall(forUserText: previous?.text ?? "")
                 : nil
 
-            if needsDivider(prev: previous, cur: message) {
+            let divided = needsDivider(prev: previous, cur: message)
+            if divided {
                 TimeDivider(date: message.date, color: theme.textDim)
             }
             let hoist = hoistFor(index: index)
+            // 0822 她要的：我一个人连着发几轮，轮和轮之间拉开一点，不然看混。
+            // 只在「上一条也是我、换了轮次号、中间没有她说话、也没有时间分割线」时拉。
+            let newSoloTurn: Bool = {
+                guard !divided, let prev = previous,
+                      prev.role == "assistant", message.role == "assistant",
+                      let a = prev.turnID, !a.isEmpty,
+                      let b = message.turnID, !b.isEmpty else { return false }
+                return a != b
+            }()
             MessageRow(
                 msg: message,
                 sticker: message.stickerId.flatMap(store.sticker(for:)),
@@ -583,6 +593,7 @@ struct ChatView: View {
                 onPlayMusic: { song in Task { await music.play(song) } },
                 onContentChange: { scrollKick += 1 }
             )
+            .padding(.top, newSoloTurn ? 22 : 0)
             .id(message.id)
         }
     }
