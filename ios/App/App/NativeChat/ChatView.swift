@@ -2658,17 +2658,17 @@ struct MessageRow: View {
     private func imageBody(_ raw: String) -> some View {
         let url = AlcoveAPI.attachmentURL(raw)
         let previewURL = AlcoveAPI.attachmentThumbnailURL(raw)
+        // 0821 她定的：聊天里的图一律小方卡（跟成叠的那种一个尺寸），不按原图比例撑大
         return CachedImage(url: previewURL) { img in
-            img.resizable().scaledToFit()
+            img.resizable().scaledToFill()
         } placeholder: {
             ZStack {
                 Color(.tertiarySystemFill)
                 ProgressView()
             }
-            .frame(width: 180, height: 180)
         }
-        .frame(maxWidth: 220, maxHeight: 300)
-        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .frame(width: 124, height: 124)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .matchedTransitionSource(id: "chat-\(msg.id)", in: photoNamespace)
         .onTapGesture { onTapImages([url], .constant(0)) }
         .contextMenu {
