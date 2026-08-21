@@ -111,6 +111,8 @@ struct RootView: View {
         .onAppear {
             prewarmPanelTexture()
             Task { await refreshThinkingState() }
+            // 0821 她要的图片缓存：开门就把最近三天的图悄悄存进手机
+            Task.detached(priority: .utility) { await ImageDiskCache.shared.prewarmRecent(days: 3) }
             restoreLiveActivityIfEnabled()
             // 声波念完两个音节再进门，跟 PWA 一个节奏
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.3) {
