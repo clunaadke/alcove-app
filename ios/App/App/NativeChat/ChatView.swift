@@ -3594,13 +3594,16 @@ struct PhotoPageViewer: View {
     let selection: PhotoViewerSelection
     let namespace: Namespace.ID
     let dismiss: () -> Void
-    @Binding private var index: Int
+    // 0821 她报的：左右滑总弹回第一张。以前直接绑着聊天列表里那条图片消息的状态，
+    // 列表每两秒刷一次、那条消息一重画，数就归零，大图页跟着弹回去。
+    // 现在大图页自己记翻到第几张，关掉时再写回去给小图那边同步。
+    @State private var index: Int
 
     init(selection: PhotoViewerSelection, namespace: Namespace.ID, dismiss: @escaping () -> Void) {
         self.selection = selection
         self.namespace = namespace
         self.dismiss = dismiss
-        _index = selection.index
+        _index = State(initialValue: selection.index.wrappedValue)
     }
 
     var body: some View {
@@ -3619,6 +3622,7 @@ struct PhotoPageViewer: View {
                     .font(.system(size: 30)).foregroundColor(.white.opacity(0.8)).padding()
             }
         }
+        .onChange(of: index) { value in selection.index.wrappedValue = value }
         .navigationTransition(.zoom(sourceID: selection.sourceID, in: namespace))
     }
 }
