@@ -742,7 +742,7 @@ struct ChatView: View {
                 // 待发表情：一张就够，再点一次面板会换掉它
                 if let stk = pendingSticker {
                     HStack(spacing: 8) {
-                        AsyncImage(url: AlcoveAPI.stickerURL(stk.url)) { img in
+                        CachedImage(url: AlcoveAPI.stickerURL(stk.url)) { img in
                             img.resizable().scaledToFit()
                         } placeholder: { Color(.systemGray6) }
                         .frame(width: 54, height: 54)
@@ -2638,7 +2638,7 @@ struct MessageRow: View {
     private var stickerBody: some View {
         Group {
             if let stk = sticker {
-                AsyncImage(url: AlcoveAPI.stickerURL(stk.url)) { img in
+                CachedImage(url: AlcoveAPI.stickerURL(stk.url)) { img in
                     img.resizable().scaledToFit()
                 } placeholder: { Color(.tertiarySystemFill) }
                 .frame(width: 110, height: 110)
@@ -2654,7 +2654,7 @@ struct MessageRow: View {
     private func imageBody(_ raw: String) -> some View {
         let url = AlcoveAPI.attachmentURL(raw)
         let previewURL = AlcoveAPI.attachmentThumbnailURL(raw)
-        return AsyncImage(url: previewURL) { img in
+        return CachedImage(url: previewURL) { img in
             img.resizable().scaledToFit()
         } placeholder: {
             ZStack {
@@ -3358,7 +3358,7 @@ struct OfficialPhotoGridMessageView: View {
             return AlcoveAPI.attachmentThumbnailURL(
                 "/attachments/" + String(url.path[range.upperBound...]))
         }()
-        return AsyncImage(url: previewURL, transaction: Transaction(animation: nil)) { phase in
+        return CachedPhaseImage(url: previewURL) { phase in
             switch phase {
             case .success(let image): image.resizable().scaledToFill()
             case .failure: Color(.tertiarySystemFill).overlay(Image(systemName: "photo"))
@@ -3489,7 +3489,7 @@ struct PhotoStackMessageView: View {
             guard let range = path.range(of: "/attachments/") else { return url }
             return AlcoveAPI.attachmentThumbnailURL("/attachments/" + String(path[range.upperBound...]))
         }()
-        return AsyncImage(url: previewURL, transaction: Transaction(animation: nil)) { phase in
+        return CachedPhaseImage(url: previewURL) { phase in
             switch phase {
             case .success(let image):
                 image.resizable().scaledToFill()
@@ -3623,7 +3623,7 @@ private struct ZoomableRemoteImage: View {
     let url: URL
     @State private var scale: CGFloat = 1
     var body: some View {
-        AsyncImage(url: url) { image in
+        CachedImage(url: url) { image in
             image.resizable().scaledToFit()
                 .scaleEffect(scale)
                 .gesture(MagnificationGesture()
@@ -3647,7 +3647,7 @@ struct ImageViewer: View {
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            AsyncImage(url: url) { img in
+            CachedImage(url: url) { img in
                 img.resizable().scaledToFit()
                     .scaleEffect(scale)
                     .gesture(MagnificationGesture()
