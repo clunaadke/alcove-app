@@ -486,10 +486,6 @@ struct ChatView: View {
         while tail + 1 < msgs.count, msgs[tail + 1].role == "assistant",
               msgs[tail + 1].turnID == turnID { tail += 1 }
         if head == tail { return Hoist() }          // 单条一轮，照旧
-        // 0821 晚：这一轮里只要有一条带新时间线（segments），整轮都不走老的「提到轮首」。
-        // 不然半路投进来的表情包 / 图片 / 卡片没有 segments、又排在最前，被当成轮首
-        // 再提一遍思绪和工具栏，她屏上同一轮出现两套（20:40 那轮的截图）。
-        if (head...tail).contains(where: { !msgs[$0].segments.isEmpty }) { return Hoist() }
 
         // 整轮第一段手写思绪是谁的
         var thoughtOwner: Int? = nil
