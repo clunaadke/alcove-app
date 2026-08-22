@@ -1239,6 +1239,15 @@ private struct ChatChannelPanel: View {
     @State private var sdkPrevSession = ""
     @State private var sdkPrevAt = ""
     @State private var confirmRollback = false
+    // 当前对话轮数（这一代 / 其中系统轮 / session 累计）
+    struct TurnCount { let current: Int; let system: Int; let total: Int }
+    @State private var cliTurns: TurnCount? = nil
+    @State private var sdkTurns: TurnCount? = nil
+    private func parseTurns(_ raw: Any?) -> TurnCount? {
+        guard let d = raw as? [String: Any] else { return nil }
+        let n = { (k: String) in (d[k] as? NSNumber)?.intValue ?? 0 }
+        return TurnCount(current: n("current"), system: n("system"), total: n("total"))
+    }
     @State private var cliContextUsed = 0
     @State private var cliContextWindow = 1_000_000
     @State private var sdkContextUsed = 0
@@ -1407,6 +1416,17 @@ private struct ChatChannelPanel: View {
             Stepper("\(handoffTurns) 轮", value: $handoffTurns, in: 1...50)
             Text("一轮按你一句＋他一轮正文回复计算，不带 Thought process、工具调用和工具结果。")
                 .font(.system(size: 12)).foregroundStyle(.secondary)
+            // 0822 她要的：当前这一窗已经聊了多少轮，cli / sdk 各自的数（这一代，forge 之后重新数）
+            let turns = panel == "sdk" ? sdkTurns : cliTurns
+            if let turns {
+                HStack(spacing: 6) {
+                    Image(systemName: "text.bubble").font(.system(size: 11))
+                    Text("当前对话 \(turns.current) 轮" +
+                         (turns.system > 0 ? "（其中 \(turns.system) 轮系统）" : "") +
+                         (turns.total > turns.current ? " · 这个 session 累计 \(turns.total) 轮" : ""))
+                }
+                .font(.system(size: 12, design: .monospaced)).foregroundStyle(.secondary)
+            }
         }
     }
 
@@ -1451,6 +1471,8 @@ private struct ChatChannelPanel: View {
             sdkSessionActive = !((cfg["sdk_session_id"] as? String) ?? "").isEmpty
             sdkPrevSession = cfg["sdk_prev_session_id"] as? String ?? ""
             sdkPrevAt = cfg["sdk_prev_at"] as? String ?? ""
+            cliTurns = parseTurns(obj["cli_turns"])
+            sdkTurns = parseTurns(obj["sdk_turns"])
             let anchors = obj["anchors"] as? [String: Any] ?? [:]
             sdkIdentity = anchors["identity"] as? String ?? ""
             sdkStyle = anchors["style"] as? String ?? ""
