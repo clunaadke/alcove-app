@@ -1556,11 +1556,14 @@ private struct SDKForgeRound: Identifiable {
     let idx: Int
     let head: String
     let at: String
+    let kind: String   // user = 她说的；system = 心跳 / keepalive / 系统班次，默认折叠
     var id: Int { idx }
+    var isSystem: Bool { kind == "system" }
     init(_ raw: [String: Any]) {
         idx = (raw["idx"] as? NSNumber)?.intValue ?? 0
         head = raw["head"] as? String ?? ""
         at = raw["at"] as? String ?? ""
+        kind = raw["kind"] as? String ?? "user"
     }
 }
 
@@ -1575,17 +1578,28 @@ private struct SDKForgeSheet: View {
     @State private var working = false
     @State private var error = ""
     @State private var confirm = false
+    // 0822 照 CLI 补的：系统轮（心跳/keepalive/系统班次）默认折叠不带；想带就打开
+    @State private var includeSystem = false
+    @State private var showSystemRounds = false
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    Text("只搬完整的 user / assistant 正文。Thought process、工具、结果和图片都不进新窗；SDK 锚点重新加载，LMC-5 继续共用。")
+                    Text("只搬完整的 user / assistant 正文，每轮自带真实时间注记，末尾附上一窗两个真实工具范本。Thought process、图片不进新窗；SDK 锚点重新加载，LMC-5 继续共用。")
                         .font(.system(size: 13)).foregroundStyle(.secondary)
                     Picker("方式", selection: $mode) {
                         Text("默认保留").tag("latest")
                         Text("挑选轮次").tag("picker")
                     }.pickerStyle(.segmented)
+                    if systemCount > 0 {
+                        Toggle(isOn: mode == "latest" ? $includeSystem : $showSystemRounds) {
+                            Text(mode == "latest" ? "带上 \(systemCount) 轮系统轮（心跳 / keepalive）"
+                                                  : "显示 \(systemCount) 轮系统轮（折叠中）")
+                                .font(.system(size: 12))
+                        }
+                        .onChange(of: includeSystem) { _ in Task { await loadPreview() } }
+                    }
 
                     if mode == "latest" {
                         VStack(alignment: .leading, spacing: 8) {
@@ -1605,7 +1619,7 @@ private struct SDKForgeSheet: View {
                         }
                     } else {
                         LazyVStack(spacing: 8) {
-                            ForEach(rounds) { round in
+                            ForEach(rounds.filter { showSystemRounds || !$0.isSystem }) { round in
                                 Button {
                                     if picked.contains(round.idx) { picked.remove(round.idx) }
                                     else { picked.insert(round.idx) }
@@ -1615,9 +1629,18 @@ private struct SDKForgeSheet: View {
                                         Image(systemName: picked.contains(round.idx)
                                               ? "checkmark.circle.fill" : "circle")
                                         VStack(alignment: .leading, spacing: 4) {
-                                            Text("#\(round.idx + 1)  \(round.at.prefix(16))")
-                                                .font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary)
+                                            HStack(spacing: 6) {
+                                                Text("#\(round.idx + 1)  \(round.at.prefix(16).replacingOccurrences(of: "T", with: " "))")
+                                                    .font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary)
+                                                if round.isSystem {
+                                                    Text("系统").font(.system(size: 9, weight: .semibold))
+                                                        .padding(.horizontal, 5).padding(.vertical, 1)
+                                                        .background(Color.secondary.opacity(0.18), in: Capsule())
+                                                        .foregroundStyle(.secondary)
+                                                }
+                                            }
                                             Text(round.head).font(.system(size: 13)).lineLimit(3)
+                                                .foregroundStyle(round.isSystem ? .secondary : .primary)
                                         }
                                         Spacer()
                                     }
@@ -1652,6 +1675,7 @@ private struct SDKForgeSheet: View {
     }
 
     private var total: Int { (preview["total_rounds"] as? NSNumber)?.intValue ?? rounds.count }
+    private var systemCount: Int { (preview["system_rounds"] as? NSNumber)?.intValue ?? rounds.filter(\.isSystem).count }
     private var valid: Bool { preview["valid"] as? Bool ?? false }
     private var report: some View {
         VStack(alignment: .leading, spacing: 7) {
@@ -1671,7 +1695,7 @@ private struct SDKForgeSheet: View {
 
     @MainActor private func loadPreview() async {
         do {
-            let obj = try await AlcoveAPI.getRaw("/api/sdk-shadow/forge?retain=\(Int(retain))")
+            let obj = try await AlcoveAPI.getRaw("/api/sdk-shadow/forge?retain=\(Int(retain))&include_system=\(includeSystem ? 1 : 0)")
             preview = obj
             rounds = (obj["rounds"] as? [[String: Any]] ?? []).map(SDKForgeRound.init)
             if retain > Double(max(rounds.count, 1)) { retain = Double(max(rounds.count, 1)) }
@@ -1682,7 +1706,7 @@ private struct SDKForgeSheet: View {
     @MainActor private func previewPicked() async {
         do {
             preview = try await AlcoveAPI.postRaw("/api/sdk-shadow/forge-preview",
-                                                  body: ["pick": picked.sorted()])
+                                                  body: ["pick": picked.sorted(), "include_system": true])
             error = ""
         } catch { self.error = "预览失败：\(error.localizedDescription)" }
     }
@@ -1690,8 +1714,8 @@ private struct SDKForgeSheet: View {
     @MainActor private func forge() async {
         working = true; error = ""
         do {
-            var body: [String: Any] = ["retain": Int(retain)]
-            if mode == "picker" { body = ["pick": picked.sorted()] }
+            var body: [String: Any] = ["retain": Int(retain), "include_system": includeSystem]
+            if mode == "picker" { body = ["pick": picked.sorted(), "include_system": true] }
             let obj = try await AlcoveAPI.postRaw("/api/sdk-shadow/forge", body: body)
             guard obj["ok"] as? Bool == true, obj["probe_ok"] as? Bool == true else {
                 throw NSError(domain: "SDKForge", code: 1,
