@@ -276,6 +276,14 @@ struct ChatView: View {
                     if theme.isMessages && !paragraphSelectionMode { floatingInput }
                 }
                 .modifier(SoftScrollEdgeModifier(enabled: theme.isMessages))
+                // 0822 夜 真机上 .soft 没画出来（顶栏底下的字还是光秃秃穿出来）。不等它了：
+                // 自己在滚动区上下各铺一层毛玻璃，用渐变蒙成「靠边糊、往里清」，哪个系统都认。
+                .overlay(alignment: .top) {
+                    if theme.isMessages { MessagesEdgeBlur(edge: .top, height: 128, dark: theme.isDark) }
+                }
+                .overlay(alignment: .bottom) {
+                    if theme.isMessages { MessagesEdgeBlur(edge: .bottom, height: 96 + inputBarHeight, dark: theme.isDark) }
+                }
                 .scrollDismissesKeyboard(.interactively)
                 .onTapGesture { inputFocused = false }
                 .simultaneousGesture(
@@ -4350,6 +4358,34 @@ private struct MessagesGlassModifier: ViewModifier {
                     .shadow(color: shadow, radius: 8, y: 2)
             }
         }
+    }
+}
+
+// 0822 信息主题上下那截「糊」：材质 + 渐变蒙版，靠边最糊，往里渐清。不吃点击。
+private struct MessagesEdgeBlur: View {
+    enum Edge { case top, bottom }
+    let edge: Edge
+    let height: CGFloat
+    let dark: Bool
+    var body: some View {
+        let stops: [Gradient.Stop] = [
+            .init(color: .black, location: 0),
+            .init(color: .black.opacity(0.85), location: 0.45),
+            .init(color: .black.opacity(0.35), location: 0.8),
+            .init(color: .clear, location: 1),
+        ]
+        ZStack {
+            Rectangle().fill(.ultraThinMaterial)
+            // 材质本身偏灰，再压一层底色让它跟纯白/纯黑底融在一起
+            Rectangle().fill((dark ? Color.black : Color.white).opacity(0.55))
+        }
+        .mask(LinearGradient(stops: stops,
+                             startPoint: edge == .top ? .top : .bottom,
+                             endPoint: edge == .top ? .bottom : .top))
+        .frame(height: height)
+        .frame(maxWidth: .infinity)
+        .ignoresSafeArea(edges: edge == .top ? .top : .bottom)
+        .allowsHitTesting(false)
     }
 }
 
