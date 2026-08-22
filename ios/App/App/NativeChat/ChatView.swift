@@ -2202,6 +2202,7 @@ struct MessageRow: View {
     @State private var openedTools: [ActivityItem]? = nil
     // 0822 iMessage 主题：思绪+脚印合成一条过程线，默认只露一个点
     @State private var processOpen = false
+    @State private var showTranscript = false   // 0822 语音条默认不露文字，长按「转文字」才展开
     @AppStorage("imsgShowProcess") private var showProcessDots = true
     @State private var openedToolDetail: ActivityItem? = nil
     @State private var showRecall = false
@@ -2347,7 +2348,15 @@ struct MessageRow: View {
                         imageBody(raw)
                     }
                     if msg.isAudio, let raw = msg.attachmentUrl {
-                        AudioBubble(url: AlcoveAPI.attachmentURL(raw), isUser: isUser, theme: theme)
+                        // 0822 她要的：一开始只有语音条，长按才「转文字」或「收藏」
+                        AudioBubble(url: AlcoveAPI.attachmentURL(raw), isUser: isUser, theme: theme,
+                                    hasTranscript: !msg.displayText.isEmpty,
+                                    transcriptShown: showTranscript,
+                                    onToggleTranscript: {
+                                        withAnimation(.easeInOut(duration: 0.18)) { showTranscript.toggle() }
+                                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { onContentChange?() }
+                                    },
+                                    onFavorite: { onFavorite?() })
                     }
                     if msg.isDocument, let raw = msg.attachmentUrl {
                         DocumentAttachmentCard(
@@ -2358,7 +2367,8 @@ struct MessageRow: View {
                     }
                     if let song = msg.musicCard {
                         MusicMessageCard(song: song, theme: theme, isUser: isUser) { onPlayMusic?(song) }
-                    } else if !msg.displayText.isEmpty && !(msg.isSticker) && !msg.isBareLink {
+                    } else if !msg.displayText.isEmpty && !(msg.isSticker) && !msg.isBareLink
+                                && (!msg.isAudio || showTranscript) {
                         if paragraphSelectionMode && !isUser {
                             HStack(alignment: .top, spacing: 9) {
                                 Button { onToggleParagraphSelection?() } label: {
@@ -3684,8 +3694,13 @@ struct AudioBubble: View {
     let url: URL
     let isUser: Bool
     var theme: AlcoveTheme = .haven
+    var hasTranscript: Bool = false
+    var transcriptShown: Bool = false
+    var onToggleTranscript: (() -> Void)? = nil
+    var onFavorite: (() -> Void)? = nil
     @State private var player: AVPlayer?
     @State private var playing = false
+    @State private var endObserver: NSObjectProtocol?
 
     var body: some View {
         Button {
@@ -3693,11 +3708,16 @@ struct AudioBubble: View {
                 player?.pause()
                 playing = false
             } else {
+                // 0822 她说「点语音没有声音」：之前没开 playback 会话，静音键一拨就哑。
+                // 旅行卡那边早就这么做了，这里补上。
+                try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
+                try? AVAudioSession.sharedInstance().setActive(true)
                 if player == nil { player = AVPlayer(url: url) }
                 player?.seek(to: .zero)
                 player?.play()
                 playing = true
-                NotificationCenter.default.addObserver(
+                if let old = endObserver { NotificationCenter.default.removeObserver(old) }
+                endObserver = NotificationCenter.default.addObserver(
                     forName: .AVPlayerItemDidPlayToEndTime,
                     object: player?.currentItem, queue: .main) { _ in
                     playing = false
@@ -3712,11 +3732,27 @@ struct AudioBubble: View {
                 Text("语音")
                     .font(.system(size: 14))
             }
-            .foregroundColor(theme.text)
+            .foregroundColor((theme.isMessages && isUser) ? .white : theme.text)
             .padding(.horizontal, 14)
             .padding(.vertical, 9)
-            .background(isUser ? theme.bubbleUser : theme.bubbleAI,
-                        in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .background {
+                if theme.isMessages {
+                    MessagesBubbleShape(isUser: isUser).fill(isUser ? theme.bubbleUser : theme.bubbleAI)
+                } else {
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(isUser ? theme.bubbleUser : theme.bubbleAI)
+                }
+            }
+        }
+        .contextMenu {
+            if hasTranscript {
+                Button { onToggleTranscript?() } label: {
+                    Label(transcriptShown ? "收起文字" : "转文字", systemImage: "text.bubble")
+                }
+            }
+            if let onFavorite {
+                Button { onFavorite() } label: { Label("收藏", systemImage: "heart") }
+            }
         }
     }
 }
