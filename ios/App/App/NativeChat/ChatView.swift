@@ -266,24 +266,17 @@ struct ChatView: View {
                     .padding(.horizontal, 12)
                     .padding(.top, theme.isMessages ? 8 : 52)
                 }
-                // 0822 她要的 iMessage 那种「上顶下顶」：不是遮罩擦淡，是顶栏/输入栏底下一截渐进毛玻璃。
-                // iOS 26 自带（scrollEdgeEffectStyle .soft），但它只认挂在安全区里的栏——
-                // 所以信息主题把顶栏高度和输入栏都塞进 safeAreaInset，别的主题结构一律不动。
-                .safeAreaInset(edge: .top, spacing: 0) {
+                // 0822 她递的图纸：iMessage 的上下渐进模糊是 iOS 26 系统画的 scroll edge effect，
+                // 自动混下层颜色、日夜自适配，不许用固定色渐变去模拟。
+                // 关键两条：① 栏要用 safeAreaBar 挂（safeAreaInset 不触发底部模糊）；② 列表不翻转（本来就没翻）。
+                // 顶栏本体在 RootView 浮着，这里只挂一条同高的透明 bar 把「顶部有栏」告诉系统。
+                .safeAreaBar(edge: .top, spacing: 0) {
                     if theme.isMessages { Color.clear.frame(height: 88) }
                 }
-                .safeAreaInset(edge: .bottom, spacing: 0) {
+                .safeAreaBar(edge: .bottom, spacing: 0) {
                     if theme.isMessages && !paragraphSelectionMode { floatingInput }
                 }
-                .modifier(SoftScrollEdgeModifier(enabled: theme.isMessages))
-                // 0822 夜 真机上 .soft 没画出来（顶栏底下的字还是光秃秃穿出来）。不等它了：
-                // 自己在滚动区上下各铺一层毛玻璃，用渐变蒙成「靠边糊、往里清」，哪个系统都认。
-                .overlay(alignment: .top) {
-                    if theme.isMessages { MessagesEdgeBlur(edge: .top, height: 128, dark: theme.isDark) }
-                }
-                .overlay(alignment: .bottom) {
-                    if theme.isMessages { MessagesEdgeBlur(edge: .bottom, height: 96 + inputBarHeight, dark: theme.isDark) }
-                }
+                .scrollEdgeEffectStyle(theme.isMessages ? .soft : .automatic, for: .all)
                 .scrollDismissesKeyboard(.interactively)
                 .onTapGesture { inputFocused = false }
                 .simultaneousGesture(
@@ -291,7 +284,7 @@ struct ChatView: View {
                         if store.live?.active == true { followLiveOutput = false }
                     }
                 )
-                .mask(theme.isMessages ? AnyView(Color.black) : AnyView(edgeFadeMask))
+                .modifier(EdgeFadeMaskModifier(enabled: !theme.isMessages, mask: edgeFadeMask))   // 信息主题不罩遮罩，别挡系统效果
 
                 if paragraphSelectionMode {
                     paragraphSelectionToolbar
@@ -4330,7 +4323,15 @@ struct RecallPop: View {
     }
 }
 
-// 0822 信息主题：iOS 26 滚动边缘渐进毛玻璃（iMessage 顶栏/输入栏底下那截）。老系统没有就原样。
+// 别的主题照旧罩渐变遮罩；信息主题不罩（遮罩会把系统的 scroll edge effect 一起蒙掉）
+private struct EdgeFadeMaskModifier<M: View>: ViewModifier {
+    let enabled: Bool
+    let mask: M
+    @ViewBuilder func body(content: Content) -> some View {
+        if enabled { content.mask(mask) } else { content }
+    }
+}
+
 // 0822 她要的打字框材质：iOS 26 真玻璃（圆加号 + 胶囊），老系统退回白片 + 细线 + 软阴影
 private struct MessagesGlassModifier: ViewModifier {
     let face: Color
@@ -4357,45 +4358,6 @@ private struct MessagesGlassModifier: ViewModifier {
                     .overlay(Capsule().stroke(line, lineWidth: 0.5))
                     .shadow(color: shadow, radius: 8, y: 2)
             }
-        }
-    }
-}
-
-// 0822 信息主题上下那截「糊」：材质 + 渐变蒙版，靠边最糊，往里渐清。不吃点击。
-private struct MessagesEdgeBlur: View {
-    enum Edge { case top, bottom }
-    let edge: Edge
-    let height: CGFloat
-    let dark: Bool
-    var body: some View {
-        let stops: [Gradient.Stop] = [
-            .init(color: .black, location: 0),
-            .init(color: .black.opacity(0.85), location: 0.45),
-            .init(color: .black.opacity(0.35), location: 0.8),
-            .init(color: .clear, location: 1),
-        ]
-        ZStack {
-            Rectangle().fill(.ultraThinMaterial)
-            // 材质本身偏灰，再压一层底色让它跟纯白/纯黑底融在一起
-            Rectangle().fill((dark ? Color.black : Color.white).opacity(0.55))
-        }
-        .mask(LinearGradient(stops: stops,
-                             startPoint: edge == .top ? .top : .bottom,
-                             endPoint: edge == .top ? .bottom : .top))
-        .frame(height: height)
-        .frame(maxWidth: .infinity)
-        .ignoresSafeArea(edges: edge == .top ? .top : .bottom)
-        .allowsHitTesting(false)
-    }
-}
-
-private struct SoftScrollEdgeModifier: ViewModifier {
-    let enabled: Bool
-    @ViewBuilder func body(content: Content) -> some View {
-        if enabled, #available(iOS 26.0, *) {
-            content.scrollEdgeEffectStyle(.soft, for: .vertical)
-        } else {
-            content
         }
     }
 }
