@@ -39,6 +39,7 @@ struct ChatView: View {
     @Namespace private var photoTransition
     @State private var previewImage: UIImage?
     @State private var inputBarHeight: CGFloat = 90
+    @State private var topSafeInset: CGFloat = 59   // 0823 信息主题顶部手搓模糊区要用：状态栏高度
     @State private var scrollKick = 0
     @State private var showMusicPlayer = false
     @State private var showModelPicker = false
@@ -115,6 +116,8 @@ struct ChatView: View {
                 }
             }
             .coordinateSpace(name: "alcoveChatRoot")
+            .onAppear { topSafeInset = root.safeAreaInsets.top }
+            .onChange(of: root.safeAreaInsets.top) { v in topSafeInset = v }
             .environment(\.chatWallpaperDescriptor, wallpaperStore.descriptor)
             .environment(\.chatWallpaperViewportSize, root.size)
             .environment(\.bubbleGlassStyle, bubbleGlassStyle)
@@ -273,10 +276,28 @@ struct ChatView: View {
                 // 自动混下层颜色、日夜自适配，不许用固定色渐变去模拟。
                 // 关键两条：① 栏要用 safeAreaBar 挂（safeAreaInset 不触发底部模糊）；② 列表不翻转（本来就没翻）。
                 // 顶栏本体在 RootView 浮着，这里只挂一条同高的透明 bar 把「顶部有栏」告诉系统。
+                // 0823 她装了 e7c827d 还是太糊（系统 soft 罩不住这个高度），按她写死的参数手搓顶部：
+                //   区域高 = 状态栏 + 60pt；最大半径 12 只在最顶端；遮罩 easeIn 二次方（顶 100% / 中点 25% / 底 0%）；
+                //   另叠主题底色罩 0.5→0 同曲线。头像名字胶囊原样悬浮在上面。底部仍是系统的。
+                //   保险：私有滤镜建不起来就整层不画（宁可清的，不再出整块硬边）。
+                .overlay(alignment: .top) {
+                    if theme.isMessages {
+                        let h = topSafeInset + 60
+                        let bg = theme.wallGradient.first ?? (theme.isDark ? Color.black : Color.white)
+                        ZStack(alignment: .top) {
+                            VariableBlurView(maxRadius: 12)
+                            LinearGradient(stops: (0...8).map { i in
+                                let t = CGFloat(i) / 8
+                                return .init(color: bg.opacity(0.5 * (1 - t) * (1 - t)), location: t)
+                            }, startPoint: .top, endPoint: .bottom)
+                        }
+                        .frame(height: h)
+                        .frame(maxWidth: .infinity)
+                        .ignoresSafeArea(edges: .top)
+                        .allowsHitTesting(false)
+                    }
+                }
                 .safeAreaBar(edge: .top, spacing: 0) {
-                    // 0823 她的话：「手搓渐变层来回反复，换回系统 .soft，一行的事」。顶上不再垫任何自己画的层。
-                    // 顶栏本体完全透明；系统模糊带的厚度跟着栏的占位高走——占位压到 52（头像 56 往下挂出来），
-                    // 模糊带就跟底下打字框那条一样薄，名字那一行附近已经清了。
                     if theme.isMessages, let bar = messagesTopBar {
                         bar().frame(height: 52, alignment: .top)
                     }
@@ -284,7 +305,8 @@ struct ChatView: View {
                 .safeAreaBar(edge: .bottom, spacing: 0) {
                     if theme.isMessages && !paragraphSelectionMode { floatingInput }
                 }
-                .scrollEdgeEffectStyle(theme.isMessages ? .soft : .automatic, for: .all)
+                .scrollEdgeEffectStyle(theme.isMessages ? .soft : .automatic, for: .bottom)
+                .scrollEdgeEffectHidden(theme.isMessages, for: .top)   // 顶部系统效果关掉，换上面手搓的
                 .scrollDismissesKeyboard(.interactively)
                 .onTapGesture { inputFocused = false }
                 .simultaneousGesture(
@@ -4337,6 +4359,57 @@ struct RecallPop: View {
             }
         }
         .presentationDetents([.medium, .large])
+    }
+}
+
+// 0823 顶部手搓可变模糊（她写死的参数）：UIVisualEffectView 的 backdrop 换 CAFilter variableBlur，
+// 遮罩图不透明处糊得重、透明处不糊。自签侧载，私有 API 她点头。
+// 保险两条：① 滤镜建不起来 → 整个 view 隐藏，什么都不画；② 系统每次布局可能把 filters 刷掉 → layoutSubviews 里重挂。
+struct VariableBlurView: UIViewRepresentable {
+    var maxRadius: CGFloat = 12
+    func makeUIView(context: Context) -> VariableBlurUIView { VariableBlurUIView(maxRadius: maxRadius) }
+    func updateUIView(_ uiView: VariableBlurUIView, context: Context) {}
+}
+
+final class VariableBlurUIView: UIVisualEffectView {
+    private var filter: NSObject?
+    init(maxRadius: CGFloat) {
+        super.init(effect: UIBlurEffect(style: .regular))
+        isUserInteractionEnabled = false
+        guard let cls = NSClassFromString("CAFilter") as AnyObject?,
+              let made = cls.perform(NSSelectorFromString("filterWithType:"), with: "variableBlur"),
+              let f = made.takeUnretainedValue() as? NSObject,
+              let mask = Self.maskImage().cgImage else {
+            isHidden = true   // 建不起来就不画，别退化成整块糊
+            return
+        }
+        f.setValue(maxRadius, forKey: "inputRadius")
+        f.setValue(mask, forKey: "inputMaskImage")
+        f.setValue(true, forKey: "inputNormalizeEdges")
+        filter = f
+        applyFilter()
+    }
+    required init?(coder: NSCoder) { fatalError() }
+    private func applyFilter() {
+        guard let f = filter, let backdrop = subviews.first?.layer else { return }
+        backdrop.filters = [f]
+        if let w = window { backdrop.setValue(w.screen.scale, forKey: "scale") }
+        // 去掉系统那层提亮/染色，只留模糊
+        for v in subviews.dropFirst() { v.alpha = 0 }
+    }
+    override func didMoveToWindow() { super.didMoveToWindow(); applyFilter() }
+    override func layoutSubviews() { super.layoutSubviews(); applyFilter() }
+    /// 1×256 竖向灰度图：alpha = (1-t)^2，顶 100%、中点 25%、底 0%
+    static func maskImage() -> UIImage {
+        let h = 256
+        return UIGraphicsImageRenderer(size: CGSize(width: 1, height: h)).image { ctx in
+            for y in 0..<h {
+                let t = CGFloat(y) / CGFloat(h - 1)
+                let a = (1 - t) * (1 - t)
+                ctx.cgContext.setFillColor(UIColor(white: 1, alpha: a).cgColor)
+                ctx.cgContext.fill(CGRect(x: 0, y: y, width: 1, height: 1))
+            }
+        }
     }
 }
 
