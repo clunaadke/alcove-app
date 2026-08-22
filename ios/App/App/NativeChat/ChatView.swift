@@ -1048,14 +1048,21 @@ struct ChatView: View {
         let showBlue = isGenerating || canSend || recorder.isRecording || store.heldCount > 0
         return HStack(alignment: .bottom, spacing: 10) {
             if recorder.isRecording {
-                Button { recorder.cancel() } label: {
+                // 0822 她报的：录音时叉点不掉。玻璃贴在图标上把点击吞了——
+                // 改成玻璃当按钮的背景，热区明确给成整个圆。
+                Button(action: { recorder.cancel() }) {
                     Image(systemName: "xmark")
                         .font(.system(size: 15, weight: .medium))
                         .foregroundColor(theme.textDim)
                         .frame(width: 40, height: 40)
-                        .modifier(MessagesGlassModifier(face: face, line: line, shadow: shadow, circle: true))
+                        .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
+                .background(
+                    Color.clear.frame(width: 40, height: 40)
+                        .modifier(MessagesGlassModifier(face: face, line: line, shadow: shadow, circle: true))
+                        .allowsHitTesting(false)
+                )
             } else {
                 composerPlusMenu
             }
