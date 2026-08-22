@@ -961,6 +961,10 @@ private struct NativeSettingsView: View {
     @State private var pulseChase = true
     @State private var pulseGhost = true
     @State private var thoughtLength = 500.0
+    // 0822 她要的：手写思绪开关。关＝后端 thought_chars 写 -1，
+    // 陈璟那轮不写 <思绪>，那栏改显示原生思考（英文）。开＝恢复滑条上的数。
+    @State private var handwrittenOn = true
+    @State private var thoughtLengthBeforeOff = 500.0
     @State private var thoughtLengthLoaded = false
     @State private var thoughtLengthSaving = false
     @State private var thoughtLengthSaveTask: Task<Void, Never>?
@@ -1075,6 +1079,27 @@ private struct NativeSettingsView: View {
                     }
                     Divider().opacity(0.25)
                     VStack(alignment: .leading, spacing: 11) {
+                        HStack(spacing: 8) {
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text("手写思绪").font(.system(size: 12, weight: .medium))
+                                Text(handwrittenOn ? "他自己写的那段碎碎念" : "关了，思绪栏显示原生思考（英文）")
+                                    .font(.system(size: 9)).foregroundColor(theme.textDim)
+                            }
+                            Toggle("", isOn: Binding(
+                                get: { handwrittenOn },
+                                set: { on in
+                                    handwrittenOn = on
+                                    if on {
+                                        thoughtLength = thoughtLengthBeforeOff
+                                    } else {
+                                        thoughtLengthBeforeOff = thoughtLength
+                                        scheduleThoughtLengthSave(-1)
+                                    }
+                                }))
+                            .labelsHidden()
+                            .tint(theme.fyAccent)
+                        }
+                        if handwrittenOn {
                         HStack {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("思绪长度").font(.system(size: 13, weight: .medium))
@@ -1093,6 +1118,7 @@ private struct NativeSettingsView: View {
                             Text("1200 字")
                         }
                         .font(.system(size: 9.5, design: .rounded)).foregroundColor(theme.textDim)
+                        }
                     }
                 }
                 section("相处") {
@@ -1241,7 +1267,7 @@ private struct NativeSettingsView: View {
         .onChange(of: aiPhoto) { item in loadDataURL(item, into: $assistantAvatar) }
         .onChange(of: wallPhoto) { item in saveWallpaper(item) }
         .onChange(of: replyLength) { value in scheduleReplyLengthSave(value) }
-        .onChange(of: thoughtLength) { value in scheduleThoughtLengthSave(value) }
+        .onChange(of: thoughtLength) { value in if handwrittenOn { scheduleThoughtLengthSave(value) } }
         .task {
             async let services: Void = loadServices()
             async let reply: Void = loadReplyLength()
@@ -1462,7 +1488,14 @@ private struct NativeSettingsView: View {
 
     @MainActor private func loadThoughtLength() async {
         if let value = try? await NativeHouseAPI.object("/api/reply-len") {
-            thoughtLength = Double(value.int("thought_chars"))
+            let n = value.int("thought_chars")
+            if n == -1 {
+                handwrittenOn = false
+            } else {
+                handwrittenOn = true
+                thoughtLength = Double(n)
+                thoughtLengthBeforeOff = Double(n)
+            }
         }
         thoughtLengthLoaded = true
     }
