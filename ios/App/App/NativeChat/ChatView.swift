@@ -274,30 +274,17 @@ struct ChatView: View {
                 // 关键两条：① 栏要用 safeAreaBar 挂（safeAreaInset 不触发底部模糊）；② 列表不翻转（本来就没翻）。
                 // 顶栏本体在 RootView 浮着，这里只挂一条同高的透明 bar 把「顶部有栏」告诉系统。
                 .safeAreaBar(edge: .top, spacing: 0) {
+                    // 0823 她的话：「手搓渐变层来回反复，换回系统 .soft，一行的事」。顶上不再垫任何自己画的层。
+                    // 顶栏本体完全透明；系统模糊带的厚度跟着栏的占位高走——占位压到 52（头像 56 往下挂出来），
+                    // 模糊带就跟底下打字框那条一样薄，名字那一行附近已经清了。
                     if theme.isMessages, let bar = messagesTopBar {
-                        // 0822 她的三条：顶部系统那层太重（整块抹掉），改成自己画的可变模糊垫在顶栏底下——
-                        // ① 最大半径减半（系统约 20 → 10）；② 遮罩 ease-in：靠列表那端长时间几乎不糊，只在贴状态栏那段快速拉满；
-                        // ③ 不叠黑层，压亮度用「当前底色」0.5→0 的渐变，日夜自适配。底部仍是系统的，不动。
-                        bar()
-                            .background(alignment: .top) {
-                                ZStack(alignment: .top) {
-                                    VariableBlurView(maxRadius: 10, curve: 3)
-                                    LinearGradient(stops: [
-                                        .init(color: (theme.wallGradient.first ?? (theme.isDark ? .black : .white)).opacity(0.5), location: 0),
-                                        .init(color: (theme.wallGradient.first ?? (theme.isDark ? .black : .white)).opacity(0.18), location: 0.55),
-                                        .init(color: .clear, location: 1),
-                                    ], startPoint: .top, endPoint: .bottom)
-                                }
-                                .ignoresSafeArea(edges: .top)
-                                .allowsHitTesting(false)
-                            }
+                        bar().frame(height: 52, alignment: .top)
                     }
                 }
                 .safeAreaBar(edge: .bottom, spacing: 0) {
                     if theme.isMessages && !paragraphSelectionMode { floatingInput }
                 }
-                .scrollEdgeEffectStyle(theme.isMessages ? .soft : .automatic, for: .bottom)
-                .scrollEdgeEffectHidden(theme.isMessages, for: .top)   // 顶部系统那层关掉，换上面自己画的
+                .scrollEdgeEffectStyle(theme.isMessages ? .soft : .automatic, for: .all)
                 .scrollDismissesKeyboard(.interactively)
                 .onTapGesture { inputFocused = false }
                 .simultaneousGesture(
@@ -4350,53 +4337,6 @@ struct RecallPop: View {
             }
         }
         .presentationDetents([.medium, .large])
-    }
-}
-
-// 0822 顶部可变模糊：UIVisualEffectView 的 backdrop 换成 CAFilter variableBlur，
-// 遮罩图不透明处糊得最重、透明处不糊。自签侧载不上架，私有 API 她点头接受。
-// curve 越大，靠列表那端越久保持清晰，只在贴状态栏那段快速拉满（alpha = (1-t)^curve，t 从上到下）。
-struct VariableBlurView: UIViewRepresentable {
-    var maxRadius: CGFloat = 10
-    var curve: CGFloat = 3
-    func makeUIView(context: Context) -> VariableBlurUIView {
-        VariableBlurUIView(maxRadius: maxRadius, curve: curve)
-    }
-    func updateUIView(_ uiView: VariableBlurUIView, context: Context) {}
-}
-
-final class VariableBlurUIView: UIVisualEffectView {
-    init(maxRadius: CGFloat, curve: CGFloat) {
-        super.init(effect: UIBlurEffect(style: .regular))
-        guard let filterClass = NSClassFromString("CAFilter") as? NSObject.Type,
-              let filter = filterClass.perform(NSSelectorFromString("filterWithType:"), with: "variableBlur")?
-                .takeUnretainedValue() as? NSObject,
-              let mask = Self.maskImage(curve: curve).cgImage else { return }
-        filter.setValue(maxRadius, forKey: "inputRadius")
-        filter.setValue(mask, forKey: "inputMaskImage")
-        filter.setValue(true, forKey: "inputNormalizeEdges")
-        subviews.first?.layer.filters = [filter]
-        // 去掉系统自带的那层提亮/染色，只留模糊
-        for v in subviews.dropFirst() { v.alpha = 0 }
-        isUserInteractionEnabled = false
-    }
-    required init?(coder: NSCoder) { fatalError() }
-    override func didMoveToWindow() {
-        super.didMoveToWindow()
-        guard let window, let backdrop = subviews.first?.layer else { return }
-        backdrop.setValue(window.screen.scale, forKey: "scale")
-    }
-    /// 1×256 竖向灰度图：顶端不透明（全糊），往下按 (1-t)^curve 掉到透明
-    static func maskImage(curve: CGFloat) -> UIImage {
-        let h = 256
-        return UIGraphicsImageRenderer(size: CGSize(width: 1, height: h)).image { ctx in
-            for y in 0..<h {
-                let t = CGFloat(y) / CGFloat(h - 1)
-                let a = pow(1 - t, curve)
-                ctx.cgContext.setFillColor(UIColor(white: 1, alpha: a).cgColor)
-                ctx.cgContext.fill(CGRect(x: 0, y: y, width: 1, height: 1))
-            }
-        }
     }
 }
 
