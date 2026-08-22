@@ -1419,11 +1419,15 @@ private struct ChatChannelPanel: View {
             // 0822 她要的：当前这一窗已经聊了多少轮，cli / sdk 各自的数（这一代，forge 之后重新数）
             let turns = panel == "sdk" ? sdkTurns : cliTurns
             if let turns {
-                HStack(spacing: 6) {
-                    Image(systemName: "text.bubble").font(.system(size: 11))
-                    Text("当前对话 \(turns.current) 轮" +
-                         (turns.system > 0 ? "（其中 \(turns.system) 轮系统）" : "") +
-                         (turns.total > turns.current ? " · 这个 session 累计 \(turns.total) 轮" : ""))
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "text.bubble").font(.system(size: 11))
+                        Text("当前对话 \(turns.current) 轮" +
+                             (turns.total > turns.current ? " · 这个 session 累计 \(turns.total) 轮" : ""))
+                    }
+                    // 0822 她要的第二行：系统轮 / 对话轮分开数
+                    Text("系统轮次 \(turns.system)　对话轮次 \(turns.current - turns.system)")
+                        .padding(.leading, 18)
                 }
                 .font(.system(size: 12, design: .monospaced)).foregroundStyle(.secondary)
             }
