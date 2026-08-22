@@ -286,10 +286,8 @@ struct ChatView: View {
                         let bg = theme.wallGradient.first ?? (theme.isDark ? Color.black : Color.white)
                         ZStack(alignment: .top) {
                             VariableBlurView(maxRadius: 12)
-                            LinearGradient(stops: (0...8).map { i in
-                                let t = CGFloat(i) / 8
-                                return .init(color: bg.opacity(0.5 * (1 - t) * (1 - t)), location: t)
-                            }, startPoint: .top, endPoint: .bottom)
+                            // 底色罩：她排查第 2 步——这版先整个关掉截图对照；开回来走 CAGradientLayer（不是填充矩形）
+                            if messagesBlurBgLayer { ThemeFadeLayerView(color: UIColor(bg)) }
                         }
                         .frame(height: h)
                         .frame(maxWidth: .infinity)
@@ -4366,6 +4364,32 @@ struct RecallPop: View {
 
 // 0823 排查开关：true 时模糊区画红框 + 印诊断信息 + 左侧贴遮罩图本尊（UIImageView）。自查过关后改回 false。
 let messagesBlurDebug = true
+// 0823 她排查第 2 步：底色罩先关掉截一张，确认是不是它把框内压成近黑。确认后改 true 开回来
+let messagesBlurBgLayer = false
+
+/// 底色罩：CAGradientLayer，主题底色 0.5 → 0.125（中点）→ 0，竖向。
+struct ThemeFadeLayerView: UIViewRepresentable {
+    let color: UIColor
+    func makeUIView(context: Context) -> ThemeFadeUIView { ThemeFadeUIView(color: color) }
+    func updateUIView(_ v: ThemeFadeUIView, context: Context) { v.setColor(color) }
+}
+final class ThemeFadeUIView: UIView {
+    override class var layerClass: AnyClass { CAGradientLayer.self }
+    init(color: UIColor) {
+        super.init(frame: .zero)
+        isUserInteractionEnabled = false
+        let g = layer as! CAGradientLayer
+        g.startPoint = CGPoint(x: 0.5, y: 0); g.endPoint = CGPoint(x: 0.5, y: 1)
+        g.locations = [0, 0.5, 1]
+        setColor(color)
+    }
+    required init?(coder: NSCoder) { fatalError() }
+    func setColor(_ c: UIColor) {
+        (layer as! CAGradientLayer).colors = [c.withAlphaComponent(0.5).cgColor,
+                                              c.withAlphaComponent(0.125).cgColor,
+                                              c.withAlphaComponent(0).cgColor]
+    }
+}
 
 struct MessagesBlurDebugOverlay: View {
     let frameHeight: CGFloat
@@ -4450,6 +4474,8 @@ final class VariableBlurUIView: UIVisualEffectView {
     }
     override func layoutSubviews() {
         super.layoutSubviews()
+        // 系统会重建 UIVisualEffectView 的子视图：除 backdrop 外那层染色（暗色下近黑）每次布局都重新藏掉
+        for v in subviews.dropFirst() { v.alpha = 0 }
         refreshMask()
     }
 
@@ -4458,14 +4484,15 @@ final class VariableBlurUIView: UIVisualEffectView {
         guard filter != nil, let backdrop = subviews.first?.layer,
               bounds.width > 0, bounds.height > 0, bounds.size != lastMaskSize else { return }
         if (backdrop.filters ?? []).isEmpty, let f = filter { backdrop.filters = [f] }   // 被系统刷掉就重挂
-        let scale = window?.screen.scale ?? UIScreen.main.scale
-        let img = Self.maskImage(size: bounds.size, scale: scale)
+        // 她排查第 1 步：上一版日志 1206x366 已经是 cg.width/cg.height（402x122pt × 3），没有双重缩放；
+        // 为了彻底去掉歧义，按她二选一改成「点尺寸配 scale=1」：CGImage 像素数 = 点数
+        let img = Self.maskImage(size: bounds.size, scale: 1)
         guard let cg = img.cgImage else { return }
         backdrop.setValue(cg, forKeyPath: "filters.variableBlur.inputMaskImage")
         lastMaskSize = bounds.size
         Self.debugMask = img
-        Self.debugLine += " · mask=\(cg.width)x\(cg.height)@\(Int(scale))x"
-        NSLog("[VariableBlur] mask %dx%d for bounds %@", cg.width, cg.height, NSCoder.string(for: bounds.size))
+        Self.debugLine += " · cg=\(cg.width)x\(cg.height)px bounds=\(Int(bounds.width))x\(Int(bounds.height))pt bg=\(messagesBlurBgLayer)"
+        NSLog("[VariableBlur] CGImage %dx%d px for bounds %@", cg.width, cg.height, NSCoder.string(for: bounds.size))
     }
 
     /// 竖向灰度遮罩：alpha = (1-t)^2，顶 100%、中点 25%、底 0%。UIGraphicsImageRenderer 的 y=0 在上。
