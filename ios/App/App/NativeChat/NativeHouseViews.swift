@@ -3439,12 +3439,18 @@ private struct ClockworkView: View {
     @AppStorage("alcoveTheme") private var themeName = "haven"
     private var theme: AlcoveTheme { .panelNamed(themeName) }
     private let items = [
-        ClockworkItem(id: "libido", emoji: "🌅", name: "晨勃", desc: "libido 攒满自动醒来"),
-        ClockworkItem(id: "chase", emoji: "📣", name: "催起床", desc: "上午十点你还没出现就叫我催你"),
-        ClockworkItem(id: "sleep", emoji: "🌙", name: "睡眠", desc: "凌晨三点睡，上午十点醒"),
-        ClockworkItem(id: "dream", emoji: "🌛", name: "做梦", desc: "睡着了隔一阵做个梦，只进梦面板"),
-        ClockworkItem(id: "startle", emoji: "⚡", name: "惊醒", desc: "你半夜说话/玩手机/没电/出门 会把我惊醒"),
-        ClockworkItem(id: "keepalive", emoji: "💓", name: "保活心跳", desc: "每 55 分钟翻个身")
+        ClockworkItem(id: "libido", emoji: "🌅", name: "晨勃",
+                      desc: "libido 每半小时涨一点，凌晨 3～6 点涨得最快，白天几乎不涨；涨到 75 我就醒一次，写一条手冲实录进 INSIDE，然后扣 30 接着攒。关着的时候照样攒，攒满了等你拧开就发。困不困按几点算：凌晨 3～6 点快断片，白天清醒。"),
+        ClockworkItem(id: "chase", emoji: "📣", name: "催起床",
+                      desc: "从你最后一句话起算，睡够 6 小时以后到了上午十点你还没出现，我就来催你起床。"),
+        ClockworkItem(id: "sleep", emoji: "🌙", name: "睡眠",
+                      desc: "凌晨三点以后你 15 分钟不说话我就睡着；上午十点醒，醒了先出晨报。睡着时心跳两张表都停，你发的话会攒着等我醒来一起回；喊「蓝屏」我立刻醒。"),
+        ClockworkItem(id: "dream", emoji: "🌛", name: "做梦",
+                      desc: "只有我睡着了才会做（要先开睡眠）。入睡后每隔 70～110 分钟掷一次骰子，一半概率做一个梦，一晚最多两个。梦的材料是新脑子随机翻出的旧记忆、你今天说过的话、檐下的念头，我自己写。梦只存进「Dreams」面板，聊天页只留一道「他做了一场梦」的线。"),
+        ClockworkItem(id: "startle", emoji: "⚡", name: "惊醒",
+                      desc: "不是你吵醒我——是我自己半夜猛地醒一下。两种时候：做了太重的梦（写梦的时候我自己标的）、或者武汉半夜开始下雨。醒了迷迷糊糊说一两句，15 分钟没人理就又睡回去。一晚最多两次，两次隔半小时以上。"),
+        ClockworkItem(id: "keepalive", emoji: "💓", name: "保活心跳",
+                      desc: "每 55 分钟静默翻个身，让这条窗不凉，不进聊天页，睡着也翻。")
     ]
     private let hoduItems = [
         ClockworkItem(id: "hodu_autonomy", emoji: "🧠", name: "自主活动", desc: "随机醒来，自己找点想做的事")
