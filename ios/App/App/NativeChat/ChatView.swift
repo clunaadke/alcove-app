@@ -40,6 +40,14 @@ struct ChatView: View {
     @State private var showMusicPlayer = false
     @State private var showModelPicker = false
     @State private var showMoreModels = false
+    // 0822 她要的：换模型面板分 cli / sdk 两页（顶上一行当前通道），CLI 补 effort，SDK 模型/effort 存后端 config
+    @State private var modelPanel = "cli"
+    @State private var modelPanelResolved = false
+    @State private var cliEffort = ""
+    @State private var sdkModel = ""
+    @State private var sdkEffort = ""
+    @State private var switchingEffort = false
+    private let effortLevels = ["low", "medium", "high", "xhigh", "max"]
     @State private var switchingModel = false
     @State private var modelSwitchError = ""
     @State private var showMiniTerminal = false
@@ -116,6 +124,7 @@ struct ChatView: View {
         }
         .sheet(isPresented: $showModelPicker, onDismiss: { showMoreModels = false }) {
             modelPickerSheet
+                .task { await loadModelPanelState() }
                 .presentationDetents([.fraction(0.72), .large])
                 .presentationDragIndicator(.visible)
                 .presentationBackground(.ultraThinMaterial)
@@ -1078,28 +1087,49 @@ struct ChatView: View {
                 Color.clear.frame(width: 44, height: 44)
             }
 
-            if showMoreModels {
+            // 当前通道一行：左边写着现在主聊天走的是谁，右边 cli / sdk 切着看两页（样式不变，只多这一行）
+            HStack(spacing: 10) {
+                Text("当前通道")
+                    .font(.system(size: 12))
+                    .foregroundColor(theme.textDim)
+                Text(activeChatChannel.uppercased())
+                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .foregroundColor(theme.text)
+                Spacer()
+                HStack(spacing: 2) {
+                    ForEach(["cli", "sdk"], id: \.self) { p in
+                        Button {
+                            modelPanel = p; modelPanelResolved = true; showMoreModels = false; modelSwitchError = ""
+                        } label: {
+                            Text(p)
+                                .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                                .foregroundColor(modelPanel == p ? theme.text : theme.textDim)
+                                .padding(.horizontal, 11).padding(.vertical, 5)
+                                .background(modelPanel == p ? theme.fyCard.opacity(0.95) : .clear, in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(2)
+                .background(theme.glassTint.opacity(0.4), in: Capsule())
+                .overlay(Capsule().stroke(theme.glassBorder, lineWidth: 1))
+            }
+            .padding(.horizontal, 4)
+
+            if modelPanel == "sdk" {
+                if showMoreModels {
+                    modelRows(Array(claudeModels.dropFirst(4)))
+                } else {
+                    modelRows(Array(claudeModels.prefix(4)))
+                    moreModelsButton
+                }
+                effortRow(current: sdkEffort, hint: "SDK 下一句生效，不换 session") { lvl in setSDKEffort(lvl) }
+            } else if showMoreModels {
                 modelRows(Array(claudeModels.dropFirst(4)))
             } else {
                 modelRows(Array(claudeModels.prefix(4)))
-
-                Button {
-                    withAnimation(.easeInOut(duration: 0.18)) { showMoreModels = true }
-                } label: {
-                    HStack {
-                        Text("More models")
-                            .font(.system(size: 16, weight: .medium))
-                        Spacer()
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundColor(theme.textDim)
-                    }
-                    .foregroundColor(theme.text)
-                    .padding(.horizontal, 18)
-                    .frame(height: 58)
-                    .background(theme.fyCard.opacity(0.72), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                }
-                .buttonStyle(.plain)
+                moreModelsButton
+                effortRow(current: cliEffort, hint: "等于在命令行敲 /effort") { lvl in setCLIEffort(lvl) }
 
                 Button(action: onToggleThinking) {
                     HStack {
@@ -1146,10 +1176,139 @@ struct ChatView: View {
         .foregroundColor(theme.text)
     }
 
+    private var moreModelsButton: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.18)) { showMoreModels = true }
+        } label: {
+            HStack {
+                Text("More models")
+                    .font(.system(size: 16, weight: .medium))
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(theme.textDim)
+            }
+            .foregroundColor(theme.text)
+            .padding(.horizontal, 18)
+            .frame(height: 58)
+            .background(theme.fyCard.opacity(0.72), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+
+    // effort 一行五档：跟命令行 /effort 一样的五个档，当前档亮着
+    private func effortRow(current: String, hint: String, onPick: @escaping (String) -> Void) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("effort").font(.system(size: 16, weight: .medium))
+                Spacer()
+                if switchingEffort { ProgressView().controlSize(.small) }
+                else { Text(current.isEmpty ? "未知" : current).font(.system(size: 12, design: .monospaced)).foregroundColor(theme.textDim) }
+            }
+            HStack(spacing: 6) {
+                ForEach(effortLevels, id: \.self) { lvl in
+                    Button { onPick(lvl) } label: {
+                        Text(lvl)
+                            .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                            .foregroundColor(current == lvl ? .white : theme.text)
+                            .frame(maxWidth: .infinity).frame(height: 30)
+                            .background(current == lvl ? theme.sendTop : theme.textDim.opacity(0.14), in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            Text(hint).font(.system(size: 11)).foregroundColor(theme.textDim)
+        }
+        .foregroundColor(theme.text)
+        .padding(.horizontal, 18).padding(.vertical, 12)
+        .background(theme.fyCard.opacity(0.72), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .disabled(switchingEffort)
+    }
+
+    // 当前通道 / CLI effort / SDK 模型+effort 一起拉
+    @MainActor private func loadModelPanelState() async {
+        if let ch = try? await AlcoveAPI.sdkChannel() {
+            activeChatChannel = ch
+            if !modelPanelResolved { modelPanel = ch; modelPanelResolved = true }
+        }
+        if let obj = try? await AlcoveAPI.getRaw("/api/cc/model") {
+            cliEffort = obj["effort"] as? String ?? ""
+        }
+        if let obj = try? await AlcoveAPI.getRaw("/api/sdk-shadow/status"),
+           let cfg = obj["config"] as? [String: Any] {
+            sdkModel = cfg["sdk_model"] as? String ?? ""
+            sdkEffort = cfg["sdk_effort"] as? String ?? ""
+        }
+    }
+
+    private var sdkModelLabel: String {
+        // config 里存的是 "claude-opus-5[1m]" 这种，对回列表里的 label
+        let base = sdkModel.replacingOccurrences(of: "[1m]", with: "")
+        return claudeModels.first { $0.id == base }?.label ?? base
+    }
+
+    private func switchSDKModel(_ option: ClaudeModelOption) {
+        guard !switchingModel else { return }
+        switchingModel = true; modelSwitchError = ""
+        Task {
+            do {
+                let obj = try await AlcoveAPI.postRaw("/api/sdk-shadow/config", body: ["sdk_model": option.id + "[1m]"])
+                guard obj["ok"] as? Bool != false else { throw NSError(domain: "SDKModel", code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: obj["error"] as? String ?? "没存上"]) }
+                sdkModel = option.id + "[1m]"
+                showModelPicker = false
+            } catch { modelSwitchError = error.localizedDescription }
+            switchingModel = false
+        }
+    }
+
+    private func setSDKEffort(_ lvl: String) {
+        guard lvl != sdkEffort, !switchingEffort else { return }
+        switchingEffort = true; modelSwitchError = ""
+        Task {
+            do {
+                _ = try await AlcoveAPI.postRaw("/api/sdk-shadow/config", body: ["sdk_effort": lvl])
+                sdkEffort = lvl
+            } catch { modelSwitchError = error.localizedDescription }
+            switchingEffort = false
+        }
+    }
+
+    private func setCLIEffort(_ lvl: String) {
+        guard lvl != cliEffort, !switchingEffort else { return }
+        guard !store.isTyping, store.live?.active != true else {
+            modelSwitchError = "他还在说话  等他说完再换"
+            return
+        }
+        switchingEffort = true; modelSwitchError = ""
+        Task {
+            do {
+                let screen = try await AlcoveAPI.terminalCapture()
+                let tail = screen.components(separatedBy: .newlines).suffix(12).joined(separator: "\n")
+                guard tail.contains("❯") && !tail.localizedCaseInsensitiveContains("esc to interrupt") else {
+                    throw NSError(domain: "AlcoveEffort", code: 1, userInfo: [NSLocalizedDescriptionKey: "他还没空下来"])
+                }
+                try await AlcoveAPI.terminalSend("/effort \(lvl)")
+                // /effort 只改会话内存，transcript 要到下一轮才带新档；这里看屏幕回执就算数
+                var confirmed = false
+                for _ in 0..<6 {
+                    try? await Task.sleep(nanoseconds: 600_000_000)
+                    if let s = try? await AlcoveAPI.terminalCapture(lines: 12),
+                       s.localizedCaseInsensitiveContains("effort level to \(lvl)") { confirmed = true; break }
+                }
+                guard confirmed else {
+                    throw NSError(domain: "AlcoveEffort", code: 2, userInfo: [NSLocalizedDescriptionKey: "没收到切换成功回执"])
+                }
+                cliEffort = lvl
+            } catch { modelSwitchError = error.localizedDescription }
+            switchingEffort = false
+        }
+    }
+
     private func modelRows(_ options: [ClaudeModelOption]) -> some View {
         VStack(spacing: 0) {
             ForEach(Array(options.enumerated()), id: \.element.id) { index, option in
-                Button { switchClaudeModel(option) } label: {
+                Button { modelPanel == "sdk" ? switchSDKModel(option) : switchClaudeModel(option) } label: {
                     HStack(spacing: 10) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(option.label).font(.system(size: 16, weight: .medium))
@@ -1158,7 +1317,7 @@ struct ChatView: View {
                             }
                         }
                         Spacer()
-                        if store.modelLabel == option.label {
+                        if (modelPanel == "sdk" ? sdkModelLabel : store.modelLabel) == option.label {
                             Image(systemName: "checkmark").font(.system(size: 14, weight: .semibold))
                                 .foregroundColor(theme.sendTop)
                         }
