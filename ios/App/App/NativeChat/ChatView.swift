@@ -1396,7 +1396,7 @@ private struct ChatChannelPanel: View {
                 Button("保存并应用") { Task { await saveSDK() } }
                     .buttonStyle(.borderedProminent).disabled(working)
             }
-            Text("LMC-5 不复制：CLI 和 SDK 始终从同一个脑子召回。SDK 默认只读召回。")
+            Text("LMC-5 不复制：CLI 和 SDK 始终从同一个脑子召回，同一份召回管线，按 session 记住喂过什么不重复喂。")
                 .font(.system(size: 12)).foregroundStyle(.secondary)
         }
     }
