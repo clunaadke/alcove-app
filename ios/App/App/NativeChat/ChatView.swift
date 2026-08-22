@@ -1078,9 +1078,13 @@ struct ChatView: View {
                     Text("录音中…").font(.system(size: 14)).foregroundColor(theme.textDim)
                     Spacer(minLength: 0)
                 } else {
-                    TextField("", text: $draft, prompt: Text("信息").font(.system(size: 16)))
+                    // 0823 她报的：信息主题按回车不攒气泡。病根是这个框没写 axis: .vertical，
+                    // 单行框的回车走 submit 不往 draft 里塞换行，handleDraftChange 的
+                    // 「新值 == 旧值 + \n」永远对不上。改成跟纸页那边同一套：竖轴 + 1...5 行。
+                    TextField("", text: $draft, prompt: Text("信息").font(.system(size: 16)),
+                              axis: .vertical)
                         .focused($inputFocused)
-                        .lineLimit(1)
+                        .lineLimit(1...5)
                         .font(.system(size: 16))
                         .tint(Color(uiColor: .systemBlue))
                         .onChange(of: draft) { value in handleDraftChange(value) }
