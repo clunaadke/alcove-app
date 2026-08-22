@@ -4451,7 +4451,7 @@ final class VariableBlurUIView: UIVisualEffectView {
         let m = backdrop.value(forKeyPath: "filters.variableBlur.inputMaskImage")
         var mdesc = "nil"
         if let m { let cg = m as! CGImage; mdesc = "\(cg.width)x\(cg.height)" }
-        Self.liveLine = "live[\(tag)]: filters=\(fs.count)\(names) radius=\(r ?? "nil") mask=\(mdesc) bounds=\(Int(bounds.width))x\(Int(bounds.height))"
+        Self.liveLine = "live[\(tag)]: filters=\(fs.count)\(names) radius=\(r ?? "nil") mask=\(mdesc) enforced×\(Self.enforceCount)"
         NSLog("[VariableBlur] %@", Self.liveLine)
     }
 
@@ -4497,8 +4497,28 @@ final class VariableBlurUIView: UIVisualEffectView {
         // 系统会重建 UIVisualEffectView 的子视图：除 backdrop 外那层染色（暗色下近黑）每次布局都重新藏掉
         for v in subviews.dropFirst() { v.alpha = 0 }
         refreshMask()
+        enforceFilter()
         readBackLive("layout")
     }
+    override func traitCollectionDidChange(_ previous: UITraitCollection?) {
+        super.traitCollectionDidChange(previous)
+        for v in subviews.dropFirst() { v.alpha = 0 }
+        enforceFilter()
+        readBackLive("trait")
+    }
+    /// 0823 真凶：系统重建 effect 时把 filters 换成默认的 [gaussianBlur, colorSaturate]，mask 一起丢。
+    /// 治法跟染色层一样——持久强制：layer 上不是且仅是我的 variableBlur，就先把 mask 设回 filter 再整组重挂。幂等。
+    private func enforceFilter() {
+        guard let f = filter, let backdrop = subviews.first?.layer else { return }
+        let names = (backdrop.filters ?? []).map { ($0 as AnyObject).value(forKey: "name") as? String ?? "" }
+        if names == ["variableBlur"] { return }
+        if let m = lastMaskCG { f.setValue(m, forKey: "inputMaskImage") }   // 先设 mask
+        backdrop.filters = [f]                                              // 再挂
+        Self.enforceCount += 1
+        NSLog("[VariableBlur] filters were %@ → re-applied variableBlur (#%d)", names.description, Self.enforceCount)
+    }
+    static var enforceCount = 0
+    private var lastMaskCG: CGImage?
 
     /// ④ 按 overlay 的点尺寸 × scale 生成遮罩，尺寸没变不重做；③ 挂上之后改 mask 走 keyPath
     private func refreshMask() {
@@ -4511,7 +4531,9 @@ final class VariableBlurUIView: UIVisualEffectView {
         guard let cg = img.cgImage else { return }
         assert(cg.width == Int(bounds.width * scale) && cg.height == Int(bounds.height * scale),
                "variableBlur mask 尺寸不对：cg=\(cg.width)x\(cg.height) 应为 \(Int(bounds.width * scale))x\(Int(bounds.height * scale))（bounds \(bounds.size) × scale \(scale)）")
-        backdrop.setValue(cg, forKeyPath: "filters.variableBlur.inputMaskImage")
+        filter?.setValue(cg, forKey: "inputMaskImage")                     // 设在 filter 对象上（重挂时带着）
+        backdrop.setValue(cg, forKeyPath: "filters.variableBlur.inputMaskImage")   // 已挂上的按 keyPath 更新
+        lastMaskCG = cg
         lastMaskSize = bounds.size
         Self.debugMask = img
         Self.debugLine += " · cg=\(cg.width)x\(cg.height)px = \(Int(bounds.width))x\(Int(bounds.height))pt×\(Int(scale)) · tintHidden=\(subviews.dropFirst().allSatisfy { $0.alpha == 0 }) bg=\(messagesBlurBgLayer)"
