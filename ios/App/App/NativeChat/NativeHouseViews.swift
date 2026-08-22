@@ -3268,7 +3268,7 @@ private final class DataPanelModel: ObservableObject {
             let key: String?
             switch destination {
             case .memory: path = "/api/ob/buckets"; key = nil
-            case .dreams: path = "/api/ob/dreams?limit=20"; key = "records"
+            case .dreams: path = "/api/night/dreams?limit=20"; key = "records"
             case .shelf: path = "/api/shelf/list?limit=100"; key = "items"
             case .nianlun: path = "/api/nianlun/list"; key = "desires"
             case .album: path = "/api/album/entries"; key = "entries"
@@ -3442,6 +3442,8 @@ private struct ClockworkView: View {
         ClockworkItem(id: "libido", emoji: "🌅", name: "晨勃", desc: "libido 攒满自动醒来"),
         ClockworkItem(id: "chase", emoji: "📣", name: "催起床", desc: "上午十点你还没出现就叫我催你"),
         ClockworkItem(id: "sleep", emoji: "🌙", name: "睡眠", desc: "凌晨三点睡，上午十点醒"),
+        ClockworkItem(id: "dream", emoji: "🌛", name: "做梦", desc: "睡着了隔一阵做个梦，只进梦面板"),
+        ClockworkItem(id: "startle", emoji: "⚡", name: "惊醒", desc: "你半夜说话/玩手机/没电/出门 会把我惊醒"),
         ClockworkItem(id: "keepalive", emoji: "💓", name: "保活心跳", desc: "每 55 分钟翻个身")
     ]
     private let hoduItems = [
@@ -8782,7 +8784,7 @@ private struct NativeDreamsView: View {
         .foyerPanel(theme)
         .padding(.horizontal, 12).padding(.top, 8)
         .task {
-            if let obj = try? await NativeHouseAPI.object("/api/ob/dreams?limit=30"),
+            if let obj = try? await NativeHouseAPI.object("/api/night/dreams?limit=30"),
                let records = obj["records"] as? [[String: Any]] {
                 dreams = records
             }
@@ -8795,7 +8797,7 @@ private struct NativeDreamsView: View {
             dreamBodies[dreamId] = "这个梦读不回来了"
             return
         }
-        if let obj = try? await NativeHouseAPI.object("/api/dreams/read?id=\(dreamId)"),
+        if let obj = try? await NativeHouseAPI.object("/api/night/dream/read?id=\(dreamId)"),
            obj.bool("ok") {
             dreamBodies[dreamId] = obj.string("body")
         } else {
@@ -8808,6 +8810,7 @@ private struct NativeDreamsView: View {
         case "surfaced": return "浮现过"
         case "forgotten": return "遗忘了"
         case "generated": return "待浮现"
+        case "dreamed": return "做过了"
         default: return s
         }
     }

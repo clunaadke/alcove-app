@@ -565,7 +565,10 @@ struct ChatView: View {
                 return a != b
             }()
             Group {
-            if message.msgType == "divider" {
+            if message.msgType == "divider" && message.source == "dream" {
+                // 0822 她定的：做梦之后聊天页只落这一道线，梦本身在梦面板
+                DreamDivider(text: message.text, date: message.date, color: theme.textDim)
+            } else if message.msgType == "divider" {
                 // 0822 她要的：切通道留一道线，跟时间分割一个样子
                 ChannelDivider(text: message.text, color: theme.textDim)
             } else {
@@ -3410,6 +3413,35 @@ private struct DocumentAttachmentCard: View {
 
 // MARK: - 小组件
 
+// 0822 她定的：做梦分割线——细虚线 + 月亮，字带时刻，比切通道那条柔一点
+struct DreamDivider: View {
+    let text: String
+    let date: Date
+    var color: Color = Color(red: 0.42, green: 0.40, blue: 0.41)
+    var body: some View {
+        HStack(spacing: 10) {
+            Rectangle().fill(Color.clear).frame(height: 1)
+                .overlay(Line().stroke(style: StrokeStyle(lineWidth: 0.8, dash: [2, 4])).foregroundColor(color.opacity(0.45)))
+            HStack(spacing: 5) {
+                Image(systemName: "moon.zzz.fill").font(.system(size: 10))
+                Text(text).font(.system(size: 11, design: .serif)).italic()
+                Text(TimeDivider.hmOnly.string(from: date)).font(.system(size: 9.5, design: .rounded))
+                    .foregroundColor(color.opacity(0.75))
+            }
+            .foregroundColor(color.opacity(0.9))
+            .fixedSize()
+            Rectangle().fill(Color.clear).frame(height: 1)
+                .overlay(Line().stroke(style: StrokeStyle(lineWidth: 0.8, dash: [2, 4])).foregroundColor(color.opacity(0.45)))
+        }
+        .padding(.horizontal, 24).padding(.vertical, 12)
+    }
+    private struct Line: Shape {
+        func path(in r: CGRect) -> Path {
+            var p = Path(); p.move(to: CGPoint(x: r.minX, y: r.midY)); p.addLine(to: CGPoint(x: r.maxX, y: r.midY)); return p
+        }
+    }
+}
+
 // 0822 她要的：通道切换分割线（"已切换到 SDK / CLI"），后端 msg_type == "divider"
 struct ChannelDivider: View {
     let text: String
@@ -3493,6 +3525,12 @@ struct TimeDivider: View {
         let f = DateFormatter()
         f.locale = Locale(identifier: "zh_CN")
         f.dateFormat = "M月d日 HH:mm"
+        return f
+    }()
+    static let hmOnly: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "zh_CN")
+        f.dateFormat = "HH:mm"
         return f
     }()
 }
