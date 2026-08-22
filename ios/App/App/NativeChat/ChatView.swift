@@ -285,7 +285,7 @@ struct ChatView: View {
                         let h = topSafeInset + 60
                         let bg = theme.wallGradient.first ?? (theme.isDark ? Color.black : Color.white)
                         ZStack(alignment: .top) {
-                            VariableBlurView(maxRadius: 12)
+                            VariableBlurView(maxRadius: 60)   // 0823 一锤定音测试：临时 60（正式值 12，定论后改回）
                             // 底色罩：她排查第 2 步——这版先整个关掉截图对照；开回来走 CAGradientLayer（不是填充矩形）
                             if messagesBlurBgLayer { ThemeFadeLayerView(color: UIColor(bg)) }
                         }
@@ -4406,6 +4406,7 @@ struct MessagesBlurDebugOverlay: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text("frame h=\(Int(frameHeight)) (safeTop \(Int(safeTop)) + 60)")
                 Text(VariableBlurUIView.debugLine + " · \(tick)")
+                Text(VariableBlurUIView.liveLine)
                 Text("edgeEffectHidden(top)=true · soft(bottom)")
             }
             .font(.system(size: 9, design: .monospaced))
@@ -4440,6 +4441,19 @@ final class VariableBlurUIView: UIVisualEffectView {
     private var lastMaskSize: CGSize = .zero
     static var debugLine = "blur: not created yet"
     static var debugMask: UIImage?
+    /// 她要的：不是「我设了什么」，是「layer 上现在挂着什么」——运行一秒后和每次布局（滚动）都回读一遍
+    static var liveLine = "live: (not read yet)"
+    private func readBackLive(_ tag: String) {
+        guard let backdrop = subviews.first?.layer else { Self.liveLine = "live[\(tag)]: no backdrop"; return }
+        let fs = backdrop.filters ?? []
+        let names = fs.map { ($0 as AnyObject).value(forKey: "name") as? String ?? "?" }
+        let r = backdrop.value(forKeyPath: "filters.variableBlur.inputRadius")
+        let m = backdrop.value(forKeyPath: "filters.variableBlur.inputMaskImage")
+        var mdesc = "nil"
+        if let m { let cg = m as! CGImage; mdesc = "\(cg.width)x\(cg.height)" }
+        Self.liveLine = "live[\(tag)]: filters=\(fs.count)\(names) radius=\(r ?? "nil") mask=\(mdesc) bounds=\(Int(bounds.width))x\(Int(bounds.height))"
+        NSLog("[VariableBlur] %@", Self.liveLine)
+    }
 
     init(maxRadius: CGFloat) {
         super.init(effect: UIBlurEffect(style: .regular))
@@ -4461,6 +4475,7 @@ final class VariableBlurUIView: UIVisualEffectView {
         f.setValue(true, forKey: "inputNormalizeEdges")
         backdrop.filters = [f]                               // ③ 再挂到 layer
         filter = f
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.readBackLive("1s") }
         for v in subviews.dropFirst() { v.alpha = 0 }        // 去掉系统提亮/染色层，只留模糊
         Self.debugLine = "blur OK: \(type(of: f)) name=\(f.value(forKey: "name") ?? "-") radius=\(f.value(forKey: "inputRadius") ?? -1) filters=\(backdrop.filters?.count ?? 0)"
         NSLog("[VariableBlur] %@", Self.debugLine)
@@ -4482,6 +4497,7 @@ final class VariableBlurUIView: UIVisualEffectView {
         // 系统会重建 UIVisualEffectView 的子视图：除 backdrop 外那层染色（暗色下近黑）每次布局都重新藏掉
         for v in subviews.dropFirst() { v.alpha = 0 }
         refreshMask()
+        readBackLive("layout")
     }
 
     /// ④ 按 overlay 的点尺寸 × scale 生成遮罩，尺寸没变不重做；③ 挂上之后改 mask 走 keyPath
