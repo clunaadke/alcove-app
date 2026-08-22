@@ -2525,7 +2525,8 @@ struct MessageRow: View {
                         .padding(.top, 1)
                 }
                 if shouldShowMetaRow {
-                    HStack(spacing: theme.isPaper && !isUser ? 14 : 4) {
+                    // 0822 她要的：信息主题下时间／清单／心率三个之间留呼吸感
+                    HStack(spacing: theme.isMessages ? 12 : (theme.isPaper && !isUser ? 14 : 4)) {
                         if msg.pending {
                             Image(systemName: "clock")
                                 .font(.system(size: 9))
@@ -2560,7 +2561,8 @@ struct MessageRow: View {
                             .buttonStyle(.plain)
                             .accessibilityLabel("选择正文段落")
                         }
-                        if showTime, !isUser, let bpm = msg.heartRate {
+                        // 0822 她定的：信息主题下心率跟过程线（思绪/脚印/记忆）一个开关，关了一起藏
+                        if showTime, !isUser, let bpm = msg.heartRate, !(theme.isMessages && !showProcessDots) {
                             Button { showPulse = true } label: {
                                 HStack(spacing: 3) {
                                     Image(systemName: "heart.fill")
