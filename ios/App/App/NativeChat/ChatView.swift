@@ -557,51 +557,58 @@ struct ChatView: View {
                       let b = message.turnID, !b.isEmpty else { return false }
                 return a != b
             }()
-            MessageRow(
-                msg: message,
-                sticker: message.stickerId.flatMap(store.sticker(for:)),
-                theme: theme,
-                fontSize: chatFontSize,
-                showTime: isGroupTail(cur: store.messages[groupEnd], next: next),
-                recall: recall,
-                hoistedThought: hoist.thought,
-                hoistedActivity: hoist.activity,
-                suppressOwnThought: hoist.suppressThought,
-                suppressOwnActivity: hoist.suppressActivity,
-                photoURLs: photos,
-                photoNamespace: photoTransition,
-                onTapImages: { urls, selectedIndex in
-                    photoViewer = PhotoViewerSelection(
-                        urls: urls,
-                        index: selectedIndex,
-                        sourceID: "chat-\(message.id)"
-                    )
-                },
-                onDelete: { store.deleteMessage(message) },
-                onFavorite: { store.favoriteMessage(message) },
-                wholeTurnText: wholeTurnText(for: message),
-                paragraphSelectionMode: paragraphSelectionMode,
-                paragraphSelected: selectedParagraphIDs.contains(message.uid),
-                onBeginParagraphSelection: {
-                    paragraphSelectionMode = true
-                    selectedParagraphIDs.insert(message.uid)
-                    inputFocused = false
-                },
-                onToggleParagraphSelection: {
-                    if selectedParagraphIDs.contains(message.uid) {
-                        selectedParagraphIDs.remove(message.uid)
-                    } else {
+            Group {
+            if message.msgType == "divider" {
+                // 0822 她要的：切通道留一道线，跟时间分割一个样子
+                ChannelDivider(text: message.text, color: theme.textDim)
+            } else {
+                MessageRow(
+                    msg: message,
+                    sticker: message.stickerId.flatMap(store.sticker(for:)),
+                    theme: theme,
+                    fontSize: chatFontSize,
+                    showTime: isGroupTail(cur: store.messages[groupEnd], next: next),
+                    recall: recall,
+                    hoistedThought: hoist.thought,
+                    hoistedActivity: hoist.activity,
+                    suppressOwnThought: hoist.suppressThought,
+                    suppressOwnActivity: hoist.suppressActivity,
+                    photoURLs: photos,
+                    photoNamespace: photoTransition,
+                    onTapImages: { urls, selectedIndex in
+                        photoViewer = PhotoViewerSelection(
+                            urls: urls,
+                            index: selectedIndex,
+                            sourceID: "chat-\(message.id)"
+                        )
+                    },
+                    onDelete: { store.deleteMessage(message) },
+                    onFavorite: { store.favoriteMessage(message) },
+                    wholeTurnText: wholeTurnText(for: message),
+                    paragraphSelectionMode: paragraphSelectionMode,
+                    paragraphSelected: selectedParagraphIDs.contains(message.uid),
+                    onBeginParagraphSelection: {
+                        paragraphSelectionMode = true
                         selectedParagraphIDs.insert(message.uid)
-                    }
-                },
-                onQuote: { text in
-                    selectedQuote = text
-                    inputFocused = true
-                },
-                onResend: { text in store.sendText(text) },
-                onPlayMusic: { song in Task { await music.play(song) } },
-                onContentChange: { scrollKick += 1 }
-            )
+                        inputFocused = false
+                    },
+                    onToggleParagraphSelection: {
+                        if selectedParagraphIDs.contains(message.uid) {
+                            selectedParagraphIDs.remove(message.uid)
+                        } else {
+                            selectedParagraphIDs.insert(message.uid)
+                        }
+                    },
+                    onQuote: { text in
+                        selectedQuote = text
+                        inputFocused = true
+                    },
+                    onResend: { text in store.sendText(text) },
+                    onPlayMusic: { song in Task { await music.play(song) } },
+                    onContentChange: { scrollKick += 1 }
+                )
+            }
+            }
             .padding(.top, newSoloTurn ? 22 : 0)
             .id(message.id)
         }
@@ -908,8 +915,13 @@ struct ChatView: View {
                     }
                     Button(action: performDynamicComposerAction) {
                         ZStack(alignment: .topTrailing) {
-                            Image(systemName: (canSend || recorder.isRecording || store.heldCount > 0) ? "arrow.up" : "waveform")
-                            .font(.system(size: 17, weight: .semibold))
+                            // 0822 她要的「打断回复」：他在回的时候这颗变成官方那种停止键（圆里一个小方块），
+                            // 平时照旧：没字是语音、有字是发送。
+                            Image(systemName: isGenerating ? "stop.fill"
+                                  : (canSend || recorder.isRecording || store.heldCount > 0) ? "arrow.up" : "waveform")
+                            .font(.system(size: isGenerating ? 13 : 17, weight: .semibold))
+                            .contentTransition(.symbolEffect(.replace))
+                            .animation(.easeInOut(duration: 0.18), value: isGenerating)
                             .foregroundColor(.white)
                             .frame(width: 36, height: 36)
                             .background(
@@ -1002,7 +1014,21 @@ struct ChatView: View {
         }
     }
 
+    /// 他正在生成（打字中或实时预览带活着）且她没在录音 → 发送键当停止键用
+    private var isGenerating: Bool {
+        (store.isTyping || store.live?.active == true) && !recorder.isRecording
+    }
+
+    private func stopGenerating() {
+        store.isTyping = false
+        Task { _ = try? await AlcoveAPI.postRaw("/api/chat-stop", body: [:]) }
+    }
+
     private func performDynamicComposerAction() {
+        if isGenerating {
+            stopGenerating()
+            return
+        }
         if recorder.isRecording {
             if let data = recorder.stopAndTake() { store.sendVoice(data: data) }
             return
@@ -3279,6 +3305,20 @@ private struct DocumentAttachmentCard: View {
 
 
 // MARK: - 小组件
+
+// 0822 她要的：通道切换分割线（"已切换到 SDK / CLI"），后端 msg_type == "divider"
+struct ChannelDivider: View {
+    let text: String
+    var color: Color = Color(red: 0.42, green: 0.40, blue: 0.41)
+    var body: some View {
+        HStack(spacing: 8) {
+            Rectangle().fill(color.opacity(0.35)).frame(height: 0.5)
+            Text(text).font(.system(size: 11, design: .serif)).foregroundColor(color).fixedSize()
+            Rectangle().fill(color.opacity(0.35)).frame(height: 0.5)
+        }
+        .padding(.horizontal, 28).padding(.vertical, 8)
+    }
+}
 
 struct TimeDivider: View {
     let date: Date
