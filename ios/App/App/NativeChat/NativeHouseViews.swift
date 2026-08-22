@@ -1190,6 +1190,11 @@ private struct NativeSettingsView: View {
                             Color(red: 185/255, green: 120/255, blue: 120/255),
                             Color(red: 37/255, green: 36/255, blue: 34/255)
                         ])
+                        familyChoice("信息", "一条一条", "imessage", [
+                            .white,
+                            Color(red: 31/255, green: 139/255, blue: 255/255),
+                            Color(red: 233/255, green: 233/255, blue: 235/255)
+                        ])
                     }
                     Divider().opacity(0.25)
                     Picker("外观", selection: appearanceBinding) {
@@ -1535,10 +1540,12 @@ private struct NativeSettingsView: View {
     }
 
     private var isPaperFamily: Bool { themeName == "paper" || themeName == "paper-dark" }
-    private var themeFamily: String { isPaperFamily ? "paper" : "glass" }
+    private var isMessagesFamily: Bool { themeName == "imessage" || themeName == "imessage-dark" }
+    private var themeFamily: String { isPaperFamily ? "paper" : (isMessagesFamily ? "imessage" : "glass") }
     private var appearanceBinding: Binding<Bool> {
         Binding(get: { theme.isDark }, set: { dark in
             themeName = isPaperFamily ? (dark ? "paper-dark" : "paper") :
+                        isMessagesFamily ? (dark ? "imessage-dark" : "imessage") :
                         (dark ? "midnight" : "haven")
         })
     }
@@ -1546,6 +1553,7 @@ private struct NativeSettingsView: View {
         Button {
             switch family {
             case "paper": themeName = theme.isDark ? "paper-dark" : "paper"
+            case "imessage": themeName = theme.isDark ? "imessage-dark" : "imessage"
             default: themeName = theme.isDark ? "midnight" : "haven"
             }
         } label: {

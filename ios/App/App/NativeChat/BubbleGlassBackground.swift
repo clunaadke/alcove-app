@@ -30,6 +30,8 @@ final class ChatWallpaperStore: ObservableObject {
         case "midnight": return "chatwall_midnight.jpg"
         case "paper": return "chatwall_paper.jpg"
         case "paper-dark": return "chatwall_paper_dark.jpg"
+        case "imessage": return "chatwall_imessage.jpg"
+        case "imessage-dark": return "chatwall_imessage_dark.jpg"
         default: return "chatwall_haven.jpg"
         }
     }

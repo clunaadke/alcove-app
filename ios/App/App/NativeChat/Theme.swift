@@ -38,6 +38,8 @@ struct AlcoveTheme {
     let fyFold: Color
     let fyDash: Color
     let panelTextureAsset: String
+    // 0822 她要的 iMessage 同款：纯色底、实心蓝/灰气泡带尾巴、过程线藏成一个点
+    var isMessages: Bool = false
 
     static let haven = AlcoveTheme(
         isDark: false,
@@ -118,12 +120,16 @@ struct AlcoveTheme {
 
     static let paper = haven.paperCopy(dark: false)
     static let paperDark = midnight.paperCopy(dark: true)
+    static let messages = haven.messagesCopy(dark: false)
+    static let messagesDark = midnight.messagesCopy(dark: true)
 
     static func named(_ name: String) -> AlcoveTheme {
         switch name {
         case "paper": return .paper
         case "paper-dark": return .paperDark
         case "midnight": return .midnight
+        case "imessage": return .messages
+        case "imessage-dark": return .messagesDark
         default: return .haven
         }
     }
@@ -134,6 +140,9 @@ struct AlcoveTheme {
         switch name {
         case "paper": return paper
         case "paper-dark": return paperDark
+        // iMessage 主题只改聊天页；抽屉/面板沿用玻璃系（白天 haven、黑夜 midnight），其他地方一律不动
+        case "imessage": return panelNamed("haven")
+        case "imessage-dark": return panelNamed("midnight")
         case "midnight":
             return midnight.panelCopy(
                 splashBg: [
@@ -239,6 +248,38 @@ struct AlcoveTheme {
             fyDash: border.opacity(0.72),
             panelTextureAsset: textureAsset
         )
+    }
+
+    /// iMessage 同款（按她 0822 两张截图抄的数）：白天 #FFF 底 / 灰泡 #E9E9EB 黑字；黑夜 #000 底 / 灰泡 #262628 白字；
+    /// 她的泡永远亮蓝 #1F8BFF 白字。面板那套颜色沿用纸页系，不动别的房间。
+    private func messagesCopy(dark: Bool) -> AlcoveTheme {
+        let bg = dark ? Color.black : Color.white
+        let gray = dark ? Color(red: 38/255, green: 38/255, blue: 40/255) : Color(red: 233/255, green: 233/255, blue: 235/255)
+        let blue = Color(red: 31/255, green: 139/255, blue: 255/255)
+        let ink = dark ? Color.white : Color.black
+        let dim = Color(red: 142/255, green: 142/255, blue: 147/255)   // systemGray
+        let card = dark ? Color(red: 28/255, green: 28/255, blue: 30/255) : Color.white
+        let line = dark ? Color.white.opacity(0.12) : Color.black.opacity(0.08)
+        var t = AlcoveTheme(
+            isDark: dark, isPaper: false, usesWallImage: false,
+            wallGradient: [bg, bg],
+            bubbleUser: blue, bubbleAI: gray, text: ink, textDim: dim,
+            textLight: dim.opacity(0.8), timestamp: dim,
+            glassTint: card, glassBorder: line,
+            capsuleTint: card, capsuleBorder: line,
+            sendTop: blue, sendBottom: blue,
+            fade: bg, splashBg: [bg, bg], splashBarTop: blue,
+            splashBarBottom: blue.opacity(0.8), splashGlowA: .clear, splashGlowB: .clear,
+            splashPetal: blue.opacity(0.3), splashTitle: blue,
+            fyAccent: blue, fyAccentSoft: blue.opacity(0.14), fyCard: card,
+            fyCardSub: dark ? Color(red: 44/255, green: 44/255, blue: 46/255) : Color(red: 242/255, green: 242/255, blue: 247/255),
+            fyBorder: line,
+            fyShadow: Color.black.opacity(dark ? 0.22 : 0.05),
+            fyFold: line, fyDash: dim.opacity(0.3),
+            panelTextureAsset: dark ? "PaperDark" : "PaperLight"
+        )
+        t.isMessages = true
+        return t
     }
 
     private func paperCopy(dark: Bool) -> AlcoveTheme {

@@ -211,7 +211,60 @@ struct RootView: View {
 
     // 左头像｜中间留空｜右侧三枚按钮共用一块清透玻璃胶囊
     @ViewBuilder private var topBar: some View {
-        legacyTopBar
+        if theme.isMessages { messagesTopBar } else { legacyTopBar }
+    }
+
+    // 0822 她要的 iMessage 同款顶栏：大头像居中（点了照样进终端页），名字在下；
+    // 左上角不放东西，右上角还是那三个胶囊。
+    private var messagesTopBar: some View {
+        ZStack(alignment: .top) {
+            Button { showTerminal = true } label: {
+                VStack(spacing: 4) {
+                    ZStack(alignment: .topTrailing) {
+                        Group {
+                            if let img = avatarImage {
+                                Image(uiImage: img).resizable().scaledToFill()
+                            } else {
+                                Circle().fill(theme.bubbleAI)
+                                    .overlay(Text("R").font(.system(size: 18, design: .serif)).foregroundColor(textDim))
+                            }
+                        }
+                        .frame(width: 56, height: 56)
+                        .clipShape(Circle())
+                        if assistantAsleep {
+                            Text("💤").font(.system(size: 15)).offset(x: 6, y: -4)
+                        }
+                    }
+                    HStack(spacing: 2) {
+                        Text(UserDefaults.standard.string(forKey: "assistantName") ?? "陈璟")
+                            .font(.system(size: 12, weight: .medium))
+                        Image(systemName: "chevron.right").font(.system(size: 8, weight: .semibold))
+                    }
+                    .foregroundColor(theme.text)
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(theme.capsuleTint.opacity(theme.isDark ? 0.9 : 0.7), in: Capsule())
+                }
+            }
+            .buttonStyle(.plain)
+            .frame(maxWidth: .infinity)
+            HStack {
+                Spacer(minLength: 0)
+                HStack(alignment: .center, spacing: 0) {
+                    topBarControl("music.note", size: 14) { presentHouse(.music) }
+                    topBarControl("checklist", size: 13) { presentHouse(.checklist) }
+                    topBarControl("line.3.horizontal", size: 15) { presentHouse(.sidebar) }
+                }
+                .padding(.horizontal, 2)
+                .frame(height: 40)
+                .modifier(InteractiveTopBarGlassModifier(
+                    fallbackTint: theme.capsuleTint,
+                    fallbackBorder: glassStroke
+                ))
+                .shadow(color: .black.opacity(0.05), radius: 14, x: 0, y: 2)
+            }
+            .padding(.trailing, 12)
+        }
+        .frame(height: 84)
     }
 
     private var legacyTopBar: some View {

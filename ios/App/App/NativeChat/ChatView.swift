@@ -63,6 +63,7 @@ struct ChatView: View {
     @FocusState private var inputFocused: Bool
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("alcoveTheme") private var themeName = "haven"
+    @AppStorage("imsgShowProcess") private var showProcessDots = true   // 0822 iMessage 主题：过程线圆点开关
     @AppStorage("chatFontSize") private var chatFontSize = 14
     @AppStorage("wallStamp") private var wallStamp = 0.0
     @AppStorage("bubbleGlassStrength") private var bubbleGlassStrength = 56.81
@@ -262,8 +263,10 @@ struct ChatView: View {
                             .onDisappear { atBottom = false }
                     }
                     .padding(.horizontal, 12)
-                    .padding(.top, 52)
+                    .padding(.top, theme.isMessages ? 96 : 52)
                 }
+                // 0822 iMessage 主题：上下渐隐走 iOS 26 原生滚动边缘效果，不再手搓遮罩
+                .scrollEdgeEffectStyle(theme.isMessages ? .soft : .automatic, for: .vertical)
                 .scrollDismissesKeyboard(.interactively)
                 .onTapGesture { inputFocused = false }
                 .simultaneousGesture(
@@ -271,7 +274,7 @@ struct ChatView: View {
                         if store.live?.active == true { followLiveOutput = false }
                     }
                 )
-                .mask(edgeFadeMask)
+                .mask(theme.isMessages ? AnyView(Color.black) : AnyView(edgeFadeMask))
 
                 if paragraphSelectionMode {
                     paragraphSelectionToolbar
@@ -545,7 +548,11 @@ struct ChatView: View {
 
             let divided = needsDivider(prev: previous, cur: message)
             if divided {
-                TimeDivider(date: message.date, color: theme.textDim)
+                if theme.isMessages {
+                    MessagesTimeDivider(date: message.date, color: theme.textDim)
+                } else {
+                    TimeDivider(date: message.date, color: theme.textDim)
+                }
             }
             let hoist = hoistFor(index: index)
             // 0822 她要的：我一个人连着发几轮，轮和轮之间拉开一点，不然看混。
@@ -645,7 +652,8 @@ struct ChatView: View {
 
     private func needsDivider(prev: ChatMessage?, cur: ChatMessage) -> Bool {
         guard let prev else { return true }
-        return cur.date.timeIntervalSince(prev.date) > 600
+        // iMessage 同款：隔一个钟头才画时间；别的主题照旧十分钟
+        return cur.date.timeIntervalSince(prev.date) > (theme.isMessages ? 3600 : 600)
     }
 
     // PWA 同款：一轮的最后一个气泡才落时间（下一条换人或隔了 2 分钟）
@@ -834,8 +842,9 @@ struct ChatView: View {
                     .padding(.init(top: 16, leading: 14, bottom: 4, trailing: 14))
                 } else {
                     TextField("", text: $draft,
-                              prompt: Text("ring the chime …")
-                                .font(.system(size: 15.5, design: .serif)).italic(),
+                              prompt: theme.isMessages
+                                ? Text("信息").font(.system(size: 15.5))
+                                : Text("ring the chime …").font(.system(size: 15.5, design: .serif)).italic(),
                               axis: .vertical)
                         .focused($inputFocused)
                         .lineLimit(1...5)
@@ -868,6 +877,21 @@ struct ChatView: View {
                             Button { showDocPicker = true } label: {
                                 Label("选取文件", systemImage: "doc")
                             }
+                            if theme.isMessages {
+                                // 0822 她定的：iMessage 主题下模型、通道、过程线开关都收进加号里
+                                Divider()
+                                if !store.modelLabel.isEmpty {
+                                    Button { showModelPicker.toggle() } label: {
+                                        Label("模型 · \(store.modelLabel)", systemImage: "cpu")
+                                    }
+                                }
+                                Button { showChannelPanel = true } label: {
+                                    Label("通道 · \(activeChatChannel.uppercased())", systemImage: "arrow.left.arrow.right")
+                                }
+                                Toggle(isOn: $showProcessDots) {
+                                    Label("过程线（思绪和脚印）", systemImage: "circle.dotted")
+                                }
+                            }
                         } label: {
                             Image(systemName: "plus")
                                 .font(.system(size: 18, weight: .medium))
@@ -875,7 +899,7 @@ struct ChatView: View {
                                 .frame(width: 36, height: 36)
                                 .background(theme.glassTint.opacity(theme.isDark ? 0.64 : 0.82), in: Circle())
                         }
-                        if !store.modelLabel.isEmpty {
+                        if !store.modelLabel.isEmpty && !theme.isMessages {
                             Button {
                                 withAnimation(.spring(response: 0.32, dampingFraction: 0.78)) {
                                     showModelPicker.toggle()
@@ -896,7 +920,7 @@ struct ChatView: View {
                             .buttonStyle(.plain)
                             .disabled(switchingModel)
                         }
-                        Button { showChannelPanel = true } label: {
+                        if !theme.isMessages { Button { showChannelPanel = true } label: {
                             HStack(spacing: 5) {
                                 Image(systemName: "arrow.left.arrow.right")
                                     .font(.system(size: 10, weight: .semibold))
@@ -910,7 +934,7 @@ struct ChatView: View {
                             .overlay(Capsule().stroke(theme.glassBorder, lineWidth: 1))
                         }
                         .buttonStyle(.plain)
-                        .accessibilityLabel("切换 CLI 或 SDK 通道，当前 \(activeChatChannel.uppercased())")
+                        .accessibilityLabel("切换 CLI 或 SDK 通道，当前 \(activeChatChannel.uppercased())") }
                         Spacer()
                     }
                     Button(action: performDynamicComposerAction) {
@@ -2176,6 +2200,9 @@ struct MessageRow: View {
     // 0820 按时间线摆之后，点开的是「这一段」，不是整轮那一坨
     @State private var openedThink: String? = nil
     @State private var openedTools: [ActivityItem]? = nil
+    // 0822 iMessage 主题：思绪+脚印合成一条过程线，默认只露一个点
+    @State private var processOpen = false
+    @AppStorage("imsgShowProcess") private var showProcessDots = true
     @State private var openedToolDetail: ActivityItem? = nil
     @State private var showRecall = false
     @State private var showPulse = false
@@ -2273,7 +2300,9 @@ struct MessageRow: View {
                    spacing: theme.isPaper && !isUser ? 10 : 7) {
                 // 0820：有时间线就照发生顺序摆 —— 想一段出一个面板，
                 // 中间干的活收成一行。没时间线（老消息）走原来那套。
-                if !isUser && !turnBlocks.isEmpty {
+                if theme.isMessages && !isUser {
+                    messagesProcessBlock
+                } else if !isUser && !turnBlocks.isEmpty {
                     ForEach(turnBlocks) { blk in
                         switch blk {
                         case .think(let text, let i):
@@ -2357,7 +2386,7 @@ struct MessageRow: View {
                 }
                 // 0819 活动脚印（她把活动卡片换掉了）：气泡外面一行浅灰斜体，
                 // 「逛了花园 写了念头」，词之间空格隔开。轻到不特意看就滑过去了。
-                if !isUser && !msg.trace.isEmpty {
+                if !isUser && !msg.trace.isEmpty && !theme.isMessages {
                     Text(msg.trace.joined(separator: "  "))
                         .font(.system(size: 11.5, design: .serif))
                         .italic()
@@ -2541,7 +2570,11 @@ struct MessageRow: View {
                     .padding(.horizontal, 14)
                     .padding(.vertical, theme.isPaper && isUser ? 11 : 10)
                     .background {
-                        if theme.isPaper {
+                        if theme.isMessages {
+                            // iMessage 同款：实心色、大圆角、底角一个小尾巴
+                            MessagesBubbleShape(isUser: isUser)
+                                .fill(isUser ? theme.bubbleUser : theme.bubbleAI)
+                        } else if theme.isPaper {
                             RoundedRectangle(cornerRadius: 18, style: .continuous)
                                 .fill(isUser ? theme.bubbleUser : theme.bubbleAI)
                         } else {
@@ -2575,7 +2608,7 @@ struct MessageRow: View {
                 text: msg.textWithoutLink,
                 fontSize: CGFloat(fontSize),
                 lineSpacing: theme.isPaper ? 7 : 5,
-                color: UIColor(msg.asleepAtSend ? theme.textDim : theme.text),
+                color: UIColor((theme.isMessages && isUser) ? .white : (msg.asleepAtSend ? theme.textDim : theme.text)),
                 maximumNumberOfLines: 0,
                 onTruncationChange: { _ in },
                 onAsk: { onQuote?($0) },
@@ -2739,6 +2772,67 @@ struct MessageRow: View {
     // ── 0820 按时间线摆的两种行 ─────────────────────────────
     // 她要的：一轮里想了三次就出现三个思绪面板，中间干的活收成一行计数。
     // 点开还是各自的面板，样式跟原来那套一模一样，只是数量和顺序变了。
+
+    // 0822 她画的：iMessage 主题下每轮只剩正文气泡；思绪和工具脚印合成一条「过程线」，
+    // 平时就一个小圆点，点开才按发生顺序摊开；加号菜单里能把这个点整个藏掉。
+    private var hasProcess: Bool {
+        !turnBlocks.isEmpty || visibleChatThought != nil || trailWorthShowing
+    }
+
+    @ViewBuilder private var messagesProcessBlock: some View {
+        if hasProcess && showProcessDots {
+            VStack(alignment: .leading, spacing: 6) {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.18)) { processOpen.toggle() }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { onContentChange?() }
+                } label: {
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(theme.textDim.opacity(processOpen ? 0.95 : 0.5))
+                            .frame(width: 7, height: 7)
+                        if recall != nil { recallBadge }
+                    }
+                    .frame(height: 14)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                if processOpen {
+                    VStack(alignment: .leading, spacing: 8) {
+                        if !turnBlocks.isEmpty {
+                            ForEach(turnBlocks) { blk in
+                                switch blk {
+                                case .think(let text, _):
+                                    processThought(text)
+                                case .tools(let items, let i):
+                                    toolRow(items, index: i)
+                                }
+                            }
+                        } else {
+                            if let think = visibleChatThought { processThought(think) }
+                            if trailWorthShowing { trailBlock }
+                        }
+                    }
+                    .padding(.leading, 10)
+                    .overlay(alignment: .leading) {
+                        Capsule().fill(theme.textDim.opacity(0.28)).frame(width: 1.5)
+                    }
+                    .transition(.opacity)
+                }
+            }
+            .padding(.leading, 4)
+        } else if recall != nil {
+            recallBadge
+        }
+    }
+
+    private func processThought(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 12.5))
+            .italic()
+            .foregroundColor(theme.textDim)
+            .lineSpacing(3)
+            .textSelection(.enabled)
+    }
 
     private func thinkPanelRow(_ text: String, index: Int, showRecall: Bool) -> some View {
         HStack(spacing: 4) {
@@ -3320,6 +3414,61 @@ struct ChannelDivider: View {
     }
 }
 
+// 0822 iMessage 同款时间分割：日期粗、时刻细，居中小灰字
+struct MessagesTimeDivider: View {
+    let date: Date
+    var color: Color = Color(red: 142/255, green: 142/255, blue: 147/255)
+    var body: some View {
+        HStack(spacing: 4) {
+            Text(Self.dayFmt.string(from: date)).fontWeight(.semibold)
+            Text(Self.timeFmt.string(from: date))
+        }
+        .font(.system(size: 11))
+        .foregroundColor(color)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 10)
+    }
+    static let dayFmt: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "zh_CN")
+        f.doesRelativeDateFormatting = true
+        f.dateStyle = .medium
+        f.timeStyle = .none
+        return f
+    }()
+    static let timeFmt: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "zh_CN")
+        f.dateFormat = "HH:mm"
+        return f
+    }()
+}
+
+// 0822 iMessage 同款气泡：大圆角 + 底角小尾巴（我的在左下，她的在右下）
+struct MessagesBubbleShape: Shape {
+    let isUser: Bool
+    func path(in r: CGRect) -> Path {
+        var p = Path(roundedRect: r, cornerRadius: 18, style: .continuous)
+        var tail = Path()
+        if isUser {
+            tail.move(to: CGPoint(x: r.maxX - 16, y: r.maxY - 14))
+            tail.addQuadCurve(to: CGPoint(x: r.maxX + 5, y: r.maxY),
+                              control: CGPoint(x: r.maxX - 3, y: r.maxY - 1))
+            tail.addQuadCurve(to: CGPoint(x: r.maxX - 9, y: r.maxY - 4),
+                              control: CGPoint(x: r.maxX - 4, y: r.maxY + 1))
+        } else {
+            tail.move(to: CGPoint(x: r.minX + 16, y: r.maxY - 14))
+            tail.addQuadCurve(to: CGPoint(x: r.minX - 5, y: r.maxY),
+                              control: CGPoint(x: r.minX + 3, y: r.maxY - 1))
+            tail.addQuadCurve(to: CGPoint(x: r.minX + 9, y: r.maxY - 4),
+                              control: CGPoint(x: r.minX + 4, y: r.maxY + 1))
+        }
+        tail.closeSubpath()
+        p.addPath(tail)
+        return p
+    }
+}
+
 struct TimeDivider: View {
     let date: Date
     var color: Color = Color(red: 0.42, green: 0.40, blue: 0.41)
@@ -3511,12 +3660,12 @@ struct TypingIndicator: View {
                 .padding(.vertical, 11)
                 .background(theme.bubbleAI,
                             in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                Text("\(name)正在\(line)中…")
+                if !theme.isMessages { Text("\(name)正在\(line)中…")
                     .font(.system(size: 12))
-                    .foregroundColor(theme.textDim)
+                    .foregroundColor(theme.textDim) }
                 Spacer()
             }
-            if let tool, !tool.isEmpty {
+            if let tool, !tool.isEmpty, !theme.isMessages {
                 // 工具原文她要留着：Bash — 追头像变量aa的赋值来源
                 Text(tool)
                     .font(.system(size: 11, design: .monospaced))
