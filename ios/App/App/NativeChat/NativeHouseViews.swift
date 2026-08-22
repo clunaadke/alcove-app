@@ -8721,6 +8721,9 @@ private struct NativeDreamsView: View {
                             let date = dream.string("local_date")
                             let status = dream.string("status")
                             let hasBody = dream.bool("has_body")
+                            let title = dream.string("title")
+                            let startled = dream.bool("startled")
+                            let hm = String(dream.string("ts").dropFirst(11).prefix(5))
                             let isExpanded = expandedId == dreamId
                             Button {
                                 if isExpanded {
@@ -8734,11 +8737,11 @@ private struct NativeDreamsView: View {
                             } label: {
                                 VStack(alignment: .leading, spacing: 0) {
                                     HStack(alignment: .center) {
-                                        Text("🌙").font(.system(size: 20))
+                                        Text(startled ? "⚡" : "🌙").font(.system(size: 20))
                                         VStack(alignment: .leading, spacing: 2) {
-                                            Text("\(date) 的梦")
+                                            Text(title.isEmpty ? "\(date) 的梦" : title)
                                                 .font(.system(size: 14, weight: .medium))
-                                            Text("\(date)  知响")
+                                            Text("\(date) \(hm)  陈璟" + (startled ? "  · 这个梦把他惊醒了" : ""))
                                                 .font(.system(size: 10))
                                                 .foregroundColor(theme.textDim)
                                         }
