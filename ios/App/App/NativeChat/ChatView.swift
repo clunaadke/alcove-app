@@ -1236,6 +1236,9 @@ private struct ChatChannelPanel: View {
     @State private var confirmSync = false
     @State private var confirmClearSession = false
     @State private var sdkSessionActive = false
+    @State private var sdkPrevSession = ""
+    @State private var sdkPrevAt = ""
+    @State private var confirmRollback = false
     @State private var cliContextUsed = 0
     @State private var cliContextWindow = 1_000_000
     @State private var sdkContextUsed = 0
@@ -1282,6 +1285,7 @@ private struct ChatChannelPanel: View {
                 SDKForgeSheet {
                     sdkSessionActive = true
                     message = "SDK Forge 已自动切到新 session"
+                    Task { await load() }   // 刷出「回上一窗」
                 }
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
@@ -1367,6 +1371,21 @@ private struct ChatChannelPanel: View {
                 Text(sdkSessionActive ? "session 已建立" : "下一句建立 session")
                     .font(.system(size: 11)).foregroundStyle(.secondary)
             }
+            if !sdkPrevSession.isEmpty {
+                HStack(spacing: 8) {
+                    Button { confirmRollback = true } label: {
+                        Label("回上一窗", systemImage: "arrow.uturn.backward")
+                    }
+                    .buttonStyle(.bordered).disabled(working)
+                    Text("上一窗 \(sdkPrevSession.prefix(8))… \(sdkPrevAt.prefix(16).replacingOccurrences(of: "T", with: " "))")
+                        .font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary)
+                    Spacer()
+                }
+                .confirmationDialog("回到上一窗？", isPresented: $confirmRollback, titleVisibility: .visible) {
+                    Button("回上一窗") { Task { await rollbackSDKSession() } }
+                    Button("取消", role: .cancel) {}
+                } message: { Text("现在这窗的 session 和它之后的对话会丢，换回 forge / 新开之前那一窗。只能回一步。") }
+            }
             editor("SDK 专用 Prompt", text: $sdkPrompt, height: 110)
             editor("SDK · CLAUDE.md", text: $sdkIdentity, height: 220)
             editor("SDK · Output Style", text: $sdkStyle, height: 260)
@@ -1430,6 +1449,8 @@ private struct ChatChannelPanel: View {
             toolMode = cfg["tool_mode"] as? String ?? "disabled"
             sdkPrompt = cfg["sdk_prompt"] as? String ?? ""
             sdkSessionActive = !((cfg["sdk_session_id"] as? String) ?? "").isEmpty
+            sdkPrevSession = cfg["sdk_prev_session_id"] as? String ?? ""
+            sdkPrevAt = cfg["sdk_prev_at"] as? String ?? ""
             let anchors = obj["anchors"] as? [String: Any] ?? [:]
             sdkIdentity = anchors["identity"] as? String ?? ""
             sdkStyle = anchors["style"] as? String ?? ""
@@ -1510,7 +1531,23 @@ private struct ChatChannelPanel: View {
             message = keepMessages
                 ? "SDK 窗口已换，下一句带最近 \(handoffTurns) 轮建立新 session"
                 : "SDK 已完全新开，下一句建立空白 session"
+            await load()
         } catch { message = "换窗失败：\(error.localizedDescription)" }
+        working = false
+    }
+
+    // 0822 她要的：forge / 完全新开 误点了，退回上一窗（session + 对话存档一起回，只能回一步）
+    @MainActor private func rollbackSDKSession() async {
+        working = true; message = ""
+        do {
+            let obj = try await AlcoveAPI.postRaw("/api/sdk-shadow/rollback", body: [:])
+            guard obj["ok"] as? Bool == true else {
+                throw NSError(domain: "SDKRollback", code: 1,
+                              userInfo: [NSLocalizedDescriptionKey: obj["error"] as? String ?? "回不去"])
+            }
+            message = "已回到上一窗，\((obj["turns"] as? NSNumber)?.intValue ?? 0) 轮对话跟着回来了"
+            await load()
+        } catch { message = "回上一窗失败：\(error.localizedDescription)" }
         working = false
     }
 }
