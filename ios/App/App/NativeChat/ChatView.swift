@@ -4364,7 +4364,7 @@ struct RecallPop: View {
     }
 }
 
-// 0823 排查开关：true 时模糊区画红框 + 印诊断信息。排查完改回 false。
+// 0823 排查开关：true 时模糊区画红框 + 印诊断信息 + 左侧贴遮罩图本尊（UIImageView）。自查过关后改回 false。
 let messagesBlurDebug = true
 
 struct MessagesBlurDebugOverlay: View {
@@ -4375,29 +4375,36 @@ struct MessagesBlurDebugOverlay: View {
     var body: some View {
         ZStack(alignment: .bottomLeading) {
             Rectangle().stroke(Color.red, lineWidth: 2)
+            // 她的第 1 条：遮罩图塞进 UIImageView 直接显示。应当上不透明（白）→ 下全透明
+            MaskPreview().frame(width: 28, height: frameHeight)
+                .background(Color.green.opacity(0.35))
+                .frame(maxWidth: .infinity, alignment: .leading)
             VStack(alignment: .leading, spacing: 1) {
                 Text("frame h=\(Int(frameHeight)) (safeTop \(Int(safeTop)) + 60)")
-                Text(VariableBlurUIView.debugLine + " · tick \(tick)")
+                Text(VariableBlurUIView.debugLine + " · \(tick)")
                 Text("edgeEffectHidden(top)=true · soft(bottom)")
             }
             .font(.system(size: 9, design: .monospaced))
             .foregroundColor(.red)
             .padding(3)
             .background(Color.black.opacity(0.6))
-            // 遮罩图本尊：白＝糊得重。上白下透明才对
-            Image(uiImage: VariableBlurUIView.maskImage())
-                .resizable()
-                .frame(width: 10, height: frameHeight)
-                .background(Color.green.opacity(0.5))
-                .frame(maxWidth: .infinity, alignment: .trailing)
+            .padding(.leading, 30)
         }
         .onReceive(timer) { _ in tick += 1 }
     }
 }
 
-// 0823 顶部手搓可变模糊（她写死的参数）：UIVisualEffectView 的 backdrop 换 CAFilter variableBlur，
-// 遮罩图不透明处糊得重、透明处不糊。自签侧载，私有 API 她点头。
-// 保险两条：① 滤镜建不起来 → 整个 view 隐藏，什么都不画；② 系统每次布局可能把 filters 刷掉 → layoutSubviews 里重挂。
+private struct MaskPreview: UIViewRepresentable {
+    func makeUIView(context: Context) -> UIImageView {
+        let v = UIImageView(); v.contentMode = .scaleToFill; v.backgroundColor = .clear; return v
+    }
+    func updateUIView(_ v: UIImageView, context: Context) { v.image = VariableBlurUIView.debugMask }
+}
+
+// 0823 顶部手搓可变模糊（她写死的参数）：UIVisualEffectView 的 backdrop 挂 CAFilter variableBlur。
+// 她排查后定的六条：① 遮罩图本尊显示出来自查 ② inputMaskImage 必须是 CGImage ③ 先设 mask 再挂到 layer.filters，
+// 之后的更新走 layer.setValue(_, forKeyPath: "filters.variableBlur.inputMaskImage")，filter 的 name 要设好
+// ④ 遮罩尺寸 = overlay 点尺寸 × 屏幕 scale，bounds 变了就重生成 ⑤ 底色罩必须是渐变 ⑥ 去掉绿条。
 struct VariableBlurView: UIViewRepresentable {
     var maxRadius: CGFloat = 12
     func makeUIView(context: Context) -> VariableBlurUIView { VariableBlurUIView(maxRadius: maxRadius) }
@@ -4406,50 +4413,69 @@ struct VariableBlurView: UIViewRepresentable {
 
 final class VariableBlurUIView: UIVisualEffectView {
     private var filter: NSObject?
-    /// 排查用：滤镜建没建起来、遮罩尺寸、半径、filters 挂没挂上
+    private var lastMaskSize: CGSize = .zero
     static var debugLine = "blur: not created yet"
+    static var debugMask: UIImage?
+
     init(maxRadius: CGFloat) {
         super.init(effect: UIBlurEffect(style: .regular))
         isUserInteractionEnabled = false
         let cls = NSClassFromString("CAFilter") as AnyObject?
         let made = cls?.perform(NSSelectorFromString("filterWithType:"), with: "variableBlur")
         let f = made?.takeUnretainedValue() as? NSObject
-        let mask = Self.maskImage().cgImage
-        guard let f, let mask else {
-            Self.debugLine = "blur FAILED: class=\(cls != nil) filter=\(f != nil) mask=\(mask != nil) → hidden"
+        // 初始先给一张 1×256 的（bounds 还是 0），真正按尺寸生成的在 layoutSubviews 里换上
+        let seed = Self.maskImage(size: CGSize(width: 1, height: 256), scale: 1)
+        guard let f, let seedCG = seed.cgImage, let backdrop = subviews.first?.layer else {
+            Self.debugLine = "blur FAILED: class=\(cls != nil) filter=\(f != nil) → hidden"
             NSLog("[VariableBlur] %@", Self.debugLine)
-            isHidden = true   // 建不起来就不画，别退化成整块糊
+            isHidden = true
             return
         }
+        f.setValue("variableBlur", forKey: "name")          // ③ keyPath 要靠这个名字
         f.setValue(maxRadius, forKey: "inputRadius")
-        f.setValue(mask, forKey: "inputMaskImage")
+        f.setValue(seedCG, forKey: "inputMaskImage")         // ② CGImage；③ 先设 mask
         f.setValue(true, forKey: "inputNormalizeEdges")
+        backdrop.filters = [f]                               // ③ 再挂到 layer
         filter = f
-        applyFilter()
-        let r = (f.value(forKey: "inputRadius") as? NSNumber)?.doubleValue ?? -1
-        let applied = (subviews.first?.layer.filters?.count ?? 0)
-        Self.debugLine = "blur OK: \(type(of: f)) radius=\(r) mask=\(mask.width)x\(mask.height) filters=\(applied) subviews=\(subviews.count)"
+        for v in subviews.dropFirst() { v.alpha = 0 }        // 去掉系统提亮/染色层，只留模糊
+        Self.debugLine = "blur OK: \(type(of: f)) name=\(f.value(forKey: "name") ?? "-") radius=\(f.value(forKey: "inputRadius") ?? -1) filters=\(backdrop.filters?.count ?? 0)"
         NSLog("[VariableBlur] %@", Self.debugLine)
     }
     required init?(coder: NSCoder) { fatalError() }
-    private func applyFilter() {
-        guard let f = filter, let backdrop = subviews.first?.layer else { return }
-        backdrop.filters = [f]
-        if let w = window { backdrop.setValue(w.screen.scale, forKey: "scale") }
-        // 去掉系统那层提亮/染色，只留模糊
-        for v in subviews.dropFirst() { v.alpha = 0 }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        if let w = window { subviews.first?.layer.setValue(w.screen.scale, forKey: "scale") }
+        refreshMask()
     }
-    override func didMoveToWindow() { super.didMoveToWindow(); applyFilter() }
-    override func layoutSubviews() { super.layoutSubviews(); applyFilter() }
-    /// 1×256 竖向灰度图：alpha = (1-t)^2，顶 100%、中点 25%、底 0%
-    static func maskImage() -> UIImage {
-        let h = 256
-        return UIGraphicsImageRenderer(size: CGSize(width: 1, height: h)).image { ctx in
-            for y in 0..<h {
-                let t = CGFloat(y) / CGFloat(h - 1)
-                let a = (1 - t) * (1 - t)
-                ctx.cgContext.setFillColor(UIColor(white: 1, alpha: a).cgColor)
-                ctx.cgContext.fill(CGRect(x: 0, y: y, width: 1, height: 1))
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        refreshMask()
+    }
+
+    /// ④ 按 overlay 的点尺寸 × scale 生成遮罩，尺寸没变不重做；③ 挂上之后改 mask 走 keyPath
+    private func refreshMask() {
+        guard filter != nil, let backdrop = subviews.first?.layer,
+              bounds.width > 0, bounds.height > 0, bounds.size != lastMaskSize else { return }
+        if (backdrop.filters ?? []).isEmpty, let f = filter { backdrop.filters = [f] }   // 被系统刷掉就重挂
+        let scale = window?.screen.scale ?? UIScreen.main.scale
+        let img = Self.maskImage(size: bounds.size, scale: scale)
+        guard let cg = img.cgImage else { return }
+        backdrop.setValue(cg, forKeyPath: "filters.variableBlur.inputMaskImage")
+        lastMaskSize = bounds.size
+        Self.debugMask = img
+        Self.debugLine += " · mask=\(cg.width)x\(cg.height)@\(Int(scale))x"
+        NSLog("[VariableBlur] mask %dx%d for bounds %@", cg.width, cg.height, NSCoder.string(for: bounds.size))
+    }
+
+    /// 竖向灰度遮罩：alpha = (1-t)^2，顶 100%、中点 25%、底 0%。UIGraphicsImageRenderer 的 y=0 在上。
+    static func maskImage(size: CGSize, scale: CGFloat) -> UIImage {
+        let fmt = UIGraphicsImageRendererFormat(); fmt.scale = scale; fmt.opaque = false
+        return UIGraphicsImageRenderer(size: size, format: fmt).image { ctx in
+            let colors = [UIColor.white.cgColor, UIColor.white.withAlphaComponent(0.25).cgColor, UIColor.white.withAlphaComponent(0).cgColor] as CFArray
+            let locs: [CGFloat] = [0, 0.5, 1]
+            if let g = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: locs) {
+                ctx.cgContext.drawLinearGradient(g, start: CGPoint(x: 0, y: 0), end: CGPoint(x: 0, y: size.height), options: [.drawsBeforeStartLocation, .drawsAfterEndLocation])
             }
         }
     }
