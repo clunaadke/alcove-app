@@ -255,7 +255,9 @@ struct AlcoveTheme {
     private func messagesCopy(dark: Bool) -> AlcoveTheme {
         let bg = dark ? Color.black : Color.white
         let gray = dark ? Color(red: 38/255, green: 38/255, blue: 40/255) : Color(red: 233/255, green: 233/255, blue: 235/255)
-        let blue = Color(uiColor: .systemBlue)   // 0822 她看了真机：#1F8BFF 太艳，用系统蓝（日 #007AFF / 夜 #0A84FF 自动切）
+        // 0822 第三版：从她真机截图取像素——iOS 26 的蓝泡实际渲染出来是 #57A1F3（比 systemBlue 浅一截、更灰）；
+        // 夜里没截图，按同样的浅法估 #3D8EF2，不对她会再截
+        let blue = dark ? Color(red: 0x3D/255, green: 0x8E/255, blue: 0xF2/255) : Color(red: 0x57/255, green: 0xA1/255, blue: 0xF3/255)
         let ink = dark ? Color.white : Color.black
         let dim = Color(red: 142/255, green: 142/255, blue: 147/255)   // systemGray
         let card = dark ? Color(red: 28/255, green: 28/255, blue: 30/255) : Color.white
