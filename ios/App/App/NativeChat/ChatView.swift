@@ -265,8 +265,6 @@ struct ChatView: View {
                     .padding(.horizontal, 12)
                     .padding(.top, theme.isMessages ? 96 : 52)
                 }
-                // 0822 iMessage 主题：上下渐隐走 iOS 26 原生滚动边缘效果，不再手搓遮罩
-                .scrollEdgeEffectStyle(theme.isMessages ? .soft : .automatic, for: .vertical)
                 .scrollDismissesKeyboard(.interactively)
                 .onTapGesture { inputFocused = false }
                 .simultaneousGesture(
@@ -274,7 +272,7 @@ struct ChatView: View {
                         if store.live?.active == true { followLiveOutput = false }
                     }
                 )
-                .mask(theme.isMessages ? AnyView(Color.black) : AnyView(edgeFadeMask))
+                .mask(edgeFadeMask)   // 0822 她看了真机：系统 .soft 等于没有，信息主题也走自家渐隐
 
                 if paragraphSelectionMode {
                     paragraphSelectionToolbar
@@ -831,145 +829,7 @@ struct ChatView: View {
                         .padding(.init(top: 8, leading: 12, bottom: 4, trailing: 12))
                     }
                 }
-                if recorder.isRecording {
-                    HStack(spacing: 10) {
-                        Circle().fill(Color.red).frame(width: 8, height: 8)
-                        Text(String(format: "%d:%02d", recorder.seconds / 60, recorder.seconds % 60))
-                            .font(.system(size: 15).monospacedDigit())
-                            .foregroundColor(theme.text)
-                        Text("录音中…")
-                            .font(.system(size: 14))
-                            .foregroundColor(theme.textDim)
-                        Spacer()
-                    }
-                    .padding(.init(top: 16, leading: 14, bottom: 4, trailing: 14))
-                } else {
-                    TextField("", text: $draft,
-                              prompt: theme.isMessages
-                                ? Text("信息").font(.system(size: 15.5))
-                                : Text("ring the chime …").font(.system(size: 15.5, design: .serif)).italic(),
-                              axis: .vertical)
-                        .focused($inputFocused)
-                        .lineLimit(1...5)
-                        .font(.system(size: 15.5))
-                        .tint(Color(uiColor: .systemGray3))
-                        .padding(.init(top: 16, leading: 14, bottom: 12, trailing: 14))
-                        .contentShape(Rectangle())
-                        .onChange(of: draft) { value in handleDraftChange(value) }
-                }
-                HStack(spacing: 2) {
-                    if recorder.isRecording {
-                        Button { recorder.cancel() } label: {
-                            Image(systemName: "xmark")
-                                .font(.system(size: 15, weight: .light))
-                                .foregroundColor(theme.textDim)
-                                .frame(width: 36, height: 36)
-                        }
-                        Spacer()
-                    } else {
-                        Menu {
-                            Button { showStickers = true } label: {
-                                Label("表情", systemImage: "face.smiling")
-                            }
-                            Button { showPhotoPicker = true } label: {
-                                Label("从相册选择", systemImage: "photo.on.rectangle")
-                            }
-                            Button { showCamera = true } label: {
-                                Label("拍照或录像", systemImage: "camera")
-                            }
-                            Button { showDocPicker = true } label: {
-                                Label("选取文件", systemImage: "doc")
-                            }
-                            if theme.isMessages {
-                                // 0822 她定的：iMessage 主题下模型、通道、过程线开关都收进加号里
-                                Divider()
-                                if !store.modelLabel.isEmpty {
-                                    Button { showModelPicker.toggle() } label: {
-                                        Label("模型 · \(store.modelLabel)", systemImage: "cpu")
-                                    }
-                                }
-                                Button { showChannelPanel = true } label: {
-                                    Label("通道 · \(activeChatChannel.uppercased())", systemImage: "arrow.left.arrow.right")
-                                }
-                                Toggle(isOn: $showProcessDots) {
-                                    Label("过程线（思绪和脚印）", systemImage: "circle.dotted")
-                                }
-                            }
-                        } label: {
-                            Image(systemName: "plus")
-                                .font(.system(size: 18, weight: .medium))
-                                .foregroundColor(theme.textDim)
-                                .frame(width: 36, height: 36)
-                                .background(theme.glassTint.opacity(theme.isDark ? 0.64 : 0.82), in: Circle())
-                        }
-                        if !store.modelLabel.isEmpty && !theme.isMessages {
-                            Button {
-                                withAnimation(.spring(response: 0.32, dampingFraction: 0.78)) {
-                                    showModelPicker.toggle()
-                                }
-                            } label: {
-                                HStack(spacing: 4) {
-                                    if switchingModel { ProgressView().controlSize(.mini) }
-                                    Text(store.modelLabel)
-                                    Image(systemName: "chevron.up.chevron.down").font(.system(size: 8))
-                                }
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundColor(theme.textLight)
-                                .padding(.horizontal, 12).frame(height: 36)
-                                .background(theme.glassTint.opacity(theme.isDark ? 0.72 : 0.92),
-                                            in: Capsule())
-                                .overlay(Capsule().stroke(theme.glassBorder, lineWidth: 1))
-                            }
-                            .buttonStyle(.plain)
-                            .disabled(switchingModel)
-                        }
-                        if !theme.isMessages { Button { showChannelPanel = true } label: {
-                            HStack(spacing: 5) {
-                                Image(systemName: "arrow.left.arrow.right")
-                                    .font(.system(size: 10, weight: .semibold))
-                                Text(activeChatChannel.uppercased())
-                                    .font(.system(size: 11, weight: .semibold))
-                            }
-                            .foregroundColor(theme.textLight)
-                            .padding(.horizontal, 10)
-                            .frame(height: 36)
-                            .background(theme.glassTint.opacity(theme.isDark ? 0.72 : 0.92), in: Capsule())
-                            .overlay(Capsule().stroke(theme.glassBorder, lineWidth: 1))
-                        }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel("切换 CLI 或 SDK 通道，当前 \(activeChatChannel.uppercased())") }
-                        Spacer()
-                    }
-                    Button(action: performDynamicComposerAction) {
-                        ZStack(alignment: .topTrailing) {
-                            // 0822 她要的「打断回复」：他在回的时候这颗变成官方那种停止键（圆里一个小方块），
-                            // 平时照旧：没字是语音、有字是发送。
-                            Image(systemName: isGenerating ? "stop.fill"
-                                  : (canSend || recorder.isRecording || store.heldCount > 0) ? "arrow.up" : "waveform")
-                            .font(.system(size: isGenerating ? 13 : 17, weight: .semibold))
-                            .contentTransition(.symbolEffect(.replace))
-                            .animation(.easeInOut(duration: 0.18), value: isGenerating)
-                            .foregroundColor(.white)
-                            .frame(width: 36, height: 36)
-                            .background(
-                                LinearGradient(
-                                    colors: [theme.sendTop, theme.sendBottom],
-                                    startPoint: .topLeading, endPoint: .bottomTrailing))
-                            .clipShape(Circle())
-                            .shadow(color: .black.opacity(0.2),
-                                    radius: 4, y: 2)
-                            if store.heldCount > 0 {
-                                Text("\(store.heldCount)")
-                                    .font(.system(size: 10, weight: .bold))
-                                    .foregroundColor(.white)
-                                    .frame(minWidth: 16, minHeight: 16)
-                                    .background(theme.sendTop, in: Capsule())
-                                    .offset(x: 3, y: -3)
-                            }
-                        }
-                    }
-                }
-                .padding(.init(top: 4, leading: 8, bottom: 8, trailing: 8))
+                if theme.isMessages { messagesComposerRow } else { classicComposerBody }
             }
             .background {
                 RoundedRectangle(cornerRadius: 28, style: .continuous)
@@ -980,8 +840,8 @@ struct ChatView: View {
                         inputFocused = true
                     }
             }
-            .modifier(InteractiveInputGlassModifier(fallbackTint: theme.capsuleTint))
-            .shadow(color: .black.opacity(0.05), radius: 14, x: 0, y: 2)
+            .modifier(InteractiveInputGlassModifier(fallbackTint: theme.capsuleTint, enabled: !theme.isMessages))
+            .shadow(color: .black.opacity(theme.isMessages ? 0 : 0.05), radius: 14, x: 0, y: 2)
             .padding(.horizontal, 14)
         }
         .padding(.bottom, 0)
@@ -989,6 +849,223 @@ struct ChatView: View {
             Color.clear.preference(key: InputBarHeightKey.self, value: geo.size.height)
         })
         .onPreferenceChange(InputBarHeightKey.self) { inputBarHeight = $0 }
+    }
+
+    // 加号菜单：经典输入栏和「信息」输入栏共用同一份
+    private var composerPlusMenu: some View {
+        Menu {
+            Button { showStickers = true } label: {
+                Label("表情", systemImage: "face.smiling")
+            }
+            Button { showPhotoPicker = true } label: {
+                Label("从相册选择", systemImage: "photo.on.rectangle")
+            }
+            Button { showCamera = true } label: {
+                Label("拍照或录像", systemImage: "camera")
+            }
+            Button { showDocPicker = true } label: {
+                Label("选取文件", systemImage: "doc")
+            }
+            if theme.isMessages {
+                // 0822 她定的：iMessage 主题下模型、通道、过程线开关都收进加号里
+                Divider()
+                if !store.modelLabel.isEmpty {
+                    Button { showModelPicker.toggle() } label: {
+                        Label("模型 · \(store.modelLabel)", systemImage: "cpu")
+                    }
+                }
+                Button { showChannelPanel = true } label: {
+                    Label("通道 · \(activeChatChannel.uppercased())", systemImage: "arrow.left.arrow.right")
+                }
+                Toggle(isOn: $showProcessDots) {
+                    Label("过程线（思绪、脚印、记忆）", systemImage: "circle.dotted")
+                }
+            }
+        } label: {
+            Image(systemName: "plus")
+                .font(.system(size: 18, weight: .medium))
+                .foregroundColor(theme.textDim)
+                .frame(width: 36, height: 36)
+                .background((theme.isMessages ? theme.bubbleAI : theme.glassTint.opacity(theme.isDark ? 0.64 : 0.82)), in: Circle())
+        }
+    }
+
+    // 经典输入栏（玻璃大胶囊）：文本框在上、按钮一排在下
+    private var classicComposerBody: some View {
+        VStack(spacing: 0) {
+                    if recorder.isRecording {
+                        HStack(spacing: 10) {
+                            Circle().fill(Color.red).frame(width: 8, height: 8)
+                            Text(String(format: "%d:%02d", recorder.seconds / 60, recorder.seconds % 60))
+                                .font(.system(size: 15).monospacedDigit())
+                                .foregroundColor(theme.text)
+                            Text("录音中…")
+                                .font(.system(size: 14))
+                                .foregroundColor(theme.textDim)
+                            Spacer()
+                        }
+                        .padding(.init(top: 16, leading: 14, bottom: 4, trailing: 14))
+                    } else {
+                        TextField("", text: $draft,
+                                  prompt: theme.isMessages
+                                    ? Text("信息").font(.system(size: 15.5))
+                                    : Text("ring the chime …").font(.system(size: 15.5, design: .serif)).italic(),
+                                  axis: .vertical)
+                            .focused($inputFocused)
+                            .lineLimit(1...5)
+                            .font(.system(size: 15.5))
+                            .tint(Color(uiColor: .systemGray3))
+                            .padding(.init(top: 16, leading: 14, bottom: 12, trailing: 14))
+                            .contentShape(Rectangle())
+                            .onChange(of: draft) { value in handleDraftChange(value) }
+                    }
+                    HStack(spacing: 2) {
+                        if recorder.isRecording {
+                            Button { recorder.cancel() } label: {
+                                Image(systemName: "xmark")
+                                    .font(.system(size: 15, weight: .light))
+                                    .foregroundColor(theme.textDim)
+                                    .frame(width: 36, height: 36)
+                            }
+                            Spacer()
+                        } else {
+                            composerPlusMenu
+                            if !store.modelLabel.isEmpty && !theme.isMessages {
+                                Button {
+                                    withAnimation(.spring(response: 0.32, dampingFraction: 0.78)) {
+                                        showModelPicker.toggle()
+                                    }
+                                } label: {
+                                    HStack(spacing: 4) {
+                                        if switchingModel { ProgressView().controlSize(.mini) }
+                                        Text(store.modelLabel)
+                                        Image(systemName: "chevron.up.chevron.down").font(.system(size: 8))
+                                    }
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundColor(theme.textLight)
+                                    .padding(.horizontal, 12).frame(height: 36)
+                                    .background(theme.glassTint.opacity(theme.isDark ? 0.72 : 0.92),
+                                                in: Capsule())
+                                    .overlay(Capsule().stroke(theme.glassBorder, lineWidth: 1))
+                                }
+                                .buttonStyle(.plain)
+                                .disabled(switchingModel)
+                            }
+                            if !theme.isMessages { Button { showChannelPanel = true } label: {
+                                HStack(spacing: 5) {
+                                    Image(systemName: "arrow.left.arrow.right")
+                                        .font(.system(size: 10, weight: .semibold))
+                                    Text(activeChatChannel.uppercased())
+                                        .font(.system(size: 11, weight: .semibold))
+                                }
+                                .foregroundColor(theme.textLight)
+                                .padding(.horizontal, 10)
+                                .frame(height: 36)
+                                .background(theme.glassTint.opacity(theme.isDark ? 0.72 : 0.92), in: Capsule())
+                                .overlay(Capsule().stroke(theme.glassBorder, lineWidth: 1))
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("切换 CLI 或 SDK 通道，当前 \(activeChatChannel.uppercased())") }
+                            Spacer()
+                        }
+                        Button(action: performDynamicComposerAction) {
+                            ZStack(alignment: .topTrailing) {
+                                // 0822 她要的「打断回复」：他在回的时候这颗变成官方那种停止键（圆里一个小方块），
+                                // 平时照旧：没字是语音、有字是发送。
+                                Image(systemName: isGenerating ? "stop.fill"
+                                      : (canSend || recorder.isRecording || store.heldCount > 0) ? "arrow.up" : "waveform")
+                                .font(.system(size: isGenerating ? 13 : 17, weight: .semibold))
+                                .contentTransition(.symbolEffect(.replace))
+                                .animation(.easeInOut(duration: 0.18), value: isGenerating)
+                                .foregroundColor(.white)
+                                .frame(width: 36, height: 36)
+                                .background(
+                                    LinearGradient(
+                                        colors: [theme.sendTop, theme.sendBottom],
+                                        startPoint: .topLeading, endPoint: .bottomTrailing))
+                                .clipShape(Circle())
+                                .shadow(color: .black.opacity(0.2),
+                                        radius: 4, y: 2)
+                                if store.heldCount > 0 {
+                                    Text("\(store.heldCount)")
+                                        .font(.system(size: 10, weight: .bold))
+                                        .foregroundColor(.white)
+                                        .frame(minWidth: 16, minHeight: 16)
+                                        .background(theme.sendTop, in: Capsule())
+                                        .offset(x: 3, y: -3)
+                                }
+                            }
+                        }
+                    }
+                    .padding(.init(top: 4, leading: 8, bottom: 8, trailing: 8))
+        }
+    }
+
+    // 0822 她要的 iMessage 同款输入栏：三件各自独立——左边一个圆加号、中间细边框单行框、
+    // 框里右边平时是话筒，有字／在回的时候换成蓝圆（发送／停止）。没有大玻璃胶囊。
+    private var messagesComposerRow: some View {
+        let line = theme.isDark ? Color.white.opacity(0.22) : Color.black.opacity(0.18)
+        let showBlue = isGenerating || canSend || recorder.isRecording || store.heldCount > 0
+        return HStack(alignment: .bottom, spacing: 10) {
+            if recorder.isRecording {
+                Button { recorder.cancel() } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundColor(theme.textDim)
+                        .frame(width: 34, height: 34)
+                        .background(theme.bubbleAI, in: Circle())
+                }
+                .buttonStyle(.plain)
+            } else {
+                composerPlusMenu
+            }
+            HStack(alignment: .center, spacing: 4) {
+                if recorder.isRecording {
+                    Circle().fill(Color.red).frame(width: 8, height: 8)
+                    Text(String(format: "%d:%02d", recorder.seconds / 60, recorder.seconds % 60))
+                        .font(.system(size: 15).monospacedDigit())
+                        .foregroundColor(theme.text)
+                    Text("录音中…").font(.system(size: 14)).foregroundColor(theme.textDim)
+                    Spacer(minLength: 0)
+                } else {
+                    TextField("", text: $draft, prompt: Text("信息").font(.system(size: 16)))
+                        .focused($inputFocused)
+                        .lineLimit(1)
+                        .font(.system(size: 16))
+                        .tint(Color(uiColor: .systemBlue))
+                        .onChange(of: draft) { value in handleDraftChange(value) }
+                }
+                Button(action: performDynamicComposerAction) {
+                    ZStack(alignment: .topTrailing) {
+                        Image(systemName: isGenerating ? "stop.fill"
+                              : (canSend || recorder.isRecording || store.heldCount > 0) ? "arrow.up" : "waveform")
+                            .font(.system(size: isGenerating ? 12 : (showBlue ? 15 : 17), weight: .semibold))
+                            .contentTransition(.symbolEffect(.replace))
+                            .animation(.easeInOut(duration: 0.18), value: isGenerating)
+                            .foregroundColor(showBlue ? .white : theme.textDim)
+                            .frame(width: 28, height: 28)
+                            .background(showBlue ? Color(uiColor: .systemBlue) : Color.clear, in: Circle())
+                        if store.heldCount > 0 {
+                            Text("\(store.heldCount)")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundColor(.white)
+                                .frame(minWidth: 14, minHeight: 14)
+                                .background(Color(uiColor: .systemBlue), in: Capsule())
+                                .offset(x: 3, y: -3)
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.leading, 14)
+            .padding(.trailing, 4)
+            .padding(.vertical, 4)
+            .background(theme.isDark ? Color.black : Color.white, in: Capsule())
+            .overlay(Capsule().stroke(line, lineWidth: 1))
+            .contentShape(Capsule())
+            .onTapGesture { if !recorder.isRecording { inputFocused = true } }
+        }
+        .padding(.init(top: 6, leading: 6, bottom: 8, trailing: 6))
     }
 
     private func holdCurrentDraft() {
@@ -2424,6 +2501,15 @@ struct MessageRow: View {
                                 .font(.system(size: 10, design: .serif))
                                 .foregroundColor(theme.timestamp)
                         }
+                        if theme.isMessages, isUser, !msg.pending {
+                            // 0822 她定的：tg 那种两个勾，发出去就亮，只是个装饰
+                            HStack(spacing: -5) {
+                                Image(systemName: "checkmark")
+                                Image(systemName: "checkmark")
+                            }
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundColor(Color(uiColor: .systemBlue))
+                        }
                         if showTime, !isUser, !msg.displayText.isEmpty {
                             Button { onBeginParagraphSelection?() } label: {
                                 Image(systemName: "checklist")
@@ -2583,11 +2669,8 @@ struct MessageRow: View {
                     .padding(.horizontal, 14)
                     .padding(.vertical, theme.isPaper && isUser ? 11 : 10)
                     .background {
-                        if theme.isMessages {
-                            // iMessage 同款：实心色、大圆角、底角一个小尾巴
-                            MessagesBubbleShape(isUser: isUser)
-                                .fill(isUser ? theme.bubbleUser : theme.bubbleAI)
-                        } else if theme.isPaper {
+                        if theme.isMessages || theme.isPaper {
+                            // 0822 她定的：信息主题不要尾巴（怎么画都像拼上去的），和纸页一样实心大圆角
                             RoundedRectangle(cornerRadius: 18, style: .continuous)
                                 .fill(isUser ? theme.bubbleUser : theme.bubbleAI)
                         } else {
@@ -2795,20 +2878,20 @@ struct MessageRow: View {
     @ViewBuilder private var messagesProcessBlock: some View {
         if hasProcess && showProcessDots {
             VStack(alignment: .leading, spacing: 6) {
+              HStack(spacing: 14) {
                 Button {
                     withAnimation(.easeInOut(duration: 0.18)) { processOpen.toggle() }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { onContentChange?() }
                 } label: {
-                    HStack(spacing: 6) {
-                        Circle()
-                            .fill(theme.textDim.opacity(processOpen ? 0.95 : 0.5))
-                            .frame(width: 7, height: 7)
-                        if recall != nil { recallBadge }
-                    }
-                    .frame(height: 14)
-                    .contentShape(Rectangle())
+                    Circle()
+                        .fill(theme.textDim.opacity(processOpen ? 0.95 : 0.5))
+                        .frame(width: 7, height: 7)
+                        .frame(width: 22, height: 14)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                if recall != nil { recallBadge }
+              }
                 if processOpen {
                     VStack(alignment: .leading, spacing: 8) {
                         if !turnBlocks.isEmpty {
@@ -2833,7 +2916,8 @@ struct MessageRow: View {
                 }
             }
             .padding(.leading, 4)
-        } else if recall != nil {
+        } else if recall != nil && showProcessDots {
+            // 0822 她定的：记忆召回也归过程线开关管，关了就一起藏
             recallBadge
         }
     }
@@ -3486,31 +3570,6 @@ struct MessagesTimeDivider: View {
     }()
 }
 
-// 0822 iMessage 同款气泡：大圆角 + 底角小尾巴（我的在左下，她的在右下）
-struct MessagesBubbleShape: Shape {
-    let isUser: Bool
-    func path(in r: CGRect) -> Path {
-        var p = Path(roundedRect: r, cornerRadius: 18, style: .continuous)
-        var tail = Path()
-        if isUser {
-            tail.move(to: CGPoint(x: r.maxX - 16, y: r.maxY - 14))
-            tail.addQuadCurve(to: CGPoint(x: r.maxX + 5, y: r.maxY),
-                              control: CGPoint(x: r.maxX - 3, y: r.maxY - 1))
-            tail.addQuadCurve(to: CGPoint(x: r.maxX - 9, y: r.maxY - 4),
-                              control: CGPoint(x: r.maxX - 4, y: r.maxY + 1))
-        } else {
-            tail.move(to: CGPoint(x: r.minX + 16, y: r.maxY - 14))
-            tail.addQuadCurve(to: CGPoint(x: r.minX - 5, y: r.maxY),
-                              control: CGPoint(x: r.minX + 3, y: r.maxY - 1))
-            tail.addQuadCurve(to: CGPoint(x: r.minX + 9, y: r.maxY - 4),
-                              control: CGPoint(x: r.minX + 4, y: r.maxY + 1))
-        }
-        tail.closeSubpath()
-        p.addPath(tail)
-        return p
-    }
-}
-
 struct TimeDivider: View {
     let date: Date
     var color: Color = Color(red: 0.42, green: 0.40, blue: 0.41)
@@ -3774,12 +3833,8 @@ struct AudioBubble: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 9)
             .background {
-                if theme.isMessages {
-                    MessagesBubbleShape(isUser: isUser).fill(isUser ? theme.bubbleUser : theme.bubbleAI)
-                } else {
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .fill(isUser ? theme.bubbleUser : theme.bubbleAI)
-                }
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(isUser ? theme.bubbleUser : theme.bubbleAI)
             }
         }
         .contextMenu {
@@ -4251,11 +4306,14 @@ struct RecallPop: View {
 
 private struct InteractiveInputGlassModifier: ViewModifier {
     let fallbackTint: Color
+    var enabled: Bool = true
 
     @ViewBuilder
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: 28, style: .continuous)
-        if #available(iOS 26.0, *) {
+        if !enabled {
+            content
+        } else if #available(iOS 26.0, *) {
             content
                 .glassEffect(.regular.interactive(), in: shape)
         } else {

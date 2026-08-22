@@ -250,12 +250,12 @@ struct AlcoveTheme {
         )
     }
 
-    /// iMessage 同款（按她 0822 两张截图抄的数）：白天 #FFF 底 / 灰泡 #E9E9EB 黑字；黑夜 #000 底 / 灰泡 #262628 白字；
-    /// 她的泡永远亮蓝 #1F8BFF 白字。面板那套颜色沿用纸页系，不动别的房间。
+    /// iMessage 同款：白天 #FFF 底 / 灰泡 #E9E9EB 黑字；黑夜 #000 底 / 灰泡 #262628 白字；
+    /// 她的泡系统蓝白字，不带尾巴。面板那套颜色沿用纸页系，不动别的房间。
     private func messagesCopy(dark: Bool) -> AlcoveTheme {
         let bg = dark ? Color.black : Color.white
         let gray = dark ? Color(red: 38/255, green: 38/255, blue: 40/255) : Color(red: 233/255, green: 233/255, blue: 235/255)
-        let blue = Color(red: 31/255, green: 139/255, blue: 255/255)
+        let blue = Color(uiColor: .systemBlue)   // 0822 她看了真机：#1F8BFF 太艳，用系统蓝（日 #007AFF / 夜 #0A84FF 自动切）
         let ink = dark ? Color.white : Color.black
         let dim = Color(red: 142/255, green: 142/255, blue: 147/255)   // systemGray
         let card = dark ? Color(red: 28/255, green: 28/255, blue: 30/255) : Color.white

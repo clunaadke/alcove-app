@@ -1192,7 +1192,7 @@ private struct NativeSettingsView: View {
                         ])
                         familyChoice("信息", "一条一条", "imessage", [
                             .white,
-                            Color(red: 31/255, green: 139/255, blue: 255/255),
+                            Color(uiColor: .systemBlue),
                             Color(red: 233/255, green: 233/255, blue: 235/255)
                         ])
                     }
