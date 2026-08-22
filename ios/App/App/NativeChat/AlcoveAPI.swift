@@ -306,6 +306,19 @@ enum AlcoveAPI {
         return obj["content"] as? String ?? ""
     }
 
+    // 0822 SDK 终端页：后端把 SDK session 记录翻成 CLI 终端那个样子（❯ ∴ ● ⏺ ⎿）
+    static func sdkTerminal(lines: Int = 120) async throws -> (content: String, busy: Bool) {
+        let obj = try await getJSON("/api/sdk-shadow/terminal?lines=\(lines)")
+        guard obj["ok"] as? Bool == true else { throw URLError(.cannotConnectToHost) }
+        return (obj["content"] as? String ?? "", obj["busy"] as? Bool ?? false)
+    }
+
+    // 当前主聊天走的是 cli 还是 sdk（终端页默认跟着它开，但能手动切着看）
+    static func sdkChannel() async throws -> String {
+        let obj = try await getJSON("/api/sdk-shadow/status")
+        return obj["channel"] as? String ?? "cli"
+    }
+
     static func terminalSend(_ text: String, session: String = "main") async throws {
         let obj = try await postJSON("/api/terminal/send", body: [
             "session": session, "keys": text, "enter": true

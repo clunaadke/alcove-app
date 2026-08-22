@@ -6,6 +6,12 @@ private enum CCWorkState: Equatable {
     case resting
 }
 
+// 0822 她要的：终端页分两种看法。cli = tmux 真终端；sdk = 后端把 SDK session 翻成同款样子。
+// 默认跟着主聊天当前 channel 开，但不焊死，顶上能切着看。
+enum TerminalMode: String {
+    case cli, sdk
+}
+
 // 原生终端页：点头像进来看我干活的地方
 // tabs/红绿灯/工具键/命令行 全套照 PWA 搬
 struct TerminalView: View {
@@ -19,6 +25,9 @@ struct TerminalView: View {
     @State private var cmd = ""
     @State private var workState: CCWorkState = .resting
     @State private var pollTask: Task<Void, Never>?
+    @State private var mode: TerminalMode = .cli
+    @State private var modeResolved = false   // 第一次按 channel 定默认；之后她切了就听她的
+    @State private var sdkSending = false
     @FocusState private var cmdFocused: Bool
 
     var body: some View {
@@ -41,7 +50,7 @@ struct TerminalView: View {
                 }
             }
             if !mini {
-                toolbar
+                if mode == .cli { toolbar } else { sdkToolbar }
                 inputBar
             }
         }
@@ -55,8 +64,48 @@ struct TerminalView: View {
         }
         .shadow(color: mini ? .black.opacity(0.2) : .clear, radius: 16, y: 6)
         .preferredColorScheme(.dark)
-        .onAppear { session = initialSession; startPoll() }
+        .onAppear { session = initialSession; resolveMode(); startPoll() }
         .onDisappear { pollTask?.cancel() }
+    }
+
+    // 工作室那页传的是 work 会话，SDK 跟它没关系，不给切换
+    private var canSwitchMode: Bool { availableSessions.contains("main") }
+
+    private func resolveMode() {
+        guard canSwitchMode, !modeResolved else { return }
+        Task {
+            if let ch = try? await AlcoveAPI.sdkChannel(), !modeResolved {
+                mode = (ch == "sdk") ? .sdk : .cli
+                modeResolved = true
+                output = ""
+                capture()
+            }
+        }
+    }
+
+    private var modeSwitch: some View {
+        HStack(spacing: 2) {
+            ForEach([TerminalMode.cli, .sdk], id: \.self) { m in
+                Button {
+                    guard mode != m else { return }
+                    modeResolved = true
+                    mode = m
+                    output = ""
+                    capture()
+                } label: {
+                    Text(m.rawValue)
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .foregroundColor(mode == m ? .black : .gray)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 4)
+                        .background(mode == m ? Color(red: 0.62, green: 0.87, blue: 0.66) : .clear,
+                                    in: Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(2)
+        .background(Color.white.opacity(0.08), in: Capsule())
     }
 
     private var tabBar: some View {
@@ -82,24 +131,34 @@ struct TerminalView: View {
             .padding(.trailing, 4)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 4) {
-                    ForEach(availableSessions, id: \.self) { s in
-                        Button {
-                            session = s
-                            output = ""
-                            capture()
-                        } label: {
-                            Text(s)
-                                .font(.system(size: 12, design: .monospaced))
-                                .foregroundColor(session == s ? .white : .gray)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 6)
-                                .background(session == s ? Color.white.opacity(0.14) : .clear,
-                                            in: Capsule())
+                    if mode == .sdk {
+                        Text("sdk")
+                            .font(.system(size: 12, design: .monospaced))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(Color.white.opacity(0.14), in: Capsule())
+                    } else {
+                        ForEach(availableSessions, id: \.self) { s in
+                            Button {
+                                session = s
+                                output = ""
+                                capture()
+                            } label: {
+                                Text(s)
+                                    .font(.system(size: 12, design: .monospaced))
+                                    .foregroundColor(session == s ? .white : .gray)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 6)
+                                    .background(session == s ? Color.white.opacity(0.14) : .clear,
+                                                in: Capsule())
+                            }
                         }
                     }
                 }
             }
             Spacer()
+            if canSwitchMode { modeSwitch }
             if mini {
                 Button { onDismiss?() } label: {
                     Image(systemName: "arrow.down.right.and.arrow.up.left")
@@ -140,6 +199,22 @@ struct TerminalView: View {
                 termKey("Tab") { sendKey("Tab") }
                 termKey("Enter") { sendKey("Enter") }
                 termKey("clear") { sendKeys("clear", enter: true) }
+            }
+            .padding(.horizontal, 10)
+        }
+        .padding(.vertical, 6)
+    }
+
+    // SDK 没有按键可发，给两个真有用的：刷新、回到底部
+    private var sdkToolbar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                termKey("刷新") { capture() }
+                termKey("清屏") { output = "" }
+                Text(sdkSending ? "发送中…" : (workState == .thinking ? "陈璟在想…" : "session 空闲"))
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundColor(.gray)
+                    .padding(.leading, 6)
             }
             .padding(.horizontal, 10)
         }
@@ -193,6 +268,7 @@ struct TerminalView: View {
     }
 
     private func capture() {
+        if mode == .sdk { captureSDK(); return }
         Task {
             var comps = URLComponents(url: AlcoveAPI.fullURL("/api/terminal/capture"),
                                       resolvingAgainstBaseURL: false)!
@@ -220,10 +296,45 @@ struct TerminalView: View {
         }
     }
 
+    // SDK 终端：session 记录 + 正在进行的这一轮（实时流）拼在一起，两秒一刷跟 tmux 一个节奏
+    private func captureSDK() {
+        Task {
+            guard let r = try? await AlcoveAPI.sdkTerminal(lines: mini ? 60 : 120) else {
+                workState = .disconnected
+                return
+            }
+            let busy = r.busy
+            var text = r.content
+            if busy, let live = try? await AlcoveAPI.liveStream(), live.active {
+                // 正在跑的这轮 jsonl 还没落全，把实时流接在转轮后面，像 CLI 边想边打字那样
+                var tail: [String] = []
+                if !live.thinking.isEmpty {
+                    tail.append("∴ " + live.thinking.replacingOccurrences(of: "\n", with: "\n  "))
+                }
+                for t in live.tools where !t.name.isEmpty { tail.append("⏺ " + t.name) }
+                let say = live.say.isEmpty ? live.pendingSay : live.say
+                if !say.isEmpty { tail.append("● " + say.replacingOccurrences(of: "\n", with: "\n  ")) }
+                if !tail.isEmpty { text += tail.joined(separator: "\n") + "\n" }
+            }
+            output = text
+            workState = busy ? .thinking : .resting
+        }
+    }
+
     private func sendCmd() {
         let c = cmd.trimmingCharacters(in: .whitespaces)
         guard !c.isEmpty else { return }
         cmd = ""
+        if mode == .sdk {
+            // SDK 没有命令行可敲：这里敲的就是一句话，走主聊天同一条路（会落进聊天页，跟 tmux 里打字一个效果）
+            sdkSending = true
+            Task {
+                _ = try? await AlcoveAPI.send(text: c)
+                sdkSending = false
+                capture()
+            }
+            return
+        }
         sendKeys(c, enter: true)
     }
 
