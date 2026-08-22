@@ -39,7 +39,6 @@ struct ChatView: View {
     @Namespace private var photoTransition
     @State private var previewImage: UIImage?
     @State private var inputBarHeight: CGFloat = 90
-    @State private var topSafeInset: CGFloat = 59   // 0823 信息主题顶部手搓模糊区要用：状态栏高度
     @State private var scrollKick = 0
     @State private var showMusicPlayer = false
     @State private var showModelPicker = false
@@ -116,8 +115,6 @@ struct ChatView: View {
                 }
             }
             .coordinateSpace(name: "alcoveChatRoot")
-            .onAppear { topSafeInset = root.safeAreaInsets.top }
-            .onChange(of: root.safeAreaInsets.top) { v in topSafeInset = v }
             .environment(\.chatWallpaperDescriptor, wallpaperStore.descriptor)
             .environment(\.chatWallpaperViewportSize, root.size)
             .environment(\.bubbleGlassStyle, bubbleGlassStyle)
@@ -276,23 +273,20 @@ struct ChatView: View {
                 // 自动混下层颜色、日夜自适配，不许用固定色渐变去模拟。
                 // 关键两条：① 栏要用 safeAreaBar 挂（safeAreaInset 不触发底部模糊）；② 列表不翻转（本来就没翻）。
                 // 顶栏本体在 RootView 浮着，这里只挂一条同高的透明 bar 把「顶部有栏」告诉系统。
-                // 0823 她装了 e7c827d 还是太糊（系统 soft 罩不住这个高度），按她写死的参数手搓顶部：
-                //   区域高 = 状态栏 + 60pt；最大半径 12 只在最顶端；遮罩 easeIn 二次方（顶 100% / 中点 25% / 底 0%）；
-                //   另叠主题底色罩 0.5→0 同曲线。头像名字胶囊原样悬浮在上面。底部仍是系统的。
-                //   保险：私有滤镜建不起来就整层不画（宁可清的，不再出整块硬边）。
+                // 0823 她拍板：顶部放弃渐进模糊，改成纸页主题那种顶部渐隐（edgeFadeMask 顶段同一条曲线，120 高）。
+                // 信息主题底是纯色，所以用主题底色做渐变盖上去和纸页的遮罩观感一致，又不碰滚动区（底部系统效果不动）。
                 .overlay(alignment: .top) {
                     if theme.isMessages {
-                        let h = topSafeInset + 60
                         let bg = theme.wallGradient.first ?? (theme.isDark ? Color.black : Color.white)
-                        ZStack(alignment: .top) {
-                            VariableBlurView(maxRadius: 60)   // 0823 一锤定音测试：临时 60（正式值 12，定论后改回）
-                            // 底色罩：她排查第 2 步——这版先整个关掉截图对照；开回来走 CAGradientLayer（不是填充矩形）
-                            if messagesBlurBgLayer { ThemeFadeLayerView(color: UIColor(bg)) }
-                        }
-                        .frame(height: h)
+                        LinearGradient(stops: [
+                            .init(color: bg, location: 0),
+                            .init(color: bg, location: 0.15),
+                            .init(color: bg.opacity(0.7), location: 0.4),
+                            .init(color: bg.opacity(0.3), location: 0.65),
+                            .init(color: bg.opacity(0), location: 1.0),
+                        ], startPoint: .top, endPoint: .bottom)
+                        .frame(height: 120)
                         .frame(maxWidth: .infinity)
-                        // 0823 排查模式（她要的 1–4 项证据）：红框标出实际 frame，角上印滤镜/遮罩/半径/方向
-                        .overlay { if messagesBlurDebug { MessagesBlurDebugOverlay(frameHeight: h, safeTop: topSafeInset) } }
                         .ignoresSafeArea(edges: .top)
                         .allowsHitTesting(false)
                     }
@@ -306,7 +300,7 @@ struct ChatView: View {
                     if theme.isMessages && !paragraphSelectionMode { floatingInput }
                 }
                 .scrollEdgeEffectStyle(theme.isMessages ? .soft : .automatic, for: .bottom)
-                .scrollEdgeEffectHidden(theme.isMessages, for: .top)   // 顶部系统效果关掉，换上面手搓的
+                .scrollEdgeEffectHidden(theme.isMessages, for: .top)   // 顶部不用系统效果，走上面纸页式渐隐
                 .scrollDismissesKeyboard(.interactively)
                 .onTapGesture { inputFocused = false }
                 .simultaneousGesture(
@@ -4359,197 +4353,6 @@ struct RecallPop: View {
             }
         }
         .presentationDetents([.medium, .large])
-    }
-}
-
-// 0823 排查开关：true 时模糊区画红框 + 印诊断信息 + 左侧贴遮罩图本尊（UIImageView）。自查过关后改回 false。
-let messagesBlurDebug = true
-// 0823 她排查第 2 步：底色罩先关掉截一张，确认是不是它把框内压成近黑。确认后改 true 开回来
-let messagesBlurBgLayer = false
-
-/// 底色罩：CAGradientLayer，主题底色 0.5 → 0.125（中点）→ 0，竖向。
-struct ThemeFadeLayerView: UIViewRepresentable {
-    let color: UIColor
-    func makeUIView(context: Context) -> ThemeFadeUIView { ThemeFadeUIView(color: color) }
-    func updateUIView(_ v: ThemeFadeUIView, context: Context) { v.setColor(color) }
-}
-final class ThemeFadeUIView: UIView {
-    override class var layerClass: AnyClass { CAGradientLayer.self }
-    init(color: UIColor) {
-        super.init(frame: .zero)
-        isUserInteractionEnabled = false
-        let g = layer as! CAGradientLayer
-        g.startPoint = CGPoint(x: 0.5, y: 0); g.endPoint = CGPoint(x: 0.5, y: 1)
-        g.locations = [0, 0.5, 1]
-        setColor(color)
-    }
-    required init?(coder: NSCoder) { fatalError() }
-    func setColor(_ c: UIColor) {
-        (layer as! CAGradientLayer).colors = [c.withAlphaComponent(0.5).cgColor,
-                                              c.withAlphaComponent(0.125).cgColor,
-                                              c.withAlphaComponent(0).cgColor]
-    }
-}
-
-struct MessagesBlurDebugOverlay: View {
-    let frameHeight: CGFloat
-    let safeTop: CGFloat
-    @State private var tick = 0
-    private let timer = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
-    var body: some View {
-        ZStack(alignment: .bottomLeading) {
-            Rectangle().stroke(Color.red, lineWidth: 2)
-            // 她的第 1 条：遮罩图塞进 UIImageView 直接显示。应当上不透明（白）→ 下全透明
-            MaskPreview().frame(width: 28, height: frameHeight)
-                .background(Color.green.opacity(0.35))
-                .frame(maxWidth: .infinity, alignment: .leading)
-            VStack(alignment: .leading, spacing: 1) {
-                Text("frame h=\(Int(frameHeight)) (safeTop \(Int(safeTop)) + 60)")
-                Text(VariableBlurUIView.debugLine + " · \(tick)")
-                Text(VariableBlurUIView.liveLine)
-                Text("edgeEffectHidden(top)=true · soft(bottom)")
-            }
-            .font(.system(size: 9, design: .monospaced))
-            .foregroundColor(.red)
-            .padding(3)
-            .background(Color.black.opacity(0.6))
-            .padding(.leading, 30)
-        }
-        .onReceive(timer) { _ in tick += 1 }
-    }
-}
-
-private struct MaskPreview: UIViewRepresentable {
-    func makeUIView(context: Context) -> UIImageView {
-        let v = UIImageView(); v.contentMode = .scaleToFill; v.backgroundColor = .clear; return v
-    }
-    func updateUIView(_ v: UIImageView, context: Context) { v.image = VariableBlurUIView.debugMask }
-}
-
-// 0823 顶部手搓可变模糊（她写死的参数）：UIVisualEffectView 的 backdrop 挂 CAFilter variableBlur。
-// 她排查后定的六条：① 遮罩图本尊显示出来自查 ② inputMaskImage 必须是 CGImage ③ 先设 mask 再挂到 layer.filters，
-// 之后的更新走 layer.setValue(_, forKeyPath: "filters.variableBlur.inputMaskImage")，filter 的 name 要设好
-// ④ 遮罩尺寸 = overlay 点尺寸 × 屏幕 scale，bounds 变了就重生成 ⑤ 底色罩必须是渐变 ⑥ 去掉绿条。
-struct VariableBlurView: UIViewRepresentable {
-    var maxRadius: CGFloat = 12
-    func makeUIView(context: Context) -> VariableBlurUIView { VariableBlurUIView(maxRadius: maxRadius) }
-    func updateUIView(_ uiView: VariableBlurUIView, context: Context) {}
-}
-
-final class VariableBlurUIView: UIVisualEffectView {
-    private var filter: NSObject?
-    private var lastMaskSize: CGSize = .zero
-    static var debugLine = "blur: not created yet"
-    static var debugMask: UIImage?
-    /// 她要的：不是「我设了什么」，是「layer 上现在挂着什么」——运行一秒后和每次布局（滚动）都回读一遍
-    static var liveLine = "live: (not read yet)"
-    private func readBackLive(_ tag: String) {
-        guard let backdrop = subviews.first?.layer else { Self.liveLine = "live[\(tag)]: no backdrop"; return }
-        let fs = backdrop.filters ?? []
-        let names = fs.map { ($0 as AnyObject).value(forKey: "name") as? String ?? "?" }
-        let r = backdrop.value(forKeyPath: "filters.variableBlur.inputRadius")
-        let m = backdrop.value(forKeyPath: "filters.variableBlur.inputMaskImage")
-        var mdesc = "nil"
-        if let m { let cg = m as! CGImage; mdesc = "\(cg.width)x\(cg.height)" }
-        Self.liveLine = "live[\(tag)]: filters=\(fs.count)\(names) radius=\(r ?? "nil") mask=\(mdesc) enforced×\(Self.enforceCount)"
-        NSLog("[VariableBlur] %@", Self.liveLine)
-    }
-
-    init(maxRadius: CGFloat) {
-        super.init(effect: UIBlurEffect(style: .regular))
-        isUserInteractionEnabled = false
-        let cls = NSClassFromString("CAFilter") as AnyObject?
-        let made = cls?.perform(NSSelectorFromString("filterWithType:"), with: "variableBlur")
-        let f = made?.takeUnretainedValue() as? NSObject
-        // 初始先给一张 1×256 的（bounds 还是 0），真正按尺寸生成的在 layoutSubviews 里换上
-        let seed = Self.maskImage(size: CGSize(width: 1, height: 256), scale: 1)
-        guard let f, let seedCG = seed.cgImage, let backdrop = subviews.first?.layer else {
-            Self.debugLine = "blur FAILED: class=\(cls != nil) filter=\(f != nil) → hidden"
-            NSLog("[VariableBlur] %@", Self.debugLine)
-            isHidden = true
-            return
-        }
-        f.setValue("variableBlur", forKey: "name")          // ③ keyPath 要靠这个名字
-        f.setValue(maxRadius, forKey: "inputRadius")
-        f.setValue(seedCG, forKey: "inputMaskImage")         // ② CGImage；③ 先设 mask
-        f.setValue(true, forKey: "inputNormalizeEdges")
-        backdrop.filters = [f]                               // ③ 再挂到 layer
-        filter = f
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in self?.readBackLive("1s") }
-        for v in subviews.dropFirst() { v.alpha = 0 }        // 去掉系统提亮/染色层，只留模糊
-        Self.debugLine = "blur OK: \(type(of: f)) name=\(f.value(forKey: "name") ?? "-") radius=\(f.value(forKey: "inputRadius") ?? -1) filters=\(backdrop.filters?.count ?? 0)"
-        NSLog("[VariableBlur] %@", Self.debugLine)
-    }
-    required init?(coder: NSCoder) { fatalError() }
-
-    override func didMoveToWindow() {
-        super.didMoveToWindow()
-        if let w = window { subviews.first?.layer.setValue(w.screen.scale, forKey: "scale") }
-        refreshMask()
-    }
-    /// 系统重建子视图时立刻压住染色层（layoutSubviews 里还会再压一遍）
-    override func didAddSubview(_ subview: UIView) {
-        super.didAddSubview(subview)
-        if subview !== subviews.first { subview.alpha = 0 }
-    }
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        // 系统会重建 UIVisualEffectView 的子视图：除 backdrop 外那层染色（暗色下近黑）每次布局都重新藏掉
-        for v in subviews.dropFirst() { v.alpha = 0 }
-        refreshMask()
-        enforceFilter()
-        readBackLive("layout")
-    }
-    override func traitCollectionDidChange(_ previous: UITraitCollection?) {
-        super.traitCollectionDidChange(previous)
-        for v in subviews.dropFirst() { v.alpha = 0 }
-        enforceFilter()
-        readBackLive("trait")
-    }
-    /// 0823 真凶：系统重建 effect 时把 filters 换成默认的 [gaussianBlur, colorSaturate]，mask 一起丢。
-    /// 治法跟染色层一样——持久强制：layer 上不是且仅是我的 variableBlur，就先把 mask 设回 filter 再整组重挂。幂等。
-    private func enforceFilter() {
-        guard let f = filter, let backdrop = subviews.first?.layer else { return }
-        let names = (backdrop.filters ?? []).map { ($0 as AnyObject).value(forKey: "name") as? String ?? "" }
-        if names == ["variableBlur"] { return }
-        if let m = lastMaskCG { f.setValue(m, forKey: "inputMaskImage") }   // 先设 mask
-        backdrop.filters = [f]                                              // 再挂
-        Self.enforceCount += 1
-        NSLog("[VariableBlur] filters were %@ → re-applied variableBlur (#%d)", names.description, Self.enforceCount)
-    }
-    static var enforceCount = 0
-    private var lastMaskCG: CGImage?
-
-    /// ④ 按 overlay 的点尺寸 × scale 生成遮罩，尺寸没变不重做；③ 挂上之后改 mask 走 keyPath
-    private func refreshMask() {
-        guard filter != nil, let backdrop = subviews.first?.layer,
-              bounds.width > 0, bounds.height > 0, bounds.size != lastMaskSize else { return }
-        if (backdrop.filters ?? []).isEmpty, let f = filter { backdrop.filters = [f] }   // 被系统刷掉就重挂
-        // 她定的：遮罩像素 = 点尺寸 × 屏幕 scale（402×122pt@3x → 1206×366px），用断言锁死，改坏立刻崩带日志
-        let scale = window?.screen.scale ?? UIScreen.main.scale
-        let img = Self.maskImage(size: bounds.size, scale: scale)
-        guard let cg = img.cgImage else { return }
-        assert(cg.width == Int(bounds.width * scale) && cg.height == Int(bounds.height * scale),
-               "variableBlur mask 尺寸不对：cg=\(cg.width)x\(cg.height) 应为 \(Int(bounds.width * scale))x\(Int(bounds.height * scale))（bounds \(bounds.size) × scale \(scale)）")
-        filter?.setValue(cg, forKey: "inputMaskImage")                     // 设在 filter 对象上（重挂时带着）
-        backdrop.setValue(cg, forKeyPath: "filters.variableBlur.inputMaskImage")   // 已挂上的按 keyPath 更新
-        lastMaskCG = cg
-        lastMaskSize = bounds.size
-        Self.debugMask = img
-        Self.debugLine += " · cg=\(cg.width)x\(cg.height)px = \(Int(bounds.width))x\(Int(bounds.height))pt×\(Int(scale)) · tintHidden=\(subviews.dropFirst().allSatisfy { $0.alpha == 0 }) bg=\(messagesBlurBgLayer)"
-        NSLog("[VariableBlur] CGImage %dx%d px for bounds %@", cg.width, cg.height, NSCoder.string(for: bounds.size))
-    }
-
-    /// 竖向灰度遮罩：alpha = (1-t)^2，顶 100%、中点 25%、底 0%。UIGraphicsImageRenderer 的 y=0 在上。
-    static func maskImage(size: CGSize, scale: CGFloat) -> UIImage {
-        let fmt = UIGraphicsImageRendererFormat(); fmt.scale = scale; fmt.opaque = false
-        return UIGraphicsImageRenderer(size: size, format: fmt).image { ctx in
-            let colors = [UIColor.white.cgColor, UIColor.white.withAlphaComponent(0.25).cgColor, UIColor.white.withAlphaComponent(0).cgColor] as CFArray
-            let locs: [CGFloat] = [0, 0.5, 1]
-            if let g = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors, locations: locs) {
-                ctx.cgContext.drawLinearGradient(g, start: CGPoint(x: 0, y: 0), end: CGPoint(x: 0, y: size.height), options: [.drawsBeforeStartLocation, .drawsAfterEndLocation])
-            }
-        }
     }
 }
 
