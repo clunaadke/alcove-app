@@ -41,13 +41,17 @@ struct RootView: View {
                 thinkingEnabled: $thinkingEnabled,
                 thinkingKnown: thinkingKnown,
                 switchingThinking: switchingThinking,
-                onToggleThinking: toggleThinking
+                onToggleThinking: toggleThinking,
+                messagesTopBar: theme.isMessages ? { AnyView(messagesTopBar) } : nil
             )
                 .blur(radius: showHouseDrawer ? 5.0 : 0)
                 .animation(.easeOut(duration: 0.22), value: showHouseDrawer)
-            topBar
-                .blur(radius: showHouseDrawer ? 5.0 : 0)
-                .animation(.easeOut(duration: 0.22), value: showHouseDrawer)
+            // 信息主题的顶栏挂在 ChatView 的 safeAreaBar 里（系统才给它画顶部渐进模糊），这里不再叠一份
+            if !theme.isMessages {
+                topBar
+                    .blur(radius: showHouseDrawer ? 5.0 : 0)
+                    .animation(.easeOut(duration: 0.22), value: showHouseDrawer)
+            }
             if showTerminal {
                 ZStack {
                     Color(red: 0.1, green: 0.1, blue: 0.12).ignoresSafeArea()

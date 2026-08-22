@@ -11,6 +11,9 @@ struct ChatView: View {
     let thinkingKnown: Bool
     let switchingThinking: Bool
     let onToggleThinking: () -> Void
+    /// 0822 信息主题：真顶栏从 RootView 递进来挂到 safeAreaBar(.top)。
+    /// 真机验出来：底部挂真打字框有渐进模糊，顶部挂一块透明空气没有——系统只给真栏画。
+    var messagesTopBar: (() -> AnyView)? = nil
 
     @StateObject private var store = ChatStore()
     @StateObject private var wallpaperStore = ChatWallpaperStore()
@@ -271,7 +274,7 @@ struct ChatView: View {
                 // 关键两条：① 栏要用 safeAreaBar 挂（safeAreaInset 不触发底部模糊）；② 列表不翻转（本来就没翻）。
                 // 顶栏本体在 RootView 浮着，这里只挂一条同高的透明 bar 把「顶部有栏」告诉系统。
                 .safeAreaBar(edge: .top, spacing: 0) {
-                    if theme.isMessages { Color.clear.frame(height: 88) }
+                    if theme.isMessages, let bar = messagesTopBar { bar() }
                 }
                 .safeAreaBar(edge: .bottom, spacing: 0) {
                     if theme.isMessages && !paragraphSelectionMode { floatingInput }
