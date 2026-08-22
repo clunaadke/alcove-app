@@ -256,15 +256,26 @@ struct ChatView: View {
                                             theme: theme)
                                 .id("typing")
                         }
-                        Color.clear.frame(height: bottomChromeHeight + 12
+                        // 信息主题：输入栏挂在安全区里，列表不用再替它留高
+                        Color.clear.frame(height: (theme.isMessages ? 0 : bottomChromeHeight) + 12
                                           + (showMiniTerminal ? miniTerminalHeight + 18 : 0))
                         Color.clear.frame(height: 1).id("tail")
                             .onAppear { atBottom = true }
                             .onDisappear { atBottom = false }
                     }
                     .padding(.horizontal, 12)
-                    .padding(.top, theme.isMessages ? 96 : 52)
+                    .padding(.top, theme.isMessages ? 8 : 52)
                 }
+                // 0822 她要的 iMessage 那种「上顶下顶」：不是遮罩擦淡，是顶栏/输入栏底下一截渐进毛玻璃。
+                // iOS 26 自带（scrollEdgeEffectStyle .soft），但它只认挂在安全区里的栏——
+                // 所以信息主题把顶栏高度和输入栏都塞进 safeAreaInset，别的主题结构一律不动。
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    if theme.isMessages { Color.clear.frame(height: 88) }
+                }
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    if theme.isMessages && !paragraphSelectionMode { floatingInput }
+                }
+                .modifier(SoftScrollEdgeModifier(enabled: theme.isMessages))
                 .scrollDismissesKeyboard(.interactively)
                 .onTapGesture { inputFocused = false }
                 .simultaneousGesture(
@@ -272,11 +283,11 @@ struct ChatView: View {
                         if store.live?.active == true { followLiveOutput = false }
                     }
                 )
-                .mask(edgeFadeMask)   // 0822 她看了真机：系统 .soft 等于没有，信息主题也走自家渐隐
+                .mask(theme.isMessages ? AnyView(Color.black) : AnyView(edgeFadeMask))
 
                 if paragraphSelectionMode {
                     paragraphSelectionToolbar
-                } else {
+                } else if !theme.isMessages {
                     floatingInput
                 }
 
@@ -842,7 +853,7 @@ struct ChatView: View {
             }
             .modifier(InteractiveInputGlassModifier(fallbackTint: theme.capsuleTint, enabled: !theme.isMessages))
             .shadow(color: .black.opacity(theme.isMessages ? 0 : 0.05), radius: 14, x: 0, y: 2)
-            .padding(.horizontal, 14)
+            .padding(.horizontal, theme.isMessages ? 0 : 14)
         }
         .padding(.bottom, 0)
         .background(GeometryReader { geo in
@@ -885,8 +896,13 @@ struct ChatView: View {
             Image(systemName: "plus")
                 .font(.system(size: 18, weight: .medium))
                 .foregroundColor(theme.textDim)
-                .frame(width: 36, height: 36)
-                .background((theme.isMessages ? theme.bubbleAI : theme.glassTint.opacity(theme.isDark ? 0.64 : 0.82)), in: Circle())
+                .frame(width: theme.isMessages ? 40 : 36, height: theme.isMessages ? 40 : 36)
+                .modifier(MessagesGlassModifier(
+                    face: theme.isDark ? Color(red: 28/255, green: 28/255, blue: 30/255) : Color.white,
+                    line: theme.isDark ? Color.white.opacity(0.10) : Color.black.opacity(0.06),
+                    shadow: Color.black.opacity(theme.isDark ? 0.35 : 0.10),
+                    circle: true, enabled: theme.isMessages))
+                .background((theme.isMessages ? Color.clear : theme.glassTint.opacity(theme.isDark ? 0.64 : 0.82)), in: Circle())
         }
     }
 
@@ -1004,7 +1020,9 @@ struct ChatView: View {
     // 0822 她要的 iMessage 同款输入栏：三件各自独立——左边一个圆加号、中间细边框单行框、
     // 框里右边平时是话筒，有字／在回的时候换成蓝圆（发送／停止）。没有大玻璃胶囊。
     private var messagesComposerRow: some View {
-        let line = theme.isDark ? Color.white.opacity(0.22) : Color.black.opacity(0.18)
+        let line = theme.isDark ? Color.white.opacity(0.10) : Color.black.opacity(0.06)
+        let face = theme.isDark ? Color(red: 28/255, green: 28/255, blue: 30/255) : Color.white
+        let shadow = Color.black.opacity(theme.isDark ? 0.35 : 0.10)
         let showBlue = isGenerating || canSend || recorder.isRecording || store.heldCount > 0
         return HStack(alignment: .bottom, spacing: 10) {
             if recorder.isRecording {
@@ -1012,8 +1030,8 @@ struct ChatView: View {
                     Image(systemName: "xmark")
                         .font(.system(size: 15, weight: .medium))
                         .foregroundColor(theme.textDim)
-                        .frame(width: 34, height: 34)
-                        .background(theme.bubbleAI, in: Circle())
+                        .frame(width: 40, height: 40)
+                        .modifier(MessagesGlassModifier(face: face, line: line, shadow: shadow, circle: true))
                 }
                 .buttonStyle(.plain)
             } else {
@@ -1038,12 +1056,12 @@ struct ChatView: View {
                 Button(action: performDynamicComposerAction) {
                     ZStack(alignment: .topTrailing) {
                         Image(systemName: isGenerating ? "stop.fill"
-                              : (canSend || recorder.isRecording || store.heldCount > 0) ? "arrow.up" : "waveform")
-                            .font(.system(size: isGenerating ? 12 : (showBlue ? 15 : 17), weight: .semibold))
+                              : (canSend || recorder.isRecording || store.heldCount > 0) ? "arrow.up" : "mic")
+                            .font(.system(size: isGenerating ? 12 : (showBlue ? 15 : 17), weight: showBlue ? .semibold : .regular))
                             .contentTransition(.symbolEffect(.replace))
                             .animation(.easeInOut(duration: 0.18), value: isGenerating)
                             .foregroundColor(showBlue ? .white : theme.textDim)
-                            .frame(width: 28, height: 28)
+                            .frame(width: 30, height: 30)
                             .background(showBlue ? Color(uiColor: .systemBlue) : Color.clear, in: Circle())
                         if store.heldCount > 0 {
                             Text("\(store.heldCount)")
@@ -1057,15 +1075,15 @@ struct ChatView: View {
                 }
                 .buttonStyle(.plain)
             }
-            .padding(.leading, 14)
-            .padding(.trailing, 4)
-            .padding(.vertical, 4)
-            .background(theme.isDark ? Color.black : Color.white, in: Capsule())
-            .overlay(Capsule().stroke(line, lineWidth: 1))
+            .padding(.leading, 16)
+            .padding(.trailing, 6)
+            .padding(.vertical, 5)
+            .frame(minHeight: 40)
+            .modifier(MessagesGlassModifier(face: face, line: line, shadow: shadow, circle: false))
             .contentShape(Capsule())
             .onTapGesture { if !recorder.isRecording { inputFocused = true } }
         }
-        .padding(.init(top: 6, leading: 6, bottom: 8, trailing: 6))
+        .padding(.init(top: 6, leading: 12, bottom: 4, trailing: 12))
     }
 
     private func holdCurrentDraft() {
@@ -4301,6 +4319,48 @@ struct RecallPop: View {
             }
         }
         .presentationDetents([.medium, .large])
+    }
+}
+
+// 0822 信息主题：iOS 26 滚动边缘渐进毛玻璃（iMessage 顶栏/输入栏底下那截）。老系统没有就原样。
+// 0822 她要的打字框材质：iOS 26 真玻璃（圆加号 + 胶囊），老系统退回白片 + 细线 + 软阴影
+private struct MessagesGlassModifier: ViewModifier {
+    let face: Color
+    let line: Color
+    let shadow: Color
+    let circle: Bool
+    var enabled: Bool = true
+    @ViewBuilder func body(content: Content) -> some View {
+        if !enabled {
+            content
+        } else if #available(iOS 26.0, *) {
+            if circle {
+                content.glassEffect(.regular.interactive(), in: Circle())
+            } else {
+                content.glassEffect(.regular.interactive(), in: Capsule())
+            }
+        } else {
+            if circle {
+                content.background(face, in: Circle())
+                    .overlay(Circle().stroke(line, lineWidth: 0.5))
+                    .shadow(color: shadow, radius: 6, y: 2)
+            } else {
+                content.background(face, in: Capsule())
+                    .overlay(Capsule().stroke(line, lineWidth: 0.5))
+                    .shadow(color: shadow, radius: 8, y: 2)
+            }
+        }
+    }
+}
+
+private struct SoftScrollEdgeModifier: ViewModifier {
+    let enabled: Bool
+    @ViewBuilder func body(content: Content) -> some View {
+        if enabled, #available(iOS 26.0, *) {
+            content.scrollEdgeEffectStyle(.soft, for: .vertical)
+        } else {
+            content
+        }
     }
 }
 
