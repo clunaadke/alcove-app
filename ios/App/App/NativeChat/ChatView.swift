@@ -4472,6 +4472,11 @@ final class VariableBlurUIView: UIVisualEffectView {
         if let w = window { subviews.first?.layer.setValue(w.screen.scale, forKey: "scale") }
         refreshMask()
     }
+    /// 系统重建子视图时立刻压住染色层（layoutSubviews 里还会再压一遍）
+    override func didAddSubview(_ subview: UIView) {
+        super.didAddSubview(subview)
+        if subview !== subviews.first { subview.alpha = 0 }
+    }
     override func layoutSubviews() {
         super.layoutSubviews()
         // 系统会重建 UIVisualEffectView 的子视图：除 backdrop 外那层染色（暗色下近黑）每次布局都重新藏掉
@@ -4484,14 +4489,16 @@ final class VariableBlurUIView: UIVisualEffectView {
         guard filter != nil, let backdrop = subviews.first?.layer,
               bounds.width > 0, bounds.height > 0, bounds.size != lastMaskSize else { return }
         if (backdrop.filters ?? []).isEmpty, let f = filter { backdrop.filters = [f] }   // 被系统刷掉就重挂
-        // 她排查第 1 步：上一版日志 1206x366 已经是 cg.width/cg.height（402x122pt × 3），没有双重缩放；
-        // 为了彻底去掉歧义，按她二选一改成「点尺寸配 scale=1」：CGImage 像素数 = 点数
-        let img = Self.maskImage(size: bounds.size, scale: 1)
+        // 她定的：遮罩像素 = 点尺寸 × 屏幕 scale（402×122pt@3x → 1206×366px），用断言锁死，改坏立刻崩带日志
+        let scale = window?.screen.scale ?? UIScreen.main.scale
+        let img = Self.maskImage(size: bounds.size, scale: scale)
         guard let cg = img.cgImage else { return }
+        assert(cg.width == Int(bounds.width * scale) && cg.height == Int(bounds.height * scale),
+               "variableBlur mask 尺寸不对：cg=\(cg.width)x\(cg.height) 应为 \(Int(bounds.width * scale))x\(Int(bounds.height * scale))（bounds \(bounds.size) × scale \(scale)）")
         backdrop.setValue(cg, forKeyPath: "filters.variableBlur.inputMaskImage")
         lastMaskSize = bounds.size
         Self.debugMask = img
-        Self.debugLine += " · cg=\(cg.width)x\(cg.height)px bounds=\(Int(bounds.width))x\(Int(bounds.height))pt bg=\(messagesBlurBgLayer)"
+        Self.debugLine += " · cg=\(cg.width)x\(cg.height)px = \(Int(bounds.width))x\(Int(bounds.height))pt×\(Int(scale)) · tintHidden=\(subviews.dropFirst().allSatisfy { $0.alpha == 0 }) bg=\(messagesBlurBgLayer)"
         NSLog("[VariableBlur] CGImage %dx%d px for bounds %@", cg.width, cg.height, NSCoder.string(for: bounds.size))
     }
 
