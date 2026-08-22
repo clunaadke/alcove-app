@@ -1552,9 +1552,19 @@ private struct SDKForgeSheet: View {
 
                     if mode == "latest" {
                         VStack(alignment: .leading, spacing: 8) {
-                            HStack { Text("保留轮次"); Spacer(); Text("\(Int(retain)) / \(total)") }
-                            Slider(value: $retain, in: 1...Double(max(total, 1)), step: 1)
-                                .onChange(of: retain) { _ in Task { await loadPreview() } }
+                            HStack { Text("保留轮次"); Spacer(); Text("\(Int(min(retain, Double(max(total, 1))))) / \(total)") }
+                            // 0822 她点开就闪退：首帧预览还没回来 total=0，滑条范围成了 1...1 而值是 20，
+                            // 零宽范围 SwiftUI 算出 NaN 直接炸。没拉到数据/只有一轮时不画滑条，值也钳在范围里。
+                            if total > 1 {
+                                Slider(value: Binding(
+                                    get: { min(max(retain, 1), Double(total)) },
+                                    set: { retain = min(max($0, 1), Double(total)) }
+                                ), in: 1...Double(total), step: 1)
+                                    .onChange(of: retain) { _ in Task { await loadPreview() } }
+                            } else {
+                                Text(preview.isEmpty ? "正在读取轮次…" : "只有 \(total) 轮，全部带走")
+                                    .font(.system(size: 12)).foregroundStyle(.secondary)
+                            }
                         }
                     } else {
                         LazyVStack(spacing: 8) {
