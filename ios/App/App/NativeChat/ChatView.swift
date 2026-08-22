@@ -293,6 +293,8 @@ struct ChatView: View {
                         }
                         .frame(height: h)
                         .frame(maxWidth: .infinity)
+                        // 0823 排查模式（她要的 1–4 项证据）：红框标出实际 frame，角上印滤镜/遮罩/半径/方向
+                        .overlay { if messagesBlurDebug { MessagesBlurDebugOverlay(frameHeight: h, safeTop: topSafeInset) } }
                         .ignoresSafeArea(edges: .top)
                         .allowsHitTesting(false)
                     }
@@ -4362,6 +4364,37 @@ struct RecallPop: View {
     }
 }
 
+// 0823 排查开关：true 时模糊区画红框 + 印诊断信息。排查完改回 false。
+let messagesBlurDebug = true
+
+struct MessagesBlurDebugOverlay: View {
+    let frameHeight: CGFloat
+    let safeTop: CGFloat
+    @State private var tick = 0
+    private let timer = Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()
+    var body: some View {
+        ZStack(alignment: .bottomLeading) {
+            Rectangle().stroke(Color.red, lineWidth: 2)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("frame h=\(Int(frameHeight)) (safeTop \(Int(safeTop)) + 60)")
+                Text(VariableBlurUIView.debugLine + " · tick \(tick)")
+                Text("edgeEffectHidden(top)=true · soft(bottom)")
+            }
+            .font(.system(size: 9, design: .monospaced))
+            .foregroundColor(.red)
+            .padding(3)
+            .background(Color.black.opacity(0.6))
+            // 遮罩图本尊：白＝糊得重。上白下透明才对
+            Image(uiImage: VariableBlurUIView.maskImage())
+                .resizable()
+                .frame(width: 10, height: frameHeight)
+                .background(Color.green.opacity(0.5))
+                .frame(maxWidth: .infinity, alignment: .trailing)
+        }
+        .onReceive(timer) { _ in tick += 1 }
+    }
+}
+
 // 0823 顶部手搓可变模糊（她写死的参数）：UIVisualEffectView 的 backdrop 换 CAFilter variableBlur，
 // 遮罩图不透明处糊得重、透明处不糊。自签侧载，私有 API 她点头。
 // 保险两条：① 滤镜建不起来 → 整个 view 隐藏，什么都不画；② 系统每次布局可能把 filters 刷掉 → layoutSubviews 里重挂。
@@ -4373,13 +4406,18 @@ struct VariableBlurView: UIViewRepresentable {
 
 final class VariableBlurUIView: UIVisualEffectView {
     private var filter: NSObject?
+    /// 排查用：滤镜建没建起来、遮罩尺寸、半径、filters 挂没挂上
+    static var debugLine = "blur: not created yet"
     init(maxRadius: CGFloat) {
         super.init(effect: UIBlurEffect(style: .regular))
         isUserInteractionEnabled = false
-        guard let cls = NSClassFromString("CAFilter") as AnyObject?,
-              let made = cls.perform(NSSelectorFromString("filterWithType:"), with: "variableBlur"),
-              let f = made.takeUnretainedValue() as? NSObject,
-              let mask = Self.maskImage().cgImage else {
+        let cls = NSClassFromString("CAFilter") as AnyObject?
+        let made = cls?.perform(NSSelectorFromString("filterWithType:"), with: "variableBlur")
+        let f = made?.takeUnretainedValue() as? NSObject
+        let mask = Self.maskImage().cgImage
+        guard let f, let mask else {
+            Self.debugLine = "blur FAILED: class=\(cls != nil) filter=\(f != nil) mask=\(mask != nil) → hidden"
+            NSLog("[VariableBlur] %@", Self.debugLine)
             isHidden = true   // 建不起来就不画，别退化成整块糊
             return
         }
@@ -4388,6 +4426,10 @@ final class VariableBlurUIView: UIVisualEffectView {
         f.setValue(true, forKey: "inputNormalizeEdges")
         filter = f
         applyFilter()
+        let r = (f.value(forKey: "inputRadius") as? NSNumber)?.doubleValue ?? -1
+        let applied = (subviews.first?.layer.filters?.count ?? 0)
+        Self.debugLine = "blur OK: \(type(of: f)) radius=\(r) mask=\(mask.width)x\(mask.height) filters=\(applied) subviews=\(subviews.count)"
+        NSLog("[VariableBlur] %@", Self.debugLine)
     }
     required init?(coder: NSCoder) { fatalError() }
     private func applyFilter() {
