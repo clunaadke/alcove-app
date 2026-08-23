@@ -1577,6 +1577,7 @@ private struct ChatChannelPanel: View {
     @State private var loading = true
     @State private var working = false
     @State private var message = ""
+    @State private var confirmSwitchMode = false   // 0823 切到 SDK 时选接旧窗还是开新窗
     @State private var confirmSync = false
     @State private var confirmClearSession = false
     @State private var sdkSessionActive = false
@@ -1659,11 +1660,22 @@ private struct ChatChannelPanel: View {
             }
             Spacer()
             if activeChannel != panel {
-                Button { Task { await switchChannel() } } label: {
+                Button {
+                    // 0823 她要的：CLI 切回 SDK 时能选「接着旧窗」还是「开新窗」。旧窗没了就直接开新的
+                    if panel == "sdk" && sdkSessionActive { confirmSwitchMode = true }
+                    else { Task { await switchChannel() } }
+                } label: {
                     if working { ProgressView().controlSize(.small) }
                     else { Text("切到这里") }
                 }
                 .buttonStyle(.borderedProminent).disabled(working)
+                .confirmationDialog("切到 SDK", isPresented: $confirmSwitchMode, titleVisibility: .visible) {
+                    Button("接着旧窗，把 CLI 这 \(handoffTurns) 轮带过去") { Task { await switchChannel(keepSession: true) } }
+                    Button("开新窗，带 CLI 这 \(handoffTurns) 轮") { Task { await switchChannel(keepSession: false) } }
+                    Button("取消", role: .cancel) {}
+                } message: {
+                    Text("旧窗上下文 \(contextLine)。接着旧窗＝上次 SDK 聊的都还在，CLI 这几轮当交接塞给他；开新窗＝只带 CLI 这几轮。")
+                }
             } else {
                 Label("已连接", systemImage: "checkmark.circle.fill")
                     .font(.system(size: 13, weight: .medium)).foregroundStyle(.green)
@@ -1885,18 +1897,18 @@ private struct ChatChannelPanel: View {
         working = false
     }
 
-    @MainActor private func switchChannel() async {
+    @MainActor private func switchChannel(keepSession: Bool = false) async {
         working = true; message = ""
         do {
             let obj = try await AlcoveAPI.postRaw("/api/sdk-shadow/switch", body: [
-                "channel": panel, "handoff_turns": handoffTurns
+                "channel": panel, "handoff_turns": handoffTurns, "keep_session": keepSession
             ])
             guard obj["ok"] as? Bool == true else {
                 throw NSError(domain: "Channel", code: 1,
                               userInfo: [NSLocalizedDescriptionKey: obj["error"] as? String ?? "切换失败"])
             }
             activeChannel = obj["channel"] as? String ?? panel
-            message = "已切到 \(activeChannel.uppercased())"
+            message = "已切到 \(activeChannel.uppercased())" + (panel == "sdk" ? (keepSession ? "，接着旧窗" : "，下一句开新窗") : "")
         } catch { message = "切换失败：\(error.localizedDescription)" }
         working = false
     }
