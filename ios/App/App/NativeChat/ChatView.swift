@@ -2530,7 +2530,9 @@ struct MessageRow: View {
                 }
                 // 0819 活动脚印（她把活动卡片换掉了）：气泡外面一行浅灰斜体，
                 // 「逛了花园 写了念头」，词之间空格隔开。轻到不特意看就滑过去了。
-                if !isUser && !msg.trace.isEmpty && !theme.isMessages {
+                // 0823 她报的：信息主题里这行整个不见。原来这儿写死了不给信息主题，
+                // 跟过程点那个开关没关系，她把思绪打开也照样没有。改成跟着开关走。
+                if !isUser && !msg.trace.isEmpty && (!theme.isMessages || showProcessDots) {
                     Text(msg.trace.joined(separator: "  "))
                         .font(.system(size: 11.5, design: .serif))
                         .italic()
