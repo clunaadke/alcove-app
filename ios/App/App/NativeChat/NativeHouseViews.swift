@@ -6780,7 +6780,17 @@ private struct NativeForgeView: View {
     private var theme: AlcoveTheme { .panelNamed(themeName) }
 
     private var activePreview: [String: Any] { mode == .picker ? pickPreview : preview }
-    private var totalRounds: Int { (preview["total_rounds"] as? Int) ?? 0 }
+    // 0823 她报的「拖动条数不更新」：滑块上限以前用 total_rounds（整个文件 234 轮），
+    // 可后端 generation_only 只在这一代里挑，上一代的 170 轮拖了也不算，拖过 64 数字就钉死。
+    // 上限改成这一代真能保留的轮数，拖到哪儿是哪儿。
+    private var totalRounds: Int {
+        let total = (preview["total_rounds"] as? Int) ?? 0
+        if (preview["generation_only"] as? Bool) == true {
+            return max(total - ((preview["dropped_prev_gen_rounds"] as? Int) ?? 0), 0)
+        }
+        return total
+    }
+    @State private var previewSeq = 0   // 拖得快时请求乱序回来，只认最后发出去那一个
     private var retainedRounds: Int { (activePreview["retained_rounds"] as? Int) ?? 0 }
     private var estimatedTokens: Int { (activePreview["estimated_tokens"] as? Int) ?? 0 }
     private var valid: Bool { (activePreview["valid"] as? Bool) ?? false }
@@ -7103,7 +7113,11 @@ private struct NativeForgeView: View {
 
     private func loadPreview() async {
         let r = Int(retain)
+        previewSeq += 1
+        let mySeq = previewSeq
         if let obj = try? await NativeHouseAPI.object("/api/forge?retain=\(r)") {
+            // 她拖一下滑块会连发十几个请求，慢的那个最后才回来把快的盖掉，数字就倒着跳。只认最新那个
+            guard mySeq == previewSeq else { return }
             preview = obj
             if loading {
                 retain = Double((obj["retained_rounds"] as? Int) ?? r)
