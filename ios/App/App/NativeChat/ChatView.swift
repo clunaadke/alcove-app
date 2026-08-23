@@ -1565,6 +1565,7 @@ private struct ChatChannelPanel: View {
     @Environment(\.dismiss) private var dismiss
     @State private var panel = "cli"
     @State private var handoffTurns = 12
+    @State private var chatRounds = 50        // 0823 后端 status 回的 chat_rounds，给「带几轮」滑块当上限
     @State private var toolMode = "disabled"
     @State private var sdkPrompt = ""
     @State private var sdkIdentity = ""
@@ -1756,7 +1757,16 @@ private struct ChatChannelPanel: View {
     private var handoffControl: some View {
         VStack(alignment: .leading, spacing: 6) {
             sectionTitle("切换时带多少轮纯对话")
-            Stepper("\(handoffTurns) 轮", value: $handoffTurns, in: 1...50)
+            // 0823 她要的：跟 CLI forge 一样拉滑块，不再卡 50。上限＝聊天页她说过的总轮数（后端 chat_rounds），
+            // 后端自己封顶 500，再多行李新窗也装不下。
+            HStack {
+                Slider(value: Binding(get: { Double(handoffTurns) },
+                                      set: { handoffTurns = Int($0.rounded()) }),
+                       in: 1...Double(max(min(chatRounds, 500), 50)), step: 1)
+                Text("\(handoffTurns) / \(max(min(chatRounds, 500), 50))")
+                    .font(.system(size: 13, design: .monospaced))
+                    .frame(minWidth: 74, alignment: .trailing)
+            }
             Text("一轮按你一句＋他一轮正文回复计算，不带 Thought process、工具调用和工具结果。")
                 .font(.system(size: 12)).foregroundStyle(.secondary)
             // 0822 她要的：当前这一窗已经聊了多少轮，cli / sdk 各自的数（这一代，forge 之后重新数）
@@ -1813,6 +1823,7 @@ private struct ChatChannelPanel: View {
             panel = activeChannel
             let cfg = obj["config"] as? [String: Any] ?? [:]
             handoffTurns = (cfg["handoff_turns"] as? NSNumber)?.intValue ?? 12
+            chatRounds = (obj["chat_rounds"] as? NSNumber)?.intValue ?? 50
             toolMode = cfg["tool_mode"] as? String ?? "disabled"
             sdkPrompt = cfg["sdk_prompt"] as? String ?? ""
             sdkSessionActive = !((cfg["sdk_session_id"] as? String) ?? "").isEmpty
