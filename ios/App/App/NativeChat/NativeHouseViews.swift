@@ -6780,9 +6780,8 @@ private struct NativeForgeView: View {
     private var theme: AlcoveTheme { .panelNamed(themeName) }
 
     private var activePreview: [String: Any] { mode == .picker ? pickPreview : preview }
-    // 0823 她报的「拖动条数不更新」：滑块上限以前用 total_rounds（整个文件 234 轮），
-    // 可后端 generation_only 只在这一代里挑，上一代的 170 轮拖了也不算，拖过 64 数字就钉死。
-    // 上限改成这一代真能保留的轮数，拖到哪儿是哪儿。
+    // 0823 她定的：滑块跟挑选行李一样数全部对话，后端已改成滑块不分代（只有一键打包 9999 限这一代）。
+    // 这里留着兜底：万一后端回 generation_only，上限就只数这一代，免得拖过去数字钉死。
     private var totalRounds: Int {
         let total = (preview["total_rounds"] as? Int) ?? 0
         if (preview["generation_only"] as? Bool) == true {
