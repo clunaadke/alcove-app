@@ -11,6 +11,7 @@ final class ChatStore: ObservableObject {
     @Published var loading = true
     @Published var loadingOlder = false
     @Published var hasOlder = true
+    @Published private(set) var isViewingHistory = false
     @Published var connectionError = false
     @Published var heldCount = 0
     @Published var modelLabel = ""
@@ -213,6 +214,7 @@ final class ChatStore: ObservableObject {
             let recs = try await AlcoveAPI.history(limit: 300)
             messages = recs
             lastTs = recs.last?.ts
+            isViewingHistory = false
             loading = false
             connectionError = false
         } catch {
@@ -239,8 +241,19 @@ final class ChatStore: ObservableObject {
         do {
             let page = try await AlcoveAPI.history(around: ts)
             messages = page
-            lastTs = page.last?.ts
             hasOlder = true
+            isViewingHistory = true
+        } catch { connectionError = true }
+    }
+
+    func returnToLatest() async {
+        do {
+            let recs = try await AlcoveAPI.history(limit: 300)
+            messages = recs
+            lastTs = recs.last?.ts
+            hasOlder = recs.count >= 300
+            isViewingHistory = false
+            connectionError = false
         } catch { connectionError = true }
     }
 
@@ -489,7 +502,7 @@ final class ChatStore: ObservableObject {
     private func pollOnce() async {
         do {
             let r = try await AlcoveAPI.poll(since: lastTs)
-            if !r.records.isEmpty {
+            if !isViewingHistory && !r.records.isEmpty {
                 appendNew(r.records)
             }
             if let lt = r.lastTs, !lt.isEmpty { lastTs = lt }

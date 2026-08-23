@@ -155,6 +155,13 @@ struct RootView: View {
         .onReceive(NotificationCenter.default.publisher(for: .alcoveJumpToMessage)) { _ in
             housePage = nil
         }
+        .onReceive(NotificationCenter.default.publisher(for: .alcoveRequestJumpToMessage)) { note in
+            guard let ts = note.object as? String, !ts.isEmpty else { return }
+            housePage = nil
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.48) {
+                NotificationCenter.default.post(name: .alcoveJumpToMessage, object: ts)
+            }
+        }
         .sheet(isPresented: $showPermissions) {
             PermissionsView()
         }
@@ -255,7 +262,7 @@ struct RootView: View {
                 Spacer(minLength: 0)
                 HStack(alignment: .center, spacing: 0) {
                     topBarControl("music.note", size: 14) { presentHouse(.music) }
-                    topBarControl("checklist", size: 13) { presentHouse(.checklist) }
+                    topBarControl("magnifyingglass", size: 14) { presentHouse(.search) }
                     topBarControl("line.3.horizontal", size: 15) { presentHouse(.sidebar) }
                 }
                 .padding(.horizontal, 2)
@@ -306,8 +313,8 @@ struct RootView: View {
                     topBarControl("music.note", size: 14) {
                         presentHouse(.music)
                     }
-                    topBarControl("checklist", size: 13) {
-                        presentHouse(.checklist)
+                    topBarControl("magnifyingglass", size: 14) {
+                        presentHouse(.search)
                     }
                     topBarControl("line.3.horizontal", size: 15) {
                         presentHouse(.sidebar)

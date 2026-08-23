@@ -228,9 +228,13 @@ struct NativeHouseSheet: View {
                 case .clockwork:
                     ClockworkView()
                 case .search:
-                    GlassSearchView()
+                    GlassSearchView(openFavorites: {
+                        withAnimation(.easeInOut(duration: 0.18)) { route = .favorites }
+                    })
                 case .favorites:
-                    GlassFavoritesView()
+                    GlassFavoritesView(openSearch: {
+                        withAnimation(.easeInOut(duration: 0.18)) { route = .search }
+                    })
                 case .usage:
                     NativeUsageView()
                 case .workbench:
@@ -789,7 +793,7 @@ private struct NativeSidebarView: View {
                     ForEach(play) { destinationButton($0) }
                 }
                 sectionTitle("Chat")
-                destinationRow([.roundtable, .search, .favorites, .forge])
+                destinationRow([.roundtable, .checklist, .forge])
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 28)

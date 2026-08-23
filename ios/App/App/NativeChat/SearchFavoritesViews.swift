@@ -12,6 +12,7 @@ import SwiftUI
 // MARK: - 搜索
 
 struct GlassSearchView: View {
+    var openFavorites: () -> Void = {}
     @Environment(\.dismiss) private var dismiss
     @AppStorage("alcoveTheme") private var themeName = "haven"
     @AppStorage("userName") private var userName = "Luna"
@@ -22,6 +23,7 @@ struct GlassSearchView: View {
     @State private var filterType = "all"
     @State private var searching = false
     @State private var searched = false
+    @State private var selectedDay = ""
     @State private var month = Date()
     @State private var dayCounts: [String: Int] = [:]
     @State private var picking = false
@@ -40,6 +42,7 @@ struct GlassSearchView: View {
             GlassBackdrop(palette: palette)
             VStack(spacing: 0) {
                 GlassHeader(title: "Search", palette: palette, onBack: { dismiss() },
+                            switchTitle: "Favorites", onSwitch: openFavorites,
                             trailing: AnyView(pickToggle))
                 searchField
                 GlassChips(options: types, selection: $filterType, palette: palette) { _ in
@@ -105,7 +108,14 @@ struct GlassSearchView: View {
     private var list: some View {
         ScrollView {
             LazyVStack(spacing: 10) {
-                if !searched { calendarCard }
+                if !searched || !selectedDay.isEmpty { calendarCard }
+                if !selectedDay.isEmpty {
+                    Text("\(selectedDay) · \(results.count) 条")
+                        .font(.system(size: 11.5, design: .monospaced))
+                        .foregroundColor(palette.ink3)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 4)
+                }
                 ForEach(results) { message in
                     row(message)
                 }
@@ -128,8 +138,7 @@ struct GlassSearchView: View {
             if picking {
                 if isPicked { picked.remove(message.uid) } else { picked.insert(message.uid) }
             } else {
-                NotificationCenter.default.post(name: .alcoveJumpToMessage, object: message.ts)
-                dismiss()
+                NotificationCenter.default.post(name: .alcoveRequestJumpToMessage, object: message.ts)
             }
         } label: {
             HStack(alignment: .top, spacing: 11) {
@@ -254,7 +263,7 @@ struct GlassSearchView: View {
                     if let date {
                         let key = dayKey(date)
                         let count = dayCounts[key]
-                        Button { Task { await jumpToDay(key) } } label: {
+                        Button { Task { await showDay(key) } } label: {
                             VStack(spacing: 1) {
                                 Text("\(calendar.component(.day, from: date))")
                                     .font(.system(size: 12, design: .serif))
@@ -266,7 +275,8 @@ struct GlassSearchView: View {
                             .frame(maxWidth: .infinity, minHeight: 34)
                             .background(
                                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                    .fill(count == nil ? Color.clear : palette.acc.opacity(0.11)))
+                                    .fill(key == selectedDay ? palette.acc.opacity(0.24) :
+                                          count == nil ? Color.clear : palette.acc.opacity(0.11)))
                         }
                         .buttonStyle(.plain)
                         .disabled(count == nil)
@@ -314,20 +324,24 @@ struct GlassSearchView: View {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
         // 不打关键词、只点一类，也要能翻——这是她要的"语音链接也能搜"
         guard !q.isEmpty || filterType != "all" else {
-            results = []; searched = false; return
+            results = []; searched = false; selectedDay = ""; return
         }
         searching = true
         defer { searching = false }
         results = (try? await AlcoveAPI.searchHistory(
             query: q, type: filterType, limit: 800)) ?? []
+        selectedDay = ""
         searched = true
     }
 
-    @MainActor private func jumpToDay(_ day: String) async {
-        guard let first = (try? await AlcoveAPI.searchHistory(day: day, limit: 1))?.first
-        else { return }
-        NotificationCenter.default.post(name: .alcoveJumpToMessage, object: first.ts)
-        dismiss()
+    @MainActor private func showDay(_ day: String) async {
+        searching = true
+        defer { searching = false }
+        filterType = "all"
+        query = ""
+        results = (try? await AlcoveAPI.searchHistory(day: day, limit: 2000)) ?? []
+        selectedDay = day
+        searched = true
     }
 
     @MainActor private func keep() async {
@@ -393,6 +407,7 @@ private struct FavoriteEntry: Identifiable {
 }
 
 struct GlassFavoritesView: View {
+    var openSearch: () -> Void = {}
     @Environment(\.dismiss) private var dismiss
     @AppStorage("alcoveTheme") private var themeName = "haven"
     @AppStorage("userName") private var userName = "Luna"
@@ -403,6 +418,9 @@ struct GlassFavoritesView: View {
     @State private var typeFilter = "all"
     @State private var loading = true
     @State private var opened: FavoriteEntry?
+    @State private var picking = false
+    @State private var picked: Set<Int> = []
+    @State private var deleting = false
 
     private var palette: GlassPalette { .named(themeName) }
     private let kinds: [(String, String)] = [
@@ -413,10 +431,12 @@ struct GlassFavoritesView: View {
     ]
 
     var body: some View {
-        ZStack {
+        ZStack(alignment: .bottom) {
             GlassBackdrop(palette: palette)
             VStack(spacing: 0) {
-                GlassHeader(title: "Favorites", palette: palette, onBack: { dismiss() })
+                GlassHeader(title: "Favorites", palette: palette, onBack: { dismiss() },
+                            switchTitle: "Search", onSwitch: openSearch,
+                            trailing: AnyView(deleteToggle))
                 GlassChips(options: kinds, selection: $kindFilter, palette: palette) { _ in
                     Task { await load() }
                 }
@@ -427,12 +447,30 @@ struct GlassFavoritesView: View {
                 .padding(.top, 7)
                 content
             }
+            if picking && !picked.isEmpty { deleteBar }
         }
         .task { await load() }
         .sheet(item: $opened) { entry in
             FavoriteThreadSheet(entry: entry, palette: palette,
                                 userName: userName, assistantName: assistantName)
         }
+    }
+
+    private var deleteToggle: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.16)) {
+                picking.toggle()
+                if !picking { picked.removeAll() }
+            }
+        } label: {
+            Image(systemName: picking ? "checkmark.circle.fill" : "checkmark.circle")
+                .font(.system(size: 15, weight: .light))
+                .foregroundColor(picking ? palette.acc : palette.ink3)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("多选删除收藏")
     }
 
     private var content: some View {
@@ -464,15 +502,22 @@ struct GlassFavoritesView: View {
 
     private func card(_ entry: FavoriteEntry) -> some View {
         Button {
-            if entry.isThread {
+            if picking {
+                if picked.contains(entry.id) { picked.remove(entry.id) }
+                else { picked.insert(entry.id) }
+            } else if entry.isThread {
                 opened = entry
             } else {
-                NotificationCenter.default.post(name: .alcoveJumpToMessage, object: entry.ts)
-                dismiss()
+                NotificationCenter.default.post(name: .alcoveRequestJumpToMessage, object: entry.ts)
             }
         } label: {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 7) {
+                    if picking {
+                        Image(systemName: picked.contains(entry.id) ? "checkmark.circle.fill" : "circle")
+                            .font(.system(size: 16, weight: .light))
+                            .foregroundColor(picked.contains(entry.id) ? palette.acc : palette.ink3)
+                    }
                     if entry.isThread {
                         Text(entry.title.isEmpty ? "聊天记录" : entry.title)
                             .font(.system(size: 14, weight: .medium, design: .serif))
@@ -519,6 +564,10 @@ struct GlassFavoritesView: View {
         }
         .buttonStyle(.plain)
         .glassCard(palette)
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .strokeBorder(picked.contains(entry.id) ? palette.acc.opacity(0.55) : .clear,
+                              lineWidth: 1.2))
         .contextMenu {
             Button(role: .destructive) {
                 Task { await remove(entry) }
@@ -526,6 +575,29 @@ struct GlassFavoritesView: View {
                 Label("不收了", systemImage: "trash")
             }
         }
+    }
+
+    private var deleteBar: some View {
+        HStack(spacing: 14) {
+            Text("已选 \(picked.count) 条")
+                .font(.system(size: 12.5, design: .serif))
+                .foregroundColor(palette.ink2)
+            Spacer()
+            Button("取消") {
+                withAnimation { picking = false; picked.removeAll() }
+            }
+            .foregroundColor(palette.ink3)
+            Button(deleting ? "删除中" : "删除", role: .destructive) {
+                Task { await removePicked() }
+            }
+            .disabled(deleting)
+        }
+        .font(.system(size: 12.5, design: .serif))
+        .padding(.horizontal, 18)
+        .padding(.vertical, 13)
+        .glassCard(palette, radius: 16)
+        .padding(.horizontal, 16)
+        .padding(.bottom, 22)
     }
 
     private func typeLabel(_ t: String) -> String {
@@ -551,6 +623,16 @@ struct GlassFavoritesView: View {
 
     @MainActor private func remove(_ entry: FavoriteEntry) async {
         try? await AlcoveAPI.favoriteRemove(id: entry.id)
+        await load()
+    }
+
+    @MainActor private func removePicked() async {
+        guard !picked.isEmpty, !deleting else { return }
+        deleting = true
+        for id in picked { try? await AlcoveAPI.favoriteRemove(id: id) }
+        picked.removeAll()
+        picking = false
+        deleting = false
         await load()
     }
 }

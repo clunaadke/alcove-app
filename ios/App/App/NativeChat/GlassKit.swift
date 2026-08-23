@@ -187,30 +187,44 @@ struct GlassHeader: View {
     let title: String
     let palette: GlassPalette
     var onBack: () -> Void
+    var switchTitle: String? = nil
+    var onSwitch: (() -> Void)? = nil
     var trailing: AnyView? = nil
 
     var body: some View {
-        HStack(spacing: 0) {
-            Button(action: onBack) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 17, weight: .light))
-                    .foregroundColor(palette.ink2)
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("返回")
-            Spacer()
+        ZStack {
             Text(title)
                 .font(.system(size: 18, weight: .medium, design: .serif))
                 .tracking(7)
                 .foregroundColor(palette.ink)
                 .padding(.leading, 7)   // 抵掉字距在右边多出来的那一格
-            Spacer()
-            if let trailing {
-                trailing.frame(width: 44, height: 44)
-            } else {
-                Color.clear.frame(width: 44, height: 44)
+            HStack(spacing: 0) {
+                Button(action: onBack) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 17, weight: .light))
+                        .foregroundColor(palette.ink2)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("返回")
+                Spacer()
+                if let switchTitle, let onSwitch {
+                    Button(action: onSwitch) {
+                        Text(switchTitle)
+                            .font(.system(size: 12.5, weight: .medium, design: .serif))
+                            .tracking(1.4)
+                            .foregroundColor(palette.ink3)
+                            .frame(minWidth: 76, minHeight: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+                if let trailing {
+                    trailing.frame(width: 44, height: 44)
+                } else {
+                    Color.clear.frame(width: 44, height: 44)
+                }
             }
         }
         .padding(.horizontal, 8)

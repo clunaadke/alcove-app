@@ -32,6 +32,7 @@ struct ChatView: View {
     @StateObject private var recorder = VoiceRecorder()
     @State private var atBottom = true
     @State private var followLiveOutput = true
+    @State private var historyJumpInProgress = false
     @State private var olderPagingArmed = false
     @State private var showCamera = false
     @State private var showDocPicker = false
@@ -263,7 +264,15 @@ struct ChatView: View {
                         Color.clear.frame(height: (theme.isMessages ? 0 : bottomChromeHeight) + 12
                                           + (showMiniTerminal ? miniTerminalHeight + 18 : 0))
                         Color.clear.frame(height: 1).id("tail")
-                            .onAppear { atBottom = true }
+                            .onAppear {
+                                atBottom = true
+                                if store.isViewingHistory && !historyJumpInProgress {
+                                    Task {
+                                        await store.returnToLatest()
+                                        scrollToTail(proxy, delays: [0.05, 0.2], animated: false)
+                                    }
+                                }
+                            }
                             .onDisappear { atBottom = false }
                     }
                     .padding(.horizontal, 12)
@@ -326,7 +335,14 @@ struct ChatView: View {
                 if !atBottom {
                     Button {
                         followLiveOutput = true
-                        withAnimation { proxy.scrollTo("tail", anchor: .bottom) }
+                        if store.isViewingHistory {
+                            Task {
+                                await store.returnToLatest()
+                                scrollToTail(proxy, delays: [0.05, 0.2], animated: false)
+                            }
+                        } else {
+                            withAnimation { proxy.scrollTo("tail", anchor: .bottom) }
+                        }
                     } label: {
                         Image(systemName: "chevron.down")
                             .font(.system(size: 15, weight: .medium))
@@ -428,15 +444,23 @@ struct ChatView: View {
             .onReceive(NotificationCenter.default.publisher(for: .alcoveJumpToMessage)) { note in
                 guard let ts = note.object as? String else { return }
                 Task {
+                    historyJumpInProgress = true
+                    olderPagingArmed = false
                     if !store.messages.contains(where: { $0.ts == ts }) { await store.loadAround(ts) }
                     if let target = store.messages.first(where: { $0.ts == ts }) {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                            withAnimation { proxy.scrollTo(target.id, anchor: .top) }
-                            flashTS = ts
+                        flashTS = ts
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.16) {
+                            withAnimation(.easeOut(duration: 0.22)) {
+                                proxy.scrollTo(target.id, anchor: .center)
+                            }
                         }
                         DispatchQueue.main.asyncAfter(deadline: .now() + 2.6) {
                             if flashTS == ts { flashTS = nil }
                         }
+                    }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.75) {
+                        historyJumpInProgress = false
+                        olderPagingArmed = true
                     }
                 }
             }

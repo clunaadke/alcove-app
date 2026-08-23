@@ -4,6 +4,7 @@ import WebKit
 extension Notification.Name {
     static let alcoveShowPermissions = Notification.Name("alcoveShowPermissions")
     static let alcoveJumpToMessage = Notification.Name("alcoveJumpToMessage")
+    static let alcoveRequestJumpToMessage = Notification.Name("alcoveRequestJumpToMessage")
 }
 
 // 常驻共享 WebView：app 启动就后台加载 PWA，按钮点开秒进对应页面，
