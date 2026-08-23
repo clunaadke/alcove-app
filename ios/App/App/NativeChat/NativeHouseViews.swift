@@ -6780,15 +6780,7 @@ private struct NativeForgeView: View {
     private var theme: AlcoveTheme { .panelNamed(themeName) }
 
     private var activePreview: [String: Any] { mode == .picker ? pickPreview : preview }
-    // 0823 她定的：滑块跟挑选行李一样数全部对话，后端已改成滑块不分代（只有一键打包 9999 限这一代）。
-    // 这里留着兜底：万一后端回 generation_only，上限就只数这一代，免得拖过去数字钉死。
-    private var totalRounds: Int {
-        let total = (preview["total_rounds"] as? Int) ?? 0
-        if (preview["generation_only"] as? Bool) == true {
-            return max(total - ((preview["dropped_prev_gen_rounds"] as? Int) ?? 0), 0)
-        }
-        return total
-    }
+    private var totalRounds: Int { (preview["total_rounds"] as? Int) ?? 0 }
     @State private var previewSeq = 0   // 拖得快时请求乱序回来，只认最后发出去那一个
     private var retainedRounds: Int { (activePreview["retained_rounds"] as? Int) ?? 0 }
     private var estimatedTokens: Int { (activePreview["estimated_tokens"] as? Int) ?? 0 }
