@@ -103,6 +103,7 @@ private struct BrainMemory: Identifiable {
     let mine: Bool
     let isProtected: Bool
     let createdAgo: String
+    let thumb: String        // 0823 她要的：图片记忆在不忘里带张小图
 
     init(_ raw: [String: Any]) {
         id = raw.int("id")
@@ -118,6 +119,7 @@ private struct BrainMemory: Identifiable {
         mine = raw.bool("mine")
         isProtected = raw.bool("protected")
         createdAgo = raw.string("createdAgo")
+        thumb = raw.string("thumb")
     }
 }
 
@@ -405,14 +407,28 @@ struct NativeBrainView: View {
                     .font(.system(size: 9, design: .monospaced))
                     .foregroundColor(palette.ink3)
             }
-            Text(m.title.isEmpty ? "（没标题）" : m.title)
-                .font(.system(size: 14, weight: .medium, design: .serif))
-                .foregroundColor(palette.ink)
-                .lineLimit(2)
-            Text(m.content)
-                .font(.system(size: 11.5))
-                .foregroundColor(palette.ink2)
-                .lineLimit(3)
+            HStack(alignment: .top, spacing: 10) {
+                // 0823 她要的：图片记忆带张小图，点开是整条记忆
+                if !m.thumb.isEmpty, let url = URL(string: AlcoveAPI.base.absoluteString + m.thumb) {
+                    AsyncImage(url: url) { img in
+                        img.resizable().aspectRatio(contentMode: .fill)
+                    } placeholder: {
+                        Rectangle().fill(palette.ink3.opacity(0.12))
+                    }
+                    .frame(width: 56, height: 56)
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                }
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(m.title.isEmpty ? "（没标题）" : m.title)
+                        .font(.system(size: 14, weight: .medium, design: .serif))
+                        .foregroundColor(palette.ink)
+                        .lineLimit(2)
+                    Text(m.content)
+                        .font(.system(size: 11.5))
+                        .foregroundColor(palette.ink2)
+                        .lineLimit(3)
+                }
+            }
             HStack(spacing: 10) {
                 if let v = m.valence {
                     dim("心情", String(format: "%.2f", v))
