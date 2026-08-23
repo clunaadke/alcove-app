@@ -101,6 +101,10 @@ private struct BrainMemory: Identifiable {
     let arousal: Double?
     let weight: Double?
     let mine: Bool
+    let authorLabel: String
+    let eReviewedBy: String
+    let evidence: String
+    let sourceEventCount: Int
     let isProtected: Bool
     let createdAgo: String
     let thumb: String        // 0823 她要的：图片记忆在不忘里带张小图
@@ -117,6 +121,10 @@ private struct BrainMemory: Identifiable {
         arousal = raw["arousal"] as? Double
         weight = raw["weight"] as? Double
         mine = raw.bool("mine")
+        authorLabel = raw.string("authorLabel")
+        eReviewedBy = raw.string("eReviewedBy")
+        evidence = raw.string("evidence")
+        sourceEventCount = raw.int("sourceEventCount")
         isProtected = raw.bool("protected")
         createdAgo = raw.string("createdAgo")
         thumb = raw.string("thumb")
@@ -538,7 +546,10 @@ private struct MemorySheet: View {
             if let w = memory.weight { row("分量", String(format: "%.2f", w)) }
             if let v = memory.valence { row("心情", String(format: "%.2f", v)) }
             if let a = memory.arousal { row("起伏", String(format: "%.2f", a)) }
-            row("谁写的", memory.mine ? "我亲笔" : "夜里消化出来的")
+            row("正文来源", memory.authorLabel.isEmpty ? (memory.mine ? "陈璟亲笔" : "—") : memory.authorLabel)
+            if !memory.eReviewedBy.isEmpty { row("情绪坐标", "\(memory.eReviewedBy)确认") }
+            if memory.sourceEventCount > 0 { row("原话线索", "\(memory.sourceEventCount) 条") }
+            if !memory.evidence.isEmpty { row("直接证据", memory.evidence) }
             if memory.isProtected { row("保护", "永不衰减") }
         }
     }
