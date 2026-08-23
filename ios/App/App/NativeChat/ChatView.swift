@@ -4383,7 +4383,10 @@ private struct MessagesGlassModifier: ViewModifier {
             content
         } else if #available(iOS 26.0, *) {
             if circle {
-                content.glassEffect(.regular.interactive(), in: Circle())
+                // 0823 她拍板：两个小圆（加号、录音取消）换成不跟手的玻璃省电，
+                // 它们太小，跟手那点活气本来就看不见。中间那个输入胶囊留着跟手，
+                // 她天天在那儿打字，手感不动。
+                content.glassEffect(.regular, in: Circle())
             } else {
                 content.glassEffect(.regular.interactive(), in: Capsule())
             }

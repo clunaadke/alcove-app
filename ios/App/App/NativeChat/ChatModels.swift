@@ -2,11 +2,30 @@ import Foundation
 
 /// One renderer for ordinary chat text in every Alcove room. The stored text
 /// stays untouched; only its presentation receives inline Markdown styling.
+///
+/// 0823 她报手机发烫：这里以前每次重绘都把整段原文重新解析一遍，一屏几十条
+/// 消息滚起来就是几十次解析，信息主题底下那层实时模糊逼着列表不停重画，
+/// 开销被整个放大。加一层缓存，同一段原文只解析一次。
+private final class MarkdownBox {
+    let value: AttributedString
+    init(_ value: AttributedString) { self.value = value }
+}
+
+private let markdownCache: NSCache<NSString, MarkdownBox> = {
+    let cache = NSCache<NSString, MarkdownBox>()
+    cache.countLimit = 400          // 超了系统自己淘汰最旧的，不会无限长
+    return cache
+}()
+
 func alcoveMarkdown(_ raw: String) -> AttributedString {
-    (try? AttributedString(
+    let key = raw as NSString
+    if let hit = markdownCache.object(forKey: key) { return hit.value }
+    let parsed = (try? AttributedString(
         markdown: raw,
         options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
     )) ?? AttributedString(raw)
+    markdownCache.setObject(MarkdownBox(parsed), forKey: key)
+    return parsed
 }
 
 // 后端 /api/history 与 /api/poll 返回的消息记录
