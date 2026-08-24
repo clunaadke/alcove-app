@@ -231,6 +231,12 @@ struct ChoiceQuestionCard: Codable, Equatable {
     let placeholder: String?
     var answered: Bool?
     var answer: String?
+    var answeredAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, question, options, placeholder, answered, answer
+        case answeredAt = "answered_at"
+    }
 }
 
 /// 陈璟现做的一页，她点一下在 app 里全屏打开。

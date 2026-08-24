@@ -536,6 +536,9 @@ final class ChatStore: ObservableObject {
                 if let label = try? await AlcoveAPI.modelLabel(), !label.isEmpty {
                     modelLabel = label
                 }
+                if let held = try? await AlcoveAPI.heldCount() {
+                    heldCount = held
+                }
             }
         } catch {
             connectionError = true
@@ -699,6 +702,7 @@ final class ChatStore: ObservableObject {
         local.msgType = "sticker"
         local.stickerId = stk.id
         messages.append(local)
+        heldCount = 0
         optimisticTyping()
         Task {
             do {
@@ -706,7 +710,10 @@ final class ChatStore: ObservableObject {
                 if let idx = messages.lastIndex(where: { $0.uid == local.uid }) {
                     messages[idx].pending = false
                 }
-            } catch { connectionError = true }
+            } catch {
+                connectionError = true
+                if let held = try? await AlcoveAPI.heldCount() { heldCount = held }
+            }
         }
     }
 
