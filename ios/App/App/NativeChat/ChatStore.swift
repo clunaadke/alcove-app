@@ -17,6 +17,7 @@ final class ChatStore: ObservableObject {
     @Published var stagingImages = false
     @Published var modelLabel = ""
     @Published var recallMap: [String: RecallItem] = [:] // norm(prompt) -> 最新召回
+    private var orderedRecalls: [RecallItem] = []
     @Published var typingLine = "思考" // "陈璟正在X中…" 的 X
     // 0730 实时预览：他说完一段就先给她看，不等整轮工具跑完
     @Published var live: AlcoveAPI.LiveState? {
@@ -116,11 +117,19 @@ final class ChatStore: ObservableObject {
             let k = RecallItem.norm(it.prompt)
             if !k.isEmpty && map[k] == nil { map[k] = it }
         }
+        orderedRecalls = items
         recallMap = map
     }
 
     func recall(forUserText text: String) -> RecallItem? {
-        recallMap[RecallItem.norm(text)]
+        let key = RecallItem.norm(text)
+        if let exact = recallMap[key] { return exact }
+        // 文字和表情同一次发出时，召回 hook 收到的是「文字＋表情描述」，
+        // 聊天页却分成两颗消息。把合并 prompt 的召回角标挂回开头那颗文字气泡。
+        guard key.count >= 4 else { return nil }
+        return orderedRecalls.first {
+            RecallItem.norm($0.prompt).hasPrefix(key + " ")
+        }
     }
 
     // 攒气泡：入屏入库不触发回复
