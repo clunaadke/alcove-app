@@ -12,6 +12,15 @@ enum AlcoveAPI {
         return URLSession(configuration: cfg)
     }()
 
+    /// ISO-8601 timestamps contain `+08:00`. `urlQueryAllowed` leaves `+`
+    /// untouched, but form-style query decoders read it as a space. Exclude the
+    /// query separators explicitly so exact history lookups survive the trip.
+    private static func timestampQueryValue(_ value: String) -> String {
+        var allowed = CharacterSet.urlQueryAllowed
+        allowed.remove(charactersIn: "+&=")
+        return value.addingPercentEncoding(withAllowedCharacters: allowed) ?? value
+    }
+
     struct PollResult {
         var records: [ChatMessage]
         var lastTs: String?
@@ -194,13 +203,13 @@ enum AlcoveAPI {
     }
 
     static func history(before: String, limit: Int = 300) async throws -> [ChatMessage] {
-        let encoded = before.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? before
+        let encoded = timestampQueryValue(before)
         let obj = try await getJSON("/api/history?limit=\(limit)&before=\(encoded)")
         return (obj["records"] as? [[String: Any]] ?? []).compactMap(ChatMessage.init(json:))
     }
 
     static func history(around ts: String) async throws -> [ChatMessage] {
-        let encoded = ts.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ts
+        let encoded = timestampQueryValue(ts)
         let obj = try await getJSON("/api/chat-around?ts=\(encoded)")
         return (obj["records"] as? [[String: Any]] ?? []).compactMap(ChatMessage.init(json:))
     }
@@ -225,8 +234,8 @@ enum AlcoveAPI {
 
     static func poll(since: String?, limit: Int = 100) async throws -> PollResult {
         var path = "/api/poll?limit=\(limit)"
-        if let s = since, !s.isEmpty,
-           let enc = s.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) {
+        if let s = since, !s.isEmpty {
+            let enc = timestampQueryValue(s)
             path += "&since=\(enc)"
         }
         let obj = try await getJSON(path)

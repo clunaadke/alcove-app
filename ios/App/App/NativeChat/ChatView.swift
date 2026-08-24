@@ -449,8 +449,18 @@ struct ChatView: View {
                     if !store.messages.contains(where: { $0.ts == ts }) { await store.loadAround(ts) }
                     if let target = store.messages.first(where: { $0.ts == ts }) {
                         flashTS = ts
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.16) {
-                            withAnimation(.easeOut(duration: 0.22)) {
+                        // loadAround swaps in as many as 240 rows. On a real phone the
+                        // LazyVStack is not guaranteed to have its final layout after the
+                        // old fixed 0.16s delay, so the only scrollTo sometimes vanished.
+                        // Prime the lazy layout without animation, then center once after
+                        // its measured heights settle. No message or paging state changes.
+                        for delay in [0.08, 0.24] {
+                            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                                proxy.scrollTo(target.id, anchor: .center)
+                            }
+                        }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.46) {
+                            withAnimation(.easeOut(duration: 0.20)) {
                                 proxy.scrollTo(target.id, anchor: .center)
                             }
                         }
