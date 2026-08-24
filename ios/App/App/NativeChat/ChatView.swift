@@ -33,6 +33,10 @@ struct ChatView: View {
     @State private var atBottom = true
     @State private var followLiveOutput = true
     @State private var historyJumpInProgress = false
+    // Every delayed auto-tail captures this generation. History navigation
+    // advances it so startup/keyboard/layout callbacks queued by the previous
+    // screen can no longer drag an old-message jump back to the latest chat.
+    @State private var tailScrollGeneration = 0
     @State private var olderPagingArmed = false
     @State private var showCamera = false
     @State private var showDocPicker = false
@@ -399,6 +403,12 @@ struct ChatView: View {
                 scrollToTail(proxy, delays: [0, 0.12, 0.3], animated: true)
             }
             .onChange(of: store.messages.count) { _ in
+                // loadAround replaces the latest page with an old 240-row window.
+                // At that instant `atBottom` can still be stale-true, so the normal
+                // auto-follow used to queue tail scrolls at 0/0.15/0.4s and race the
+                // requested history target. History navigation owns the scroll until
+                // it has centered the target.
+                guard !historyJumpInProgress, !store.isViewingHistory else { return }
                 guard atBottom || inputFocused else { return }
                 scrollToTail(proxy, delays: [0, 0.15, 0.4], animated: true)
             }
@@ -445,21 +455,14 @@ struct ChatView: View {
                 guard let ts = note.object as? String else { return }
                 Task {
                     historyJumpInProgress = true
+                    tailScrollGeneration &+= 1
                     olderPagingArmed = false
                     if !store.messages.contains(where: { $0.ts == ts }) { await store.loadAround(ts) }
                     if let target = store.messages.first(where: { $0.ts == ts }) {
                         flashTS = ts
-                        // loadAround swaps in as many as 240 rows. On a real phone the
-                        // LazyVStack is not guaranteed to have its final layout after the
-                        // old fixed 0.16s delay, so the only scrollTo sometimes vanished.
-                        // Prime the lazy layout without animation, then center once after
-                        // its measured heights settle. No message or paging state changes.
-                        for delay in [0.08, 0.24] {
-                            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-                                proxy.scrollTo(target.id, anchor: .center)
-                            }
-                        }
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.46) {
+                        // One owner, one movement. The competing auto-tail schedule is
+                        // suppressed above while the old page is being installed.
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.32) {
                             withAnimation(.easeOut(duration: 0.20)) {
                                 proxy.scrollTo(target.id, anchor: .center)
                             }
@@ -708,8 +711,14 @@ struct ChatView: View {
         delays: [Double],
         animated: Bool
     ) {
+        // While an old window is visible, only the explicit “back to latest”
+        // path may re-enable auto-follow after returnToLatest has completed.
+        guard !historyJumpInProgress, !store.isViewingHistory else { return }
+        let generation = tailScrollGeneration
         for delay in delays {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                guard generation == tailScrollGeneration,
+                      !historyJumpInProgress, !store.isViewingHistory else { return }
                 if animated {
                     withAnimation(.easeOut(duration: 0.2)) {
                         proxy.scrollTo("tail", anchor: .bottom)
