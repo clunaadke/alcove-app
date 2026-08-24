@@ -192,7 +192,13 @@ struct TerminalView: View {
     private var toolbar: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
-                termKey("Esc") { sendKey("Escape") }
+                termKey("Esc") {
+                    if session == "main" {
+                        stopMainGeneration()
+                    } else {
+                        sendKey("Escape")
+                    }
+                }
                 termKey("↑") { sendKey("Up") }
                 termKey("↑↑") { sendKey("Up"); sendKey("Up") }
                 termKey("↓") { sendKey("Down") }
@@ -344,6 +350,14 @@ struct TerminalView: View {
 
     private func sendKey(_ key: String) {
         post(["key": key, "session": session])
+    }
+
+    private func stopMainGeneration() {
+        Task {
+            _ = try? await AlcoveAPI.postRaw("/api/chat-stop", body: [:])
+            try? await Task.sleep(nanoseconds: 200_000_000)
+            capture()
+        }
     }
 
     private func post(_ body: [String: Any]) {
