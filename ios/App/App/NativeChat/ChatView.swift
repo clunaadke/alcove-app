@@ -2398,7 +2398,7 @@ struct MessageRow: View {
         return !msg.text.isEmpty && !msg.isSticker ? 12 : 0
     }
     private var shouldShowMetaRow: Bool {
-        msg.pending || msg.asleepAtSend || showTime
+        msg.msgType != "choice_answer" && (msg.pending || msg.asleepAtSend || showTime)
     }
 
     /// 这条消息头上要挂的轨迹：轮首拿整轮的，其他消息不挂。
@@ -2519,6 +2519,8 @@ struct MessageRow: View {
                     WorkDeliveryMessageCard(card: work, theme: theme)
                 } else if let choice = msg.choiceCard {
                     ChoiceQuestionMessageCard(card: choice, theme: theme)
+                } else if msg.msgType == "choice_answer" {
+                    ChoiceAnswerStrip(text: msg.displayText, theme: theme)
                 } else if let journey = msg.journeyCard {
                     JourneyMessageCard(ref: journey, theme: theme)
                         .frame(maxWidth: .infinity)   // 她要卡片在聊天页正中间
@@ -3288,7 +3290,6 @@ private struct ChoiceQuestionMessageCard: View {
     @State private var custom = ""
     @State private var submitting = false
     @State private var submittedAnswer: String?
-    @State private var submittedAt: Date?
     @FocusState private var customFocused: Bool
 
     private let blue = Color(uiColor: .systemBlue)
@@ -3297,12 +3298,6 @@ private struct ChoiceQuestionMessageCard: View {
         return typed.isEmpty ? (selected ?? "") : typed
     }
     private var finished: Bool { card.answered == true || submittedAnswer != nil }
-    private var finalAnswer: String { submittedAnswer ?? card.answer ?? "" }
-    private var answerTime: Date? {
-        guard let raw = card.answeredAt else { return submittedAt }
-        return ISO8601DateFormatter.alcove.date(from: raw)
-            ?? ISO8601DateFormatter.alcoveFrac.date(from: raw)
-    }
     private var surface: Color {
         guard theme.isMessages else { return theme.bubbleAI }
         return theme.isDark
@@ -3314,41 +3309,7 @@ private struct ChoiceQuestionMessageCard: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            cardBody
-            if finished, !finalAnswer.isEmpty {
-                HStack {
-                    Spacer(minLength: 42)
-                    VStack(alignment: .trailing, spacing: 5) {
-                        Text(finalAnswer)
-                            .font(.system(size: 15.5))
-                            .foregroundColor(theme.isMessages ? .white : theme.text)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 9)
-                            .background(theme.bubbleUser,
-                                        in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                            .fixedSize(horizontal: false, vertical: true)
-                        HStack(spacing: 9) {
-                            if let answerTime {
-                                Text(Self.answerHM.string(from: answerTime))
-                                    .font(.system(size: 10, design: .serif))
-                                    .foregroundColor(theme.timestamp)
-                            }
-                            if theme.isMessages {
-                                HStack(spacing: -5) {
-                                    Image(systemName: "checkmark")
-                                    Image(systemName: "checkmark")
-                                }
-                                .font(.system(size: 9, weight: .semibold))
-                                .foregroundColor(Color(uiColor: .systemBlue))
-                            }
-                        }
-                        .padding(.trailing, 10)
-                    }
-                }
-            }
-        }
-        .frame(maxWidth: 360, alignment: .leading)
+        cardBody.frame(maxWidth: 360, alignment: .leading)
     }
 
     private var cardBody: some View {
@@ -3442,17 +3403,28 @@ private struct ChoiceQuestionMessageCard: View {
             do {
                 try await AlcoveAPI.answerChoice(cardID: card.id, answer: value)
                 submittedAnswer = value
-                submittedAt = Date()
             } catch { }
             submitting = false
         }
     }
 
-    private static let answerHM: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm"
-        return formatter
-    }()
+}
+
+private struct ChoiceAnswerStrip: View {
+    let text: String
+    let theme: AlcoveTheme
+
+    var body: some View {
+        Text(text)
+            .font(.system(size: 15.5))
+            .foregroundColor(theme.isMessages ? .white : theme.text)
+            .padding(.horizontal, 13)
+            .padding(.vertical, 7)
+            .background(theme.bubbleUser,
+                        in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityLabel("我的回答：\(text)")
+    }
 }
 
 /// 陈璟端上来的一页：点一下全屏打开，不跳浏览器。
