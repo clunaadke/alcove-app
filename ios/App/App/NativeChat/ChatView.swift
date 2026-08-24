@@ -3319,7 +3319,19 @@ private struct ChoiceQuestionMessageCard: View {
                 .foregroundColor(theme.text)
                 .fixedSize(horizontal: false, vertical: true)
 
-            VStack(spacing: 0) {
+            if finished {
+                HStack(spacing: 9) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 18))
+                        .foregroundColor(blue)
+                    Text(submittedAnswer ?? card.answer ?? "已回答")
+                        .font(.system(size: 14.5, weight: .medium))
+                        .foregroundColor(theme.text)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(minHeight: 40)
+            } else {
+                VStack(spacing: 0) {
                     ForEach(Array(card.options.enumerated()), id: \.offset) { index, option in
                         Button {
                             withAnimation(.easeInOut(duration: 0.18)) {
@@ -3348,9 +3360,9 @@ private struct ChoiceQuestionMessageCard: View {
                             Rectangle().fill(border).frame(height: 1).padding(.leading, 28)
                         }
                     }
-            }
+                }
 
-            HStack(spacing: 8) {
+                HStack(spacing: 8) {
                     TextField(card.placeholder ?? "或者自己写一句…", text: $custom, axis: .vertical)
                         .focused($customFocused)
                         .font(.system(size: 14.5))
@@ -3372,27 +3384,22 @@ private struct ChoiceQuestionMessageCard: View {
                     }
                     .buttonStyle(.plain)
                     .disabled(answer.isEmpty || submitting)
+                }
+                .padding(.leading, 13)
+                .padding(.trailing, 5)
+                .frame(minHeight: 44)
+                .background(theme.isDark ? Color.white.opacity(0.045) : Color.white.opacity(0.72),
+                            in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous)
+                    .stroke(border, lineWidth: 1))
             }
-            .padding(.leading, 13)
-            .padding(.trailing, 5)
-            .frame(minHeight: 44)
-            .background(theme.isDark ? Color.white.opacity(0.045) : Color.white.opacity(0.72),
-                        in: RoundedRectangle(cornerRadius: 15, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous)
-                .stroke(border, lineWidth: 1))
         }
-        .allowsHitTesting(!finished)
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(surface, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous)
             .stroke(border, lineWidth: 1))
         .accessibilityElement(children: .contain)
-        .onAppear {
-            guard card.answered == true, let saved = card.answer, selected == nil, custom.isEmpty else { return }
-            if card.options.contains(saved) { selected = saved }
-            else { custom = saved }
-        }
     }
 
     private func submit() {
