@@ -3320,16 +3320,44 @@ private struct ChoiceQuestionMessageCard: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             if finished {
-                HStack(spacing: 9) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 18))
-                        .foregroundColor(blue)
-                    Text(submittedAnswer ?? card.answer ?? "已回答")
-                        .font(.system(size: 14.5, weight: .medium))
-                        .foregroundColor(theme.text)
-                        .fixedSize(horizontal: false, vertical: true)
+                let saved = submittedAnswer ?? card.answer ?? ""
+                let choseOption = card.options.contains(saved)
+                VStack(spacing: 0) {
+                    ForEach(Array(card.options.enumerated()), id: \.offset) { index, option in
+                        let chosen = choseOption && saved == option
+                        HStack(spacing: 10) {
+                            Image(systemName: chosen ? "checkmark.circle.fill" : "circle")
+                                .font(.system(size: 18))
+                                .foregroundColor(chosen ? blue : theme.textDim.opacity(0.62))
+                            Text(option)
+                                .font(.system(size: 14.5, weight: chosen ? .medium : .regular))
+                                .foregroundColor(chosen ? theme.text : theme.textDim.opacity(0.72))
+                                .strikethrough(!chosen, color: theme.textDim.opacity(0.72))
+                                .multilineTextAlignment(.leading)
+                            Spacer(minLength: 0)
+                        }
+                        .frame(minHeight: 40)
+                        if index < card.options.count - 1 {
+                            Rectangle().fill(border).frame(height: 1).padding(.leading, 28)
+                        }
+                    }
                 }
-                .frame(minHeight: 40)
+                if !choseOption, !saved.isEmpty {
+                    HStack(spacing: 9) {
+                        Image(systemName: "pencil")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(blue)
+                        Text(saved)
+                            .font(.system(size: 14.5, weight: .medium))
+                            .foregroundColor(theme.text)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 9)
+                    .background(blue.opacity(theme.isDark ? 0.16 : 0.10),
+                                in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                }
             } else {
                 VStack(spacing: 0) {
                     ForEach(Array(card.options.enumerated()), id: \.offset) { index, option in
