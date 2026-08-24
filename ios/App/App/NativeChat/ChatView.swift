@@ -713,8 +713,8 @@ struct ChatView: View {
 
     private func needsDivider(prev: ChatMessage?, cur: ChatMessage) -> Bool {
         guard let prev else { return true }
-        // iMessage 同款：隔一个钟头才画时间；别的主题照旧十分钟
-        return cur.date.timeIntervalSince(prev.date) > (theme.isMessages ? 3600 : 600)
+        // 三套主题统一：安静超过 20 分钟再插一条时间分割。
+        return cur.date.timeIntervalSince(prev.date) > 1200
     }
 
     // PWA 同款：一轮的最后一个气泡才落时间（下一条换人或隔了 2 分钟）
@@ -2651,7 +2651,7 @@ struct MessageRow: View {
             if !isUser {
                 // 晨报和旅行卡片是整行居中的东西，不吃我这边气泡的右侧留白
                 Spacer(minLength: (msg.morningPaperDate != nil || msg.journeyCard != nil) ? 0
-                       : (msg.choiceCard != nil ? 20 : (theme.isPaper ? 15 : 48)))
+                       : (msg.choiceCard != nil ? 34 : (theme.isPaper ? 15 : 48)))
             }
         }
         .padding(.leading, theme.isPaper && !isUser && msg.morningPaperDate == nil && msg.journeyCard == nil ? 12 : 0)
@@ -2808,7 +2808,9 @@ struct MessageRow: View {
                     Text(quote).lineLimit(2)
                 }
                 .font(.system(size: 12))
-                .foregroundColor(theme.textDim.opacity(0.78))
+                .foregroundColor(
+                    isUser ? Color.black : theme.textDim.opacity(0.94)
+                )
             }
             SelectableMessageText(
                 text: msg.textWithoutLink,
@@ -3294,6 +3296,7 @@ private struct ChoiceQuestionMessageCard: View {
         return typed.isEmpty ? (selected ?? "") : typed
     }
     private var finished: Bool { card.answered == true || submittedAnswer != nil }
+    private var finalAnswer: String { submittedAnswer ?? card.answer ?? "" }
     private var surface: Color {
         guard theme.isMessages else { return theme.bubbleAI }
         return theme.isDark
@@ -3305,23 +3308,33 @@ private struct ChoiceQuestionMessageCard: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 8) {
+            cardBody
+            if finished, !finalAnswer.isEmpty {
+                HStack {
+                    Spacer(minLength: 42)
+                    Text(finalAnswer)
+                        .font(.system(size: 15.5))
+                        .foregroundColor(theme.isMessages ? .white : theme.text)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 9)
+                        .background(theme.bubbleUser,
+                                    in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+        .frame(maxWidth: 360, alignment: .leading)
+    }
+
+    private var cardBody: some View {
+        VStack(alignment: .leading, spacing: 10) {
             Text(card.question)
-                .font(.system(size: 17, weight: .semibold))
+                .font(.system(size: 16, weight: .semibold))
                 .foregroundColor(theme.text)
                 .fixedSize(horizontal: false, vertical: true)
 
-            if finished {
-                HStack(spacing: 9) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundColor(blue)
-                    Text(submittedAnswer ?? card.answer ?? "已回答")
-                        .font(.system(size: 15, weight: .medium))
-                        .foregroundColor(theme.text)
-                }
-                .frame(minHeight: 44)
-            } else {
-                VStack(spacing: 0) {
+            VStack(spacing: 0) {
                     ForEach(Array(card.options.enumerated()), id: \.offset) { index, option in
                         Button {
                             withAnimation(.easeInOut(duration: 0.18)) {
@@ -3330,69 +3343,71 @@ private struct ChoiceQuestionMessageCard: View {
                                 customFocused = false
                             }
                         } label: {
-                            HStack(spacing: 12) {
+                            HStack(spacing: 10) {
                                 Image(systemName: selected == option ? "checkmark.circle.fill" : "circle")
-                                    .font(.system(size: 20))
+                                    .font(.system(size: 18))
                                     .foregroundColor(selected == option ? blue : theme.textDim)
                                 Text(option)
-                                    .font(.system(size: 15.5))
+                                    .font(.system(size: 14.5))
                                     .foregroundColor(theme.text)
                                     .multilineTextAlignment(.leading)
                                 Spacer(minLength: 0)
                             }
-                            .frame(minHeight: 48)
+                            .frame(minHeight: 40)
                             .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel("选项：\(option)")
                         .accessibilityValue(selected == option ? "已选择" : "未选择")
                         if index < card.options.count - 1 {
-                            Rectangle().fill(border).frame(height: 1).padding(.leading, 32)
+                            Rectangle().fill(border).frame(height: 1).padding(.leading, 28)
                         }
                     }
-                }
+            }
 
-                TextField(card.placeholder ?? "或者自己写一句…", text: $custom, axis: .vertical)
-                    .focused($customFocused)
-                    .font(.system(size: 15.5))
-                    .foregroundColor(theme.text)
-                    .lineLimit(1...4)
-                    .padding(.horizontal, 14)
-                    .frame(minHeight: 48)
-                    .background(theme.isDark ? Color.white.opacity(0.045) : Color.white.opacity(0.72),
-                                in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .stroke(border, lineWidth: 1))
-                    .onChange(of: custom) { value in
-                        if !value.isEmpty { selected = nil }
-                    }
-
-                HStack {
-                    Spacer()
+            HStack(spacing: 8) {
+                    TextField(card.placeholder ?? "或者自己写一句…", text: $custom, axis: .vertical)
+                        .focused($customFocused)
+                        .font(.system(size: 14.5))
+                        .foregroundColor(theme.text)
+                        .lineLimit(1...3)
+                        .onChange(of: custom) { value in
+                            if !value.isEmpty { selected = nil }
+                        }
                     Button {
                         submit()
                     } label: {
-                        HStack(spacing: 6) {
+                        Group {
                             if submitting { ProgressView().controlSize(.small).tint(blue) }
-                            Text("交给陈璟")
-                                .font(.system(size: 14.5, weight: .semibold))
+                            else { Image(systemName: "arrow.up.circle.fill")
+                                .font(.system(size: 27, weight: .semibold)) }
                         }
-                        .foregroundColor(answer.isEmpty ? theme.textDim : blue)
-                        .padding(.horizontal, 16)
-                        .frame(minHeight: 44)
-                        .background(blue.opacity(answer.isEmpty ? 0.04 : 0.12), in: Capsule())
+                        .foregroundColor(answer.isEmpty ? theme.textDim.opacity(0.55) : blue)
+                        .frame(width: 36, height: 36)
                     }
                     .buttonStyle(.plain)
                     .disabled(answer.isEmpty || submitting)
-                }
             }
+            .padding(.leading, 13)
+            .padding(.trailing, 5)
+            .frame(minHeight: 44)
+            .background(theme.isDark ? Color.white.opacity(0.045) : Color.white.opacity(0.72),
+                        in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous)
+                .stroke(border, lineWidth: 1))
         }
-        .padding(18)
-        .frame(maxWidth: 390, alignment: .leading)
-        .background(surface, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 28, style: .continuous)
+        .allowsHitTesting(!finished)
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(surface, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous)
             .stroke(border, lineWidth: 1))
         .accessibilityElement(children: .contain)
+        .onAppear {
+            guard card.answered == true, let saved = card.answer, selected == nil, custom.isEmpty else { return }
+            if card.options.contains(saved) { selected = saved }
+            else { custom = saved }
+        }
     }
 
     private func submit() {
