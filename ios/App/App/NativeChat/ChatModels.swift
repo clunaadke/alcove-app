@@ -116,6 +116,12 @@ struct ChatMessage: Identifiable, Equatable {
         return try? JSONDecoder().decode(WorkDeliveryCard.self, from: data)
     }
 
+    var choiceCard: ChoiceQuestionCard? {
+        guard let raw = Self.taggedBody(text, tag: "CHOICE_CARD"),
+              let data = raw.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(ChoiceQuestionCard.self, from: data)
+    }
+
     // 旅行卡片：正文里只有一个 id，整趟数据走 /api/journeys/<id> 现取。
     var journeyCard: JourneyCardRef? {
         guard let raw = Self.taggedBody(text, tag: "JOURNEY_CARD"),
@@ -216,6 +222,15 @@ struct ChatMessage: Identifiable, Equatable {
         self.asleepAtSend = false
         self.pending = true
     }
+}
+
+struct ChoiceQuestionCard: Codable, Equatable {
+    let id: String
+    let question: String
+    let options: [String]
+    let placeholder: String?
+    var answered: Bool?
+    var answer: String?
 }
 
 /// 陈璟现做的一页，她点一下在 app 里全屏打开。

@@ -2517,6 +2517,8 @@ struct MessageRow: View {
                     ReadingShareMessageCard(card: reading, theme: theme)
                 } else if let work = msg.workCard {
                     WorkDeliveryMessageCard(card: work, theme: theme)
+                } else if let choice = msg.choiceCard {
+                    ChoiceQuestionMessageCard(card: choice, theme: theme)
                 } else if let journey = msg.journeyCard {
                     JourneyMessageCard(ref: journey, theme: theme)
                         .frame(maxWidth: .infinity)   // 她要卡片在聊天页正中间
@@ -2648,7 +2650,8 @@ struct MessageRow: View {
             }
             if !isUser {
                 // 晨报和旅行卡片是整行居中的东西，不吃我这边气泡的右侧留白
-                Spacer(minLength: (msg.morningPaperDate != nil || msg.journeyCard != nil) ? 0 : (theme.isPaper ? 15 : 48))
+                Spacer(minLength: (msg.morningPaperDate != nil || msg.journeyCard != nil) ? 0
+                       : (msg.choiceCard != nil ? 20 : (theme.isPaper ? 15 : 48)))
             }
         }
         .padding(.leading, theme.isPaper && !isUser && msg.morningPaperDate == nil && msg.journeyCard == nil ? 12 : 0)
@@ -3274,6 +3277,136 @@ struct MessageRow: View {
         f.dateFormat = "HH:mm"
         return f
     }()
+}
+
+private struct ChoiceQuestionMessageCard: View {
+    let card: ChoiceQuestionCard
+    let theme: AlcoveTheme
+    @State private var selected: String?
+    @State private var custom = ""
+    @State private var submitting = false
+    @State private var submittedAnswer: String?
+    @FocusState private var customFocused: Bool
+
+    private let blue = Color(uiColor: .systemBlue)
+    private var answer: String {
+        let typed = custom.trimmingCharacters(in: .whitespacesAndNewlines)
+        return typed.isEmpty ? (selected ?? "") : typed
+    }
+    private var finished: Bool { card.answered == true || submittedAnswer != nil }
+    private var surface: Color {
+        guard theme.isMessages else { return theme.bubbleAI }
+        return theme.isDark
+            ? Color(red: 28/255, green: 28/255, blue: 30/255)
+            : Color(red: 246/255, green: 246/255, blue: 248/255)
+    }
+    private var border: Color {
+        theme.isDark ? Color.white.opacity(0.14) : Color.black.opacity(0.09)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text(card.question)
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundColor(theme.text)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if finished {
+                HStack(spacing: 9) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundColor(blue)
+                    Text(submittedAnswer ?? card.answer ?? "已回答")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundColor(theme.text)
+                }
+                .frame(minHeight: 44)
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(Array(card.options.enumerated()), id: \.offset) { index, option in
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.18)) {
+                                selected = option
+                                custom = ""
+                                customFocused = false
+                            }
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: selected == option ? "checkmark.circle.fill" : "circle")
+                                    .font(.system(size: 20))
+                                    .foregroundColor(selected == option ? blue : theme.textDim)
+                                Text(option)
+                                    .font(.system(size: 15.5))
+                                    .foregroundColor(theme.text)
+                                    .multilineTextAlignment(.leading)
+                                Spacer(minLength: 0)
+                            }
+                            .frame(minHeight: 48)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("选项：\(option)")
+                        .accessibilityValue(selected == option ? "已选择" : "未选择")
+                        if index < card.options.count - 1 {
+                            Rectangle().fill(border).frame(height: 1).padding(.leading, 32)
+                        }
+                    }
+                }
+
+                TextField(card.placeholder ?? "或者自己写一句…", text: $custom, axis: .vertical)
+                    .focused($customFocused)
+                    .font(.system(size: 15.5))
+                    .foregroundColor(theme.text)
+                    .lineLimit(1...4)
+                    .padding(.horizontal, 14)
+                    .frame(minHeight: 48)
+                    .background(theme.isDark ? Color.white.opacity(0.045) : Color.white.opacity(0.72),
+                                in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(border, lineWidth: 1))
+                    .onChange(of: custom) { value in
+                        if !value.isEmpty { selected = nil }
+                    }
+
+                HStack {
+                    Spacer()
+                    Button {
+                        submit()
+                    } label: {
+                        HStack(spacing: 6) {
+                            if submitting { ProgressView().controlSize(.small).tint(blue) }
+                            Text("交给陈璟")
+                                .font(.system(size: 14.5, weight: .semibold))
+                        }
+                        .foregroundColor(answer.isEmpty ? theme.textDim : blue)
+                        .padding(.horizontal, 16)
+                        .frame(minHeight: 44)
+                        .background(blue.opacity(answer.isEmpty ? 0.04 : 0.12), in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(answer.isEmpty || submitting)
+                }
+            }
+        }
+        .padding(18)
+        .frame(maxWidth: 390, alignment: .leading)
+        .background(surface, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 28, style: .continuous)
+            .stroke(border, lineWidth: 1))
+        .accessibilityElement(children: .contain)
+    }
+
+    private func submit() {
+        let value = answer
+        guard !value.isEmpty, !submitting else { return }
+        submitting = true
+        Task {
+            do {
+                try await AlcoveAPI.answerChoice(cardID: card.id, answer: value)
+                submittedAnswer = value
+            } catch { }
+            submitting = false
+        }
+    }
 }
 
 /// 陈璟端上来的一页：点一下全屏打开，不跳浏览器。

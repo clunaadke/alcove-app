@@ -358,6 +358,13 @@ enum AlcoveAPI {
         return obj["held"] as? Int ?? 0
     }
 
+    static func answerChoice(cardID: String, answer: String) async throws {
+        let obj = try await postJSON("/api/choice/respond", body: [
+            "card_id": cardID, "answer": answer
+        ])
+        guard obj["ok"] as? Bool == true else { throw URLError(.cannotWriteToFile) }
+    }
+
     static func uploadSticker(data: Data, mime: String, owner: String,
                               name: String = "", description: String = "",
                               emotionTags: [String] = []) async throws {
