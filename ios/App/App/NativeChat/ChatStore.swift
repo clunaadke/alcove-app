@@ -124,11 +124,12 @@ final class ChatStore: ObservableObject {
     func recall(forUserText text: String) -> RecallItem? {
         let key = RecallItem.norm(text)
         if let exact = recallMap[key] { return exact }
-        // 文字和表情同一次发出时，召回 hook 收到的是「文字＋表情描述」，
-        // 聊天页却分成两颗消息。把合并 prompt 的召回角标挂回开头那颗文字气泡。
+        // 文字和表情／图片同一次发出时，召回 hook 收到的是合并 prompt，
+        // 聊天页却分开显示。只要合并 prompt 含这颗文字，就把角标挂回来。
         guard key.count >= 4 else { return nil }
         return orderedRecalls.first {
-            RecallItem.norm($0.prompt).hasPrefix(key + " ")
+            let prompt = RecallItem.norm($0.prompt)
+            return prompt.hasPrefix(key + " ") || prompt.contains(key)
         }
     }
 
