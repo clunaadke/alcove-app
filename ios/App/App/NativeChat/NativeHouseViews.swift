@@ -8724,69 +8724,15 @@ private struct NativeDreamsView: View {
                 Spacer(); ProgressView().tint(theme.fyAccent); Spacer()
             } else {
                 ScrollView(showsIndicators: false) {
-                    LazyVStack(spacing: 10) {
-                        ForEach(Array(dreams.enumerated()), id: \.offset) { _, dream in
-                            let dreamId = dream.string("dream_id")
-                            let date = dream.string("local_date")
-                            let status = dream.string("status")
-                            let hasBody = dream.bool("has_body")
-                            let title = dream.string("title")
-                            let startled = dream.bool("startled")
-                            let hm = String(dream.string("ts").dropFirst(11).prefix(5))
-                            let isExpanded = expandedId == dreamId
-                            Button {
-                                if isExpanded {
-                                    expandedId = nil
-                                } else {
-                                    expandedId = dreamId
-                                    if dreamBodies[dreamId] == nil {
-                                        Task { await loadDreamBody(dreamId: dreamId, hasBody: hasBody) }
-                                    }
+                    LazyVStack(spacing: 22) {
+                        ForEach(groupedDates, id: \.self) { date in
+                            let dayDreams = dreams.filter { $0.string("local_date") == date }
+                            VStack(alignment: .leading, spacing: 9) {
+                                dayHeader(date: date, records: dayDreams)
+                                ForEach(Array(dayDreams.enumerated()), id: \.offset) { _, dream in
+                                    dreamRow(dream)
                                 }
-                            } label: {
-                                VStack(alignment: .leading, spacing: 0) {
-                                    HStack(alignment: .center) {
-                                        Text(startled ? "⚡" : "🌙").font(.system(size: 20))
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text(title.isEmpty ? "\(date) 的梦" : title)
-                                                .font(.system(size: 14, weight: .medium))
-                                            Text("\(date) \(hm)  陈璟" + (startled ? "  · 这个梦把他惊醒了" : ""))
-                                                .font(.system(size: 10))
-                                                .foregroundColor(theme.textDim)
-                                        }
-                                        Spacer()
-                                        Text(statusLabel(status))
-                                            .font(.system(size: 11, weight: .medium))
-                                            .foregroundColor(statusColor(status))
-                                            .padding(.horizontal, 8).padding(.vertical, 3)
-                                            .overlay(
-                                                RoundedRectangle(cornerRadius: 8)
-                                                    .stroke(statusColor(status).opacity(0.4), lineWidth: 1)
-                                            )
-                                    }
-                                    if isExpanded {
-                                        Rectangle()
-                                            .stroke(style: StrokeStyle(lineWidth: 1, dash: [4]))
-                                            .foregroundColor(theme.textLight.opacity(0.3))
-                                            .frame(height: 1)
-                                            .padding(.vertical, 10)
-                                        if let body = dreamBodies[dreamId] {
-                                            Text(body)
-                                                .font(.system(size: 12))
-                                                .foregroundColor(theme.textDim)
-                                                .lineSpacing(4)
-                                                .textSelection(.enabled)
-                                                .fixedSize(horizontal: false, vertical: true)
-                                                .frame(maxWidth: .infinity, alignment: .center)
-                                        } else {
-                                            ProgressView().scaleEffect(0.7).tint(theme.fyAccent)
-                                                .frame(maxWidth: .infinity).padding(8)
-                                        }
-                                    }
-                                }
-                                .padding(14).foyerCard(theme)
                             }
-                            .buttonStyle(.plain)
                         }
                         if dreams.isEmpty {
                             Text("还没有梦")
@@ -8810,6 +8756,122 @@ private struct NativeDreamsView: View {
         }
     }
 
+    private var groupedDates: [String] {
+        Array(Set(dreams.map { $0.string("local_date") })).sorted(by: >)
+    }
+
+    private func dayHeader(date: String, records: [[String: Any]]) -> some View {
+        let made = records.filter { $0.string("status") == "dreamed" }.count
+        let traces = records.count - made
+        return HStack(alignment: .firstTextBaseline) {
+            Text(dayLabel(date))
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(theme.text)
+            Spacer()
+            Text([made > 0 ? "\(made) 场梦" : nil, traces > 0 ? "\(traces) 次夜间留痕" : nil]
+                .compactMap { $0 }.joined(separator: "  ·  "))
+                .font(.system(size: 10, weight: .medium))
+                .foregroundColor(theme.textDim)
+        }
+        .padding(.horizontal, 4)
+    }
+
+    @ViewBuilder
+    private func dreamRow(_ dream: [String: Any]) -> some View {
+        let dreamId = dream.string("dream_id")
+        let status = dream.string("status")
+        let hasBody = dream.bool("has_body")
+        let isDream = status == "dreamed"
+        let title = dream.string("title")
+        let startled = dream.bool("startled")
+        let hm = String(dream.string("ts").dropFirst(11).prefix(5))
+        let isExpanded = expandedId == dreamId
+
+        Button {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                expandedId = isExpanded ? nil : dreamId
+            }
+            if !isExpanded, dreamBodies[dreamId] == nil {
+                Task { await loadDreamBody(dreamId: dreamId, hasBody: hasBody) }
+            }
+        } label: {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(alignment: .center, spacing: 12) {
+                    ZStack {
+                        Circle()
+                            .fill(statusColor(status).opacity(isDream ? 0.15 : 0.08))
+                        Image(systemName: rowIcon(status: status, startled: startled))
+                            .font(.system(size: isDream ? 16 : 13, weight: .medium))
+                            .foregroundColor(statusColor(status))
+                    }
+                    .frame(width: isDream ? 38 : 30, height: isDream ? 38 : 30)
+
+                    VStack(alignment: .leading, spacing: isDream ? 4 : 2) {
+                        Text(title.isEmpty ? "一场没有名字的梦" : title)
+                            .font(.system(size: isDream ? 15 : 13, weight: isDream ? .semibold : .medium))
+                            .foregroundColor(isDream ? theme.text : theme.textDim)
+                            .lineLimit(isExpanded ? nil : (isDream ? 2 : 1))
+                            .multilineTextAlignment(.leading)
+                        Text(isDream ? "\(hm)  ·  陈璟\(startled ? "  ·  梦醒了" : "")" : hm)
+                            .font(.system(size: 10))
+                            .foregroundColor(theme.textDim.opacity(isDream ? 1 : 0.75))
+                    }
+                    Spacer(minLength: 8)
+                    if !isDream {
+                        Text(statusLabel(status))
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundColor(statusColor(status))
+                    }
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundColor(theme.textDim.opacity(0.55))
+                        .rotationEffect(.degrees(isExpanded ? 180 : 0))
+                }
+                if isExpanded {
+                    Rectangle()
+                        .fill(theme.textLight.opacity(0.16))
+                        .frame(height: 1)
+                        .padding(.vertical, 12)
+                    if let body = dreamBodies[dreamId] {
+                        Text(body)
+                            .font(.system(size: 12))
+                            .foregroundColor(theme.textDim)
+                            .lineSpacing(4)
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    } else {
+                        ProgressView().scaleEffect(0.7).tint(theme.fyAccent)
+                            .frame(maxWidth: .infinity).padding(8)
+                    }
+                }
+            }
+            .padding(.horizontal, isDream ? 14 : 12)
+            .padding(.vertical, isDream ? 14 : 10)
+            .foyerCard(theme)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(title)，\(hm)，\(statusLabel(status))")
+        .accessibilityHint(isExpanded ? "轻点收起详情" : "轻点展开详情")
+    }
+
+    private func dayLabel(_ date: String) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        let today = formatter.string(from: Date())
+        if date == today { return "今夜" }
+        formatter.dateFormat = "M 月 d 日"
+        guard let parsed = ISO8601DateFormatter().date(from: "\(date)T12:00:00Z") else { return date }
+        return formatter.string(from: parsed)
+    }
+
+    private func rowIcon(status: String, startled: Bool) -> String {
+        if startled || status == "惊醒了" { return "bolt.fill" }
+        if status == "dreamed" { return "moon.stars.fill" }
+        if status == "我在忙" { return "hammer.fill" }
+        return "dice.fill"
+    }
+
     private func loadDreamBody(dreamId: String, hasBody: Bool) async {
         guard hasBody else {
             dreamBodies[dreamId] = "这个梦读不回来了"
@@ -8825,22 +8887,22 @@ private struct NativeDreamsView: View {
 
     private func statusLabel(_ s: String) -> String {
         switch s {
+        case "dreamed": return "梦境"
+        case "惊醒了": return "惊醒"
+        case "骰子没中": return "未入梦"
+        case "我在忙": return "醒着"
         case "surfaced": return "浮现过"
         case "forgotten": return "遗忘了"
         case "generated": return "待浮现"
-        case "dreamed": return "做过了"
         default: return s
-        }
-    }
-    private func statusIcon(_ s: String) -> String {
-        switch s {
-        case "surfaced": return "moon.stars.fill"
-        case "forgotten": return "cloud.fog"
-        default: return "moon.zzz"
         }
     }
     private func statusColor(_ s: String) -> Color {
         switch s {
+        case "dreamed": return theme.fyAccent
+        case "惊醒了": return .orange.opacity(0.82)
+        case "骰子没中": return theme.textDim.opacity(0.75)
+        case "我在忙": return .blue.opacity(0.72)
         case "surfaced": return .purple.opacity(0.7)
         case "forgotten": return .gray
         default: return .blue.opacity(0.6)

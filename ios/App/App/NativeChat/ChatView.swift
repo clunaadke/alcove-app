@@ -1203,10 +1203,12 @@ struct ChatView: View {
 
     private func stopGenerating() {
         store.isTyping = false
+        store.live = nil
         Task { _ = try? await AlcoveAPI.postRaw("/api/chat-stop", body: [:]) }
     }
 
     private func performDynamicComposerAction() {
+        guard !store.stagingImages else { return }
         if isGenerating {
             stopGenerating()
             return

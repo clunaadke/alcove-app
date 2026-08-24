@@ -14,6 +14,7 @@ final class ChatStore: ObservableObject {
     @Published private(set) var isViewingHistory = false
     @Published var connectionError = false
     @Published var heldCount = 0
+    @Published var stagingImages = false
     @Published var modelLabel = ""
     @Published var recallMap: [String: RecallItem] = [:] // norm(prompt) -> 最新召回
     @Published var typingLine = "思考" // "陈璟正在X中…" 的 X
@@ -78,6 +79,7 @@ final class ChatStore: ObservableObject {
     private var pollTask: Task<Void, Never>?
     private var liveTask: Task<Void, Never>?
     private var lastModelPoll = Date.distantPast
+    private var idlePollsWhileLive = 0
 
     func start() {
         guard pollTask == nil else { return }
@@ -164,8 +166,10 @@ final class ChatStore: ObservableObject {
 
     // 多张图微信式一起发，caption 挂第一张
     func sendImages(_ datas: [Data], caption: String) {
-        optimisticTyping()
+        guard !datas.isEmpty, !stagingImages else { return }
+        stagingImages = true
         Task {
+            defer { stagingImages = false }
             let batch = Int(Date().timeIntervalSince1970 * 1000)
             let group = datas.count > 1 ? UUID().uuidString : nil
             for (i, d) in datas.enumerated() {
@@ -178,6 +182,9 @@ final class ChatStore: ObservableObject {
                         else if lastTs == nil { lastTs = rec.ts }
                     }
                 } catch { connectionError = true }
+            }
+            if let held = try? await AlcoveAPI.heldCount() {
+                heldCount = held
             }
         }
     }
@@ -509,6 +516,19 @@ final class ChatStore: ObservableObject {
             currentTool = r.currentTool
             isTyping = r.isTyping || Date() < optimisticUntil
             if r.isTyping { optimisticUntil = .distantPast }
+            if r.isTyping || Date() < optimisticUntil {
+                idlePollsWhileLive = 0
+            } else if live?.active == true {
+                // CLI/SDK 被打断时偶尔收不到 turn_end，live 会一直把发送键锁成停止键。
+                // 连续两次轮询确认后端已空闲再清，避开生成过程中的瞬时误判。
+                idlePollsWhileLive += 1
+                if idlePollsWhileLive >= 2 {
+                    live = nil
+                    idlePollsWhileLive = 0
+                }
+            } else {
+                idlePollsWhileLive = 0
+            }
             if isTyping { refreshTypingLine() }
             connectionError = false
             if Date().timeIntervalSince(lastModelPoll) > 5 {
@@ -698,6 +718,7 @@ final class ChatStore: ObservableObject {
                     if let lt = lastTs, rec.ts > lt { lastTs = rec.ts }
                     else if lastTs == nil { lastTs = rec.ts }
                 }
+                if let held = try? await AlcoveAPI.heldCount() { heldCount = held }
             } catch { connectionError = true }
         }
     }
