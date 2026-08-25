@@ -19,6 +19,7 @@ private struct SurfBookmark: Identifiable {
 struct NativeSurfCollectionView: View {
     @AppStorage("houseInterfaceAppearance") private var appearance = "system"
     @Environment(\.colorScheme) private var systemScheme
+    @Environment(\.dismiss) private var dismiss
     @State private var selected = "x"
     @State private var items: [SurfBookmark] = []
     @State private var loading = false
@@ -44,11 +45,25 @@ struct NativeSurfCollectionView: View {
         ZStack {
             CoreadYanxiaBackground(isNight: dark).ignoresSafeArea()
             VStack(spacing: 16) {
-                Text("冲浪收藏")
-                    .font(.system(size: 18, weight: .semibold, design: .serif))
-                    .tracking(1.2)
-                    .foregroundColor(pal.ink)
-                    .padding(.top, 14)
+                // 这页自己铺满，所以返回和标题也得自己长（0826 她说上面被挡住、没有返回）
+                HStack(spacing: 2) {
+                    Button { dismiss() } label: {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundColor(pal.ink2)
+                            .frame(width: 42, height: 42)
+                            .contentShape(Rectangle())
+                    }.buttonStyle(.plain)
+                    Spacer(minLength: 0)
+                    Text("冲浪收藏")
+                        .font(.system(size: 16, weight: .semibold, design: .serif))
+                        .tracking(1.2)
+                        .foregroundColor(pal.ink)
+                    Spacer(minLength: 0)
+                    Color.clear.frame(width: 42, height: 42)
+                }
+                .padding(.horizontal, 8)
+                .padding(.top, 46)
                 platformPicker
                 ScrollView(showsIndicators: false) {
                     LazyVStack(spacing: 10) {

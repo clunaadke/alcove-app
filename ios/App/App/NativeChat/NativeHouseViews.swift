@@ -2921,12 +2921,45 @@ private struct MusicGiftSheet: View {
     }
 }
 
+/// AsyncImage 有两个毛病：下完不留、失败了不再试。聊天页一长，卡片滚出屏幕再滚回来
+/// 就是一张空图，两张卡里能有一张永远是黑的（0826 她说咋一张有一张没有）。
+/// 这个自己管：内存里留一份，拿不到就退避着再试两回，一张封面全卡片共用。
+@MainActor
+final class CoverLoader: ObservableObject {
+    private static let cache = NSCache<NSString, UIImage>()
+    @Published var image: UIImage?
+    private var loading = false
+
+    func load(_ raw: String) {
+        guard !raw.isEmpty, image == nil, !loading else { return }
+        if let hit = Self.cache.object(forKey: raw as NSString) {
+            image = hit
+            return
+        }
+        guard let url = URL(string: raw) else { return }
+        loading = true
+        Task {
+            defer { loading = false }
+            for attempt in 0..<3 {
+                if let (data, _) = try? await URLSession.shared.data(from: url),
+                   let picture = UIImage(data: data) {
+                    Self.cache.setObject(picture, forKey: raw as NSString)
+                    withAnimation(.easeInOut(duration: 0.25)) { image = picture }
+                    return
+                }
+                try? await Task.sleep(nanoseconds: 400_000_000 << UInt64(attempt))
+            }
+        }
+    }
+}
+
 struct MusicMessageCard: View {
     let song: MusicSong
     let theme: AlcoveTheme
     let isUser: Bool
     let play: () -> Void
     @ObservedObject private var model = MusicModel.shared
+    @StateObject private var cover = CoverLoader()
     @State private var messageExpanded = false
 
     private var isCurrent: Bool { model.nowPlaying?.id == song.id }
@@ -2936,22 +2969,27 @@ struct MusicMessageCard: View {
         return min(max(model.progress / model.duration, 0), 1)
     }
 
+    /// 一行大概装得下二十来个字，超了才给展开键（0826 她要收起时只留一行）
+    private var needsToggle: Bool { song.message.count > 17 }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            Text(isUser ? "♫ 送给陈璟" : "♫ 为你点播")
-                .font(.system(size: 11, weight: .medium))
-                .foregroundColor(theme.textDim)
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(song.name).font(.system(size: 18, weight: .semibold)).lineLimit(1)
-                    Text(song.artist).font(.system(size: 13)).foregroundColor(theme.textDim).lineLimit(1)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 11) {
+                // 点播那一行跟歌名歌手叠在同一列里，别自己独占一行，
+                // 独占会白吃掉二十来点高度，卡片就立起来了（0826 她说太高）
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(isUser ? "♫ 送给陈璟" : "♫ 为你点播")
+                        .font(.system(size: 10.5, weight: .medium))
+                        .tracking(1.1)
+                        .foregroundColor(.white.opacity(0.45))
+                        .padding(.bottom, 1)
+                    Text(song.name).font(.system(size: 18, weight: .bold))
+                        .foregroundColor(.white).lineLimit(1)
+                    Text(song.artist).font(.system(size: 12.5))
+                        .foregroundColor(.white.opacity(0.55)).lineLimit(1)
                 }
                 Spacer(minLength: 8)
-                AsyncImage(url: URL(string: song.cover)) { image in
-                    image.resizable().scaledToFill()
-                } placeholder: { theme.fyCardSub }
-                .frame(width: 58, height: 58)
-                .clipShape(Circle())
+                vinyl
                 Button {
                     // A card may point at the same song that was previewed in the
                     // music page, while that old AVPlayer is already paused,
@@ -2960,44 +2998,139 @@ struct MusicMessageCard: View {
                     if isCurrent && isPlaying { model.toggle() } else { play() }
                 } label: {
                     Image(systemName: isPlaying ? "pause.fill" : "play.fill")
-                        .font(.system(size: 16))
+                        .font(.system(size: 13.5, weight: .semibold))
                         .contentTransition(.symbolEffect(.replace))
-                        .foregroundColor(theme.text)
-                        .frame(width: 44, height: 44)
-                        .background(theme.fyCardSub, in: Circle())
+                        .foregroundColor(.white)
+                        .frame(width: 38, height: 38)
+                        .background(.ultraThinMaterial, in: Circle())
+                        .background(Color.white.opacity(0.18), in: Circle())
+                        // 圆看着 38，手指够得着的是 46。原来 36 太小，
+                        // 点边上就落空了（0826 她说第一张点不了）
+                        .frame(width: 46, height: 46)
+                        .contentShape(Rectangle())
                 }.buttonStyle(.plain)
             }
-            if !song.message.isEmpty {
-                HStack(alignment: .bottom, spacing: 5) {
-                    Text("›  \(song.message)")
-                        .font(.system(size: 12))
-                        .foregroundColor(theme.textDim)
-                        .lineLimit(messageExpanded ? nil : 3)
-                    if song.message.count > 54 {
-                        Button { withAnimation(.easeInOut(duration: 0.18)) { messageExpanded.toggle() } } label: {
-                            Image(systemName: "chevron.down.circle")
-                                .font(.system(size: 13, weight: .medium))
-                                .rotationEffect(.degrees(messageExpanded ? 180 : 0))
-                                .foregroundColor(theme.textDim)
-                        }.buttonStyle(.plain)
+
+            if !song.message.isEmpty { messageRow }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 13)
+        // 先撑满可用宽度再压到 340，否则留言短的时候卡片会跟着内容缩水，
+        // 看着又窄又立（0826 她说长度有点短）。也不再给高度下限。
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: 340)
+        .background(backdrop)
+        .overlay(alignment: .bottomLeading) {
+            GeometryReader { geo in
+                Capsule().fill(Color.white.opacity(0.6))
+                    .frame(width: geo.size.width * CGFloat(progressFraction), height: 2)
+            }
+            .frame(height: 2)
+            .animation(.linear(duration: 0.3), value: progressFraction)
+            .allowsHitTesting(false)
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        // 她的聊天背景是纯黑，参考图那种阴影在黑底上等于没有，得留一道边。
+        // 三层装饰一律不吃点击，免得压在播放键和展开箭头上面
+        // （0826 她说第一张卡什么都点不动）
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color.white.opacity(0.1), lineWidth: 0.8)
+                .allowsHitTesting(false)
+        )
+        .shadow(color: .black.opacity(0.4), radius: 16, y: 7)
+        .onAppear { cover.load(song.cover) }
+    }
+
+    /// 底色不是算出来的，是把封面自己糊开：放大、模糊、加饱和、压暗。
+    /// 每首歌的卡片就长成那张封面的颜色。
+    /// 封面没来的时候得有张脸兜着，不然整张卡烂成一块纯黑，跟聊天背景糊成一片
+    /// 连边都找不着（0826 她 build 出来就是这样）。
+    private var backdrop: some View {
+        ZStack {
+            Rectangle().fill(.ultraThinMaterial)
+            Color.black.opacity(0.42)
+            // 用跟音乐页一模一样的裸链，那条她确认一直是好的；
+            // 尺寸也给死，装在 background 里的 AsyncImage 拿不到固有尺寸会塌成零，
+            // 图下回来了也不画（0826 她说只有这张卡没图）。
+            if let picture = cover.image {
+                GeometryReader { geo in
+                    ZStack {
+                        Image(uiImage: picture).resizable().scaledToFill()
+                            .frame(width: geo.size.width * 1.5,
+                                   height: geo.size.height * 1.5)
+                            .blur(radius: 30)
+                            .saturation(1.55)
+                            .frame(width: geo.size.width, height: geo.size.height)
+                            .clipped()
+                        Color.black.opacity(0.3)
                     }
                 }
             }
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(theme.fyAccent.opacity(0.18))
-                    Capsule().fill(theme.fyAccent.opacity(0.75))
-                        .frame(width: geo.size.width * CGFloat(progressFraction))
+        }
+        .allowsHitTesting(false)
+    }
+
+    /// 黑胶：黑盘打底，压两圈纹路，封面嵌在中间，中心留个孔
+    private var vinyl: some View {
+        ZStack {
+            Circle().fill(
+                AngularGradient(
+                    gradient: Gradient(colors: [
+                        Color(white: 0.10), Color(white: 0.18), Color(white: 0.10),
+                        Color(white: 0.18), Color(white: 0.10),
+                    ]),
+                    center: .center)
+            )
+            Circle().stroke(Color.white.opacity(0.05), lineWidth: 0.8).padding(3.5)
+            Circle().stroke(Color.white.opacity(0.035), lineWidth: 0.8).padding(6.5)
+            Group {
+                if let picture = cover.image {
+                    Image(uiImage: picture).resizable().scaledToFill()
+                } else {
+                    ZStack {
+                        Color(white: 0.13)
+                        Image(systemName: "music.note")
+                            .font(.system(size: 13))
+                            .foregroundColor(.white.opacity(0.28))
+                    }
                 }
             }
-            .frame(height: 2)
-            .animation(.linear(duration: 0.35), value: progressFraction)
+            .frame(width: 39, height: 39)
+            .clipShape(Circle())
+            Circle().fill(Color(white: 0.05)).frame(width: 8.5, height: 8.5)
+            Circle().stroke(Color.white.opacity(0.07), lineWidth: 0.6)
         }
-        .padding(14)
-        .frame(maxWidth: 340)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .background(theme.fyCard.opacity(0.62), in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 24).stroke(theme.fyBorder, lineWidth: 1))
+        .frame(width: 56, height: 56)
+    }
+
+    /// 收起的时候把留言里的换行抹成空格。她那条留言原文带三个换行，
+    /// 配上 fixedSize(vertical:) 之后这一行的固有高度是四行，lineLimit(1) 只管画一行，
+    /// 底下三行的高度照样撑着，整张卡的点击落点就全歪了，播放键和展开箭头一起点不动
+    /// （0826 她说第一张什么都点不动，第二张那条留言没有换行所以好好的）。
+    private var messageLine: String {
+        messageExpanded ? song.message
+                        : song.message.replacingOccurrences(of: "\n", with: " ")
+    }
+
+    private var messageRow: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text("›  \(messageLine)")
+                .font(.system(size: 12))
+                .foregroundColor(.white.opacity(0.62))
+                .lineLimit(messageExpanded ? nil : 1)
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: messageExpanded)
+            if needsToggle {
+                Spacer(minLength: 0)
+                Button { withAnimation(.easeInOut(duration: 0.2)) { messageExpanded.toggle() } } label: {
+                    Image(systemName: "chevron.down.circle")
+                        .font(.system(size: 13, weight: .medium))
+                        .rotationEffect(.degrees(messageExpanded ? 180 : 0))
+                        .foregroundColor(.white.opacity(0.5))
+                }.buttonStyle(.plain)
+            }
+        }
     }
 }
 

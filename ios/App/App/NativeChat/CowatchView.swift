@@ -2,9 +2,16 @@ import SwiftUI
 import AVFoundation
 import UIKit
 
-// 共影室（2026-08-25）。片单粘链接进来，后端把字幕、听写和画面网格备好；
+// 共影室（2026-08-25 起，0826 大修）。片单粘链接进来，后端把字幕、听写和画面网格备好；
 // 播放页是一块能往上拉的布：一档看片、二档边看边聊、三档翻记录。
-// 全屏不靠转手机，画面自己转过去铺满。
+//
+// 0826 修的四件（她说的原话：听不见声音、开始播很慢、没有进度条、布局要重排）：
+//   · 声音：这一页从来没配过 AVAudioSession，走的是默认的 soloAmbient，
+//     手机侧边静音键一拨就整页没声。别的页面都配了，就这里漏了。
+//   · 慢：后端每个 Range 请求都重解析一次直链，现在加了缓存（cowatch.py）。
+//   · 进度条：以前只有一层裸 AVPlayerLayer，一个控件都没有。
+//   · 布局：画面高度以前按屏幕百分比切，16:9 的片子上下能空出两百多点黑边；
+//     现在按视频自己的宽高比算。
 
 struct CowatchItem: Identifiable, Hashable {
     let id: String
@@ -146,6 +153,11 @@ struct NativeCowatchView: View {
                     Text(item.stateLine).font(.system(size: 10.5))
                         .foregroundColor(item.status == "ready" ? theme.fyAccent : theme.textDim)
                         .lineLimit(1)
+                    if item.progress > 3 && item.duration > 0 {
+                        Text("看到 \(CowatchClock.stamp(item.progress))")
+                            .font(.system(size: 10.5, design: .monospaced))
+                            .foregroundColor(theme.fyAccent.opacity(0.8))
+                    }
                 }
                 .foregroundColor(theme.textDim)
             }
@@ -193,38 +205,57 @@ struct CowatchPlayerView: View {
     @State private var tab = 0
     @State private var draft = ""
     @State private var fullscreen = false
+    // 打完字点别处键盘收不回去，这一页从来没管过焦点（0826 她说的）
+    @FocusState private var typing: Bool
     private var theme: AlcoveTheme { .panelNamed(themeName) }
-
-    private let gears: [CGFloat] = [0.74, 0.42, 0.10]
 
     var body: some View {
         GeometryReader { geo in
-            let height = geo.size.height
-            let top = max(0.06, min(0.86, gears[gear] + dragOffset / height))
+            let W = geo.size.width
+            let H = geo.size.height
 
-            ZStack(alignment: .top) {
+            ZStack(alignment: .topTrailing) {
                 Color.black.ignoresSafeArea()
 
-                CowatchScreen(player: deck.player)
-                    .frame(height: max(120, height * min(top + 0.02, 1)))
-                    .clipped()
-                    .ignoresSafeArea(edges: .top)
+                VStack(spacing: 0) {
+                    if gear < 2 {
+                        ZStack(alignment: .top) {
+                            CowatchScreen(player: deck.player)
+                                .frame(height: stageHeight(W: W, H: H))
+                                .clipped()
+                                // 打完字戳一下画面就收键盘（0826 她说点别处下不去）
+                                .contentShape(Rectangle())
+                                .onTapGesture { typing = false }
+                            topBar.padding(.horizontal, 14).padding(.top, geo.safeAreaInsets.top + 6)
+                        }
+                        controlBar
+                    }
+                    talkDeck
+                }
 
-                topBar
-                    .padding(.horizontal, 14)
-                    .padding(.top, 10)
-
-                sheet(top: top, height: height)
+                if gear == 2 {
+                    miniWindow.padding(.top, geo.safeAreaInsets.top + 8).padding(.trailing, 12)
+                }
 
                 if fullscreen {
-                    CowatchFullscreen(deck: deck, item: item, size: geo.size) { fullscreen = false }
+                    CowatchFullscreen(deck: deck) { fullscreen = false }
                         .transition(.opacity)
                 }
             }
+            .animation(.spring(response: 0.34, dampingFraction: 0.88), value: gear)
         }
+        .ignoresSafeArea(edges: .top)
         .task { await deck.open(item: item) }
         .onDisappear { deck.close() }
         .statusBarHidden(true)
+    }
+
+    /// 画面按视频自己的宽高比撑，不再按屏幕百分比切。
+    /// 16:9 的片子在 393 宽下真实高度就是 221 点，以前给它 647 点，上下白空 213 点黑边。
+    private func stageHeight(W: CGFloat, H: CGFloat) -> CGFloat {
+        let natural = W / max(0.4, deck.aspect)
+        let cap = gear == 0 ? H * 0.74 : H * 0.40
+        return max(140, min(natural, cap))
     }
 
     private var topBar: some View {
@@ -256,35 +287,112 @@ struct CowatchPlayerView: View {
         .foregroundColor(.white)
     }
 
-    private func sheet(top: CGFloat, height: CGFloat) -> some View {
+    // MARK: 进度条与传送键（0826 新增，以前这一整条都没有）
+
+    private var controlBar: some View {
+        VStack(spacing: 6) {
+            CowatchScrubber(deck: deck, tint: theme.fyAccent)
+                .frame(height: 26)
+
+            HStack {
+                Text(CowatchClock.stamp(Int(deck.shownTime)))
+                Spacer()
+                Text(CowatchClock.stamp(max(0, Int(deck.duration - deck.shownTime))) )
+            }
+            .font(.system(size: 10, design: .monospaced))
+            .foregroundColor(.white.opacity(0.55))
+
+            HStack(spacing: 26) {
+                Button { deck.nudge(-15) } label: {
+                    Image(systemName: "gobackward.15").font(.system(size: 19))
+                }.buttonStyle(.plain)
+
+                Button { deck.togglePlay() } label: {
+                    Image(systemName: deck.playing ? "pause.fill" : "play.fill")
+                        .font(.system(size: 22))
+                        .frame(width: 40, height: 40)
+                }.buttonStyle(.plain)
+
+                Button { deck.nudge(15) } label: {
+                    Image(systemName: "goforward.15").font(.system(size: 19))
+                }.buttonStyle(.plain)
+
+                Spacer()
+
+                Button { Task { await deck.askThisMoment() } } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: deck.asking ? "hourglass" : "bubble.left.and.text.bubble.right")
+                            .font(.system(size: 11))
+                        Text(deck.asking ? "在看" : "问这一幕").font(.system(size: 11))
+                    }
+                    .foregroundColor(theme.fyAccent)
+                    .padding(.horizontal, 11).frame(height: 28)
+                    .background(theme.fyAccent.opacity(0.15), in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .disabled(deck.asking)
+            }
+            .foregroundColor(.white.opacity(0.92))
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
+        .padding(.bottom, 10)
+        .background(Color.black)
+    }
+
+    private var miniWindow: some View {
+        CowatchScreen(player: deck.player)
+            .frame(width: 132, height: max(56, 132 / max(0.4, deck.aspect)))
+            .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .stroke(Color.white.opacity(0.18), lineWidth: 0.8)
+            )
+            .shadow(color: .black.opacity(0.5), radius: 10, y: 4)
+            .onTapGesture { withAnimation { gear = 0 } }
+    }
+
+    // MARK: 那块布
+
+    private var talkDeck: some View {
         VStack(spacing: 0) {
             Capsule().fill(Color.white.opacity(0.26))
                 .frame(width: 38, height: 4)
-                .padding(.top, 10).padding(.bottom, 7)
+                .padding(.top, 9).padding(.bottom, 7)
                 .frame(maxWidth: .infinity)
                 .contentShape(Rectangle())
-                .gesture(
-                    DragGesture()
-                        .onChanged { dragOffset = $0.translation.height }
-                        .onEnded { value in
-                            let landed = gears[gear] + value.translation.height / height
-                            let nearest = gears.enumerated().min {
-                                abs($0.element - landed) < abs($1.element - landed)
-                            }?.offset ?? gear
-                            dragOffset = 0
-                            withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) { gear = nearest }
-                        }
-                )
+                .gesture(gearDrag)
 
             if gear == 0 {
-                VStack(spacing: 7) {
-                    Text(deck.currentLine.isEmpty ? "这一段没有台词" : deck.currentLine)
-                        .font(.system(size: 13.5)).multilineTextAlignment(.center)
+                // 16:9 的片子在竖屏手机上只有两百来点高，底下这六百点不能空着。
+                // 放台词：已经过去的两句压暗，当前这句亮着，后面的一个字都不给（防剧透）。
+                VStack(spacing: 10) {
+                    Spacer(minLength: 12)
+                    ForEach(passedLines, id: \.id) { line in
+                        Text(line.text)
+                            .font(.system(size: line.t == deck.currentT ? 16 : 13,
+                                          weight: line.t == deck.currentT ? .medium : .regular))
+                            .foregroundColor(line.t == deck.currentT
+                                             ? theme.text : theme.textDim.opacity(0.45))
+                            .multilineTextAlignment(.center)
+                            .lineLimit(3)
+                            .transition(.opacity)
+                    }
+                    if passedLines.isEmpty {
+                        Text(deck.lines.isEmpty ? "这条片子没有台词" : "还没开口")
+                            .font(.system(size: 13)).foregroundColor(theme.textDim.opacity(0.6))
+                    }
+                    Spacer(minLength: 12)
                     Text("▲ 往上拉，说说话")
-                        .font(.system(size: 10.5, design: .monospaced)).foregroundColor(theme.textDim)
+                        .font(.system(size: 10.5, design: .monospaced))
+                        .foregroundColor(theme.textDim)
+                        .padding(.bottom, 12)
                 }
-                .padding(.horizontal, 18).padding(.bottom, 16)
-                Spacer(minLength: 0)
+                .padding(.horizontal, 26)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .contentShape(Rectangle())
+                .gesture(gearDrag)
+                .animation(.easeInOut(duration: 0.28), value: deck.currentT)
             } else {
                 Picker("", selection: $tab) {
                     Text("说话").tag(0)
@@ -298,36 +406,58 @@ struct CowatchPlayerView: View {
                 composer
             }
         }
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(theme.fyCard)
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .shadow(color: .black.opacity(0.45), radius: 18, y: -8)
-        .frame(height: height * (1 - top) + 40)
-        .offset(y: height * top)
+        .clipShape(RoundedRectangle(cornerRadius: gear == 2 ? 0 : 20, style: .continuous))
         .foregroundColor(theme.text)
     }
 
-    private var talkFlow: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 11) {
-                ForEach(deck.said) { line in
-                    VStack(alignment: line.mine ? .trailing : .leading, spacing: 3) {
-                        Text(line.text).font(.system(size: 13.5))
-                            .padding(.horizontal, 12).padding(.vertical, 8)
-                            .background(line.mine ? theme.fyAccent.opacity(0.16) : theme.fyCardSub,
-                                        in: RoundedRectangle(cornerRadius: 13))
-                        Button {
-                            deck.seek(to: Double(line.ms) / 1000)
-                        } label: {
-                            Text(CowatchClock.stamp(line.ms / 1000))
-                                .font(.system(size: 10.5, design: .monospaced))
-                                .foregroundColor(theme.fyAccent)
-                        }.buttonStyle(.plain)
-                    }
-                    .frame(maxWidth: .infinity, alignment: line.mine ? .trailing : .leading)
+    /// 一档底下摆的台词：当前这句加它前面两句，后面的一句都不给。
+    private var passedLines: [CowatchLine] {
+        let now = Int(deck.current)
+        return Array(deck.lines.filter { $0.t <= now }.suffix(3))
+    }
+
+    private var gearDrag: some Gesture {
+        DragGesture(minimumDistance: 8)
+            .onEnded { value in
+                let dy = value.translation.height
+                guard abs(dy) > 34 else { return }
+                withAnimation(.spring(response: 0.34, dampingFraction: 0.86)) {
+                    gear = dy < 0 ? min(2, gear + 1) : max(0, gear - 1)
                 }
             }
-            .padding(.horizontal, 16).padding(.vertical, 12)
+    }
+
+    private var talkFlow: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 11) {
+                    ForEach(deck.said) { line in
+                        VStack(alignment: line.mine ? .trailing : .leading, spacing: 3) {
+                            Text(line.text).font(.system(size: 13.5))
+                                .padding(.horizontal, 12).padding(.vertical, 8)
+                                .background(line.mine ? theme.fyAccent.opacity(0.16) : theme.fyCardSub,
+                                            in: RoundedRectangle(cornerRadius: 13))
+                            Button {
+                                deck.seek(to: Double(line.ms) / 1000)
+                            } label: {
+                                Text(CowatchClock.stamp(line.ms / 1000))
+                                    .font(.system(size: 10.5, design: .monospaced))
+                                    .foregroundColor(theme.fyAccent)
+                            }.buttonStyle(.plain)
+                        }
+                        .id(line.id)
+                        .frame(maxWidth: .infinity, alignment: line.mine ? .trailing : .leading)
+                    }
+                    Color.clear.frame(height: 1).id("tail")
+                }
+                .padding(.horizontal, 16).padding(.vertical, 12)
+            }
+            .scrollDismissesKeyboard(.interactively)
+            .onChange(of: deck.said.count) { _ in
+                withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo("tail", anchor: .bottom) }
+            }
         }
     }
 
@@ -350,6 +480,7 @@ struct CowatchPlayerView: View {
                 }
                 .padding(.horizontal, 16).padding(.vertical, 12)
             }
+            .scrollDismissesKeyboard(.interactively)
             .onChange(of: deck.currentT) { value in
                 withAnimation(.easeInOut(duration: 0.25)) { proxy.scrollTo(value, anchor: .center) }
             }
@@ -360,11 +491,20 @@ struct CowatchPlayerView: View {
         HStack(spacing: 9) {
             TextField("说点什么，会钉在 \(CowatchClock.stamp(Int(deck.current)))", text: $draft)
                 .font(.system(size: 13))
+                .focused($typing)
+                .submitLabel(.send)
+                .onSubmit {
+                    let text = draft
+                    draft = ""
+                    typing = false
+                    Task { await deck.say(text) }
+                }
                 .padding(.horizontal, 13).frame(height: 34)
                 .background(theme.fyCardSub, in: Capsule())
             Button {
                 let text = draft
                 draft = ""
+                typing = false
                 Task { await deck.say(text) }
             } label: {
                 Image(systemName: "arrow.up").font(.system(size: 13, weight: .semibold))
@@ -375,57 +515,150 @@ struct CowatchPlayerView: View {
             .buttonStyle(.plain)
             .disabled(draft.trimmingCharacters(in: .whitespaces).isEmpty)
         }
-        .padding(.horizontal, 14).padding(.top, 9).padding(.bottom, 18)
+        .padding(.horizontal, 14).padding(.top, 9).padding(.bottom, 10)
     }
 }
 
-// MARK: - 全屏（手机不用转，画面自己转）
+// MARK: - 进度条
+
+private struct CowatchScrubber: View {
+    @ObservedObject var deck: CowatchDeck
+    let tint: Color
+
+    var body: some View {
+        GeometryReader { geo in
+            let W = geo.size.width
+            let ratio = deck.duration > 0 ? min(1, max(0, deck.shownTime / deck.duration)) : 0
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color.white.opacity(0.16)).frame(height: 3)
+                Capsule().fill(tint).frame(width: W * ratio, height: 3)
+                Circle().fill(tint)
+                    .frame(width: deck.scrubbing ? 15 : 11, height: deck.scrubbing ? 15 : 11)
+                    .offset(x: W * ratio - (deck.scrubbing ? 7.5 : 5.5))
+            }
+            .frame(maxHeight: .infinity)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        guard deck.duration > 0 else { return }
+                        deck.scrubbing = true
+                        deck.scrubTime = deck.duration * min(1, max(0, value.location.x / W))
+                    }
+                    .onEnded { value in
+                        guard deck.duration > 0 else { return }
+                        let target = deck.duration * min(1, max(0, value.location.x / W))
+                        deck.seek(to: target)
+                        deck.scrubbing = false
+                    }
+            )
+            .animation(.easeOut(duration: 0.14), value: deck.scrubbing)
+        }
+    }
+}
+
+// MARK: - 全屏（真横屏：画面在左，说话在右，每句钉着片中时间）
 
 private struct CowatchFullscreen: View {
     @ObservedObject var deck: CowatchDeck
-    let item: CowatchItem
-    let size: CGSize
     var onExit: () -> Void
 
     @AppStorage("alcoveTheme") private var themeName = "haven"
-    @State private var showChat = false
+    // 字幕开关记在本地，她关过一次下次进来还是关的（0826 她要的）
+    @AppStorage("cowatchSubtitleOn") private var subtitleOn = true
+    @State private var showChat = true
+    @State private var draft = ""
     private var theme: AlcoveTheme { .panelNamed(themeName) }
 
     var body: some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
-            ZStack(alignment: .bottom) {
-                CowatchScreen(player: deck.player)
-
-                if !deck.currentLine.isEmpty {
-                    Text(deck.currentLine)
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundColor(.white)
-                        .shadow(color: .black.opacity(0.9), radius: 4, y: 1)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 30).padding(.bottom, 46)
+        GeometryReader { geo in
+            let landscape = geo.size.width > geo.size.height
+            HStack(spacing: 0) {
+                stage
+                if landscape && showChat {
+                    chatColumn.frame(width: min(340, geo.size.width * 0.34))
+                        .transition(.move(edge: .trailing))
                 }
-
-                deckBar
             }
-            .frame(width: size.height, height: size.width)
-            .overlay(alignment: .trailing) {
-                if showChat { chatWing.frame(width: 216) }
-            }
-            .rotationEffect(.degrees(90))
         }
+        .background(Color.black)
         .ignoresSafeArea()
+        // 以前是把整块画面 rotationEffect 转 90 度，手势和布局全是歪的。
+        // Info.plist 本来就允许横屏，直接请系统转过来就好（0826 她给了张图）
+        .onAppear { turn(.landscapeRight) }
+        .onDisappear { turn(.portrait) }
+    }
+
+    private func turn(_ mask: UIInterfaceOrientationMask) {
+        guard let scene = UIApplication.shared.connectedScenes
+            .compactMap({ $0 as? UIWindowScene }).first else { return }
+        scene.requestGeometryUpdate(.iOS(interfaceOrientations: mask))
+    }
+
+    // MARK: 左边：画面 + 字幕 + 控制条
+
+    private var stage: some View {
+        ZStack(alignment: .bottom) {
+            CowatchScreen(player: deck.player)
+            if subtitleOn, !deck.currentLine.isEmpty { subtitleBand }
+            deckBar
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// 听写出来的句子有时候一句就是一整段，不掐行会糊满整个屏（0826 她截过图）
+    private var subtitleBand: some View {
+        Text(deck.currentLine)
+            .font(.system(size: 19, weight: .semibold))
+            .foregroundColor(.white)
+            .lineLimit(2)
+            .minimumScaleFactor(0.72)
+            .multilineTextAlignment(.center)
+            .shadow(color: .black.opacity(0.92), radius: 5, y: 1)
+            .padding(.horizontal, 44)
+            .padding(.bottom, 74)
+            .allowsHitTesting(false)
     }
 
     private var deckBar: some View {
-        HStack(spacing: 7) {
-            pill("双语字幕") {}
-            pill("问这一幕", lamp: true) { Task { await deck.askThisMoment() } }
-            Spacer()
-            pill(showChat ? "收起" : "说话") { withAnimation(.easeInOut(duration: 0.24)) { showChat.toggle() } }
-            pill("退出全屏") { onExit() }
+        VStack(spacing: 9) {
+            CowatchScrubber(deck: deck, tint: theme.fyAccent)
+                .frame(height: 22)
+                .padding(.horizontal, 18)
+
+            HStack(spacing: 7) {
+                Button { deck.nudge(-15) } label: {
+                    Image(systemName: "gobackward.15").font(.system(size: 16))
+                        .foregroundColor(.white.opacity(0.9)).frame(width: 32, height: 28)
+                }.buttonStyle(.plain)
+                Button { deck.togglePlay() } label: {
+                    Image(systemName: deck.playing ? "pause.fill" : "play.fill")
+                        .font(.system(size: 17)).foregroundColor(.white)
+                        .frame(width: 32, height: 28)
+                }.buttonStyle(.plain)
+                Button { deck.nudge(15) } label: {
+                    Image(systemName: "goforward.15").font(.system(size: 16))
+                        .foregroundColor(.white.opacity(0.9)).frame(width: 32, height: 28)
+                }.buttonStyle(.plain)
+
+                Text("\(CowatchClock.stamp(Int(deck.shownTime)))  /  \(CowatchClock.stamp(Int(deck.duration)))")
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundColor(.white.opacity(0.55))
+
+                Spacer()
+
+                pill(subtitleOn ? "字幕" : "字幕 关", lamp: subtitleOn) { subtitleOn.toggle() }
+                pill(deck.asking ? "在看" : "问这一幕", lamp: true) {
+                    Task { await deck.askThisMoment() }
+                }
+                pill(showChat ? "收起" : "说话") {
+                    withAnimation(.easeInOut(duration: 0.24)) { showChat.toggle() }
+                }
+                pill("退出全屏") { onExit() }
+            }
+            .padding(.horizontal, 16)
         }
-        .padding(.horizontal, 14).padding(.bottom, 12)
+        .padding(.bottom, 14)
     }
 
     private func pill(_ title: String, lamp: Bool = false, action: @escaping () -> Void) -> some View {
@@ -434,30 +667,65 @@ private struct CowatchFullscreen: View {
                 .font(.system(size: 10.5, design: .monospaced))
                 .foregroundColor(lamp ? theme.fyAccent : .white.opacity(0.85))
                 .padding(.horizontal, 11).frame(height: 27)
-                .background(Color.black.opacity(0.42), in: Capsule())
-                .overlay(Capsule().stroke(lamp ? theme.fyAccent.opacity(0.4) : Color.white.opacity(0.18), lineWidth: 1))
+                .background(Color.black.opacity(0.45), in: Capsule())
+                .overlay(Capsule().stroke(lamp ? theme.fyAccent.opacity(0.42) : Color.white.opacity(0.18), lineWidth: 1))
         }.buttonStyle(.plain)
     }
 
-    private var chatWing: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 9) {
-                ForEach(deck.said) { line in
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(line.text).font(.system(size: 11.5))
-                            .padding(.horizontal, 10).padding(.vertical, 6)
-                            .background(Color.white.opacity(line.mine ? 0.14 : 0.08),
-                                        in: RoundedRectangle(cornerRadius: 11))
-                        Text(CowatchClock.stamp(line.ms / 1000))
-                            .font(.system(size: 9.5, design: .monospaced))
-                            .foregroundColor(theme.fyAccent)
+    // MARK: 右边：说话
+
+    private var chatColumn: some View {
+        VStack(spacing: 0) {
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 11) {
+                        ForEach(deck.said) { line in
+                            VStack(alignment: line.mine ? .trailing : .leading, spacing: 3) {
+                                Text(line.text)
+                                    .font(.system(size: 13))
+                                    .foregroundColor(theme.text)
+                                    .padding(.horizontal, 11).padding(.vertical, 7)
+                                    .background(line.mine ? theme.fyAccent.opacity(0.18) : theme.fyCardSub,
+                                                in: RoundedRectangle(cornerRadius: 12))
+                                Button { deck.seek(to: Double(line.ms) / 1000) } label: {
+                                    Text(CowatchClock.stamp(line.ms / 1000))
+                                        .font(.system(size: 10, design: .monospaced))
+                                        .foregroundColor(theme.fyAccent)
+                                }.buttonStyle(.plain)
+                            }
+                            .frame(maxWidth: .infinity, alignment: line.mine ? .trailing : .leading)
+                        }
+                        Color.clear.frame(height: 1).id("tail")
                     }
+                    .padding(.horizontal, 13).padding(.vertical, 14)
+                }
+                .onChange(of: deck.said.count) { _ in
+                    withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo("tail", anchor: .bottom) }
                 }
             }
-            .padding(12)
+
+            HStack(spacing: 8) {
+                TextField("说点什么，会钉在 \(CowatchClock.stamp(Int(deck.current)))", text: $draft)
+                    .font(.system(size: 12.5))
+                    .foregroundColor(theme.text)
+                    .padding(.horizontal, 12).frame(height: 34)
+                    .background(theme.fyCardSub, in: Capsule())
+                Button {
+                    let text = draft
+                    draft = ""
+                    Task { await deck.say(text) }
+                } label: {
+                    Image(systemName: "arrow.up").font(.system(size: 12.5, weight: .semibold))
+                        .frame(width: 34, height: 34)
+                        .background(theme.fyAccent.opacity(0.18), in: Circle())
+                        .foregroundColor(theme.fyAccent)
+                }
+                .buttonStyle(.plain)
+                .disabled(draft.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+            .padding(.horizontal, 12).padding(.top, 8).padding(.bottom, 14)
         }
-        .foregroundColor(.white)
-        .background(.ultraThinMaterial)
+        .background(theme.fyCard)
     }
 }
 
@@ -465,36 +733,92 @@ private struct CowatchFullscreen: View {
 
 final class CowatchDeck: ObservableObject {
     @Published var current: Double = 0
+    @Published var duration: Double = 0
+    @Published var playing = false
+    @Published var asking = false
+    @Published var scrubbing = false
+    @Published var scrubTime: Double = 0
+    /// 画面宽高比（宽 ÷ 高）。视频真正加载出来之前先按 16:9 摆。
+    @Published var aspect: CGFloat = 16.0 / 9.0
     @Published var lines: [CowatchLine] = []
     @Published var said: [CowatchSaid] = []
 
     let player = AVPlayer()
     private var observer: Any?
+    private var pollTask: Task<Void, Never>?
     private var videoID = ""
+    private var lastSaid = 0
 
+    /// 手指按在进度条上时显示手指的位置，松开才跟播放器走。
+    var shownTime: Double { scrubbing ? scrubTime : current }
     var currentT: Int { lines.last(where: { $0.t <= Int(current) })?.t ?? -1 }
     var currentLine: String { lines.last(where: { $0.t <= Int(current) })?.text ?? "" }
 
     @MainActor func open(item: CowatchItem) async {
         videoID = item.id
+        // 后端记着时长，进度条不用等 AVPlayer 把 moov 读完就能画出来
+        duration = Double(item.duration)
+
+        // ‼️没有这两行，手机侧边静音键一拨这一页就整个没声（0826 她说听不见声音）。
+        // 默认的 soloAmbient 跟静音开关走；别的页面早就配了，就共影室漏了。
+        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
+        try? AVAudioSession.sharedInstance().setActive(true)
+
         let asset = AVURLAsset(url: AlcoveAPI.fullURL("/api/cowatch/stream/\(item.id)"))
         player.replaceCurrentItem(with: AVPlayerItem(asset: asset))
         if item.progress > 3 { seek(to: Double(item.progress)) }
         player.play()
+        playing = true
+
         observer = player.addPeriodicTimeObserver(
-            forInterval: CMTime(seconds: 0.5, preferredTimescale: 600), queue: .main
+            forInterval: CMTime(seconds: 0.4, preferredTimescale: 600), queue: .main
         ) { [weak self] time in
-            self?.current = time.seconds.isFinite ? time.seconds : 0
+            guard let self else { return }
+            if !self.scrubbing {
+                self.current = time.seconds.isFinite ? time.seconds : 0
+            }
+            self.playing = self.player.timeControlStatus == .playing
+            if let asset = self.player.currentItem {
+                let real = asset.duration.seconds
+                if real.isFinite, real > 0, abs(real - self.duration) > 1 { self.duration = real }
+                let box = asset.presentationSize
+                if box.width > 0, box.height > 0 {
+                    let ratio = box.width / box.height
+                    if abs(ratio - self.aspect) > 0.01 {
+                        withAnimation(.easeInOut(duration: 0.25)) { self.aspect = ratio }
+                    }
+                }
+            }
         }
+
         if let value = try? await NativeHouseAPI.object("/api/cowatch/video?id=\(item.id)") {
             lines = (value["transcript"] as? [[String: Any]] ?? []).map(CowatchLine.init)
         }
         await loadSaid()
+        startPolling()
+    }
+
+    /// 我在这间屋子里回的话是后端另一头写进去的，前端自己隔几秒来拿。
+    private func startPolling() {
+        pollTask?.cancel()
+        pollTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                guard let self, !Task.isCancelled else { return }
+                await self.loadSaid()
+            }
+        }
     }
 
     @MainActor func loadSaid() async {
-        guard let value = try? await NativeHouseAPI.object("/api/cowatch/danmaku?id=\(videoID)") else { return }
-        said = (value["items"] as? [[String: Any]] ?? []).map(CowatchSaid.init)
+        guard !videoID.isEmpty else { return }
+        guard let value = try? await NativeHouseAPI.object(
+            "/api/cowatch/danmaku?id=\(videoID)&since=\(lastSaid)") else { return }
+        let fresh = (value["items"] as? [[String: Any]] ?? []).map(CowatchSaid.init)
+        guard !fresh.isEmpty else { return }
+        said.append(contentsOf: fresh)
+        lastSaid = max(lastSaid, fresh.map(\.id).max() ?? lastSaid)
+        if fresh.contains(where: { !$0.mine }) { asking = false }
     }
 
     @MainActor func say(_ text: String) async {
@@ -506,24 +830,51 @@ final class CowatchDeck: ObservableObject {
         await loadSaid()
     }
 
+    /// 问这一幕：后端把这一秒之前的台词捆成证据递给我，同时把我叫醒。
+    /// 以前这里拿到 model_content 之后什么都不做，等于按了个空按钮（0826 接上）。
     @MainActor func askThisMoment() async {
+        guard !asking else { return }
+        asking = true
+        player.pause()
+        playing = false
         _ = try? await NativeHouseAPI.request(
             "/api/cowatch/moment", method: "POST",
             body: ["id": videoID, "at": Int(current)])
+        await loadSaid()
+    }
+
+    func togglePlay() {
+        if player.timeControlStatus == .playing {
+            player.pause()
+            playing = false
+        } else {
+            player.play()
+            playing = true
+        }
+    }
+
+    func nudge(_ seconds: Double) {
+        seek(to: max(0, min(duration > 0 ? duration : .greatestFiniteMagnitude, current + seconds)))
     }
 
     func seek(to seconds: Double) {
+        current = max(0, seconds)
         player.seek(to: CMTime(seconds: max(0, seconds), preferredTimescale: 600),
                     toleranceBefore: .zero, toleranceAfter: .zero)
     }
 
     func close() {
+        pollTask?.cancel()
+        pollTask = nil
         if let observer { player.removeTimeObserver(observer) }
         observer = nil
-        let seconds = Int(current)
+        // 看到片尾了就把进度抹掉，不然下次点开直接跳到结尾（教程 2.5）
+        let atEnd = duration > 0 && current > duration - 15
+        let seconds = atEnd ? 0 : Int(current)
         let id = videoID
         player.pause()
         player.replaceCurrentItem(with: nil)
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         guard !id.isEmpty else { return }
         Task {
             _ = try? await NativeHouseAPI.request(
@@ -543,13 +894,14 @@ struct CowatchLine: Identifiable, Hashable {
 }
 
 struct CowatchSaid: Identifiable, Hashable {
+    let id: Int
     let ms: Int
     let actor: String
     let text: String
     let created: String
-    var id: String { "\(ms)-\(created)" }
     var mine: Bool { actor == "陈霁" }
     init(_ row: [String: Any]) {
+        id = row["id"] as? Int ?? 0
         ms = row["ms"] as? Int ?? 0
         actor = row["actor"] as? String ?? ""
         text = row["text"] as? String ?? ""

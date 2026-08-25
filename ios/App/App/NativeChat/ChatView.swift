@@ -264,7 +264,8 @@ struct ChatView: View {
                                             theme: theme)
                                 .id("typing")
                         }
-                        // 信息主题：输入栏挂在安全区里，列表不用再替它留高
+                        // 信息主题：输入栏和迷你条都挂在安全区那一栏里，系统自己会推，
+                        // 列表这边一点都不用替它们留高
                         Color.clear.frame(height: (theme.isMessages ? 0 : bottomChromeHeight) + 12
                                           + (showMiniTerminal ? miniTerminalHeight + 18 : 0))
                         Color.clear.frame(height: 1).id("tail")
@@ -310,7 +311,19 @@ struct ChatView: View {
                     }
                 }
                 .safeAreaBar(edge: .bottom, spacing: 0) {
-                    if theme.isMessages && !paragraphSelectionMode { floatingInput }
+                    if theme.isMessages && !paragraphSelectionMode {
+                        // 迷你条跟打字框叠成同一栏交给系统量高度。
+                        // 之前它浮在 ZStack 里，那一层的底既不是屏幕底也不是打字框上沿，
+                        // 垫多了空一条，垫少了直接把打字框盖住（0826 两回都踩了）
+                        VStack(spacing: 8) {
+                            if music.nowPlaying != nil {
+                                MusicMiniPlayer(model: music) { showMusicPlayer = true }
+                                    .padding(.horizontal, 12)
+                                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                            }
+                            floatingInput
+                        }
+                    }
                 }
                 .scrollEdgeEffectStyle(theme.isMessages ? .soft : .automatic, for: .bottom)
                 .scrollEdgeEffectHidden(theme.isMessages, for: .top)   // 顶部不用系统效果，走上面纸页式渐隐
@@ -329,7 +342,8 @@ struct ChatView: View {
                     floatingInput
                 }
 
-                if music.nowPlaying != nil && !paragraphSelectionMode {
+                // 信息主题的那条挂在上面的 safeAreaBar 里，跟打字框同一栏
+                if music.nowPlaying != nil && !paragraphSelectionMode && !theme.isMessages {
                     MusicMiniPlayer(model: music) { showMusicPlayer = true }
                         .padding(.horizontal, 12)
                         .padding(.bottom, inputBarHeight + 10)
