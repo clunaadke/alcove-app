@@ -41,11 +41,17 @@ final class LinkCardStore: ObservableObject {
 
     enum State: Equatable { case loading, ready(LinkCard), failed }
     @Published private(set) var cards: [String: State] = [:]
+    private var attempts: [String: Int] = [:]
 
     func state(for url: String) -> State? { cards[url] }
 
     func load(_ url: String) {
-        guard cards[url] == nil else { return }
+        if let state = cards[url] {
+            if case .loading = state { return }
+            if case .ready = state { return }
+        }
+        let attempt = (attempts[url] ?? 0) + 1
+        attempts[url] = attempt
         cards[url] = .loading
         Task { [weak self] in
             var comps = URLComponents(url: AlcoveAPI.fullURL("/api/linkcard"), resolvingAgainstBaseURL: false)!
@@ -56,8 +62,16 @@ final class LinkCardStore: ObservableObject {
                   let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let card = LinkCard(obj["card"] as? [String: Any]) else {
                 self?.cards[url] = .failed
+                // Assistant tool-posts can reach the chat poll just before the
+                // backend prewarm finishes. Retry briefly instead of pinning the
+                // URL to `.failed` for the rest of the app session.
+                if attempt < 3 {
+                    try? await Task.sleep(nanoseconds: 1_500_000_000)
+                    if self?.cards[url] == .failed { self?.load(url) }
+                }
                 return
             }
+            self?.attempts[url] = 0
             self?.cards[url] = .ready(card)
         }
     }
@@ -111,7 +125,11 @@ struct LinkPreviewCard: View {
                             Button { UIPasteboard.general.string = u.absoluteString } label: { Label("复制链接", systemImage: "doc.on.doc") }
                         }
                     }
-            case .loading:
+            case .loading, .none:
+                // Assistant-posted links are not preloaded by the composer.
+                // This placeholder gives the view a real layout node so
+                // onAppear below can start the first fetch; EmptyView could
+                // prevent that callback from ever firing.
                 HStack(spacing: 10) {
                     ProgressView().scaleEffect(0.7).tint(theme.fyAccent)
                     Text("正在把那页取回来…")
@@ -119,9 +137,24 @@ struct LinkPreviewCard: View {
                 }
                 .padding(.horizontal, 12).padding(.vertical, 10)
                 .background(theme.fyCard.opacity(0.9), in: RoundedRectangle(cornerRadius: 14))
-            case .failed, .none:
-                // 抓不到就什么都不画——链接本身还在气泡里，不碍事
-                EmptyView()
+            case .failed:
+                // Bare-link messages suppress their ordinary bubble in favor of
+                // this view. If metadata really cannot be fetched, keep a visible
+                // tappable URL rather than making the whole message disappear.
+                if let raw = URL(string: url) {
+                    Button { UIApplication.shared.open(raw) } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "link")
+                            Text(url).lineLimit(2).multilineTextAlignment(.leading)
+                        }
+                        .font(.system(size: 11.5, design: .serif))
+                        .foregroundColor(theme.textDim)
+                        .padding(.horizontal, 12).padding(.vertical, 10)
+                        .frame(maxWidth: 300, alignment: .leading)
+                        .background(theme.fyCard.opacity(0.9), in: RoundedRectangle(cornerRadius: 14))
+                    }
+                    .buttonStyle(.plain)
+                }
             }
         }
         .onAppear { store.load(url) }
