@@ -54,6 +54,18 @@ enum CowatchClock {
     }
 }
 
+// 客厅那套 foyerCard 关在 NativeHouseViews 的 private extension 里，跨文件够不着。
+// 这间屋子自己留一张同样气质的卡片。
+private extension View {
+    func cowatchCard(_ theme: AlcoveTheme) -> some View {
+        background(theme.fyCard, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 15, style: .continuous)
+                    .stroke(theme.textDim.opacity(0.14), lineWidth: 0.7)
+            )
+    }
+}
+
 // MARK: - 片单
 
 struct NativeCowatchView: View {
@@ -141,7 +153,7 @@ struct NativeCowatchView: View {
         }
         .padding(13)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .foyerCard(theme)
+        .cowatchCard(theme)
     }
 
     @MainActor private func load() async {
