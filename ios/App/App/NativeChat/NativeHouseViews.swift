@@ -1018,9 +1018,10 @@ private struct NativeSettingsView: View {
     @State private var cacheCutoff = Calendar.current.date(byAdding: .day, value: -3, to: Date()) ?? Date()
     @State private var cacheJustFreed: Int64? = nil
     @Environment(\.houseOwnsHeader) private var houseOwnsHeader
+    // 0826 她说一点进去闪白再变黑：UITraitCollection.current 在 SwiftUI 求值那一刻
+    // 还可能停在 light，第二帧才对，于是白闪一下。环境里的 colorScheme 首帧就准。
     private var interfaceDark: Bool {
-        houseAppearance == "dark" || (houseAppearance == "system"
-            && UITraitCollection.current.userInterfaceStyle == .dark)
+        houseAppearance == "dark" || (houseAppearance == "system" && systemColorScheme == .dark)
     }
     private var theme: AlcoveTheme { interfaceDark ? .messagesDark : .messages }
 
@@ -3516,7 +3517,7 @@ private struct NativeDataPanel: View {
     @AppStorage("houseInterfaceAppearance") private var appearance = "system"
     @Environment(\.colorScheme) private var systemScheme
     private var dark: Bool { appearance == "dark" || (appearance == "system"
-        && UITraitCollection.current.userInterfaceStyle == .dark) }
+        && systemScheme == .dark) }
     private var theme: AlcoveTheme { dark ? .messagesDark : .messages }
 
     var body: some View {
@@ -3769,8 +3770,7 @@ private struct NativeCoreadRoomView: View {
     @AppStorage("coreadActiveBookID") private var activeBookID = ""
     @AppStorage("coreadActiveChapter") private var activeChapter = 0
     private var isNight: Bool {
-        houseAppearance == "dark" || (houseAppearance == "system"
-            && UITraitCollection.current.userInterfaceStyle == .dark)
+        houseAppearance == "dark" || (houseAppearance == "system" && colorScheme == .dark)
     }
 
     var body: some View {
@@ -3925,7 +3925,8 @@ private struct CoreadPressStyle: ButtonStyle {
 // 三件套缺一不可 —— 整页大渐变（顶亮底暗）· 水痕亮斑 · 噪点。
 // 少了噪点就是普通毛玻璃，整张脸会平掉，这条是看图看出来的第一条。
 
-private struct YanxiaPal {
+// 檐下这套皮不止共读在用了（0826 她要冲浪收藏和设置页也统一过来），所以开放到文件外。
+struct YanxiaPal {
     let night: Bool
     var ink: Color    { night ? Color(red: 0.90, green: 0.93, blue: 0.95) : Color(red: 0.165, green: 0.185, blue: 0.212) }
     var ink2: Color   { night ? Color(red: 0.70, green: 0.75, blue: 0.80) : Color(red: 0.290, green: 0.322, blue: 0.361) }
@@ -3952,7 +3953,7 @@ private struct YanxiaPal {
 
 /// 噪点。一次生成一张 128×128 的图平铺 ——
 /// ‼️不能用 Canvas 每帧现算：随机数每次重绘都变，整页会闪。
-private enum YanxiaGrain {
+enum YanxiaGrain {
     static let tile: UIImage = {
         let side = 128
         let fmt = UIGraphicsImageRendererFormat.default()
@@ -3974,7 +3975,7 @@ private enum YanxiaGrain {
     }()
 }
 
-private struct CoreadYanxiaBackground: View {
+struct CoreadYanxiaBackground: View {
     let isNight: Bool
     private var pal: YanxiaPal { YanxiaPal(night: isNight) }
     /// x, y, 半径系数, 强度
@@ -4522,7 +4523,7 @@ private struct NativePlayView: View {
     @AppStorage("houseInterfaceAppearance") private var appearance = "system"
     @Environment(\.colorScheme) private var systemScheme
     private var dark: Bool { appearance == "dark" || (appearance == "system"
-        && UITraitCollection.current.userInterfaceStyle == .dark) }
+        && systemScheme == .dark) }
     private var theme: AlcoveTheme { dark ? .messagesDark : .messages }
     private var url: URL {
         switch destination {

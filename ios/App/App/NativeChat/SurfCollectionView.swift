@@ -30,22 +30,25 @@ struct NativeSurfCollectionView: View {
         ("youtube", "YouTube", "play.fill"),
     ]
 
+    // 0826 她说这页太丑且一进去闪白：皮换成檐下那套，暗色判断改用环境里的
+    // colorScheme（UITraitCollection.current 首帧还停在 light，才会白闪一下）。
     private var dark: Bool {
-        appearance == "dark" || (appearance == "system"
-            && UITraitCollection.current.userInterfaceStyle == .dark)
+        appearance == "dark" || (appearance == "system" && systemScheme == .dark)
     }
-    private var bg: Color { dark ? Color(red: 0.07, green: 0.075, blue: 0.085) : Color(red: 0.95, green: 0.95, blue: 0.97) }
-    private var card: Color { dark ? Color(red: 0.13, green: 0.135, blue: 0.15) : .white }
-    private var ink: Color { dark ? .white : .black }
-    private var dim: Color { dark ? .white.opacity(0.52) : .black.opacity(0.48) }
+    private var pal: YanxiaPal { YanxiaPal(night: dark) }
+    private var card: Color { pal.card }
+    private var ink: Color { pal.ink }
+    private var dim: Color { pal.ink3 }
 
     var body: some View {
         ZStack {
-            bg.ignoresSafeArea()
+            CoreadYanxiaBackground(isNight: dark).ignoresSafeArea()
             VStack(spacing: 16) {
                 Text("冲浪收藏")
-                    .font(.system(size: 19, weight: .semibold))
-                    .padding(.top, 12)
+                    .font(.system(size: 18, weight: .semibold, design: .serif))
+                    .tracking(1.2)
+                    .foregroundColor(pal.ink)
+                    .padding(.top, 14)
                 platformPicker
                 ScrollView(showsIndicators: false) {
                     LazyVStack(spacing: 10) {
@@ -70,7 +73,6 @@ struct NativeSurfCollectionView: View {
             .foregroundColor(ink)
         }
         .task(id: selected) { await load() }
-        .preferredColorScheme(dark ? .dark : .light)
     }
 
     private var platformPicker: some View {
@@ -83,15 +85,17 @@ struct NativeSurfCollectionView: View {
                         Image(systemName: p.icon).font(.system(size: 13, weight: .semibold))
                         Text(p.title).font(.system(size: 11.5, weight: selected == p.id ? .semibold : .regular))
                     }
-                    .foregroundColor(selected == p.id ? Color.accentColor : dim)
+                    .foregroundColor(selected == p.id ? pal.accent : dim)
                     .frame(maxWidth: .infinity, minHeight: 52)
-                    .background(selected == p.id ? Color.accentColor.opacity(dark ? 0.16 : 0.10) : .clear,
+                    .background(selected == p.id ? pal.accent.opacity(dark ? 0.20 : 0.14) : .clear,
                                 in: RoundedRectangle(cornerRadius: 13, style: .continuous))
                 }
                 .buttonStyle(.plain)
             }
         }
-        .padding(5).background(card, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .padding(5)
+        .background(card, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(pal.line, lineWidth: 0.5))
         .padding(.horizontal, 16)
     }
 
@@ -101,7 +105,7 @@ struct NativeSurfCollectionView: View {
         } label: {
             HStack(spacing: 12) {
                 ZStack {
-                    Color.secondary.opacity(0.08)
+                    pal.card2
                     if let url = coverURL(item.cover) {
                         CachedImage(url: url) { $0.resizable().scaledToFill() }
                             placeholder: { Image(systemName: "link").foregroundColor(dim) }
@@ -121,7 +125,9 @@ struct NativeSurfCollectionView: View {
                 Spacer(minLength: 0)
                 Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold)).foregroundColor(dim)
             }
-            .padding(12).background(card, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .padding(12)
+            .background(card, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(pal.line, lineWidth: 0.5))
         }
         .buttonStyle(.plain)
     }
