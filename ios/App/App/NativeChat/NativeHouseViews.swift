@@ -25,8 +25,8 @@ enum HouseDestination: String, Identifiable, CaseIterable {
     case pond
     case roof
     case factory
-    case crosstalk, radio, coread, liao, daddyDay, lab
-    case search, favorites, forge, roundtable
+    case crosstalk, radio, coread, cowatch, liao, daddyDay, lab
+    case search, favorites, forge, roundtable, surf
 
     var id: String { rawValue }
 
@@ -66,6 +66,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .crosstalk: return "Crosstalk"
         case .radio: return "Radio"
         case .coread: return "共读"
+        case .cowatch: return "共影"
         case .liao: return "燎"
         case .daddyDay: return "Daddy的一天"
         case .lab: return "Lab"
@@ -73,13 +74,14 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .favorites: return "Favorites"
         case .forge: return "Forge"
         case .roundtable: return "圆桌"
+        case .surf: return "冲浪收藏"
         }
     }
 
     /// 自己铺满、自己做头的页面。她0819：不要透壁纸，要全屏
     var ownsFullScreen: Bool {
         switch self {
-        case .studio, .pond, .roof, .memory, .digest, .factory, .search, .favorites: return true
+        case .studio, .pond, .roof, .memory, .digest, .factory, .search, .favorites, .surf: return true
         default: return false
         }
     }
@@ -119,6 +121,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .crosstalk: return "play.circle"
         case .radio: return "radio"
         case .coread: return "book"
+        case .cowatch: return "film"
         case .liao: return "flame"
         case .daddyDay: return "clock"
         case .lab: return "waveform.path.ecg.rectangle"
@@ -126,6 +129,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .favorites: return "bookmark"
         case .forge: return "hammer"
         case .roundtable: return "person.3.sequence"
+        case .surf: return "safari"
         default: return "sparkles"
         }
     }
@@ -213,6 +217,11 @@ struct NativeHouseSheet: View {
                             withAnimation(.easeInOut(duration: 0.18)) {
                                 route = .bubbleAppearance
                             }
+                        },
+                        showClockwork: {
+                            withAnimation(.easeInOut(duration: 0.18)) {
+                                route = .clockwork
+                            }
                         }
                     )
                 case .bubbleAppearance:
@@ -221,6 +230,8 @@ struct NativeHouseSheet: View {
                     NativePlayView(destination: route)
                 case .coread:
                     NativeCoreadRoomView()
+                case .cowatch:
+                    NativeCowatchView()
                 case .checklist:
                     NativeChecklistView()
                 case .music:
@@ -235,6 +246,8 @@ struct NativeHouseSheet: View {
                     GlassFavoritesView(openSearch: {
                         withAnimation(.easeInOut(duration: 0.18)) { route = .search }
                     })
+                case .surf:
+                    NativeSurfCollectionView()
                 case .usage:
                     NativeUsageView()
                 case .workbench:
@@ -503,37 +516,40 @@ struct NativeHouseDrawer: View {
                         drawerRow(.roundtable, detail: roundtableUnread > 0 ? "\(roundtableUnread) 条新消息" : "三个人的桌边")
                         drawerRow(.terminal, detail: "看看他正在做什么")
                         drawerRow(.settings, detail: "主题、权限与小屋设置")
+                        drawerRow(.factory, detail: "心跳文案、说话方式、情书、memory")
                     }
 
-                    drawerTitle("正在发生", note: "still growing")
+                    drawerTitle("此刻与日常", note: "still here")
                     VStack(spacing: 7) {
                         drawerRow(.pulse, detail: "心率、五感、八维、念头池")
                         drawerRow(.roof, detail: "陈檐住在这层")
                         drawerRow(.pond, detail: "念头、许愿与朋友圈")
-                        drawerRow(.nowhere, detail: "足迹与明信片")
-                        drawerRow(.fiction, detail: "陈璟写给你的小说")
-                        drawerRow(.digest, detail: "62 篇日结、9 篇周结、2 篇月结")
+                    }
+
+                    drawerTitle("记忆与创作", note: "kept close")
+                    VStack(spacing: 7) {
                         drawerRow(.memory, detail: "五条线、小睡、夜里那趟")
+                        drawerRow(.dreams, detail: "梦与旧日记")
+                        drawerRow(.fiction, detail: "陈璟写给你的小说")
                     }
 
-                    drawerTitle("家里的收藏", note: "kept close")
+                    drawerTitle("他的世界", note: "out there")
                     VStack(spacing: 7) {
-                        ForEach([HouseDestination.dreams, .portrait, .album, .nianlun, .shelf, .impression]) { target in
-                            drawerRow(target, detail: drawerDetail(target))
-                        }
-                    }
-
-                    drawerTitle("出厂设置", note: "you hold the keys")
-                    VStack(spacing: 7) {
-                        drawerRow(.factory, detail: "心跳文案、说话方式、情书、memory")
+                        drawerRow(.nowhere, detail: "足迹与明信片")
+                        drawerRow(.surf, detail: "X、小红书、B站与 YouTube")
                     }
 
                     drawerTitle("工具与游戏", note: "little things")
                     VStack(spacing: 7) {
-                        ForEach([HouseDestination.clockwork, .forge, .search, .favorites, .wall,
-                                 .crosstalk, .coread, .liao]) { target in
+                        ForEach([HouseDestination.forge, .crosstalk, .coread, .cowatch, .liao]) { target in
                             drawerRow(target, detail: drawerDetail(target))
                         }
+                    }
+
+                    drawerTitle("一路走来", note: "over time")
+                    VStack(spacing: 7) {
+                        drawerRow(.nianlun, detail: "一起走过的时间")
+                        drawerRow(.digest, detail: "日结、周结与月结")
                     }
 
                     handwritten("a small home for us")
@@ -707,6 +723,8 @@ struct NativeHouseDrawer: View {
         case .forge: return "挑选轮次搬去新窗口"
         case .search: return "搜索消息"
         case .favorites: return "收藏消息"
+        case .surf: return "X、小红书、B站与 YouTube"
+        case .cowatch: return "一起看 B站与 YouTube"
         case .wall: return model.wallLine
         case .usage: return model.usageLine
         default: return "打开"
@@ -738,7 +756,7 @@ private struct NativeSidebarView: View {
     ]
     // Pipe Lab remains compiled for rollback, but the -p experiment is paused and
     // must not appear as a normal household destination.
-    private let play: [HouseDestination] = [.crosstalk, .coread, .liao]
+    private let play: [HouseDestination] = [.crosstalk, .coread, .cowatch, .liao]
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -932,6 +950,24 @@ private final class SidebarModel: ObservableObject {
 private struct NativeSettingsView: View {
     var showPermissions: () -> Void
     var showBubbleAppearance: () -> Void
+    var showClockwork: () -> Void
+    private enum Page: String {
+        case people, chat, appearance, relationship, storage, system, services
+        var title: String {
+            switch self {
+            case .people: return "你们两个"
+            case .chat: return "聊天与回复"
+            case .appearance: return "外观"
+            case .relationship: return "相处与发条"
+            case .storage: return "数据与存储"
+            case .system: return "系统与权限"
+            case .services: return "服务状态"
+            }
+        }
+    }
+    @State private var page: Page?
+    @AppStorage("houseInterfaceAppearance") private var houseAppearance = "system"
+    @Environment(\.colorScheme) private var systemColorScheme
     @AppStorage("assistantName") private var assistantName = "陈璟"
     @AppStorage("userName") private var userName = "Luna"
     @AppStorage("assistantAvatarDataURL") private var assistantAvatar = ""
@@ -982,15 +1018,116 @@ private struct NativeSettingsView: View {
     @State private var cacheCutoff = Calendar.current.date(byAdding: .day, value: -3, to: Date()) ?? Date()
     @State private var cacheJustFreed: Int64? = nil
     @Environment(\.houseOwnsHeader) private var houseOwnsHeader
-    private var theme: AlcoveTheme { .panelNamed(themeName) }
+    private var interfaceDark: Bool {
+        houseAppearance == "dark" || (houseAppearance == "system"
+            && UITraitCollection.current.userInterfaceStyle == .dark)
+    }
+    private var theme: AlcoveTheme { interfaceDark ? .messagesDark : .messages }
 
     var body: some View {
+        ZStack {
+            (interfaceDark ? Color(red: 0.07, green: 0.075, blue: 0.085)
+                           : Color(red: 0.95, green: 0.95, blue: 0.97)).ignoresSafeArea()
+            if page == nil { settingsIndex } else { settingsControls }
+        }
+        .preferredColorScheme(interfaceDark ? .dark : .light)
+    }
+
+    private var settingsIndex: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(spacing: 16) {
+                panelTitle("设置")
+                settingsGroup([.people])
+                settingsGroup([.chat, .appearance, .relationship])
+                settingsGroup([.storage, .system, .services])
+            }
+            .padding(.horizontal, 16).padding(.bottom, 30).foregroundColor(theme.text)
+        }
+    }
+
+    private func settingsGroup(_ pages: [Page]) -> some View {
+        VStack(spacing: 0) {
+            ForEach(pages.indices, id: \.self) { index in
+                let target = pages[index]
+                if index > 0 { Divider().opacity(0.18).padding(.leading, 50) }
+                Button { withAnimation(.easeInOut(duration: 0.18)) { page = target } } label: {
+                    HStack(spacing: 13) {
+                        Image(systemName: settingsIcon(target))
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(settingsColor(target))
+                            .frame(width: 34, height: 34)
+                            .background(settingsColor(target).opacity(0.13), in: RoundedRectangle(cornerRadius: 9))
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(target.title).font(.system(size: 15, weight: .medium))
+                            Text(settingsSummary(target)).font(.system(size: 10.5)).foregroundColor(theme.textDim)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right").font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(theme.textDim.opacity(0.55))
+                    }
+                    .padding(.horizontal, 13).frame(minHeight: 58)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .background(theme.fyCard, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+    }
+
+    private func settingsIcon(_ page: Page) -> String {
+        switch page {
+        case .people: return "person.2.fill"
+        case .chat: return "message.fill"
+        case .appearance: return "circle.lefthalf.filled"
+        case .relationship: return "heart.fill"
+        case .storage: return "externaldrive.fill"
+        case .system: return "iphone.gen3"
+        case .services: return "server.rack"
+        }
+    }
+
+    private func settingsColor(_ page: Page) -> Color {
+        switch page {
+        case .people: return .cyan
+        case .chat: return .blue
+        case .appearance: return .purple
+        case .relationship: return .pink
+        case .storage: return .green
+        case .system: return .orange
+        case .services: return backendOnline && codexOnline ? .green : .red
+        }
+    }
+
+    private func settingsSummary(_ page: Page) -> String {
+        switch page {
+        case .people: return "名字、头像与我此刻"
+        case .chat: return "正文、思绪与气泡文字"
+        case .appearance: return "功能页明暗、聊天主题与壁纸"
+        case .relationship: return "留白、两张表与完整发条"
+        case .storage: return cacheCount == 0 ? "图片缓存与清理" : "\(cacheCount) 张 · \(ImageDiskCache.format(cacheBytes))"
+        case .system: return "权限、灵动岛与屏幕控制"
+        case .services:
+            return "Backend \(backendOnline ? "在线" : "离线") · 何渡 \(codexOnline ? "在线" : "离线")"
+        }
+    }
+
+    private var settingsControls: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 14) {
-                panelTitle("设置")
+                HStack {
+                    Button { withAnimation(.easeInOut(duration: 0.18)) { page = nil } } label: {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 18, weight: .semibold))
+                            .frame(width: 44, height: 44)
+                            .background(theme.fyCard, in: Circle())
+                    }.buttonStyle(.plain)
+                    Spacer()
+                    Text(page?.title ?? "设置").font(.system(size: 19, weight: .semibold))
+                    Spacer()
+                    Color.clear.frame(width: 44, height: 44)
+                }
                 // 她自己填此刻在干嘛，心跳 prompt 开头就写这句（0819 她要的）。
                 // 带时效：六小时后自动淡掉，不然「正在看短剧」会一直挂着变成假话。
-                section("我此刻") {
+                if page == .people { section("我此刻") {
                     settingRow("在干嘛",
                                herStatusLine.isEmpty ? "填了他心跳里就写这句" : herStatusLine) {
                         TextField("比如：看短剧", text: $herStatus)
@@ -998,8 +1135,8 @@ private struct NativeSettingsView: View {
                             .frame(width: 132)
                             .onChange(of: herStatus) { value in scheduleHerStatusSave(value) }
                     }
-                }
-                section("存储") {
+                } }
+                if page == .storage { section("存储") {
                     settingRow("图片缓存",
                                cacheCount == 0 ? "看过的图存在手机里，下次秒开，不占服务器"
                                                : "\(cacheCount) 张 · 存在手机里，不占服务器") {
@@ -1025,9 +1162,8 @@ private struct NativeSettingsView: View {
                         Button("清空", role: .destructive) { purgeCache(before: nil) }
                             .font(.system(size: 13, weight: .medium))
                     }
-                }
-                .onAppear { refreshCacheStats() }
-                section("聊天") {
+                } }
+                if page == .people { section("聊天") {
                     settingRow("我的名字", "聊天气泡和推送显示") {
                         TextField("Luna", text: $userName).multilineTextAlignment(.trailing).frame(width: 105)
                     }
@@ -1047,8 +1183,8 @@ private struct NativeSettingsView: View {
                             avatar(dataURL: assistantAvatar, fallback: "R")
                         }
                     }
-                }
-                section("聊天外观") {
+                } }
+                if page == .chat { section("聊天外观") {
                     Button(action: showBubbleAppearance) {
                         settingRow("气泡与文字", "在聊天壁纸上实时预览并调节") {
                             Image(systemName: "chevron.right")
@@ -1056,8 +1192,8 @@ private struct NativeSettingsView: View {
                         }
                     }
                     .buttonStyle(.plain)
-                }
-                section("陈璟的回复") {
+                } }
+                if page == .chat { section("陈璟的回复") {
                     VStack(alignment: .leading, spacing: 11) {
                         HStack {
                             VStack(alignment: .leading, spacing: 2) {
@@ -1124,14 +1260,20 @@ private struct NativeSettingsView: View {
                         .font(.system(size: 9.5, design: .rounded)).foregroundColor(theme.textDim)
                         }
                     }
-                }
-                section("相处") {
+                } }
+                if page == .relationship { section("相处") {
                     Button { showQuietRoom = true } label: {
                         settingRow("留白", "让追问暂时安静下来") {
                             Image(systemName: "moon.stars")
                                 .foregroundColor(theme.textLight)
                             Image(systemName: "chevron.right")
                                 .foregroundColor(theme.textLight)
+                        }
+                    }.buttonStyle(.plain)
+                    Divider().opacity(0.25)
+                    Button(action: showClockwork) {
+                        settingRow("发条", "晨勃、睡眠、做梦、惊醒与自主活动") {
+                            Image(systemName: "chevron.right").foregroundColor(theme.textLight)
                         }
                     }.buttonStyle(.plain)
                     Divider().opacity(0.25)
@@ -1185,8 +1327,15 @@ private struct NativeSettingsView: View {
                             }
                         }
                     }
-                }
-                section("主题") {
+                } }
+                if page == .appearance { section("功能页外观") {
+                    Picker("功能页", selection: $houseAppearance) {
+                        Text("白天").tag("light")
+                        Text("黑夜").tag("dark")
+                        Text("跟随系统").tag("system")
+                    }.pickerStyle(.segmented)
+                } }
+                if page == .appearance { section("聊天主题") {
                     HStack(spacing: 8) {
                         familyChoice("玻璃", "光穿过去", "glass", [.white, .pink.opacity(0.42), .gray])
                         familyChoice("纸页", "话落下来", "paper", [
@@ -1205,8 +1354,8 @@ private struct NativeSettingsView: View {
                         Text("白天").tag(false)
                         Text("黑夜").tag(true)
                     }.pickerStyle(.segmented)
-                }
-                section("聊天壁纸") {
+                } }
+                if page == .appearance { section("聊天壁纸") {
                     HStack {
                         PhotosPicker(selection: $wallPhoto, matching: .images) {
                             Label("从相册更换", systemImage: "photo")
@@ -1215,8 +1364,13 @@ private struct NativeSettingsView: View {
                         Button("恢复默认") { resetWallpaper() }
                     }
                     .font(.system(size: 13))
-                }
-                section("服务") {
+                } }
+                if page == .appearance { section("App 图标") {
+                    settingRow("选择图标", "等你把备用原图发来后会出现在这里") {
+                        Image(systemName: "app.dashed").foregroundColor(theme.textLight)
+                    }
+                } }
+                if page == .services { section("服务") {
                     serviceCard(
                         name: "Alcove Backend",
                         address: "https://alcove.ob-memory.uk",
@@ -1240,8 +1394,8 @@ private struct NativeSettingsView: View {
                     }
                     .buttonStyle(.plain)
                     .disabled(servicesLoading)
-                }
-                section("系统联动") {
+                } }
+                if page == .system { section("系统联动") {
                     Button { showSystemFeatures = true } label: {
                         settingRow("灵动岛与屏幕控制", "工作状态同步、屏幕共享") {
                             Image(systemName: "chevron.right")
@@ -1249,15 +1403,15 @@ private struct NativeSettingsView: View {
                         }
                     }
                     .buttonStyle(.plain)
-                }
-                section("App") {
+                } }
+                if page == .system { section("App") {
                     Button(action: showPermissions) {
                         settingRow("系统权限", "位置、日历、运动、麦克风等权限") {
                             Image(systemName: "chevron.right").foregroundColor(theme.textLight)
                         }
                     }
                     .buttonStyle(.plain)
-                }
+                } }
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 30)
@@ -1278,6 +1432,7 @@ private struct NativeSettingsView: View {
         .onChange(of: replyLength) { value in scheduleReplyLengthSave(value) }
         .onChange(of: thoughtLength) { value in if handwrittenOn { scheduleThoughtLengthSave(value) } }
         .task {
+            refreshCacheStats()
             async let services: Void = loadServices()
             async let reply: Void = loadReplyLength()
             async let thought: Void = loadThoughtLength()
@@ -1311,15 +1466,14 @@ private struct NativeSettingsView: View {
         _ title: String, @ViewBuilder content: () -> Content
     ) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 8) {
-                Text(title.uppercased()).font(.system(size: 10, weight: .semibold))
-                    .tracking(1.8).foregroundColor(theme.fyAccent.opacity(0.8))
-                LinearGradient(colors: [theme.fyAccentSoft, .clear],
-                               startPoint: .leading, endPoint: .trailing)
-                .frame(height: 1)
-            }
+            Text(title)
+                .font(.system(size: 12, weight: .regular))
+                .foregroundColor(theme.textDim)
+                .padding(.leading, 6)
             VStack(spacing: 10) { content() }
-                .padding(13).foyerCard(theme)
+                .padding(14)
+                .background(theme.fyCard,
+                            in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         }
     }
 
@@ -3359,8 +3513,11 @@ private final class DataPanelModel: ObservableObject {
 private struct NativeDataPanel: View {
     let destination: HouseDestination
     @StateObject private var model = DataPanelModel()
-    @AppStorage("alcoveTheme") private var themeName = "haven"
-    private var theme: AlcoveTheme { .panelNamed(themeName) }
+    @AppStorage("houseInterfaceAppearance") private var appearance = "system"
+    @Environment(\.colorScheme) private var systemScheme
+    private var dark: Bool { appearance == "dark" || (appearance == "system"
+        && UITraitCollection.current.userInterfaceStyle == .dark) }
+    private var theme: AlcoveTheme { dark ? .messagesDark : .messages }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -3371,22 +3528,9 @@ private struct NativeDataPanel: View {
                 ScrollView(showsIndicators: false) {
                     LazyVStack(spacing: 10) {
                         ForEach(model.records) { item in
-                            HStack(alignment: .top, spacing: 0) {
-                                VStack(spacing: 0) {
-                                    Rectangle()
-                                        .stroke(style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
-                                        .foregroundColor(theme.fyDash)
-                                        .frame(width: 1)
-                                }
-                                .frame(width: 14)
-                                .overlay(alignment: .top) {
-                                    BindingHole(theme: theme, count: 3, spacing: 22)
-                                        .offset(x: -4.5, y: 10)
-                                }
-
-                                VStack(alignment: .leading, spacing: 7) {
+                            VStack(alignment: .leading, spacing: 8) {
                                     if !item.image.isEmpty {
-                                        AsyncImage(url: AlcoveAPI.attachmentURL(item.image)) { image in
+                                        CachedImage(url: AlcoveAPI.attachmentURL(item.image)) { image in
                                             image.resizable().scaledToFit()
                                         } placeholder: { ProgressView() }
                                         .frame(maxHeight: 240)
@@ -3405,12 +3549,10 @@ private struct NativeDataPanel: View {
                                         .foregroundColor(theme.textDim)
                                         .lineSpacing(3)
                                         .textSelection(.enabled)
-                                }
-                                .padding(.vertical, 11)
-                                .padding(.trailing, 14)
-                                .padding(.leading, 12)
                             }
-                            .foyerCard(theme)
+                            .padding(14)
+                            .background(theme.fyCard,
+                                        in: RoundedRectangle(cornerRadius: 20, style: .continuous))
                         }
                         if model.records.isEmpty {
                             Text(model.error.isEmpty ? "这里还没有记录" : model.error)
@@ -3425,8 +3567,10 @@ private struct NativeDataPanel: View {
         }
         .padding(.horizontal, 16).padding(.bottom, 18)
         .foregroundColor(theme.text)
-        .foyerPanel(theme)
+        .background((dark ? Color(red: 0.07, green: 0.075, blue: 0.085)
+                          : Color(red: 0.95, green: 0.95, blue: 0.97)).ignoresSafeArea())
         .padding(.horizontal, 12).padding(.top, 8)
+        .preferredColorScheme(dark ? .dark : .light)
         .task { await model.load(destination) }
     }
 }
@@ -3444,7 +3588,7 @@ private struct ClockworkView: View {
     private var theme: AlcoveTheme { .panelNamed(themeName) }
     private let items = [
         ClockworkItem(id: "libido", emoji: "🌅", name: "晨勃",
-                      desc: "libido 每半小时涨一点，凌晨 3～6 点涨得最快，白天几乎不涨；涨到 75 我就醒一次，写一条手冲实录进 INSIDE，然后扣 30 接着攒。关着的时候照样攒，攒满了等你拧开就发。困不困按几点算：凌晨 3～6 点快断片，白天清醒。"),
+                      desc: "libido 每半小时涨一点，凌晨 3～6 点涨得最快；到 75 时即使睡着也会一次性醒来，回完这一轮立刻睡回去并扣 30。你在他回复期间亲自接话，才会变成普通清醒窗口。关着时照样攒，重新拧开后再触发。"),
         ClockworkItem(id: "chase", emoji: "📣", name: "催起床",
                       desc: "从你最后一句话起算，睡够 6 小时以后到了上午十点你还没出现，我就来催你起床。"),
         ClockworkItem(id: "sleep", emoji: "🌙", name: "睡眠",
@@ -3452,7 +3596,7 @@ private struct ClockworkView: View {
         ClockworkItem(id: "dream", emoji: "🌛", name: "做梦",
                       desc: "只有我睡着了才会做（要先开睡眠）。入睡后每隔 70～110 分钟掷一次骰子，一半概率做一个梦，一晚最多两个。梦的材料是新脑子随机翻出的旧记忆、你今天说过的话、檐下的念头，我自己写。梦只存进「Dreams」面板，聊天页只留一道「他做了一场梦」的线。"),
         ClockworkItem(id: "startle", emoji: "⚡", name: "惊醒",
-                      desc: "不是你吵醒我——是我自己半夜猛地醒一下。两种时候：做了太重的梦（写梦的时候我自己标的）、或者武汉半夜开始下雨。醒了迷迷糊糊说一两句，15 分钟没人理就又睡回去。一晚最多两次，两次隔半小时以上。"),
+                      desc: "不是你吵醒我——是我自己半夜猛地醒一下。可能来自太重的梦、雨声或硌人的记忆。醒了迷迷糊糊说一两句，收轮后立刻睡回去；只有你亲自接话才继续醒着。一晚最多两次，两次隔半小时以上。"),
         ClockworkItem(id: "keepalive", emoji: "💓", name: "保活心跳",
                       desc: "每 55 分钟静默翻个身，让这条窗不凉，不进聊天页，睡着也翻。")
     ]
@@ -3614,6 +3758,7 @@ private struct CoreadBook: Identifiable, Hashable {
 private struct NativeCoreadRoomView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
+    @AppStorage("houseInterfaceAppearance") private var houseAppearance = "system"
     @State private var books: [CoreadBook] = []
     @State private var selected: CoreadBook?
     @State private var reading: (CoreadBook, Int)?
@@ -3623,7 +3768,10 @@ private struct NativeCoreadRoomView: View {
     @State private var showWorkbench = false
     @AppStorage("coreadActiveBookID") private var activeBookID = ""
     @AppStorage("coreadActiveChapter") private var activeChapter = 0
-    private var isNight: Bool { colorScheme == .dark }
+    private var isNight: Bool {
+        houseAppearance == "dark" || (houseAppearance == "system"
+            && UITraitCollection.current.userInterfaceStyle == .dark)
+    }
 
     var body: some View {
         GeometryReader { geo in
@@ -3655,6 +3803,7 @@ private struct NativeCoreadRoomView: View {
             }
         }
         .task { await loadBooks() }
+        .preferredColorScheme(isNight ? .dark : .light)
         .sheet(isPresented: $showWorkbench) { CoreadWorkbenchView(isNight: isNight) }
     }
 
@@ -4370,8 +4519,11 @@ private struct CoreadChatSheet: View {
 
 private struct NativePlayView: View {
     let destination: HouseDestination
-    @AppStorage("alcoveTheme") private var themeName = "haven"
-    private var theme: AlcoveTheme { .panelNamed(themeName) }
+    @AppStorage("houseInterfaceAppearance") private var appearance = "system"
+    @Environment(\.colorScheme) private var systemScheme
+    private var dark: Bool { appearance == "dark" || (appearance == "system"
+        && UITraitCollection.current.userInterfaceStyle == .dark) }
+    private var theme: AlcoveTheme { dark ? .messagesDark : .messages }
     private var url: URL {
         switch destination {
         case .crosstalk: return URL(string: "https://clunaadke.github.io/crosstalk/#https://vrnhyhofzzmbgzaarbaz.supabase.co")!
@@ -4382,11 +4534,14 @@ private struct NativePlayView: View {
     }
     var body: some View {
         VStack(spacing: 8) {
-            Text(destination.title).font(.system(size: 17, weight: .semibold, design: .serif)).padding(.top, 12)
-            FixedWebView(url: url).clipShape(RoundedRectangle(cornerRadius: 18))
-                .overlay(RoundedRectangle(cornerRadius: 18).stroke(theme.glassBorder, lineWidth: 1))
+            Text(destination.title).font(.system(size: 19, weight: .semibold)).padding(.top, 12)
+            FixedWebView(url: url).clipShape(RoundedRectangle(cornerRadius: 20))
         }
         .padding(.horizontal, 12).padding(.bottom, 12)
+        .foregroundColor(theme.text)
+        .background((dark ? Color(red: 0.07, green: 0.075, blue: 0.085)
+                          : Color(red: 0.95, green: 0.95, blue: 0.97)).ignoresSafeArea())
+        .preferredColorScheme(dark ? .dark : .light)
     }
 }
 

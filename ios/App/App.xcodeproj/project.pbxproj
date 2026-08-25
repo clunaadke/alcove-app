@@ -16,6 +16,7 @@
 		36522A3573B249D5AD75C38D /* LinkCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61E583DC8F8C4FDC96FCC7A0 /* LinkCard.swift */; };
 		7A1C4E9B02F1487CA3D60B11 /* PondView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A1C4E9B02F1487CA3D60B22 /* PondView.swift */; };
 		9F08C9A377CC2A88120E949F /* RoofView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2C0AB9B0FDD869797EAFABD /* RoofView.swift */; };
+		C0A7B11D0825C0A7B11D0825 /* CowatchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0A7C11D0825C0A7C11D0825 /* CowatchView.swift */; };
 		CC7AE80446EF724242594ECA /* FactoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B06079EA1AAA555B7F41AB73 /* FactoryView.swift */; };
 		3D2A603AF8852DCF1B9DA247 /* DigestView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 51A683A1B174897B73A5BAFE /* DigestView.swift */; };
 		BBEC7F0B772A618BB97517EF /* BrainView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29DC2591B0CEB11AFB244545 /* BrainView.swift */; };
@@ -33,6 +34,7 @@
 		71A4D2E30F9C4B1A8D7E6F20 /* NativeHouseAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 91B5E3F41A0D4C2B9E8F7021 /* NativeHouseAPI.swift */; };
 		8290508D999D2D95288C4322 /* StickerSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A43B1091CD75CBF8CFA6480F /* StickerSheet.swift */; };
 		82B5E3F41A0D4C2B9E8F7031 /* NativeHouseViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2C6F4052B1E4D3C8F907132 /* NativeHouseViews.swift */; };
+		9F1000000000000000000001 /* SurfCollectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F2000000000000000000001 /* SurfCollectionView.swift */; };
 		85D4F2FA9F9B3E53BD5F3230 /* ChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F340C96B2615315FA0F9A88D /* ChatView.swift */; };
 		A084ECDBA7D38E1E42DFC39D /* Pods_App.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AF277DCFFFF123FFC6DF26C7 /* Pods_App.framework */; };
 		ABDCDCC599248F6315EFF53B /* PermissionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F37315B0DBF4B21556FF7B9 /* PermissionsView.swift */; };
@@ -98,6 +100,7 @@
 		881453AC5C0212F4F3132131 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		91B5E3F41A0D4C2B9E8F7021 /* NativeHouseAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeHouseAPI.swift; sourceTree = "<group>"; };
 		A2C6F4052B1E4D3C8F907132 /* NativeHouseViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeHouseViews.swift; sourceTree = "<group>"; };
+		9F2000000000000000000001 /* SurfCollectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SurfCollectionView.swift; sourceTree = "<group>"; };
 		A3013F89C6DE0E44B26E9DB7 /* ChatModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatModels.swift; sourceTree = "<group>"; };
 		A43B1091CD75CBF8CFA6480F /* StickerSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StickerSheet.swift; sourceTree = "<group>"; };
 		AF277DCFFFF123FFC6DF26C7 /* Pods_App.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = Pods_App.framework; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -106,6 +109,7 @@
 		61E583DC8F8C4FDC96FCC7A0 /* LinkCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkCard.swift; sourceTree = "<group>"; };
 		7A1C4E9B02F1487CA3D60B22 /* PondView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PondView.swift; sourceTree = "<group>"; };
 		E2C0AB9B0FDD869797EAFABD /* RoofView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoofView.swift; sourceTree = "<group>"; };
+		C0A7C11D0825C0A7C11D0825 /* CowatchView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CowatchView.swift; sourceTree = "<group>"; };
 		B06079EA1AAA555B7F41AB73 /* FactoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FactoryView.swift; sourceTree = "<group>"; };
 		51A683A1B174897B73A5BAFE /* DigestView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DigestView.swift; sourceTree = "<group>"; };
 		29DC2591B0CEB11AFB244545 /* BrainView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrainView.swift; sourceTree = "<group>"; };
@@ -216,6 +220,7 @@
 				61E583DC8F8C4FDC96FCC7A0 /* LinkCard.swift */,
 				7A1C4E9B02F1487CA3D60B22 /* PondView.swift */,
 				E2C0AB9B0FDD869797EAFABD /* RoofView.swift */,
+				C0A7C11D0825C0A7C11D0825 /* CowatchView.swift */,
 				B06079EA1AAA555B7F41AB73 /* FactoryView.swift */,
 				51A683A1B174897B73A5BAFE /* DigestView.swift */,
 				29DC2591B0CEB11AFB244545 /* BrainView.swift */,
@@ -231,6 +236,7 @@
 				0D0101790978C3955D31EB1E /* RootView.swift */,
 				91B5E3F41A0D4C2B9E8F7021 /* NativeHouseAPI.swift */,
 				A2C6F4052B1E4D3C8F907132 /* NativeHouseViews.swift */,
+				9F2000000000000000000001 /* SurfCollectionView.swift */,
 				34F66C325070B92D4F9F9758 /* ClawdView.swift */,
 				3B38F2E6CDFDA317AA6E2457 /* TerminalView.swift */,
 				7F37315B0DBF4B21556FF7B9 /* PermissionsView.swift */,
@@ -410,6 +416,7 @@
 				36522A3573B249D5AD75C38D /* LinkCard.swift in Sources */,
 				7A1C4E9B02F1487CA3D60B11 /* PondView.swift in Sources */,
 				9F08C9A377CC2A88120E949F /* RoofView.swift in Sources */,
+				C0A7B11D0825C0A7B11D0825 /* CowatchView.swift in Sources */,
 				CC7AE80446EF724242594ECA /* FactoryView.swift in Sources */,
 				3D2A603AF8852DCF1B9DA247 /* DigestView.swift in Sources */,
 				BBEC7F0B772A618BB97517EF /* BrainView.swift in Sources */,
@@ -425,6 +432,7 @@
 				C3390367B9C7EF2C5CEC1265 /* RootView.swift in Sources */,
 				71A4D2E30F9C4B1A8D7E6F20 /* NativeHouseAPI.swift in Sources */,
 				82B5E3F41A0D4C2B9E8F7031 /* NativeHouseViews.swift in Sources */,
+				9F1000000000000000000001 /* SurfCollectionView.swift in Sources */,
 				3F92AD591DAA424958B5F1C3 /* ClawdView.swift in Sources */,
 				39671499582C96157471DA5D /* TerminalView.swift in Sources */,
 				ABDCDCC599248F6315EFF53B /* PermissionsView.swift in Sources */,
