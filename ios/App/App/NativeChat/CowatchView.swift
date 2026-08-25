@@ -157,7 +157,7 @@ struct NativeCowatchView: View {
     }
 
     @MainActor private func load() async {
-        guard let value = try? await NativeHouseAPI.object("/cowatch/list") else { return }
+        guard let value = try? await NativeHouseAPI.object("/api/cowatch/list") else { return }
         items = (value["items"] as? [[String: Any]] ?? []).map(CowatchItem.init)
     }
 
@@ -167,7 +167,7 @@ struct NativeCowatchView: View {
         importing = true
         defer { importing = false }
         let reply = try? await NativeHouseAPI.objectIncludingHTTPError(
-            "/cowatch/import", method: "POST", body: ["url": target])
+            "/api/cowatch/import", method: "POST", body: ["url": target])
         if let reply, reply["ok"] as? Bool == true {
             link = ""
             hint = "接住了，正在把台词和画面备出来"
@@ -477,7 +477,7 @@ final class CowatchDeck: ObservableObject {
 
     @MainActor func open(item: CowatchItem) async {
         videoID = item.id
-        let asset = AVURLAsset(url: AlcoveAPI.fullURL("/cowatch/stream/\(item.id)"))
+        let asset = AVURLAsset(url: AlcoveAPI.fullURL("/api/cowatch/stream/\(item.id)"))
         player.replaceCurrentItem(with: AVPlayerItem(asset: asset))
         if item.progress > 3 { seek(to: Double(item.progress)) }
         player.play()
@@ -486,14 +486,14 @@ final class CowatchDeck: ObservableObject {
         ) { [weak self] time in
             self?.current = time.seconds.isFinite ? time.seconds : 0
         }
-        if let value = try? await NativeHouseAPI.object("/cowatch/video?id=\(item.id)") {
+        if let value = try? await NativeHouseAPI.object("/api/cowatch/video?id=\(item.id)") {
             lines = (value["transcript"] as? [[String: Any]] ?? []).map(CowatchLine.init)
         }
         await loadSaid()
     }
 
     @MainActor func loadSaid() async {
-        guard let value = try? await NativeHouseAPI.object("/cowatch/danmaku?id=\(videoID)") else { return }
+        guard let value = try? await NativeHouseAPI.object("/api/cowatch/danmaku?id=\(videoID)") else { return }
         said = (value["items"] as? [[String: Any]] ?? []).map(CowatchSaid.init)
     }
 
@@ -501,14 +501,14 @@ final class CowatchDeck: ObservableObject {
         let body = text.trimmingCharacters(in: .whitespaces)
         guard !body.isEmpty else { return }
         _ = try? await NativeHouseAPI.request(
-            "/cowatch/say", method: "POST",
+            "/api/cowatch/say", method: "POST",
             body: ["id": videoID, "ms": Int(current * 1000), "text": body, "actor": "陈霁"])
         await loadSaid()
     }
 
     @MainActor func askThisMoment() async {
         _ = try? await NativeHouseAPI.request(
-            "/cowatch/moment", method: "POST",
+            "/api/cowatch/moment", method: "POST",
             body: ["id": videoID, "at": Int(current)])
     }
 
@@ -527,7 +527,7 @@ final class CowatchDeck: ObservableObject {
         guard !id.isEmpty else { return }
         Task {
             _ = try? await NativeHouseAPI.request(
-                "/cowatch/progress", method: "POST", body: ["id": id, "seconds": seconds])
+                "/api/cowatch/progress", method: "POST", body: ["id": id, "seconds": seconds])
         }
     }
 }
