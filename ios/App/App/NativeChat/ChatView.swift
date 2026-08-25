@@ -2799,36 +2799,7 @@ struct MessageRow: View {
     }
 
     private var bubble: some View {
-        return Group {
-            if theme.isPaper && !isUser {
-                bubbleContents.padding(.horizontal, 0).padding(.vertical, 2)
-            } else {
-                bubbleContents
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, theme.isPaper && isUser ? 11 : 10)
-                    .background {
-                        if theme.isMessages || theme.isPaper {
-                            // 0822 她定的：信息主题不要尾巴（怎么画都像拼上去的），和纸页一样实心大圆角
-                            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                .fill(isUser ? theme.bubbleUser : theme.bubbleAI)
-                        } else {
-                            BubbleGlassBackground(
-                                tintColor: isUser ? theme.bubbleUser : theme.bubbleAI,
-                                tintOpacity: isUser ? 0.14 : 0.09,
-                                style: bubbleGlassStyle
-                            )
-                        }
-                    }
-            }
-        }
-            .contentShape(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-            )
-
-    }
-
-    private var bubbleContents: some View {
-        VStack(alignment: isUser ? .trailing : .leading, spacing: 6) {
+        return VStack(alignment: isUser ? .trailing : .leading, spacing: 6) {
             if let quote = msg.quotedSelection, !quote.isEmpty {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Image(systemName: "arrow.turn.down.right")
@@ -2837,9 +2808,40 @@ struct MessageRow: View {
                 }
                 .font(.system(size: 12))
                 .foregroundColor(
-                    isUser ? Color.black : theme.textDim.opacity(0.94)
+                    (theme.isMessages && isUser)
+                        ? Color.white.opacity(0.72)
+                        : (isUser ? Color.black : theme.textDim.opacity(0.94))
                 )
             }
+            Group {
+                if theme.isPaper && !isUser {
+                    bubbleContents.padding(.horizontal, 0).padding(.vertical, 2)
+                } else {
+                    bubbleContents
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, theme.isPaper && isUser ? 11 : 10)
+                        .background {
+                            if theme.isMessages || theme.isPaper {
+                                // 0822 她定的：信息主题不要尾巴（怎么画都像拼上去的），和纸页一样实心大圆角
+                                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                    .fill(isUser ? theme.bubbleUser : theme.bubbleAI)
+                            } else {
+                                BubbleGlassBackground(
+                                    tintColor: isUser ? theme.bubbleUser : theme.bubbleAI,
+                                    tintOpacity: isUser ? 0.14 : 0.09,
+                                    style: bubbleGlassStyle
+                                )
+                            }
+                        }
+                }
+            }
+        }
+        .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+
+    }
+
+    private var bubbleContents: some View {
+        VStack(alignment: isUser ? .trailing : .leading, spacing: 6) {
             SelectableMessageText(
                 text: msg.textWithoutLink,
                 fontSize: CGFloat(fontSize),
