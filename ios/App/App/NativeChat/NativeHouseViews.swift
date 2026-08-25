@@ -8418,6 +8418,100 @@ private struct FictionQuoteRow: Identifiable {
     var id: String { "\(book.id)-\(annotation.id)" }
 }
 
+/// 书房正文的轻量 Markdown 渲染：**粗**、*斜*、# 标题、--- 分隔、> 引用。
+/// 只吃这几样，其余字符原样保留，划线取词拿到的也是去掉标记后的干净句子。
+private enum FictionMarkdown {
+    private static let bold = try! NSRegularExpression(pattern: "\\*\\*(.+?)\\*\\*")
+    private static let italic = try! NSRegularExpression(pattern: "(?<!\\*)\\*(?!\\*)([^*\\n]+?)\\*(?!\\*)")
+
+    static func attributed(_ raw: String, fontSize: Double,
+                           letterSpacing: Double, lineSpacing: Double) -> NSAttributedString {
+        let body = NSMutableParagraphStyle()
+        body.lineSpacing = lineSpacing
+        body.paragraphSpacing = max(8, fontSize * 0.75)
+        let centered = NSMutableParagraphStyle()
+        centered.alignment = .center
+        centered.lineSpacing = lineSpacing
+        centered.paragraphSpacing = max(8, fontSize * 0.75)
+        let quoted = NSMutableParagraphStyle()
+        quoted.lineSpacing = lineSpacing
+        quoted.paragraphSpacing = max(8, fontSize * 0.75)
+        quoted.firstLineHeadIndent = fontSize
+        quoted.headIndent = fontSize
+
+        let out = NSMutableAttributedString()
+        let lines = raw.components(separatedBy: "\n")
+        for (index, line) in lines.enumerated() {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed == "---" || trimmed == "***" || trimmed == "___" {
+                out.append(NSAttributedString(string: "· · ·", attributes: [
+                    .font: UIFont.systemFont(ofSize: fontSize),
+                    .foregroundColor: UIColor.secondaryLabel,
+                    .kern: max(letterSpacing, 5),
+                    .paragraphStyle: centered
+                ]))
+            } else if let (level, title) = heading(trimmed) {
+                let size = fontSize + (level == 1 ? 7 : level == 2 ? 4 : 2)
+                out.append(inline(title, size: size, weight: .semibold, boldWeight: .heavy,
+                                  color: .label, letterSpacing: letterSpacing, paragraph: body))
+            } else if trimmed.hasPrefix("> ") || trimmed == ">" {
+                let text = String(trimmed.dropFirst(trimmed == ">" ? 1 : 2))
+                out.append(inline(text, size: fontSize, weight: .regular, boldWeight: .bold,
+                                  color: .secondaryLabel, letterSpacing: letterSpacing, paragraph: quoted))
+            } else {
+                out.append(inline(line, size: fontSize, weight: .regular, boldWeight: .bold,
+                                  color: .label, letterSpacing: letterSpacing, paragraph: body))
+            }
+            if index < lines.count - 1 {
+                out.append(NSAttributedString(string: "\n", attributes: [
+                    .font: UIFont.systemFont(ofSize: fontSize),
+                    .paragraphStyle: body
+                ]))
+            }
+        }
+        return out
+    }
+
+    private static func heading(_ line: String) -> (Int, String)? {
+        var level = 0
+        var cursor = line.startIndex
+        while cursor < line.endIndex, line[cursor] == "#", level < 6 {
+            level += 1
+            cursor = line.index(after: cursor)
+        }
+        guard level > 0, cursor < line.endIndex, line[cursor] == " " else { return nil }
+        return (level, String(line[line.index(after: cursor)...]))
+    }
+
+    private static func inline(_ text: String, size: Double,
+                               weight: UIFont.Weight, boldWeight: UIFont.Weight,
+                               color: UIColor, letterSpacing: Double,
+                               paragraph: NSParagraphStyle) -> NSAttributedString {
+        let piece = NSMutableAttributedString(string: text, attributes: [
+            .font: UIFont.systemFont(ofSize: size, weight: weight),
+            .foregroundColor: color,
+            .kern: letterSpacing,
+            .paragraphStyle: paragraph
+        ])
+        apply(bold, on: piece, font: UIFont.systemFont(ofSize: size, weight: boldWeight))
+        apply(italic, on: piece, font: UIFont.italicSystemFont(ofSize: size))
+        return piece
+    }
+
+    private static func apply(_ regex: NSRegularExpression,
+                              on target: NSMutableAttributedString, font: UIFont) {
+        let whole = NSRange(location: 0, length: target.length)
+        for match in regex.matches(in: target.string, range: whole).reversed() {
+            guard match.numberOfRanges > 1 else { continue }
+            let inner = NSMutableAttributedString(
+                attributedString: target.attributedSubstring(from: match.range(at: 1)))
+            inner.addAttribute(.font, value: font,
+                               range: NSRange(location: 0, length: inner.length))
+            target.replaceCharacters(in: match.range(at: 0), with: inner)
+        }
+    }
+}
+
 private struct FictionSelectableText: UIViewRepresentable {
     let text: String
     let fontSize: Double
@@ -8439,15 +8533,9 @@ private struct FictionSelectableText: UIViewRepresentable {
         return view
     }
     func updateUIView(_ view: FictionTextView, context: Context) {
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.lineSpacing = lineSpacing
-        paragraph.paragraphSpacing = max(8, fontSize * 0.75)
-        view.attributedText = NSAttributedString(string: text, attributes: [
-            .font: UIFont.systemFont(ofSize: fontSize),
-            .foregroundColor: UIColor.label,
-            .kern: letterSpacing,
-            .paragraphStyle: paragraph
-        ])
+        view.attributedText = FictionMarkdown.attributed(text, fontSize: fontSize,
+                                                         letterSpacing: letterSpacing,
+                                                         lineSpacing: lineSpacing)
         view.onReview = onReview
     }
 
