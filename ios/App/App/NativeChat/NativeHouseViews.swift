@@ -81,7 +81,8 @@ enum HouseDestination: String, Identifiable, CaseIterable {
     /// 自己铺满、自己做头的页面。她0819：不要透壁纸，要全屏
     var ownsFullScreen: Bool {
         switch self {
-        case .studio, .pond, .roof, .memory, .digest, .factory, .search, .favorites, .surf: return true
+        case .studio, .pond, .roof, .memory, .digest, .factory, .search, .favorites, .surf,
+             .settings: return true
         default: return false
         }
     }
@@ -966,6 +967,7 @@ private struct NativeSettingsView: View {
         }
     }
     @State private var page: Page?
+    @Environment(\.dismiss) private var dismiss
     @AppStorage("houseInterfaceAppearance") private var houseAppearance = "system"
     @Environment(\.colorScheme) private var systemColorScheme
     @AppStorage("assistantName") private var assistantName = "陈璟"
@@ -1024,20 +1026,50 @@ private struct NativeSettingsView: View {
         houseAppearance == "dark" || (houseAppearance == "system" && systemColorScheme == .dark)
     }
     private var theme: AlcoveTheme { interfaceDark ? .messagesDark : .messages }
+    private var pal: YanxiaPal { YanxiaPal(night: interfaceDark) }
 
+    // 0826 她说设置页没全屏、顶上透出壁纸：这页现在自己铺满、自己做头，
+    // 皮也换成檐下那套，跟共读室一个屋檐下。
     var body: some View {
         ZStack {
-            (interfaceDark ? Color(red: 0.07, green: 0.075, blue: 0.085)
-                           : Color(red: 0.95, green: 0.95, blue: 0.97)).ignoresSafeArea()
-            if page == nil { settingsIndex } else { settingsControls }
+            CoreadYanxiaBackground(isNight: interfaceDark).ignoresSafeArea()
+            VStack(spacing: 0) {
+                settingsHeader
+                if page == nil { settingsIndex } else { settingsControls }
+            }
         }
         .preferredColorScheme(interfaceDark ? .dark : .light)
+    }
+
+    private var settingsHeader: some View {
+        let pal = YanxiaPal(night: interfaceDark)
+        return HStack(spacing: 2) {
+            Button {
+                if page == nil { dismiss() }
+                else { withAnimation(.easeInOut(duration: 0.18)) { page = nil } }
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(pal.ink2)
+                    .frame(width: 42, height: 42)
+                    .contentShape(Rectangle())
+            }.buttonStyle(.plain)
+            Spacer(minLength: 0)
+            Text(page?.title ?? "设置")
+                .font(.system(size: 16, weight: .semibold, design: .serif))
+                .tracking(0.8)
+                .foregroundColor(pal.ink)
+            Spacer(minLength: 0)
+            Color.clear.frame(width: 42, height: 42)
+        }
+        .padding(.horizontal, 8)
+        .padding(.top, 46)
+        .padding(.bottom, 4)
     }
 
     private var settingsIndex: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 16) {
-                panelTitle("设置")
                 settingsGroup([.people])
                 settingsGroup([.chat, .appearance, .relationship])
                 settingsGroup([.storage, .system, .services])
@@ -1067,11 +1099,15 @@ private struct NativeSettingsView: View {
                             .foregroundColor(theme.textDim.opacity(0.55))
                     }
                     .padding(.horizontal, 13).frame(minHeight: 58)
+                    // 0826 她说只有带字的地方点得动：Spacer 不接触摸，整行得自己撑出形状
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
         }
-        .background(theme.fyCard, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .background(pal.card, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous)
+            .strokeBorder(pal.line, lineWidth: 0.5))
     }
 
     private func settingsIcon(_ page: Page) -> String {
@@ -1114,18 +1150,6 @@ private struct NativeSettingsView: View {
     private var settingsControls: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 14) {
-                HStack {
-                    Button { withAnimation(.easeInOut(duration: 0.18)) { page = nil } } label: {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 18, weight: .semibold))
-                            .frame(width: 44, height: 44)
-                            .background(theme.fyCard, in: Circle())
-                    }.buttonStyle(.plain)
-                    Spacer()
-                    Text(page?.title ?? "设置").font(.system(size: 19, weight: .semibold))
-                    Spacer()
-                    Color.clear.frame(width: 44, height: 44)
-                }
                 // 她自己填此刻在干嘛，心跳 prompt 开头就写这句（0819 她要的）。
                 // 带时效：六小时后自动淡掉，不然「正在看短剧」会一直挂着变成假话。
                 if page == .people { section("我此刻") {
@@ -1473,8 +1497,10 @@ private struct NativeSettingsView: View {
                 .padding(.leading, 6)
             VStack(spacing: 10) { content() }
                 .padding(14)
-                .background(theme.fyCard,
+                .background(pal.card,
                             in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .strokeBorder(pal.line, lineWidth: 0.5))
         }
     }
 
