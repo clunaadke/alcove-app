@@ -846,8 +846,12 @@ struct ChatView: View {
                     HStack(alignment: .top, spacing: 6) {
                         LinkPreviewCard(url: link, theme: theme, isUser: true)
                         Button {
+                            handlingReturn = true
                             pendingLink = nil
-                            draft = draft.isEmpty ? link : draft + " " + link
+                            let restored = draft.isEmpty ? link : draft + " " + link
+                            draft = restored
+                            previousDraft = restored
+                            DispatchQueue.main.async { handlingReturn = false }
                         } label: {
                             Image(systemName: "xmark.circle.fill")
                                 .font(.system(size: 22)).foregroundColor(.secondary)
@@ -1174,6 +1178,13 @@ struct ChatView: View {
     }
 
     private func handleDraftChange(_ value: String) {
+        // Programmatic restores (notably dismissing a pending link card) must
+        // update the text field without immediately being extracted as a new
+        // pending card again.
+        guard !handlingReturn else {
+            previousDraft = value
+            return
+        }
         // 贴进来一个链接：抽出去做成待发卡，打字框留给她说话
         if pendingLink == nil, value.contains("http"),
            let range = value.range(of: #"https?://[^\s<>"'）)]+"#, options: .regularExpression) {
@@ -1190,10 +1201,6 @@ struct ChatView: View {
                 DispatchQueue.main.async { handlingReturn = false }
                 return
             }
-        }
-        guard !handlingReturn else {
-            previousDraft = value
-            return
         }
         let before = previousDraft
         previousDraft = value
