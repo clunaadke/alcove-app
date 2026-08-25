@@ -165,7 +165,7 @@ struct LinkPreviewCard: View {
             ZStack {
                 Color.black.opacity(0.06)
                 if let cover = card.coverURL {
-                    AsyncImage(url: cover) { img in
+                    CachedImage(url: cover) { img in
                         img.resizable().scaledToFill()
                     } placeholder: {
                         Image(systemName: card.kind == "xhs" ? "book.closed" : "link")
