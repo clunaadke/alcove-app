@@ -42,8 +42,7 @@ struct LetterMessageCard: View {
             ZStack {
                 CachedImage(url: imageURL) { image in
                     image.resizable()
-                        .aspectRatio(contentMode: .fill)
-                        .scaleEffect(1.075, anchor: UnitPoint(x: 0.5, y: 0.54))
+                        .aspectRatio(contentMode: .fit)
                 } placeholder: {
                     (night ? Color(red: 0.086, green: 0.086, blue: 0.086)
                            : Color(red: 0.949, green: 0.937, blue: 0.914))
@@ -79,6 +78,7 @@ struct LetterMessageCard: View {
             }
         }
         .aspectRatio(2048.0 / 2007.0, contentMode: .fit)
+        .frame(maxWidth: 196)          // 她说至少缩一半
         .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
         .shadow(color: Color.black.opacity(night ? 0.42 : 0.16), radius: 14, y: 5)
         .padding(.horizontal, 6)
