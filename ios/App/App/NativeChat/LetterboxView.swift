@@ -21,12 +21,15 @@ struct LetterEnvelopeCard: Decodable, Equatable {
 struct LetterMessageCard: View {
     let card: LetterEnvelopeCard
     let theme: AlcoveTheme
+    // 0827 她切白天信封还是黑的：这张卡直接认全屋那个开关，
+    // 不经过聊天主题转一道手，按哪边就是哪边。
+    @AppStorage("houseInterfaceAppearance") private var appearance = "dark"
 
     // 2026-08-27 白天：换回深浅两套皮。
     // 凌晨那版把深色信封钉死了（黑配黑糊过三次，图省事一刀切），结果白天模式下
-    // 一块黑砖贴在米白聊天页上。判深浅只认一个源：theme.isDark，图和字色一起翻，
-    // 不再各判各的，就不会出现信封翻了字没翻的糊法。
-    private var dark: Bool { theme.isDark }
+    // 一块黑砖贴在米白聊天页上。图和字色一起翻，不再各判各的，
+    // 就不会出现信封翻了字没翻的糊法。
+    private var dark: Bool { appearance != "light" }
     private var imageURL: URL {
         AlcoveAPI.fullURL(dark ? "/letter/envelope-dark.png" : "/letter/envelope-light.png")
     }
@@ -175,14 +178,13 @@ private final class LetterboxModel: ObservableObject {
 struct NativeLetterboxView: View {
     private enum Tab: String, CaseIterable { case inbox = "收信", compose = "写信", archive = "共读" }
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.colorScheme) private var systemScheme
-    @AppStorage("houseInterfaceAppearance") private var appearance = "system"
+    @AppStorage("houseInterfaceAppearance") private var appearance = "dark"
     @StateObject private var model = LetterboxModel()
     @State private var tab: Tab = .inbox
     @State private var opened: LetterboxItem?
     @State private var editLetter: LetterboxItem?
 
-    private var dark: Bool { appearance == "dark" || (appearance == "system" && systemScheme == .dark) }
+    private var dark: Bool { appearance != "light" }
     private var pal: LetterboxPalette { LetterboxPalette(dark: dark) }
 
     var body: some View {

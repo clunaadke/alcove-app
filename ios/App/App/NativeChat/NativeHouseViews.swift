@@ -973,8 +973,7 @@ private struct NativeSettingsView: View {
     }
     @State private var page: Page?
     @Environment(\.dismiss) private var dismiss
-    @AppStorage("houseInterfaceAppearance") private var houseAppearance = "system"
-    @Environment(\.colorScheme) private var systemColorScheme
+    @AppStorage("houseInterfaceAppearance") private var houseAppearance = "dark"
     @AppStorage("assistantName") private var assistantName = "陈璟"
     @AppStorage("userName") private var userName = "Luna"
     @AppStorage("assistantAvatarDataURL") private var assistantAvatar = ""
@@ -1029,9 +1028,7 @@ private struct NativeSettingsView: View {
     @Environment(\.houseOwnsHeader) private var houseOwnsHeader
     // 0826 她说一点进去闪白再变黑：UITraitCollection.current 在 SwiftUI 求值那一刻
     // 还可能停在 light，第二帧才对，于是白闪一下。环境里的 colorScheme 首帧就准。
-    private var interfaceDark: Bool {
-        houseAppearance == "dark" || (houseAppearance == "system" && systemColorScheme == .dark)
-    }
+    private var interfaceDark: Bool { houseAppearance != "light" }
     private var theme: AlcoveTheme { interfaceDark ? .messagesDark : .messages }
     private var pal: YanxiaPal { YanxiaPal(night: interfaceDark) }
 
@@ -1360,12 +1357,15 @@ private struct NativeSettingsView: View {
                         }
                     }
                 } }
-                if page == .appearance { section("功能页外观") {
-                    Picker("功能页", selection: $houseAppearance) {
-                        Text("白天").tag("light")
-                        Text("黑夜").tag("dark")
-                        Text("跟随系统").tag("system")
+                // 0827 她定的：一个按钮管全屋，不跟系统。
+                // 聊天页、圆桌、共读室、檐下、信箱、数据页、信封卡全部认这一个值。
+                if page == .appearance { section("白天 / 黑夜") {
+                    Picker("全屋", selection: appearanceBinding) {
+                        Text("白天").tag(false)
+                        Text("黑夜").tag(true)
                     }.pickerStyle(.segmented)
+                    Text("整个 app 一起翻，不跟手机的深色模式走")
+                        .font(.system(size: 10.5)).foregroundColor(theme.textLight)
                 } }
                 if page == .appearance { section("聊天主题") {
                     HStack(spacing: 8) {
@@ -1381,11 +1381,6 @@ private struct NativeSettingsView: View {
                             Color(red: 233/255, green: 233/255, blue: 235/255)
                         ])
                     }
-                    Divider().opacity(0.25)
-                    Picker("外观", selection: appearanceBinding) {
-                        Text("白天").tag(false)
-                        Text("黑夜").tag(true)
-                    }.pickerStyle(.segmented)
                 } }
                 if page == .appearance { section("聊天壁纸") {
                     HStack {
@@ -1802,27 +1797,19 @@ private struct NativeSettingsView: View {
     private var isPaperFamily: Bool { themeName == "paper" || themeName == "paper-dark" }
     private var isMessagesFamily: Bool { themeName == "imessage" || themeName == "imessage-dark" }
     private var themeFamily: String { isPaperFamily ? "paper" : (isMessagesFamily ? "imessage" : "glass") }
-    // 0827 她说这个滑块一直显示黑夜、点不动：设置页自己把 theme 定义成
-    // interfaceDark ? .messagesDark : .messages（跟系统/功能页走），
-    // 于是滑块写的是 alcoveTheme、读的却是隔壁那间屋的开关，左右手不是一本账。
-    // 现在深浅只从 themeName 自己判。
-    private var chatThemeDark: Bool {
-        themeName == "midnight" || themeName == "paper-dark" || themeName == "imessage-dark"
-    }
+    // 0827 全屋只剩这一个开关：按下去同时写 houseInterfaceAppearance（功能页、
+    // 共读室、檐下、信箱、信封卡读它）和 alcoveTheme 的深浅后缀（聊天页、圆桌、
+    // 根视图读它）。以前这两个各走各的，她按了一边另一边不动。
     private var appearanceBinding: Binding<Bool> {
-        Binding(get: { chatThemeDark }, set: { dark in
-            themeName = isPaperFamily ? (dark ? "paper-dark" : "paper") :
-                        isMessagesFamily ? (dark ? "imessage-dark" : "imessage") :
-                        (dark ? "midnight" : "haven")
+        Binding(get: { houseAppearance != "light" }, set: { dark in
+            AlcoveAppearance.apply(dark: dark)
+            houseAppearance = dark ? "dark" : "light"
+            themeName = AlcoveAppearance.themeName(family: themeFamily, dark: dark)
         })
     }
     private func familyChoice(_ title: String, _ sub: String, _ family: String, _ colors: [Color]) -> some View {
         Button {
-            switch family {
-            case "paper": themeName = chatThemeDark ? "paper-dark" : "paper"
-            case "imessage": themeName = chatThemeDark ? "imessage-dark" : "imessage"
-            default: themeName = chatThemeDark ? "midnight" : "haven"
-            }
+            themeName = AlcoveAppearance.themeName(family: family, dark: houseAppearance != "light")
         } label: {
             VStack(spacing: 7) {
                 HStack(spacing: 4) { ForEach(colors.indices, id: \.self) { Circle().fill(colors[$0]).frame(width: 13, height: 13) } }
@@ -3755,10 +3742,8 @@ private final class DataPanelModel: ObservableObject {
 private struct NativeDataPanel: View {
     let destination: HouseDestination
     @StateObject private var model = DataPanelModel()
-    @AppStorage("houseInterfaceAppearance") private var appearance = "system"
-    @Environment(\.colorScheme) private var systemScheme
-    private var dark: Bool { appearance == "dark" || (appearance == "system"
-        && systemScheme == .dark) }
+    @AppStorage("houseInterfaceAppearance") private var appearance = "dark"
+    private var dark: Bool { appearance != "light" }
     private var theme: AlcoveTheme { dark ? .messagesDark : .messages }
 
     var body: some View {
@@ -4035,8 +4020,7 @@ private struct CoreadBook: Identifiable, Hashable {
 
 private struct NativeCoreadRoomView: View {
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.colorScheme) private var colorScheme
-    @AppStorage("houseInterfaceAppearance") private var houseAppearance = "system"
+    @AppStorage("houseInterfaceAppearance") private var houseAppearance = "dark"
     @State private var books: [CoreadBook] = []
     @State private var selected: CoreadBook?
     @State private var reading: (CoreadBook, Int)?
@@ -4048,9 +4032,7 @@ private struct NativeCoreadRoomView: View {
     @AppStorage("coreadActiveChapter") private var activeChapter = 0
     @State private var showImporter = false
     @State private var uploading = false
-    private var isNight: Bool {
-        houseAppearance == "dark" || (houseAppearance == "system" && colorScheme == .dark)
-    }
+    private var isNight: Bool { houseAppearance != "light" }
 
     var body: some View {
         GeometryReader { geo in
@@ -4544,8 +4526,8 @@ private struct CoreadDetailView: View {
     let book: CoreadBook
     let onBack: () -> Void
     let open: (Int) -> Void
-    @Environment(\.colorScheme) private var colorScheme
-    private var isNight: Bool { colorScheme == .dark }
+    @AppStorage("houseInterfaceAppearance") private var houseAppearance = "dark"
+    private var isNight: Bool { houseAppearance != "light" }
     private var pal: YanxiaPal { YanxiaPal(night: isNight) }
 
     var body: some View {
@@ -5117,10 +5099,10 @@ private struct CoreadChatSheet: View {
     let pageText: String
     @Binding var quotedText: String?
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.colorScheme) private var colorScheme
+    @AppStorage("houseInterfaceAppearance") private var houseAppearance = "dark"
     @State private var messages: [[String: Any]] = []
     @State private var text = ""
-    private var isNight: Bool { colorScheme == .dark }
+    private var isNight: Bool { houseAppearance != "light" }
     var body: some View {
         VStack(spacing: 0) {
             HStack { Text("陪读 · \(book.title)").font(.system(size: 15, weight: .semibold, design: .serif)); Spacer(); Button { dismiss() } label: { Image(systemName: "xmark") } }.padding(18)
@@ -5167,10 +5149,8 @@ private struct CoreadChatSheet: View {
 
 private struct NativePlayView: View {
     let destination: HouseDestination
-    @AppStorage("houseInterfaceAppearance") private var appearance = "system"
-    @Environment(\.colorScheme) private var systemScheme
-    private var dark: Bool { appearance == "dark" || (appearance == "system"
-        && systemScheme == .dark) }
+    @AppStorage("houseInterfaceAppearance") private var appearance = "dark"
+    private var dark: Bool { appearance != "light" }
     private var theme: AlcoveTheme { dark ? .messagesDark : .messages }
     private var url: URL {
         switch destination {

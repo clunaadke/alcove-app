@@ -277,7 +277,9 @@ struct RoundtableView: View {
     private var theme: AlcoveTheme { .named(themeName) }
     private var activeRTWallpaper: String {
         switch themeName {
-        case "midnight": return rtWallpaperMidnight
+        // 0827：信息主题以前没有自己的槽，深浅两态共用白天那一格，
+        // 所以圆桌壁纸怎么切都不动。黑夜的信息主题借黑夜玻璃那一格。
+        case "midnight", "imessage-dark": return rtWallpaperMidnight
         case "paper": return rtWallpaperPaper
         case "paper-dark": return rtWallpaperPaperDark
         default: return rtWallpaperHaven.isEmpty ? rtWallpaper : rtWallpaperHaven
@@ -1901,7 +1903,7 @@ private struct RTSettingsView: View {
 
     private var activeWallpaper: String {
         switch themeName {
-        case "midnight": return wallpaperMidnight
+        case "midnight", "imessage-dark": return wallpaperMidnight
         case "paper": return wallpaperPaper
         case "paper-dark": return wallpaperPaperDark
         default: return wallpaperHaven.isEmpty ? wallpaper : wallpaperHaven
@@ -1910,7 +1912,7 @@ private struct RTSettingsView: View {
 
     private func setActiveWallpaper(_ value: String) {
         switch themeName {
-        case "midnight": wallpaperMidnight = value
+        case "midnight", "imessage-dark": wallpaperMidnight = value
         case "paper": wallpaperPaper = value
         case "paper-dark": wallpaperPaperDark = value
         default:

@@ -316,3 +316,75 @@ struct AlcoveTheme {
         )
     }
 }
+
+// MARK: - 一个按钮管全屋（0827 她定的）
+//
+// 以前深浅有两个源：设置里的“功能页外观”（houseInterfaceAppearance，还带一档跟随系统）
+// 管共读室／檐下／信箱／数据页，聊天主题里那个白天黑夜（alcoveTheme 的深浅后缀）
+// 管聊天页／圆桌／根视图。她要的是一个按钮管所有页面、并且不跟系统走。
+//
+// 现在 houseInterfaceAppearance 只剩 "light"/"dark" 两个值，是全屋唯一真源；
+// alcoveTheme 只负责“哪一套皮”（玻璃／纸页／信息），深浅永远被掰到跟开关一致。
+enum AlcoveAppearance {
+    static let key = "houseInterfaceAppearance"
+    static let themeKey = "alcoveTheme"
+
+    /// 皮的家族，跟深浅无关
+    static func family(of name: String) -> String {
+        switch name {
+        case "paper", "paper-dark": return "paper"
+        case "imessage", "imessage-dark": return "imessage"
+        default: return "glass"
+        }
+    }
+
+    static func themeName(family: String, dark: Bool) -> String {
+        switch family {
+        case "paper": return dark ? "paper-dark" : "paper"
+        case "imessage": return dark ? "imessage-dark" : "imessage"
+        default: return dark ? "midnight" : "haven"
+        }
+    }
+
+    static func isDark(_ themeName: String) -> Bool {
+        themeName == "midnight" || themeName == "paper-dark" || themeName == "imessage-dark"
+    }
+
+    /// 开关当下是不是黑夜（读不到就按聊天主题的深浅兜底）
+    static var isDark: Bool {
+        let d = UserDefaults.standard
+        switch d.string(forKey: key) {
+        case "dark":  return true
+        case "light": return false
+        default:      return isDark(d.string(forKey: themeKey) ?? "haven")
+        }
+    }
+
+    /// 按一次按钮：开关和皮的深浅一起翻
+    static func apply(dark: Bool) {
+        let d = UserDefaults.standard
+        d.set(dark ? "dark" : "light", forKey: key)
+        let current = d.string(forKey: themeKey) ?? "haven"
+        d.set(themeName(family: family(of: current), dark: dark), forKey: themeKey)
+    }
+
+    /// 换皮不换深浅
+    static func applyFamily(_ family: String) {
+        let d = UserDefaults.standard
+        d.set(themeName(family: family, dark: isDark), forKey: themeKey)
+    }
+
+    /// 启动时对齐一次：旧的 "system" 值按此刻系统色落定成 light/dark，
+    /// 再把聊天主题的深浅掰到跟开关一致，之后全 app 只认这一个值。
+    static func migrate(systemDark: Bool) {
+        let d = UserDefaults.standard
+        let stored = d.string(forKey: key)
+        let dark: Bool
+        switch stored {
+        case "dark":  dark = true
+        case "light": dark = false
+        default:      dark = stored == "system" ? systemDark : isDark(d.string(forKey: themeKey) ?? "haven")
+        }
+        apply(dark: dark)
+    }
+}

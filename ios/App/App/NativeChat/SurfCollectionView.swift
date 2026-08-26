@@ -17,8 +17,7 @@ private struct SurfBookmark: Identifiable {
 }
 
 struct NativeSurfCollectionView: View {
-    @AppStorage("houseInterfaceAppearance") private var appearance = "system"
-    @Environment(\.colorScheme) private var systemScheme
+    @AppStorage("houseInterfaceAppearance") private var appearance = "dark"
     @Environment(\.dismiss) private var dismiss
     @State private var selected = "x"
     @State private var items: [SurfBookmark] = []
@@ -34,7 +33,7 @@ struct NativeSurfCollectionView: View {
     // 0826 她说这页太丑且一进去闪白：皮换成檐下那套，暗色判断改用环境里的
     // colorScheme（UITraitCollection.current 首帧还停在 light，才会白闪一下）。
     private var dark: Bool {
-        appearance == "dark" || (appearance == "system" && systemScheme == .dark)
+        appearance != "light"
     }
     private var pal: YanxiaPal { YanxiaPal(night: dark) }
     private var card: Color { pal.card }

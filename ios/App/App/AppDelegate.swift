@@ -8,6 +8,10 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+        // 0827 一个按钮管全屋：旧的“跟随系统”在这里落定成白天或黑夜，
+        // 之后全 app 只认 houseInterfaceAppearance 这一个值。
+        AlcoveAppearance.migrate(systemDark: UITraitCollection.current.userInterfaceStyle == .dark)
+
         // SwiftUI 原生聊天页接管根视图；其余页面走常驻 WebHouse WebView
         let win = UIWindow(frame: UIScreen.main.bounds)
         let host = UIHostingController(rootView: RootView())
