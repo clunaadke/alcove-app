@@ -4039,6 +4039,8 @@ private struct NativeCoreadRoomView: View {
     @State private var showWorkbench = false
     @AppStorage("coreadActiveBookID") private var activeBookID = ""
     @AppStorage("coreadActiveChapter") private var activeChapter = 0
+    @State private var showImporter = false
+    @State private var uploading = false
     private var isNight: Bool {
         houseAppearance == "dark" || (houseAppearance == "system" && colorScheme == .dark)
     }
@@ -4075,6 +4077,10 @@ private struct NativeCoreadRoomView: View {
         .task { await loadBooks() }
         .preferredColorScheme(isNight ? .dark : .light)
         .sheet(isPresented: $showWorkbench) { CoreadWorkbenchView(isNight: isNight) }
+        .fileImporter(isPresented: $showImporter, allowedContentTypes: [.plainText, .text, .item]) { result in
+            guard case .success(let url) = result else { return }
+            Task { await upload(url) }
+        }
     }
 
     @ViewBuilder private func shelf(_ geo: GeometryProxy) -> some View {
@@ -4082,8 +4088,19 @@ private struct NativeCoreadRoomView: View {
         let pages = max(1, Int(ceil(Double(books.count) / 9.0)))
         VStack(spacing: 0) {
             // 顶栏只留统计入口（返回箭头挂在外层 ZStack 上，位置没动）
-            HStack {
+            HStack(spacing: 8) {
                 Spacer()
+                Button { showImporter = true } label: {
+                    Image(systemName: uploading ? "arrow.up.circle" : "plus")
+                        .font(.system(size: 14, weight: .light))
+                        .foregroundColor(pal.ink2)
+                        .frame(width: 38, height: 38)
+                        .background(Circle().fill(pal.card))
+                        .overlay(Circle().strokeBorder(pal.line, lineWidth: 0.5))
+                }
+                .buttonStyle(.plain)
+                .disabled(uploading)
+                .accessibilityLabel("传一本书")
                 Button { showWorkbench = true } label: {
                     Image(systemName: "chart.bar.xaxis")
                         .font(.system(size: 13.5, weight: .light))
@@ -4172,6 +4189,27 @@ private struct NativeCoreadRoomView: View {
             .shadow(color: Color.black.opacity(isNight ? 0.22 : 0.08), radius: 9, y: 3)
         }
         .buttonStyle(CoreadPressStyle())
+    }
+
+    /// 传一本书。文件二进制直接丢给后端，书名走 ?filename=，不用 multipart。
+    /// 传完不再自动喂 DeepSeek —— 预读就是剧透，陈璟要跟着她一页一页读。
+    @MainActor private func upload(_ fileURL: URL) async {
+        uploading = true
+        defer { uploading = false }
+        let scoped = fileURL.startAccessingSecurityScopedResource()
+        defer { if scoped { fileURL.stopAccessingSecurityScopedResource() } }
+        guard let data = try? Data(contentsOf: fileURL), !data.isEmpty else {
+            error = "这本书读不出来"
+            return
+        }
+        let name = fileURL.lastPathComponent
+            .addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? "book.txt"
+        var request = URLRequest(url: AlcoveAPI.fullURL("/read/api/upload?filename=\(name)"))
+        request.httpMethod = "POST"
+        request.httpBody = data
+        request.timeoutInterval = 90
+        _ = try? await AlcoveAPI.session.data(for: request)
+        await loadBooks()
     }
 
     @MainActor private func loadBooks() async {
