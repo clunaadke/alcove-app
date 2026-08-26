@@ -59,7 +59,7 @@ struct LetterMessageCard: View {
                     .font(.system(size: 8.5, design: .monospaced))
                     .tracking(4.5)
                     .foregroundColor(ink3)
-                    .position(x: geo.size.width / 2, y: geo.size.height * 0.395)
+                    .position(x: geo.size.width / 2, y: geo.size.height * 0.435)   // 她说太靠上，往小卡片中间挪
 
                 // 信封下半截
                 Text("\(card.senderName ?? "") 寄给 \(card.recipientName ?? "")")
