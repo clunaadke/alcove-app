@@ -2562,7 +2562,7 @@ struct MessageRow: View {
                 } else if msg.msgType == "choice_answer" {
                     ChoiceAnswerStrip(text: msg.displayText, theme: theme)
                 } else if let letter = msg.letterCard {
-                    LetterMessageCard(card: letter)
+                    LetterMessageCard(card: letter, theme: theme)
                         .frame(maxWidth: .infinity)   // 信封也走正中间，跟旅行卡一个待遇
                 } else if let journey = msg.journeyCard {
                     JourneyMessageCard(ref: journey, theme: theme)

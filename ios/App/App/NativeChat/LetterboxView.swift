@@ -20,8 +20,10 @@ struct LetterEnvelopeCard: Decodable, Equatable {
 
 struct LetterMessageCard: View {
     let card: LetterEnvelopeCard
-    @Environment(\.colorScheme) private var colorScheme
-    private var night: Bool { colorScheme == .dark }
+    let theme: AlcoveTheme
+    // 跟聊天页的主题走，不看系统深浅色：她把聊天页调成浅色的时候
+    // 系统还可能是深色，信封就会黑压压地压在白纸上。
+    private var night: Bool { theme.isDark }
 
     // 两张信封是同一张图的正反色，尺寸一致，坐标共用
     private var imageURL: URL {
