@@ -3979,6 +3979,14 @@ private struct CoreadBook: Identifiable, Hashable {
     let currentChapter: Int
     let chapterTitles: [String]
     let coverURL: String?
+    // 2026-08-26 加的：她正在读的章节名、陈璟自己那条进度、她私有的书签数、一起读了多久
+    let chapterTitle: String
+    let hasMyMark: Bool
+    let myChapter: Int
+    let myPct: Double
+    let myNotes: Int
+    let bookmarkCount: Int
+    let readMs: Int
 
     init(_ value: [String: Any]) {
         id = value.string("id")
@@ -3987,6 +3995,34 @@ private struct CoreadBook: Identifiable, Hashable {
         currentChapter = value.int("current_chapter")
         chapterTitles = value["chapter_titles"] as? [String] ?? []
         coverURL = value.string("cover_url", "cover").isEmpty ? nil : value.string("cover_url", "cover")
+        chapterTitle = value.string("chapter_title")
+        bookmarkCount = value.int("bookmark_count")
+        readMs = value.int("read_ms")
+        if let mark = value["my_mark"] as? [String: Any] {
+            hasMyMark = true
+            myChapter = mark.int("chapter")
+            myPct = (mark["pct"] as? Double) ?? Double(mark.int("pct"))
+            myNotes = mark.int("notes")
+        } else {
+            hasMyMark = false
+            myChapter = 0
+            myPct = 0
+            myNotes = 0
+        }
+    }
+
+    /// 陈璟那条进度（0~1）。他自己一段一段读出来的，跟她的各走各的。
+    var myProgress: CGFloat {
+        guard hasMyMark else { return 0 }
+        return min(1, max(0, CGFloat(myPct) / 100))
+    }
+
+    /// 一起读了多久，写成人话
+    var readTimeText: String {
+        let minutes = readMs / 60000
+        if minutes <= 0 { return "" }
+        if minutes < 60 { return "读了 \(minutes) 分钟" }
+        return "读了 \(minutes / 60) 小时 \(minutes % 60) 分"
     }
 }
 
@@ -4439,8 +4475,24 @@ private struct CoreadBookSlot: View {
                 }
             }
             .frame(height: 1.5)
+
+            // 陈璟那条：更细更淡，压在她下面。两条线各走各的，谁也不动谁。
+            if book.hasMyMark {
+                GeometryReader { g in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(Color.clear)
+                        Capsule().fill(CoreadBookSlot.jingLine)
+                            .frame(width: max(0, g.size.width * book.myProgress))
+                    }
+                }
+                .frame(height: 1)
+                .padding(.top, 1.5)
+            }
         }
     }
+
+    /// 陈璟那条线的颜色：冷一点的蓝，跟她的琥珀分得开
+    static let jingLine = Color(red: 0.392, green: 0.565, blue: 0.729).opacity(0.85)
 }
 
 private struct CoreadDetailView: View {
@@ -4485,6 +4537,29 @@ private struct CoreadDetailView: View {
                 .tracking(1.2)
                 .foregroundColor(pal.ink3)
                 .padding(.top, 6)
+
+            // 陈璟自己读到哪。不共读的时候他也在往下走，这一行就是他的书签。
+            if book.hasMyMark {
+                HStack(spacing: 5) {
+                    Circle().fill(CoreadBookSlot.jingLine).frame(width: 3.5, height: 3.5)
+                    Text("陈璟读到第 \(book.myChapter + 1) 章 · \(Int(book.myPct.rounded()))%"
+                         + (book.myNotes > 0 ? " · 留了 \(book.myNotes) 句" : ""))
+                }
+                .font(.system(size: 9.5, design: .monospaced))
+                .tracking(1)
+                .foregroundColor(pal.ink3)
+                .padding(.top, 4)
+            }
+
+            if !book.readTimeText.isEmpty || book.bookmarkCount > 0 {
+                Text([book.readTimeText,
+                      book.bookmarkCount > 0 ? "夹了 \(book.bookmarkCount) 处" : ""]
+                        .filter { !$0.isEmpty }.joined(separator: " · "))
+                    .font(.system(size: 9.5, design: .monospaced))
+                    .tracking(1)
+                    .foregroundColor(pal.ink3.opacity(0.8))
+                    .padding(.top, 3)
+            }
 
             Button { open(min(book.currentChapter, max(0, book.chapters - 1))) } label: {
                 HStack(spacing: 8) {
@@ -4543,18 +4618,31 @@ private struct CoreadDetailView: View {
 
 private struct CoreadReaderView: View {
     let book: CoreadBook
-    let chapter: Int
     let onBack: () -> Void
+    @State private var chapter: Int
     @State private var title = ""
     @State private var content = ""
     @State private var showChat = false
     @State private var samePage = false
     @State private var knocked = false
     @State private var quotedText: String?
+    @State private var showSettings = false
+    @State private var showMarks = false
+    @State private var marked = false
+    @State private var openedAt = Date()
     @Environment(\.colorScheme) private var colorScheme
     @AppStorage("coreadActiveBookID") private var activeBookID = ""
     @AppStorage("coreadActiveChapter") private var activeChapter = 0
+    // 读书的手感存在本机，换书换章都不用重设
+    @AppStorage("coreadFontSize") private var fontSize: Double = 17
+    @AppStorage("coreadLineSpacing") private var lineSpacing: Double = 9
     private var isNight: Bool { colorScheme == .dark }
+
+    init(book: CoreadBook, chapter: Int, onBack: @escaping () -> Void) {
+        self.book = book
+        self.onBack = onBack
+        _chapter = State(initialValue: chapter)
+    }
     var body: some View {
         let pal = YanxiaPal(night: isNight)
         VStack(spacing: 0) {
@@ -4584,10 +4672,25 @@ private struct CoreadReaderView: View {
                         .font(.system(size: 14, weight: .light))
                         .frame(width: 42, height: 42)
                 }
+                Button { Task { await toggleMark() } } label: {
+                    Image(systemName: marked ? "bookmark.fill" : "bookmark")
+                        .font(.system(size: 14, weight: .light))
+                        .frame(width: 36, height: 42)
+                }
+                Button { showMarks = true } label: {
+                    Image(systemName: "list.bullet")
+                        .font(.system(size: 13.5, weight: .light))
+                        .frame(width: 36, height: 42)
+                }
+                Button { showSettings = true } label: {
+                    Image(systemName: "textformat.size")
+                        .font(.system(size: 14, weight: .light))
+                        .frame(width: 36, height: 42)
+                }
                 Button { openChat() } label: {
                     Image(systemName: "bubble.left.and.bubble.right")
                         .font(.system(size: 14, weight: .light))
-                        .frame(width: 42, height: 42)
+                        .frame(width: 36, height: 42)
                 }
             }
             .foregroundColor(pal.ink2)
@@ -4602,26 +4705,86 @@ private struct CoreadReaderView: View {
             }
             .overlay(Rectangle().fill(pal.line).frame(height: 0.5), alignment: .bottom)
 
-            ScrollView {
-                CoreadSelectableText(text: content, isNight: isNight) { quote in
-                    quotedText = quote
-                    openChat()
-                    Task { await saveHighlight(quote) }
+            ScrollViewReader { proxy in
+                ScrollView {
+                    CoreadSelectableText(text: content, isNight: isNight,
+                                         fontSize: fontSize, lineSpacing: lineSpacing) { quote in
+                        quotedText = quote
+                        openChat()
+                        Task { await saveHighlight(quote) }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 24)
+                    .padding(.top, 26)
+                    .padding(.bottom, 34)
+                    .id("top")
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 24)
-                .padding(.vertical, 26)
+                .onChange(of: chapter) { _ in
+                    withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo("top", anchor: .top) }
+                }
             }
             // 读字的地方要素净：这一屏不铺噪点也不铺渐变，只留一层贴近纸的底。
             // 噪点压在正文底下会硌眼睛 —— 皮再好看也不能妨碍她读书。
             .background(isNight ? Color(red: 0.086, green: 0.102, blue: 0.125)
                                 : Color(red: 0.973, green: 0.980, blue: 0.984))
+
+            // 翻章：以前只能退回目录再点，现在在这儿翻
+            HStack(spacing: 0) {
+                Button { turn(-1) } label: {
+                    Image(systemName: "chevron.left").font(.system(size: 13, weight: .light))
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .disabled(chapter <= 0)
+                .opacity(chapter <= 0 ? 0.3 : 1)
+
+                Text("\(chapter + 1) / \(max(book.chapters, 1))")
+                    .font(.system(size: 10, design: .monospaced))
+                    .tracking(1.2)
+                    .foregroundColor(pal.ink3)
+                    .frame(width: 74)
+
+                Button { turn(1) } label: {
+                    Image(systemName: "chevron.right").font(.system(size: 13, weight: .light))
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .disabled(chapter >= book.chapters - 1)
+                .opacity(chapter >= book.chapters - 1 ? 0.3 : 1)
+            }
+            .foregroundColor(pal.ink2)
+            .padding(.bottom, 6)
+            .background {
+                ZStack {
+                    Rectangle().fill(.ultraThinMaterial)
+                    (isNight ? Color(red: 0.106, green: 0.125, blue: 0.149) : Color.white)
+                        .opacity(isNight ? 0.55 : 0.45)
+                }
+            }
+            .overlay(Rectangle().fill(pal.line).frame(height: 0.5), alignment: .top)
         }
         .foregroundColor(pal.ink)
-        .task { await load(); await heartbeat() }
+        .task(id: chapter) { await load(); await heartbeat(); await syncMarked() }
+        .onDisappear { Task { await saveProgress() } }
         .sheet(isPresented: $showChat) {
             CoreadChatSheet(book: book, chapter: chapter, pageText: String(content.prefix(1800)), quotedText: $quotedText)
         }
+        .sheet(isPresented: $showSettings) {
+            CoreadReadingSettingsSheet(fontSize: $fontSize, lineSpacing: $lineSpacing, isNight: isNight)
+        }
+        .sheet(isPresented: $showMarks) {
+            CoreadMarksSheet(book: book, isNight: isNight) { ch in
+                showMarks = false
+                chapter = min(max(0, ch), max(0, book.chapters - 1))
+            }
+        }
+    }
+
+    private func turn(_ step: Int) {
+        let next = chapter + step
+        guard next >= 0, next < book.chapters else { return }
+        Task { await saveProgress() }
+        openedAt = Date()
+        chapter = next
+        activeChapter = next
     }
     @MainActor private func load() async {
         guard let value = try? await NativeHouseAPI.object("/read/api/book/\(book.id)/chapter/\(chapter)") else { return }
@@ -4641,6 +4804,37 @@ private struct CoreadReaderView: View {
         activeChapter = chapter
         showChat = true
     }
+    /// 存进度＋这一段读了多久。以前翻到哪儿根本没人记，退出就丢。
+    @MainActor private func saveProgress() async {
+        let ms = max(0, Int(Date().timeIntervalSince(openedAt) * 1000))
+        try? await NativeHouseAPI.post("/read/api/book/\(book.id)/progress",
+                                       body: ["chapter": chapter, "read_ms": ms])
+        openedAt = Date()
+    }
+
+    @MainActor private func syncMarked() async {
+        activeBookID = book.id
+        activeChapter = chapter
+        let list = (try? await NativeHouseAPI.array("/read/api/book/\(book.id)/bookmarks")) ?? []
+        marked = list.contains { $0.int("chapter") == chapter }
+    }
+
+    @MainActor private func toggleMark() async {
+        let list = (try? await NativeHouseAPI.array("/read/api/book/\(book.id)/bookmarks")) ?? []
+        if let hit = list.first(where: { $0.int("chapter") == chapter }) {
+            try? await NativeHouseAPI.post("/read/api/book/\(book.id)/bookmarks/\(hit.string("id"))/delete", body: [:])
+            marked = false
+        } else {
+            try? await NativeHouseAPI.post("/read/api/book/\(book.id)/bookmarks", body: [
+                "chapter": chapter,
+                "chapter_title": title.isEmpty ? "第 \(chapter + 1) 章" : title,
+                "scroll": 0,
+                "excerpt": String(content.prefix(40))
+            ])
+            marked = true
+        }
+    }
+
     @MainActor private func saveHighlight(_ quote: String) async {
         try? await NativeHouseAPI.post("/read/api/book/\(book.id)/annotate", body: [
             "chapter": chapter, "text": quote, "note": "引用到陪读室", "author": "luna"
@@ -4651,6 +4845,8 @@ private struct CoreadReaderView: View {
 private struct CoreadSelectableText: UIViewRepresentable {
     let text: String
     let isNight: Bool
+    var fontSize: Double = 17
+    var lineSpacing: Double = 9
     let onQuote: (String) -> Void
 
     func makeUIView(context: Context) -> CoreadTextView {
@@ -4667,10 +4863,10 @@ private struct CoreadSelectableText: UIViewRepresentable {
     }
     func updateUIView(_ view: CoreadTextView, context: Context) {
         let paragraph = NSMutableParagraphStyle()
-        paragraph.lineSpacing = 9
-        paragraph.paragraphSpacing = 12
+        paragraph.lineSpacing = CGFloat(lineSpacing)
+        paragraph.paragraphSpacing = CGFloat(lineSpacing) + 3
         view.attributedText = NSAttributedString(string: text, attributes: [
-            .font: UIFont.systemFont(ofSize: 17),
+            .font: UIFont.systemFont(ofSize: CGFloat(fontSize)),
             .foregroundColor: isNight ? UIColor(red: 0.86, green: 0.89, blue: 0.92, alpha: 1) : UIColor(red: 0.165, green: 0.185, blue: 0.212, alpha: 1),
             .paragraphStyle: paragraph
         ])
@@ -4695,6 +4891,178 @@ private final class CoreadTextView: UITextView {
             onQuote?(quote)
         }
         builder.insertChild(UIMenu(options: .displayInline, children: [action]), atStartOfMenu: .standardEdit)
+    }
+}
+
+/// 两个共读面板共用的底：跟共读室一个色系，不另起炉灶
+private struct CoreadSheetBG: View {
+    let isNight: Bool
+    var body: some View {
+        (isNight ? Color(red: 0.137, green: 0.153, blue: 0.173)
+                 : Color(red: 0.965, green: 0.973, blue: 0.980))
+            .ignoresSafeArea()
+    }
+}
+
+/// 读书的手感：字大一点、行松一点，她自己调。存本机，换书也记得。
+private struct CoreadReadingSettingsSheet: View {
+    @Binding var fontSize: Double
+    @Binding var lineSpacing: Double
+    let isNight: Bool
+    @Environment(\.dismiss) private var dismiss
+    private var pal: YanxiaPal { YanxiaPal(night: isNight) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("读着舒服就好").font(.system(size: 15, weight: .semibold, design: .serif)).tracking(1)
+                Spacer()
+                Button { dismiss() } label: { Image(systemName: "xmark").font(.system(size: 13, weight: .medium)) }
+                    .buttonStyle(.plain)
+            }
+            .foregroundColor(pal.ink)
+            .padding(.horizontal, 20)
+            .padding(.top, 20)
+
+            Text("这一段是给你看的：字挪大一点，行松一点，眼睛就不那么累了。")
+                .font(.system(size: CGFloat(fontSize), design: .serif))
+                .lineSpacing(CGFloat(lineSpacing))
+                .foregroundColor(pal.ink2)
+                .padding(.horizontal, 20)
+                .padding(.top, 16)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            row(title: "字号", value: Int(fontSize).description) {
+                Slider(value: $fontSize, in: 14...23, step: 0.5).tint(pal.accent)
+            }
+            row(title: "行距", value: Int(lineSpacing).description) {
+                Slider(value: $lineSpacing, in: 4...18, step: 0.5).tint(pal.accent)
+            }
+
+            Button {
+                fontSize = 17; lineSpacing = 9
+            } label: {
+                Text("恢复原来的").font(.system(size: 11.5, design: .serif)).tracking(1)
+                    .foregroundColor(pal.ink3)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 40)
+                    .background(Capsule().fill(pal.card2))
+                    .overlay(Capsule().strokeBorder(pal.line, lineWidth: 0.5))
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 20)
+            .padding(.top, 6)
+
+            Spacer(minLength: 12)
+        }
+        .background(CoreadSheetBG(isNight: isNight))
+        .presentationDetents([.height(340)])
+    }
+
+    @ViewBuilder private func row<C: View>(title: String, value: String, @ViewBuilder control: () -> C) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text(title).font(.system(size: 11.5, design: .serif)).tracking(1.5)
+                Spacer()
+                Text(value).font(.system(size: 10.5, design: .monospaced))
+            }
+            .foregroundColor(pal.ink3)
+            control()
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 14)
+    }
+}
+
+/// 她夹的书签。私有的，一条都不推给陈璟。
+private struct CoreadMarksSheet: View {
+    let book: CoreadBook
+    let isNight: Bool
+    let onJump: (Int) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var marks: [[String: Any]] = []
+    @State private var loading = true
+    private var pal: YanxiaPal { YanxiaPal(night: isNight) }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("夹过的地方").font(.system(size: 15, weight: .semibold, design: .serif)).tracking(1)
+                Spacer()
+                Button { dismiss() } label: { Image(systemName: "xmark").font(.system(size: 13, weight: .medium)) }
+                    .buttonStyle(.plain)
+            }
+            .foregroundColor(pal.ink)
+            .padding(20)
+
+            if loading {
+                ProgressView().tint(pal.accent).frame(maxHeight: .infinity)
+            } else if marks.isEmpty {
+                VStack(spacing: 8) {
+                    Image(systemName: "bookmark").font(.system(size: 22, weight: .ultraLight))
+                    Text("还没夹过。读到舍不得走的地方，点右上角那个书签")
+                        .font(.system(size: 11.5, design: .serif))
+                        .multilineTextAlignment(.center)
+                }
+                .foregroundColor(pal.ink3)
+                .padding(.horizontal, 40)
+                .frame(maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 8) {
+                        ForEach(Array(marks.enumerated()), id: \.offset) { _, mark in
+                            HStack(spacing: 10) {
+                                Button { onJump(mark.int("chapter")) } label: {
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text(mark.string("chapter_title").isEmpty
+                                             ? "第 \(mark.int("chapter") + 1) 章"
+                                             : mark.string("chapter_title"))
+                                            .font(.system(size: 12.5, design: .serif))
+                                            .foregroundColor(pal.ink2)
+                                            .lineLimit(1)
+                                        if !mark.string("excerpt").isEmpty {
+                                            Text(mark.string("excerpt"))
+                                                .font(.system(size: 10, design: .serif))
+                                                .foregroundColor(pal.ink3)
+                                                .lineLimit(1)
+                                        }
+                                    }
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                                .buttonStyle(.plain)
+
+                                Button { Task { await remove(mark.string("id")) } } label: {
+                                    Image(systemName: "trash").font(.system(size: 11, weight: .light))
+                                        .foregroundColor(pal.ink3)
+                                        .frame(width: 32, height: 32)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 10)
+                            .background(RoundedRectangle(cornerRadius: 13, style: .continuous).fill(pal.card))
+                            .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous)
+                                .strokeBorder(pal.line, lineWidth: 0.5))
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 24)
+                }
+            }
+        }
+        .background(CoreadSheetBG(isNight: isNight))
+        .presentationDetents([.medium])
+        .task { await load() }
+    }
+
+    @MainActor private func load() async {
+        loading = true; defer { loading = false }
+        marks = (try? await NativeHouseAPI.array("/read/api/book/\(book.id)/bookmarks")) ?? []
+    }
+
+    @MainActor private func remove(_ id: String) async {
+        try? await NativeHouseAPI.post("/read/api/book/\(book.id)/bookmarks/\(id)/delete", body: [:])
+        await load()
     }
 }
 
