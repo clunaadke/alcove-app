@@ -113,6 +113,8 @@ struct RootView: View {
         .blur(radius: housePage == nil || theme.isPaper ? 0 : 2.2)
         .animation(.easeOut(duration: 0.20), value: housePage != nil)
         .onAppear {
+            // 开关是全屋唯一真源；谁把主题的深浅弄歪了，这里再掰回来
+            AlcoveAppearance.realign()
             prewarmPanelTexture()
             Task { await refreshThinkingState() }
             // 0821 她要的图片缓存：开门就把最近三天的图悄悄存进手机

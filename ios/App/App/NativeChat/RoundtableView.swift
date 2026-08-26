@@ -276,14 +276,14 @@ struct RoundtableView: View {
     @AppStorage("bubbleGlassSize") private var bubbleGlassSize = 174.33
     private var theme: AlcoveTheme { .named(themeName) }
     private var activeRTWallpaper: String {
-        switch themeName {
-        // 0827：信息主题以前没有自己的槽，深浅两态共用白天那一格，
-        // 所以圆桌壁纸怎么切都不动。黑夜的信息主题借黑夜玻璃那一格。
-        case "midnight", "imessage-dark": return rtWallpaperMidnight
-        case "paper": return rtWallpaperPaper
-        case "paper-dark": return rtWallpaperPaperDark
-        default: return rtWallpaperHaven.isEmpty ? rtWallpaper : rtWallpaperHaven
+        // 0827 改成只按白天/黑夜两格：以前按主题名分四格，信息主题没有自己的格子，
+        // 深浅共用白天那一张，她切白天圆桌照旧是那张深色照片。
+        // 纸页那两格留着，它本来就是两张不同的纸。
+        if themeName == "paper" || themeName == "paper-dark" {
+            return AlcoveAppearance.isDark ? rtWallpaperPaperDark : rtWallpaperPaper
         }
+        if AlcoveAppearance.isDark { return rtWallpaperMidnight }
+        return rtWallpaperHaven.isEmpty ? rtWallpaper : rtWallpaperHaven
     }
 
     private var bubbleGlassStyle: BubbleGlassStyle {
@@ -1902,20 +1902,19 @@ private struct RTSettingsView: View {
     }
 
     private var activeWallpaper: String {
-        switch themeName {
-        case "midnight", "imessage-dark": return wallpaperMidnight
-        case "paper": return wallpaperPaper
-        case "paper-dark": return wallpaperPaperDark
-        default: return wallpaperHaven.isEmpty ? wallpaper : wallpaperHaven
+        if themeName == "paper" || themeName == "paper-dark" {
+            return AlcoveAppearance.isDark ? wallpaperPaperDark : wallpaperPaper
         }
+        if AlcoveAppearance.isDark { return wallpaperMidnight }
+        return wallpaperHaven.isEmpty ? wallpaper : wallpaperHaven
     }
 
     private func setActiveWallpaper(_ value: String) {
-        switch themeName {
-        case "midnight", "imessage-dark": wallpaperMidnight = value
-        case "paper": wallpaperPaper = value
-        case "paper-dark": wallpaperPaperDark = value
-        default:
+        if themeName == "paper" || themeName == "paper-dark" {
+            if AlcoveAppearance.isDark { wallpaperPaperDark = value } else { wallpaperPaper = value }
+        } else if AlcoveAppearance.isDark {
+            wallpaperMidnight = value
+        } else {
             wallpaperHaven = value
             wallpaper = ""
         }
