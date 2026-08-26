@@ -7138,6 +7138,7 @@ private struct ForgeRoundChoice: Identifiable {
     let events: Int
     let tools: Int
     let kind: String
+    let history: Bool
     var id: Int { idx }
 
     init(_ raw: [String: Any]) {
@@ -7147,6 +7148,7 @@ private struct ForgeRoundChoice: Identifiable {
         events = raw.int("events")
         tools = raw.int("tools")
         kind = raw.string("kind")
+        history = raw.bool("history")
     }
 }
 
@@ -7400,7 +7402,18 @@ private struct NativeForgeView: View {
                 ProgressView().frame(maxWidth: .infinity).padding(.vertical, 28)
             } else {
                 LazyVStack(spacing: 7) {
-                    ForEach(visibleRounds) { round in
+                    ForEach(Array(visibleRounds.enumerated()), id: \.element.id) { offset, round in
+                        if round.history && (offset == 0 || !visibleRounds[offset - 1].history) {
+                            HStack(spacing: 8) {
+                                Rectangle().frame(height: 0.5)
+                                Text("以下是上次 Forge 带来的历史")
+                                    .font(.system(size: 9, weight: .medium, design: .serif))
+                                    .fixedSize()
+                                Rectangle().frame(height: 0.5)
+                            }
+                            .foregroundColor(theme.textDim.opacity(0.72))
+                            .padding(.vertical, 5)
+                        }
                         Button { toggleRound(round.idx) } label: {
                             HStack(alignment: .top, spacing: 10) {
                                 Image(systemName: selectedRounds.contains(round.idx)
