@@ -21,25 +21,15 @@ struct LetterEnvelopeCard: Decodable, Equatable {
 struct LetterMessageCard: View {
     let card: LetterEnvelopeCard
     let theme: AlcoveTheme
-    // 跟聊天页的主题走，不看系统深浅色：她把聊天页调成浅色的时候
-    // 系统还可能是深色，信封就会黑压压地压在白纸上。
-    private var night: Bool { theme.isDark }
 
-    // 两张信封是同一张图的正反色，尺寸一致，坐标共用
-    private var imageURL: URL {
-        // .png 是固定的门牌：她从 /letter-upload.html 传一张透明的上来就自动换掉，
-        // app 不用重新构建。UIImage 按内容认格式，不看后缀。
-        AlcoveAPI.fullURL(night ? "/letter/envelope-dark.png" : "/letter/envelope-light.png")
-    }
-    private var ink: Color {
-        night ? Color(red: 0.914, green: 0.898, blue: 0.863) : Color(red: 0.165, green: 0.145, blue: 0.122)
-    }
-    private var ink2: Color {
-        night ? Color(red: 0.702, green: 0.675, blue: 0.628) : Color(red: 0.373, green: 0.341, blue: 0.298)
-    }
-    private var ink3: Color {
-        night ? Color(red: 0.490, green: 0.467, blue: 0.427) : Color(red: 0.604, green: 0.569, blue: 0.518)
-    }
+    // 2026-08-27 凌晨改的：不再跟主题换皮。
+    // 深浅两套图＋两套字色，只要有一边判断偏了就是黑信封配黑字，糊成一团，
+    // 她连着看到三次不对，最后一次说她要疯了。现在固定一张深色信封＋固定浅色字，
+    // 它就是一张实物照片贴在聊天流里，白底黑底都立得住，不会再错。
+    private var imageURL: URL { AlcoveAPI.fullURL("/letter/envelope-dark.png") }
+    private var ink: Color  { Color(red: 0.945, green: 0.933, blue: 0.906) }
+    private var ink2: Color { Color(red: 0.757, green: 0.733, blue: 0.690) }
+    private var ink3: Color { Color(red: 0.549, green: 0.525, blue: 0.482) }
 
     var body: some View {
         GeometryReader { geo in
@@ -48,8 +38,7 @@ struct LetterMessageCard: View {
                     image.resizable()
                         .aspectRatio(contentMode: .fit)
                 } placeholder: {
-                    (night ? Color(red: 0.086, green: 0.086, blue: 0.086)
-                           : Color(red: 0.949, green: 0.937, blue: 0.914))
+                    Color(red: 0.086, green: 0.086, blue: 0.086)
                 }
                 .frame(width: geo.size.width, height: geo.size.height)
                 .clipped()
@@ -84,7 +73,7 @@ struct LetterMessageCard: View {
         .aspectRatio(2048.0 / 2007.0, contentMode: .fit)
         .frame(maxWidth: 196)          // 她说至少缩一半
         .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-        .shadow(color: Color.black.opacity(night ? 0.42 : 0.16), radius: 14, y: 5)
+        .shadow(color: Color.black.opacity(0.30), radius: 14, y: 5)
         .padding(.horizontal, 6)
     }
 }
