@@ -11,6 +11,7 @@ struct StickerSheet: View {
     @State private var uploadItem: PhotosPickerItem?
     @State private var draft: StickerDraft?
     @State private var editing: Sticker?      // 长按格子 → 补描述
+    @State private var errorMessage = ""
     @AppStorage("assistantName") private var assistantName = "陈璟"
 
     private var shown: [Sticker] {
@@ -35,13 +36,17 @@ struct StickerSheet: View {
 
                 Spacer()
 
-                PhotosPicker(selection: $uploadItem, matching: .any(of: [.images, .videos])) {
-                    Image(systemName: "plus")
-                        .font(.system(size: 16))
-                        .foregroundColor(.secondary)
-                        .frame(width: 42, height: 42)
-                        .background(Color(.systemGray6), in: Circle())
+                PhotosPicker(selection: $uploadItem, matching: .images,
+                             preferredItemEncoding: .current) {
+                    Group {
+                        if store.stickerUploading { ProgressView().scaleEffect(0.72) }
+                        else { Image(systemName: "plus").font(.system(size: 16)) }
+                    }
+                    .foregroundColor(.secondary)
+                    .frame(width: 42, height: 42)
+                    .background(Color(.systemGray6), in: Circle())
                 }
+                .disabled(store.stickerUploading)
             }
 
             ScrollView {
@@ -51,7 +56,7 @@ struct StickerSheet: View {
                         // 点一下选中；长按进编辑——以前传的那些没法补描述，她 0818 要的
                         Button { onPick(stk) } label: {
                             VStack(spacing: 4) {
-                                AsyncImage(url: AlcoveAPI.stickerURL(stk.url)) { img in
+                                CachedImage(url: AlcoveAPI.stickerURL(stk.url)) { img in
                                     img.resizable().scaledToFit()
                                 } placeholder: {
                                     Color(.systemGray6)
@@ -96,13 +101,33 @@ struct StickerSheet: View {
         }
         .onChange(of: uploadItem) { item in
             guard let item else { return }
-            uploadItem = nil
             Task {
-                guard let raw = try? await item.loadTransferable(type: Data.self) else { return }
-                // 动图原样保留：GIF / animated WebP 一转 JPEG 就死了（教程坑 2）
-                let mime = StickerDraft.sniff(raw)
-                draft = StickerDraft(data: raw, mime: mime, owner: tab)
+                do {
+                    guard let raw = try await item.loadTransferable(type: Data.self),
+                          !raw.isEmpty, UIImage(data: raw) != nil else {
+                        throw NSError(domain: "StickerPicker", code: 1,
+                                      userInfo: [NSLocalizedDescriptionKey: "这张图片没有读取成功，请重新选择"])
+                    }
+                    let mime = StickerDraft.sniff(raw)
+                    draft = StickerDraft(data: raw, mime: mime, owner: tab)
+                } catch {
+                    errorMessage = error.localizedDescription
+                }
+                uploadItem = nil
             }
+        }
+        .onChange(of: store.stickerUploadError) { message in
+            guard !message.isEmpty else { return }
+            errorMessage = message
+            store.stickerUploadError = ""
+        }
+        .alert("添加表情失败", isPresented: Binding(
+            get: { !errorMessage.isEmpty },
+            set: { if !$0 { errorMessage = "" } }
+        )) {
+            Button("知道了") { errorMessage = "" }
+        } message: {
+            Text(errorMessage)
         }
     }
 
@@ -195,7 +220,7 @@ private struct StickerDescribeSheet: View {
                                     .clipShape(RoundedRectangle(cornerRadius: 12))
                             }
                         case .remote(let url):
-                            AsyncImage(url: url) { img in
+                            CachedImage(url: url) { img in
                                 img.resizable().scaledToFit()
                             } placeholder: { Color(.systemGray6) }
                             .frame(maxHeight: 150)

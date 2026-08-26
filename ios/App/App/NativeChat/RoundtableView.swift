@@ -1979,7 +1979,7 @@ private struct RoundtableStickerPicker: View {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 82), spacing: 12)], spacing: 12) {
                     ForEach(stickers) { sticker in
                         Button { onSelect(sticker) } label: {
-                            AsyncImage(url: AlcoveAPI.stickerURL(sticker.url)) { image in
+                            CachedImage(url: AlcoveAPI.stickerURL(sticker.url)) { image in
                                 image.resizable().scaledToFit()
                             } placeholder: {
                                 ProgressView()

@@ -401,7 +401,17 @@ enum AlcoveAPI {
         body.append(data)
         body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
         req.httpBody = body
-        _ = try await session.data(for: req)
+        let (responseData, response) = try await session.data(for: req)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            let object = try? JSONSerialization.jsonObject(with: responseData) as? [String: Any]
+            throw NSError(domain: "StickerUpload", code: (response as? HTTPURLResponse)?.statusCode ?? -1,
+                          userInfo: [NSLocalizedDescriptionKey: object?["error"] as? String ?? "表情上传失败"])
+        }
+        if let object = try? JSONSerialization.jsonObject(with: responseData) as? [String: Any],
+           object["ok"] as? Bool != true {
+            throw NSError(domain: "StickerUpload", code: -2,
+                          userInfo: [NSLocalizedDescriptionKey: object["error"] as? String ?? "表情没有存进去"])
+        }
     }
 
     /// 给已有的表情补名称/描述/情绪标签（长按格子进编辑）

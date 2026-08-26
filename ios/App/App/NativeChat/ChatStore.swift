@@ -8,6 +8,8 @@ final class ChatStore: ObservableObject {
     @Published var isTyping = false
     @Published var currentTool: String?
     @Published var stickers: [Sticker] = []
+    @Published var stickerUploading = false
+    @Published var stickerUploadError = ""
     @Published var loading = true
     @Published var loadingOlder = false
     @Published var hasOlder = true
@@ -30,6 +32,27 @@ final class ChatStore: ObservableObject {
     private var heldGen = 0
     private var optimisticUntil = Date.distantPast // 发出去立刻亮气泡的乐观窗口
     private var typingLineTs = Date.distantPast
+    private static let stickerCacheKey = "alcove.stickers.metadata.v1"
+
+    init() {
+        guard let data = UserDefaults.standard.data(forKey: Self.stickerCacheKey),
+              let raw = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return }
+        stickers = raw.compactMap(Sticker.init(json:))
+    }
+
+    private func saveStickerCache() {
+        let raw: [[String: Any]] = stickers.map {
+            ["id": $0.id, "owner": $0.owner, "name": $0.name,
+             "description": $0.description, "emotion_tags": $0.emotionTags, "url": $0.url]
+        }
+        if let data = try? JSONSerialization.data(withJSONObject: raw) {
+            UserDefaults.standard.set(data, forKey: Self.stickerCacheKey)
+        }
+    }
+
+    private func prefetchStickerImages() async {
+        await ImageDiskCache.shared.prefetch(stickers.map { AlcoveAPI.stickerURL($0.url) })
+    }
 
     // PWA TYPING_LINES 原班人马
     static let typingLines = [
@@ -96,8 +119,11 @@ final class ChatStore: ObservableObject {
             await self?.consumeLiveStream()
         }
         Task { [weak self] in
+            await self?.prefetchStickerImages()
             if let stk = try? await AlcoveAPI.stickers() {
                 self?.stickers = stk
+                self?.saveStickerCache()
+                await self?.prefetchStickerImages()
             }
             if let held = try? await AlcoveAPI.heldCount() {
                 self?.heldCount = held
@@ -158,11 +184,22 @@ final class ChatStore: ObservableObject {
     func uploadSticker(data: Data, mime: String, owner: String,
                        name: String = "", description: String = "",
                        emotionTags: [String] = []) {
+        guard !stickerUploading else { return }
+        stickerUploading = true
+        stickerUploadError = ""
         Task {
-            try? await AlcoveAPI.uploadSticker(data: data, mime: mime, owner: owner,
-                                               name: name, description: description,
-                                               emotionTags: emotionTags)
-            if let stk = try? await AlcoveAPI.stickers() { stickers = stk }
+            defer { stickerUploading = false }
+            do {
+                try await AlcoveAPI.uploadSticker(data: data, mime: mime, owner: owner,
+                                                  name: name, description: description,
+                                                  emotionTags: emotionTags)
+                stickers = try await AlcoveAPI.stickers()
+                saveStickerCache()
+                await prefetchStickerImages()
+            } catch {
+                stickerUploadError = error.localizedDescription.isEmpty
+                    ? "表情没有存进去，请再试一次" : error.localizedDescription
+            }
         }
     }
 
@@ -170,7 +207,7 @@ final class ChatStore: ObservableObject {
         Task {
             try? await AlcoveAPI.updateSticker(id: stk.id, name: name, description: description,
                                                emotionTags: emotionTags)
-            if let list = try? await AlcoveAPI.stickers() { stickers = list }
+            if let list = try? await AlcoveAPI.stickers() { stickers = list; saveStickerCache() }
         }
     }
 
