@@ -1,5 +1,90 @@
 import SwiftUI
 
+/// 聊天页那张信封卡。信封是她自己抠的图，字叠在两块空白上：
+/// 中间那张小卡片写一行邮戳，信封下半截写寄给谁、锁没锁、多久之前投递的。
+struct LetterEnvelopeCard: Decodable, Equatable {
+    let kind: String?          // sealed 封着的预告 / opened 锁开了 / plain 没上锁
+    let stateLine: String?     // 锁着 · 2027.08.26 开 ／ 锁开了 ／ 这封信现在就能读
+    let agoText: String?       // 今天投递 ／ 三天前投递 ／ 一年前投递
+    let senderName: String?
+    let recipientName: String?
+
+    var stamp: String {
+        switch kind ?? "opened" {
+        case "sealed": return "SEALED"
+        case "plain":  return "A LETTER"
+        default:       return "OPENED"
+        }
+    }
+}
+
+struct LetterMessageCard: View {
+    let card: LetterEnvelopeCard
+    @Environment(\.colorScheme) private var colorScheme
+    private var night: Bool { colorScheme == .dark }
+
+    // 两张信封是同一张图的正反色，尺寸一致，坐标共用
+    private var imageURL: URL {
+        AlcoveAPI.fullURL(night ? "/letter/envelope-dark.jpg" : "/letter/envelope-light.jpg")
+    }
+    private var ink: Color {
+        night ? Color(red: 0.914, green: 0.898, blue: 0.863) : Color(red: 0.165, green: 0.145, blue: 0.122)
+    }
+    private var ink2: Color {
+        night ? Color(red: 0.702, green: 0.675, blue: 0.628) : Color(red: 0.373, green: 0.341, blue: 0.298)
+    }
+    private var ink3: Color {
+        night ? Color(red: 0.490, green: 0.467, blue: 0.427) : Color(red: 0.604, green: 0.569, blue: 0.518)
+    }
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack {
+                CachedImage(url: imageURL) { image in
+                    image.resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .scaleEffect(1.075, anchor: UnitPoint(x: 0.5, y: 0.54))
+                } placeholder: {
+                    (night ? Color(red: 0.086, green: 0.086, blue: 0.086)
+                           : Color(red: 0.949, green: 0.937, blue: 0.914))
+                }
+                .frame(width: geo.size.width, height: geo.size.height)
+                .clipped()
+
+                // 中间那张小卡片上的一行，像邮戳
+                Text(card.stamp)
+                    .font(.system(size: 8.5, design: .monospaced))
+                    .tracking(4.5)
+                    .foregroundColor(ink3)
+                    .position(x: geo.size.width / 2, y: geo.size.height * 0.395)
+
+                // 信封下半截
+                Text("\(card.senderName ?? "") 寄给 \(card.recipientName ?? "")")
+                    .font(.system(size: 15.5, design: .serif))
+                    .tracking(2.5)
+                    .foregroundColor(ink)
+                    .position(x: geo.size.width / 2, y: geo.size.height * 0.685)
+
+                Text(card.stateLine ?? "")
+                    .font(.system(size: 10.5, design: .serif))
+                    .tracking(1.6)
+                    .foregroundColor(ink2)
+                    .position(x: geo.size.width / 2, y: geo.size.height * 0.778)
+
+                Text(card.agoText ?? "")
+                    .font(.system(size: 8.5, design: .monospaced))
+                    .tracking(2.6)
+                    .foregroundColor(ink3)
+                    .position(x: geo.size.width / 2, y: geo.size.height * 0.847)
+            }
+        }
+        .aspectRatio(2048.0 / 2007.0, contentMode: .fit)
+        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .shadow(color: Color.black.opacity(night ? 0.42 : 0.16), radius: 14, y: 5)
+        .padding(.horizontal, 6)
+    }
+}
+
 private struct LetterboxPalette {
     let dark: Bool
     var background: Color { dark ? Color(red: 0.095, green: 0.10, blue: 0.115) : Color(red: 0.952, green: 0.945, blue: 0.938) }
@@ -329,6 +414,7 @@ private struct LetterComposeView: View {
     @State private var deliverAt = Calendar.current.date(byAdding: .day, value: 1, to: Date()) ?? Date()
     @State private var lockDays = 3
     @State private var sending = false
+    @State private var announce = false      // 她 0827 要的：寄完自己决定要不要先让对方看见信封
     @State private var error = ""
 
     var body: some View {
@@ -361,6 +447,19 @@ private struct LetterComposeView: View {
                         ForEach([1, 3, 7, 14, 30, 60, 90, 180, 365], id: \.self) { Text("\($0) 天").tag($0) }
                     }.pickerStyle(.menu) }
                     .font(.system(size: 12)).padding(12).paperCard(pal)
+                }
+                if editing == nil {
+                    Toggle(isOn: $announce) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("寄完先让他看见这个信封")
+                                .font(.system(size: 12.5, design: .serif))
+                            Text("他只看得见有一封信在等，看不见里面写了什么")
+                                .font(.system(size: 10, design: .serif))
+                                .foregroundColor(pal.ink2)
+                        }
+                    }
+                    .tint(pal.blush)
+                    .padding(12).paperCard(pal)
                 }
                 Button { send() } label: {
                     HStack { if sending { ProgressView().scaleEffect(0.7) }; Text(editing == nil ? "把信寄出去" : "保存这封定时信") }
@@ -410,6 +509,7 @@ private struct LetterComposeView: View {
             path = "/letters/send"
             if mode == "scheduled" { payload["deliver_at"] = iso(deliverAt) }
             if mode == "locked" { payload["lock_days"] = lockDays }
+            if announce { payload["announce"] = true }
         }
         Task { @MainActor in
             do {

@@ -122,6 +122,14 @@ struct ChatMessage: Identifiable, Equatable {
         return try? JSONDecoder().decode(ChoiceQuestionCard.self, from: data)
     }
 
+    // 信件卡片：锁到期那天信自己走到聊天页来，正文里只有一张信封的元信息。
+    // 后端 letters.py 的 _push_chat_card 投递，格式 [LETTER_CARD]{…}[/LETTER_CARD]。
+    var letterCard: LetterEnvelopeCard? {
+        guard let raw = Self.taggedBody(text, tag: "LETTER_CARD"),
+              let data = raw.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(LetterEnvelopeCard.self, from: data)
+    }
+
     // 旅行卡片：正文里只有一个 id，整趟数据走 /api/journeys/<id> 现取。
     var journeyCard: JourneyCardRef? {
         guard let raw = Self.taggedBody(text, tag: "JOURNEY_CARD"),
