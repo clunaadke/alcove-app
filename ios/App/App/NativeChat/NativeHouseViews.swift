@@ -26,7 +26,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
     case roof
     case factory
     case crosstalk, radio, coread, cowatch, liao, daddyDay, lab
-    case search, favorites, forge, roundtable, surf
+    case search, favorites, forge, roundtable, surf, letterbox
 
     var id: String { rawValue }
 
@@ -75,6 +75,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .forge: return "Forge"
         case .roundtable: return "圆桌"
         case .surf: return "冲浪收藏"
+        case .letterbox: return "信箱"
         }
     }
 
@@ -82,7 +83,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
     var ownsFullScreen: Bool {
         switch self {
         case .studio, .pond, .roof, .memory, .digest, .factory, .search, .favorites, .surf,
-             .settings: return true
+             .settings, .letterbox: return true
         default: return false
         }
     }
@@ -131,6 +132,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .forge: return "hammer"
         case .roundtable: return "person.3.sequence"
         case .surf: return "safari"
+        case .letterbox: return "envelope.badge"
         default: return "sparkles"
         }
     }
@@ -249,6 +251,8 @@ struct NativeHouseSheet: View {
                     })
                 case .surf:
                     NativeSurfCollectionView()
+                case .letterbox:
+                    NativeLetterboxView()
                 case .usage:
                     NativeUsageView()
                 case .workbench:
@@ -525,6 +529,7 @@ struct NativeHouseDrawer: View {
                         drawerRow(.pulse, detail: "心率、五感、八维、念头池")
                         drawerRow(.roof, detail: "陈檐住在这层")
                         drawerRow(.pond, detail: "念头、许愿与朋友圈")
+                        drawerRow(.letterbox, detail: "你和陈璟的往来书信")
                     }
 
                     drawerTitle("记忆与创作", note: "kept close")
