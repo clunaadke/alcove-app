@@ -1802,8 +1802,15 @@ private struct NativeSettingsView: View {
     private var isPaperFamily: Bool { themeName == "paper" || themeName == "paper-dark" }
     private var isMessagesFamily: Bool { themeName == "imessage" || themeName == "imessage-dark" }
     private var themeFamily: String { isPaperFamily ? "paper" : (isMessagesFamily ? "imessage" : "glass") }
+    // 0827 她说这个滑块一直显示黑夜、点不动：设置页自己把 theme 定义成
+    // interfaceDark ? .messagesDark : .messages（跟系统/功能页走），
+    // 于是滑块写的是 alcoveTheme、读的却是隔壁那间屋的开关，左右手不是一本账。
+    // 现在深浅只从 themeName 自己判。
+    private var chatThemeDark: Bool {
+        themeName == "midnight" || themeName == "paper-dark" || themeName == "imessage-dark"
+    }
     private var appearanceBinding: Binding<Bool> {
-        Binding(get: { theme.isDark }, set: { dark in
+        Binding(get: { chatThemeDark }, set: { dark in
             themeName = isPaperFamily ? (dark ? "paper-dark" : "paper") :
                         isMessagesFamily ? (dark ? "imessage-dark" : "imessage") :
                         (dark ? "midnight" : "haven")
@@ -1812,9 +1819,9 @@ private struct NativeSettingsView: View {
     private func familyChoice(_ title: String, _ sub: String, _ family: String, _ colors: [Color]) -> some View {
         Button {
             switch family {
-            case "paper": themeName = theme.isDark ? "paper-dark" : "paper"
-            case "imessage": themeName = theme.isDark ? "imessage-dark" : "imessage"
-            default: themeName = theme.isDark ? "midnight" : "haven"
+            case "paper": themeName = chatThemeDark ? "paper-dark" : "paper"
+            case "imessage": themeName = chatThemeDark ? "imessage-dark" : "imessage"
+            default: themeName = chatThemeDark ? "midnight" : "haven"
             }
         } label: {
             VStack(spacing: 7) {

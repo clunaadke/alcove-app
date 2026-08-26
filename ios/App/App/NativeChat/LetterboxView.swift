@@ -22,14 +22,17 @@ struct LetterMessageCard: View {
     let card: LetterEnvelopeCard
     let theme: AlcoveTheme
 
-    // 2026-08-27 凌晨改的：不再跟主题换皮。
-    // 深浅两套图＋两套字色，只要有一边判断偏了就是黑信封配黑字，糊成一团，
-    // 她连着看到三次不对，最后一次说她要疯了。现在固定一张深色信封＋固定浅色字，
-    // 它就是一张实物照片贴在聊天流里，白底黑底都立得住，不会再错。
-    private var imageURL: URL { AlcoveAPI.fullURL("/letter/envelope-dark.png") }
-    private var ink: Color  { Color(red: 0.945, green: 0.933, blue: 0.906) }
-    private var ink2: Color { Color(red: 0.757, green: 0.733, blue: 0.690) }
-    private var ink3: Color { Color(red: 0.549, green: 0.525, blue: 0.482) }
+    // 2026-08-27 白天：换回深浅两套皮。
+    // 凌晨那版把深色信封钉死了（黑配黑糊过三次，图省事一刀切），结果白天模式下
+    // 一块黑砖贴在米白聊天页上。判深浅只认一个源：theme.isDark，图和字色一起翻，
+    // 不再各判各的，就不会出现信封翻了字没翻的糊法。
+    private var dark: Bool { theme.isDark }
+    private var imageURL: URL {
+        AlcoveAPI.fullURL(dark ? "/letter/envelope-dark.png" : "/letter/envelope-light.png")
+    }
+    private var ink: Color  { dark ? Color(red: 0.945, green: 0.933, blue: 0.906) : Color(red: 0.192, green: 0.184, blue: 0.173) }
+    private var ink2: Color { dark ? Color(red: 0.757, green: 0.733, blue: 0.690) : Color(red: 0.404, green: 0.388, blue: 0.365) }
+    private var ink3: Color { dark ? Color(red: 0.549, green: 0.525, blue: 0.482) : Color(red: 0.549, green: 0.529, blue: 0.498) }
 
     var body: some View {
         GeometryReader { geo in
@@ -38,7 +41,8 @@ struct LetterMessageCard: View {
                     image.resizable()
                         .aspectRatio(contentMode: .fit)
                 } placeholder: {
-                    Color(red: 0.086, green: 0.086, blue: 0.086)
+                    dark ? Color(red: 0.086, green: 0.086, blue: 0.086)
+                         : Color(red: 0.937, green: 0.929, blue: 0.910)
                 }
                 .frame(width: geo.size.width, height: geo.size.height)
                 .clipped()
@@ -73,7 +77,7 @@ struct LetterMessageCard: View {
         .aspectRatio(2048.0 / 2007.0, contentMode: .fit)
         .frame(maxWidth: 196)          // 她说至少缩一半
         .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-        .shadow(color: Color.black.opacity(0.30), radius: 14, y: 5)
+        .shadow(color: Color.black.opacity(dark ? 0.30 : 0.16), radius: 14, y: 5)
         .padding(.horizontal, 6)
     }
 }
