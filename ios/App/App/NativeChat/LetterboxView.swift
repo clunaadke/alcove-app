@@ -25,7 +25,9 @@ struct LetterMessageCard: View {
 
     // 两张信封是同一张图的正反色，尺寸一致，坐标共用
     private var imageURL: URL {
-        AlcoveAPI.fullURL(night ? "/letter/envelope-dark.jpg" : "/letter/envelope-light.jpg")
+        // .png 是固定的门牌：她从 /letter-upload.html 传一张透明的上来就自动换掉，
+        // app 不用重新构建。UIImage 按内容认格式，不看后缀。
+        AlcoveAPI.fullURL(night ? "/letter/envelope-dark.png" : "/letter/envelope-light.png")
     }
     private var ink: Color {
         night ? Color(red: 0.914, green: 0.898, blue: 0.863) : Color(red: 0.165, green: 0.145, blue: 0.122)
