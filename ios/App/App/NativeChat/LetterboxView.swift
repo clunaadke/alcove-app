@@ -322,7 +322,7 @@ private struct LetterComposeView: View {
     let completed: () -> Void
     @State private var salutation = "陈璟"
     @State private var title = ""
-    @State private var body = ""
+    @State private var letterBody = ""
     @State private var blessing = ""
     @State private var postscript = ""
     @State private var mode = "immediate"
@@ -342,7 +342,7 @@ private struct LetterComposeView: View {
                 }
                 field("信的题目") { TextField("写给此刻的你", text: $title).font(.system(size: 17, weight: .medium, design: .serif)) }
                 field("正文") {
-                    TextEditor(text: $body).scrollContentBackground(.hidden).frame(minHeight: 220)
+                    TextEditor(text: $letterBody).scrollContentBackground(.hidden).frame(minHeight: 220)
                 }
                 HStack(spacing: 10) {
                     field("祝颂语") { TextField("愿你一切安好", text: $blessing) }
@@ -366,13 +366,13 @@ private struct LetterComposeView: View {
                     HStack { if sending { ProgressView().scaleEffect(0.7) }; Text(editing == nil ? "把信寄出去" : "保存这封定时信") }
                         .font(.system(size: 13, weight: .semibold, design: .serif)).frame(maxWidth: .infinity).frame(height: 47)
                         .background(pal.blush.opacity(0.82), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
-                }.buttonStyle(.plain).disabled(sending || title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }.buttonStyle(.plain).disabled(sending || title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || letterBody.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 if !error.isEmpty { Text(error).font(.system(size: 10.5)).foregroundColor(.red.opacity(0.8)) }
             }.padding(.horizontal, 18).padding(.bottom, 18)
         }
         .onAppear {
             guard let editing else { return }
-            salutation = editing.salutation; title = editing.title; body = editing.body
+            salutation = editing.salutation; title = editing.title; letterBody = editing.body
             blessing = editing.blessing; postscript = editing.postscript; mode = "scheduled"
             deliverAt = parse(editing.deliverAt) ?? deliverAt
         }
@@ -400,7 +400,7 @@ private struct LetterComposeView: View {
 
     private func send() {
         sending = true; error = ""
-        var payload: [String: Any] = ["sender": "chenji", "salutation": salutation, "title": title, "body": body,
+        var payload: [String: Any] = ["sender": "chenji", "salutation": salutation, "title": title, "body": letterBody,
                                       "blessing": blessing, "postscript": postscript, "mode": mode]
         let path: String
         if let editing {
