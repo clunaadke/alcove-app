@@ -374,13 +374,6 @@ enum AlcoveAppearance {
         d.set(themeName(family: family, dark: isDark), forKey: themeKey)
     }
 
-    /// 每次根视图出现都掰一次：开关是唯一真源，谁把 alcoveTheme 的深浅改歪了都掰回来
-    static func realign() {
-        let d = UserDefaults.standard
-        guard let stored = d.string(forKey: key), stored == "light" || stored == "dark" else { return }
-        apply(dark: stored == "dark")
-    }
-
     /// 启动时对齐一次：旧的 "system" 值按此刻系统色落定成 light/dark，
     /// 再把聊天主题的深浅掰到跟开关一致，之后全 app 只认这一个值。
     static func migrate(systemDark: Bool) {
@@ -393,20 +386,5 @@ enum AlcoveAppearance {
         default:      dark = stored == "system" ? systemDark : isDark(d.string(forKey: themeKey) ?? "haven")
         }
         apply(dark: dark)
-
-        // 0827 一次性：圆桌壁纸以前只有常用的那一格（rtWallpaperHaven），
-        // 她那张深色照片就存在里面，切到白天照旧盖着整屏。挪去黑夜格，白天先用干净的渐变。
-        if !d.bool(forKey: "rtWallpaperSplitDone") {
-            d.set(true, forKey: "rtWallpaperSplitDone")
-            let day = d.string(forKey: "rtWallpaperHaven") ?? ""
-            let legacy = d.string(forKey: "rtWallpaper") ?? ""
-            let picture = day.isEmpty ? legacy : day
-            let night = d.string(forKey: "rtWallpaperMidnight") ?? ""
-            if night.isEmpty, !picture.isEmpty {
-                d.set(picture, forKey: "rtWallpaperMidnight")
-                d.set("", forKey: "rtWallpaperHaven")
-                d.set("", forKey: "rtWallpaper")
-            }
-        }
     }
 }
