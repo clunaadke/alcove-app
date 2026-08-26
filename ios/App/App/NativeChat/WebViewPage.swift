@@ -73,11 +73,9 @@ final class WebHouse: NSObject, WKNavigationDelegate {
                 UserDefaults.standard.set(avatar, forKey: "assistantAvatarDataURL")
             }
         }
-        webView.evaluateJavaScript("localStorage.getItem('alcove-theme') || 'haven'") { v, _ in
-            if let theme = v as? String, !theme.isEmpty {
-                UserDefaults.standard.set(theme, forKey: "alcoveTheme")
-            }
-        }
+        // 0827 拆掉：这里原来把网页 localStorage 里的 alcove-theme 抄回 alcoveTheme，
+        // 网页那份是死的旧值，每次 WebView 出现就把她刚按下的白天冲回黑夜。
+        // 主题现在只由原生设置页那一个开关写。
         webView.evaluateJavaScript("localStorage.getItem('haven-font-size') || '15'") { v, _ in
             if let s = v as? String, let n = Int(s), (10...24).contains(n) {
                 UserDefaults.standard.set(n, forKey: "chatFontSize")

@@ -49,6 +49,7 @@ struct LetterMessageCard: View {
                 }
                 .frame(width: geo.size.width, height: geo.size.height)
                 .clipped()
+                .id(dark)   // 深浅换了整块重建，不给任何缓存留下攥着旧图不放的机会
 
                 // 中间那张小卡片上的一行，像邮戳
                 Text(card.stamp)

@@ -149,8 +149,12 @@ struct CachedImage<Content: View, Placeholder: View>: View {
         Group {
             if let ui { content(Image(uiImage: ui)) } else { placeholder() }
         }
+        // 0827：原来这里写的是 `guard let url, ui == nil`，
+        // 于是 URL 换了、手里还攥着上一张图时就直接 return，图永远不换。
+        // 信封的白天/黑夜两张就栽在这儿：她把开关掰过去，字色翻了，图还是黑的。
         .task(id: url) {
-            guard let url, ui == nil else { return }
+            guard let url else { ui = nil; return }
+            if let hit = ImageDiskCache.shared.cached(url) { ui = hit; return }
             ui = await ImageDiskCache.shared.image(for: url)
         }
     }
@@ -175,8 +179,11 @@ struct CachedPhaseImage<Content: View>: View {
     var body: some View {
         content(phase)
             .task(id: url) {
-                guard let url else { return }
-                if case .success = phase { return }
+                guard let url else { phase = .empty; return }
+                // 同上：URL 换了就得重新取，不能因为手里已有一张成功的图就跳过
+                if let hit = ImageDiskCache.shared.cached(url) {
+                    phase = .success(Image(uiImage: hit)); return
+                }
                 if let img = await ImageDiskCache.shared.image(for: url) {
                     phase = .success(Image(uiImage: img))
                 } else {
