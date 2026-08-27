@@ -154,6 +154,11 @@ private struct QipaiActionResponse<GameV: Decodable>: Decodable {
     let legal: [QipaiLegalMove]?
 }
 
+/// 只关心 ok 的轻响应（泛型类的方法里不能再声明局部类型，放外面）
+private struct QipaiOKResponse: Decodable {
+    let ok: Bool
+}
+
 // MARK: - Store
 
 @MainActor
@@ -269,8 +274,7 @@ final class QipaiTableStore<GameV: Decodable>: ObservableObject {
         busy = true
         defer { busy = false }
         do {
-            struct OK: Decodable { let ok: Bool }
-            let _: OK = try await QipaiAPI.request("cards/api/rooms/\(code)/start",
+            let _: QipaiOKResponse = try await QipaiAPI.request("cards/api/rooms/\(code)/start",
                                                    method: "POST", body: ["playerToken": token])
         } catch {
             show(error.localizedDescription)
@@ -281,10 +285,9 @@ final class QipaiTableStore<GameV: Decodable>: ObservableObject {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         do {
-            struct OK: Decodable { let ok: Bool }
             var body: [String: Any] = ["text": trimmed]
             if let token { body["playerToken"] = token }
-            let _: OK = try await QipaiAPI.request("cards/api/rooms/\(code)/chat",
+            let _: QipaiOKResponse = try await QipaiAPI.request("cards/api/rooms/\(code)/chat",
                                                    method: "POST", body: body)
         } catch {
             show(error.localizedDescription)
@@ -293,10 +296,9 @@ final class QipaiTableStore<GameV: Decodable>: ObservableObject {
 
     func closeRoom() async {
         do {
-            struct OK: Decodable { let ok: Bool }
             var body: [String: Any] = [:]
             if let token { body["playerToken"] = token }
-            let _: OK = try await QipaiAPI.request("cards/api/rooms/\(code)/close",
+            let _: QipaiOKResponse = try await QipaiAPI.request("cards/api/rooms/\(code)/close",
                                                    method: "POST", body: body)
         } catch {
             show(error.localizedDescription)
