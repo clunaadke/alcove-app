@@ -126,6 +126,7 @@ struct QipaiSeat: Decodable, Identifiable {
     let name: String
     let isHost: Bool
     let isAI: Bool
+    let agentId: String?     // AI 座位的名录 id（external/opus/sonnet/haiku），人类为 nil
     var id: String { playerId }
 }
 
@@ -329,6 +330,20 @@ final class QipaiTableStore<GameV: Decodable & QipaiGameView>: ObservableObject 
         do {
             let _: QipaiOKResponse = try await QipaiAPI.request("\(service)/api/rooms/\(code)/start",
                                                    method: "POST", body: ["playerToken": token])
+        } catch {
+            show(error.localizedDescription)
+        }
+    }
+
+    /// 开局前补请一位 AI（房主；app 带 owner cookie，token 只是顺手捎上）
+    func inviteAI(_ agentId: String) async {
+        busy = true
+        defer { busy = false }
+        do {
+            var body: [String: Any] = ["agent_id": agentId]
+            if let token { body["playerToken"] = token }
+            let _: QipaiOKResponse = try await QipaiAPI.request("\(service)/api/rooms/\(code)/ai",
+                                                   method: "POST", body: body)
         } catch {
             show(error.localizedDescription)
         }

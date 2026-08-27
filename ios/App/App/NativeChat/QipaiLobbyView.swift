@@ -358,6 +358,7 @@ struct QipaiCreateRoomSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var roomName = ""
     @State private var nickname = QipaiAPI.nickname
+    @State private var aiPrompt = ""
     @State private var rulesExpanded = false
     @State private var aiExpanded = true
     @State private var flagRules: [String: Bool] = [:]
@@ -573,6 +574,13 @@ struct QipaiCreateRoomSheet: View {
                         .padding(11)
                         .qipaiPanel(corner: 13)
                     }
+                    field("给 AI 立的桌规（可空）") {
+                        TextField("", text: $aiPrompt,
+                                  prompt: Text("比如「毒舌一点，公屏一次最多两句」")
+                                    .foregroundColor(QipaiPalette.inkDim.opacity(0.7)),
+                                  axis: .vertical)
+                            .lineLimit(2...4)
+                    }
                     QipaiWhisper(text: "真身出牌要等工作室醒，急不得。")
                 }
                 .padding([.horizontal, .bottom], 11)
@@ -603,7 +611,8 @@ struct QipaiCreateRoomSheet: View {
             let created = try await QipaiAPI.createRoom(
                 game: game.key,
                 name: roomName.trimmingCharacters(in: .whitespaces),
-                rules: rules, aiPlayers: ai)
+                rules: rules, aiPlayers: ai,
+                aiPrompt: aiPrompt.trimmingCharacters(in: .whitespacesAndNewlines))
             _ = try await QipaiAPI.join(code: created.code, name: name, service: service)
             UserDefaults.standard.set(created.inviteToken, forKey: "qipai.invite.\(created.code)")
             // 房主入座后 AI 才落座；拉一次大厅拿回真实座次

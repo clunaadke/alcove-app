@@ -232,10 +232,12 @@ enum QipaiAPI {
     }
 
     static func createRoom(game: String, name: String,
-                           rules: [String: Any], aiPlayers: [String]) async throws -> CreatedRoom {
+                           rules: [String: Any], aiPlayers: [String],
+                           aiPrompt: String = "") async throws -> CreatedRoom {
         var body: [String: Any] = ["game": game, "name": name]
         if !rules.isEmpty { body["rules"] = rules }
         if !aiPlayers.isEmpty { body["ai_players"] = aiPlayers }
+        if !aiPrompt.isEmpty { body["ai_prompt"] = aiPrompt }
         return try await request("\(service(for: game))/api/rooms", method: "POST", body: body)
     }
 

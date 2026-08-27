@@ -29,6 +29,11 @@ struct QipaiTableShell<GameV: Decodable & QipaiGameView, Content: View, Help: Vi
     @State private var inviteCopied = false
     @StateObject private var keyboard = QipaiKeyboardWatcher()
 
+    /// 等人页现喊 AI 的名录（id, 短名），和建房面板那份同源
+    static var aiRoster: [(id: String, name: String)] {
+        [("external", "工程师"), ("opus", "Opus"), ("sonnet", "Sonnet"), ("haiku", "Haiku")]
+    }
+
     var body: some View {
         ZStack {
             background
@@ -137,6 +142,21 @@ struct QipaiTableShell<GameV: Decodable & QipaiGameView, Content: View, Help: Vi
                 }
             }
             .padding(.horizontal, 30)
+
+            // 座位没满时房主可以现喊 AI（0829 她要的「中途加分身」）
+            if store.isHost, frame.seats.count < frame.maxPlayers {
+                VStack(spacing: 7) {
+                    QipaiWhisper(text: "seats open — call in the machines")
+                    HStack(spacing: 6) {
+                        ForEach(Self.aiRoster, id: \.id) { ai in
+                            Button(ai.name) { Task { await store.inviteAI(ai.id) } }
+                                .buttonStyle(QipaiEmbossedButtonStyle())
+                                .disabled(store.busy ||
+                                          frame.seats.contains { $0.agentId == ai.id })
+                        }
+                    }
+                }
+            }
 
             if let invite = frame.inviteToken {
                 Button {
