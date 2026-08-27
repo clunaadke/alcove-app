@@ -34,11 +34,11 @@ struct QipaiLobbyView: View {
     }
 
     var body: some View {
-        // 0828 连环案：先是内容被撑宽、后是整体右偏 70pt。UIScreen 猜宽度不可靠，
-        // 改用 GeometryReader 拿真实容器几何，把 ScrollView 和内容全部钉死在容器内。
-        GeometryReader { geo in
-            ZStack {
-                background
+        // 0828 连环案备忘：内容曾被撑宽/右偏 → 用 GeometryReader 钉死；
+        // 但背景不能一起关进裁剪盒（会顶上留黑、壁纸像被放大），背景独立全屏铺。
+        ZStack {
+            background
+            GeometryReader { geo in
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 18) {
                         header
@@ -53,9 +53,8 @@ struct QipaiLobbyView: View {
                 }
                 .refreshable { await reload() }
                 .frame(width: geo.size.width, height: geo.size.height)
+                .clipped()
             }
-            .frame(width: geo.size.width, height: geo.size.height)
-            .clipped()
         }
         // 调色盘是静态计算属性，切日夜靠整树重建（牌桌只能从这里进，不会中途换肤）
         .id(night)
