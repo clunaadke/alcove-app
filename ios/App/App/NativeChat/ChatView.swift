@@ -23,7 +23,7 @@ struct ChatView: View {
     @State private var selectedQuote: String?
     @State private var showStickers = false
     @State private var photoItems: [PhotosPickerItem] = []
-    @State private var pendingImages: [(thumb: UIImage, jpeg: Data)] = []
+    @State private var pendingImages: [(thumb: UIImage, data: Data, ext: String)] = []
     // 选表情不立刻飞出去：先进待发区，还能继续打字或者撤掉（教程坑 1）
     @State private var pendingSticker: Sticker?
     // 0818 她要的：链接一贴进打字框就自动抽出来变成待发卡片，她还能接着打字一起发
@@ -216,7 +216,7 @@ struct ChatView: View {
             photoItems = []
             Task {
                 // 微信式叠加：选完先进预览条，跟文字一起发
-                // HEIC 等格式统一转 JPEG，保证 PWA 端也能显示
+                // HEIC 等照片统一转 JPEG；带透明的图走 PNG（见 UploadImage）
                 for item in items {
                     if let raw = try? await item.loadTransferable(type: Data.self),
                        let img = UIImage(data: raw),
@@ -1301,7 +1301,7 @@ struct ChatView: View {
             return
         }
         if !pendingImages.isEmpty {
-            let images = pendingImages.map(\.jpeg)
+            let images = pendingImages.map { ($0.data, $0.ext) }
             pendingImages = []
             store.sendImages(images, caption: outgoingText(text))
         } else {
@@ -4926,13 +4926,45 @@ enum UploadImage {
     static let maxEdge: CGFloat = 2048
     static let quality: CGFloat = 0.8
 
-    static func prepare(_ image: UIImage) -> (thumb: UIImage, jpeg: Data)? {
-        let scaled = downscaled(image)
+    /// 0828 透明底修复：JPEG 装不下透明通道，以前一律 jpegData + opaque 垫白底，
+    /// 抠图素材发出去全成白底图。真带透明的图改走 PNG，照片截图照旧 JPEG 省流量。
+    static func prepare(_ image: UIImage) -> (thumb: UIImage, data: Data, ext: String)? {
+        let transparent = hasTransparency(image)
+        let scaled = downscaled(image, opaque: !transparent)
+        if transparent {
+            guard let data = scaled.pngData() else { return nil }
+            return (scaled, data, "png")
+        }
         guard let data = scaled.jpegData(compressionQuality: quality) else { return nil }
-        return (scaled, data)
+        return (scaled, data, "jpg")
     }
 
-    static func downscaled(_ image: UIImage) -> UIImage {
+    /// 光看 alphaInfo 会把不透明的 PNG 截图也当成透明（解码后常带 alpha 通道），
+    /// 那样截图全走 PNG 又回到 0813 上行过大的老坑。缩到 64×64 实际扫一遍 alpha：
+    /// 抠图必有大片透明，照片截图满格不透明，几毫秒的事。
+    static func hasTransparency(_ image: UIImage) -> Bool {
+        guard let cg = image.cgImage else { return false }
+        switch cg.alphaInfo {
+        case .first, .last, .premultipliedFirst, .premultipliedLast, .alphaOnly: break
+        default: return false
+        }
+        let side = 64
+        var pixels = [UInt8](repeating: 0, count: side * side * 4)
+        guard let ctx = CGContext(data: &pixels, width: side, height: side,
+                                  bitsPerComponent: 8, bytesPerRow: side * 4,
+                                  space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        else { return true }
+        ctx.draw(cg, in: CGRect(x: 0, y: 0, width: side, height: side))
+        var i = 3
+        while i < pixels.count {
+            if pixels[i] < 250 { return true }
+            i += 4
+        }
+        return false
+    }
+
+    static func downscaled(_ image: UIImage, opaque: Bool = true) -> UIImage {
         // size 是点数，乘 scale 才是真实像素——相机和相册来的图 scale 不一定是 1
         let pixelWidth = image.size.width * image.scale
         let pixelHeight = image.size.height * image.scale
@@ -4944,7 +4976,7 @@ enum UploadImage {
         let format = UIGraphicsImageRendererFormat.default()
         // target 已经是像素目标，再乘屏幕倍率会画出三倍大的图
         format.scale = 1
-        format.opaque = true
+        format.opaque = opaque
         return UIGraphicsImageRenderer(size: target, format: format).image { _ in
             image.draw(in: CGRect(origin: .zero, size: target))
         }

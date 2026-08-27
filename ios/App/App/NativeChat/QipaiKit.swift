@@ -1,0 +1,340 @@
+import SwiftUI
+import UIKit
+
+// MARK: - 棋牌室风格零件库
+// 古早味 6s：低饱和灰蓝、噪点雾面、波点底纹、iOS6 拟物玻璃。
+// 棋牌室是自成一体的房间，不跟 AlcoveTheme 联动——她要的就是整间屋子一个味道。
+
+enum QipaiPalette {
+    static let fog       = qhex(0xECEDF2)   // 底色·雾
+    static let panel     = qhex(0xF7F8FB)   // 面板·白瓷
+    static let panelDeep = qhex(0xE4E6ED)   // 面板按下/凹陷
+    static let ink       = qhex(0x585F6E)   // 正文·低饱和石板
+    static let inkDim    = qhex(0x9AA0AD)   // 次要文字
+    static let line      = qhex(0xD5D9E2)   // 描边
+    static let dot       = qhex(0xC7CBD6)   // 波点
+    static let accent    = qhex(0x7C8AA6)   // 点缀·灰蓝
+    static let red       = qhex(0xC25B55)   // 压过饱和的红（红桃/警示）
+    static let glowRing  = qhex(0xAeB9D2)   // 光环
+
+    static func qhex(_ v: UInt32) -> Color {
+        Color(red: Double((v >> 16) & 0xFF) / 255,
+              green: Double((v >> 8) & 0xFF) / 255,
+              blue: Double(v & 0xFF) / 255)
+    }
+}
+
+// MARK: 噪点（那种"不是特别特别清晰"的颗粒感）
+
+enum QipaiTexture {
+    static let noise: UIImage = {
+        let side = 144
+        var pixels = [UInt8](repeating: 0, count: side * side * 2) // gray + alpha
+        var seed: UInt64 = 0x9E3779B97F4A7C15
+        for i in 0..<(side * side) {
+            seed = seed &* 6364136223846793005 &+ 1442695040888963407
+            let r = UInt8((seed >> 33) & 0xFF)
+            pixels[i * 2] = r > 128 ? 255 : 0          // 亮点或暗点
+            pixels[i * 2 + 1] = UInt8((seed >> 41) % 22) // 都很淡
+        }
+        let ctx = CGContext(data: &pixels, width: side, height: side,
+                            bitsPerComponent: 8, bytesPerRow: side * 2,
+                            space: CGColorSpaceCreateDeviceGray(),
+                            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        return UIImage(cgImage: ctx.makeImage()!)
+    }()
+}
+
+extension View {
+    /// 铺一层颗粒噪点。盖在任何背景最上面用。
+    func qipaiGrain(_ opacity: Double = 0.55) -> some View {
+        overlay(
+            Image(uiImage: QipaiTexture.noise)
+                .resizable(resizingMode: .tile)
+                .opacity(opacity)
+                .allowsHitTesting(false)
+        )
+    }
+}
+
+// MARK: 波点底纹
+
+struct QipaiDots: View {
+    var spacing: CGFloat = 14
+    var radius: CGFloat = 1.6
+    var color: Color = QipaiPalette.dot
+    var opacity: Double = 0.55
+
+    var body: some View {
+        Canvas { context, size in
+            var y: CGFloat = spacing / 2
+            var row = 0
+            while y < size.height + spacing {
+                var x: CGFloat = (row % 2 == 0) ? spacing / 2 : spacing
+                while x < size.width + spacing {
+                    let rect = CGRect(x: x - radius, y: y - radius,
+                                      width: radius * 2, height: radius * 2)
+                    context.fill(Path(ellipseIn: rect), with: .color(color))
+                    x += spacing
+                }
+                y += spacing * 0.86
+                row += 1
+            }
+        }
+        .opacity(opacity)
+        .allowsHitTesting(false)
+    }
+}
+
+// MARK: 白瓷面板（卡片底座）
+
+struct QipaiPanelModifier: ViewModifier {
+    var corner: CGFloat = 18
+    var dotted: Bool = false
+
+    func body(content: Content) -> some View {
+        content
+            .background(
+                ZStack {
+                    RoundedRectangle(cornerRadius: corner, style: .continuous)
+                        .fill(QipaiPalette.panel)
+                    if dotted { QipaiDots(opacity: 0.3)
+                        .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous)) }
+                    // 顶部一道很浅的高光，让面板微微凸起
+                    RoundedRectangle(cornerRadius: corner, style: .continuous)
+                        .fill(LinearGradient(colors: [.white.opacity(0.85), .white.opacity(0)],
+                                             startPoint: .top, endPoint: .center))
+                        .padding(1)
+                        .opacity(0.6)
+                }
+            )
+            .overlay(RoundedRectangle(cornerRadius: corner, style: .continuous)
+                .stroke(QipaiPalette.line, lineWidth: 1))
+            .shadow(color: QipaiPalette.ink.opacity(0.10), radius: 7, y: 3)
+    }
+}
+
+extension View {
+    func qipaiPanel(corner: CGFloat = 18, dotted: Bool = false) -> some View {
+        modifier(QipaiPanelModifier(corner: corner, dotted: dotted))
+    }
+}
+
+// MARK: 拟物玻璃方块（图标底座，iOS6 那口味）
+
+struct QipaiGlassTile<Content: View>: View {
+    var corner: CGFloat = 20
+    var gloss: Double = 0.5
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        content
+            .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
+            .overlay(
+                // 上半截玻璃高光：老 iOS 图标的灵魂
+                GeometryReader { geo in
+                    RoundedRectangle(cornerRadius: corner, style: .continuous)
+                        .fill(LinearGradient(colors: [.white.opacity(gloss), .white.opacity(gloss * 0.24), .clear],
+                                             startPoint: .top, endPoint: .bottom))
+                        .frame(height: geo.size.height * 0.46)
+                        .padding(.horizontal, 1)
+                        .padding(.top, 1)
+                }
+                .allowsHitTesting(false)
+            )
+            .overlay(RoundedRectangle(cornerRadius: corner, style: .continuous)
+                .strokeBorder(.white.opacity(0.9), lineWidth: 1.2)
+                .padding(0.8))
+            .overlay(RoundedRectangle(cornerRadius: corner, style: .continuous)
+                .stroke(QipaiPalette.line, lineWidth: 1))
+            .shadow(color: QipaiPalette.ink.opacity(0.22), radius: 5, y: 3)
+    }
+}
+
+// MARK: 拟物凸起按钮
+
+struct QipaiEmbossedButtonStyle: ButtonStyle {
+    var prominent: Bool = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        let pressed = configuration.isPressed
+        return configuration.label
+            .font(.system(size: 14, weight: .semibold))
+            .foregroundColor(prominent ? .white : QipaiPalette.ink)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 9)
+            .background(
+                Capsule().fill(
+                    prominent
+                    ? LinearGradient(colors: pressed
+                                     ? [QipaiPalette.qhex(0x66748F), QipaiPalette.qhex(0x8291AC)]
+                                     : [QipaiPalette.qhex(0x93A1BB), QipaiPalette.qhex(0x6D7B96)],
+                                     startPoint: .top, endPoint: .bottom)
+                    : LinearGradient(colors: pressed
+                                     ? [QipaiPalette.panelDeep, QipaiPalette.panel]
+                                     : [.white, QipaiPalette.panelDeep],
+                                     startPoint: .top, endPoint: .bottom)
+                )
+            )
+            .overlay(Capsule().stroke(prominent ? QipaiPalette.qhex(0x5D6A83) : QipaiPalette.line,
+                                      lineWidth: 1))
+            .overlay(Capsule().strokeBorder(.white.opacity(pressed ? 0.2 : 0.65), lineWidth: 1)
+                .padding(1).mask(Capsule().padding(1)))
+            .shadow(color: QipaiPalette.ink.opacity(pressed ? 0.05 : 0.18),
+                    radius: pressed ? 1 : 3, y: pressed ? 0.5 : 2)
+            .scaleEffect(pressed ? 0.985 : 1)
+            .animation(.easeOut(duration: 0.12), value: pressed)
+    }
+}
+
+// MARK: 状态小胶囊（等人中 / 进行中 / 已结束 / AI 在座…）
+
+struct QipaiChip: View {
+    enum Tone { case neutral, live, done, red }
+    var text: String
+    var tone: Tone = .neutral
+    var icon: String? = nil
+
+    private var fg: Color {
+        switch tone {
+        case .neutral: return QipaiPalette.inkDim
+        case .live: return QipaiPalette.accent
+        case .done: return QipaiPalette.inkDim.opacity(0.8)
+        case .red: return QipaiPalette.red
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 3.5) {
+            if let icon { Image(systemName: icon).font(.system(size: 8.5, weight: .semibold)) }
+            Text(text).font(.system(size: 10.5, weight: .medium))
+        }
+        .foregroundColor(fg)
+        .padding(.horizontal, 8).padding(.vertical, 3.5)
+        .background(Capsule().fill(.white.opacity(0.75)))
+        .overlay(Capsule().stroke(fg.opacity(0.45), lineWidth: 0.8))
+    }
+}
+
+// MARK: slide to start（古早解锁滑条）
+
+struct QipaiSlideControl: View {
+    var label: String
+    var onComplete: () -> Void
+    @State private var offset: CGFloat = 0
+    @State private var shimmer = false
+    @GestureState private var dragging = false
+
+    private let height: CGFloat = 46
+    private let knob: CGFloat = 40
+
+    var body: some View {
+        GeometryReader { geo in
+            let travel = geo.size.width - knob - 6
+            ZStack {
+                // 凹槽轨道
+                RoundedRectangle(cornerRadius: height / 2, style: .continuous)
+                    .fill(LinearGradient(colors: [QipaiPalette.panelDeep, QipaiPalette.qhex(0xEFF1F6)],
+                                         startPoint: .top, endPoint: .bottom))
+                    .overlay(RoundedRectangle(cornerRadius: height / 2)
+                        .stroke(QipaiPalette.line, lineWidth: 1))
+                    .overlay(RoundedRectangle(cornerRadius: height / 2)
+                        .strokeBorder(QipaiPalette.ink.opacity(0.1), lineWidth: 1.5)
+                        .blur(radius: 1).padding(1)
+                        .mask(RoundedRectangle(cornerRadius: height / 2)
+                            .fill(LinearGradient(colors: [.black, .clear],
+                                                 startPoint: .top, endPoint: .bottom))))
+
+                // 流光文字
+                Text(label)
+                    .font(.system(size: 13.5, weight: .medium))
+                    .foregroundColor(QipaiPalette.inkDim)
+                    .overlay(
+                        LinearGradient(colors: [.clear, .white.opacity(0.9), .clear],
+                                       startPoint: .leading, endPoint: .trailing)
+                        .frame(width: 60)
+                        .offset(x: shimmer ? 90 : -90)
+                        .mask(Text(label).font(.system(size: 13.5, weight: .medium)))
+                    )
+                    .opacity(1 - Double(offset / max(travel, 1)) * 1.6)
+                    .onAppear {
+                        withAnimation(.linear(duration: 1.9).repeatForever(autoreverses: false)) {
+                            shimmer = true
+                        }
+                    }
+
+                // 玻璃滑块
+                HStack {
+                    QipaiGlassTile(corner: knob / 2 - 3, gloss: 0.65) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: knob / 2 - 3)
+                                .fill(LinearGradient(colors: [.white, QipaiPalette.qhex(0xE8EAF1)],
+                                                     startPoint: .top, endPoint: .bottom))
+                            Image(systemName: "arrow.right")
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundColor(QipaiPalette.accent)
+                        }
+                        .frame(width: knob - 6, height: knob - 6)
+                    }
+                    .offset(x: offset)
+                    .gesture(
+                        DragGesture()
+                            .updating($dragging) { _, s, _ in s = true }
+                            .onChanged { v in
+                                offset = min(max(0, v.translation.width), travel)
+                            }
+                            .onEnded { _ in
+                                if offset > travel * 0.86 {
+                                    offset = travel
+                                    onComplete()
+                                    withAnimation(.easeOut(duration: 0.3).delay(0.35)) { offset = 0 }
+                                } else {
+                                    withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                                        offset = 0
+                                    }
+                                }
+                            }
+                    )
+                    Spacer(minLength: 0)
+                }
+                .padding(.leading, 3)
+            }
+        }
+        .frame(height: height)
+    }
+}
+
+// MARK: 光环（轮到谁，谁头上亮）
+
+struct QipaiHalo: View {
+    var active: Bool
+    @State private var breathe = false
+
+    var body: some View {
+        Ellipse()
+            .strokeBorder(
+                LinearGradient(colors: [.white, QipaiPalette.glowRing],
+                               startPoint: .top, endPoint: .bottom),
+                lineWidth: 2.4)
+            .frame(width: 30, height: 10)
+            .shadow(color: QipaiPalette.glowRing.opacity(0.9), radius: breathe ? 5 : 2)
+            .opacity(active ? 1 : 0)
+            .onAppear {
+                withAnimation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true)) {
+                    breathe = true
+                }
+            }
+    }
+}
+
+// MARK: 丧甜小字（角落里的那种）
+
+struct QipaiWhisper: View {
+    var text: String
+    var body: some View {
+        Text(text)
+            .font(.system(size: 9.5, weight: .regular, design: .monospaced))
+            .tracking(0.6)
+            .foregroundColor(QipaiPalette.inkDim.opacity(0.85))
+    }
+}

@@ -212,16 +212,17 @@ final class ChatStore: ObservableObject {
         }
     }
 
-    // 多张图微信式一起发，caption 挂第一张
-    func sendImages(_ datas: [Data], caption: String) {
+    // 多张图微信式一起发，caption 挂第一张；ext 跟着数据走，透明图是 png
+    func sendImages(_ datas: [(data: Data, ext: String)], caption: String) {
         guard !datas.isEmpty, !stagingImages else { return }
         stagingImages = true
         Task {
             defer { stagingImages = false }
             let batch = Int(Date().timeIntervalSince1970 * 1000)
             let group = datas.count > 1 ? UUID().uuidString : nil
-            for (i, d) in datas.enumerated() {
-                let name = "IMG_\(batch)_\(i).jpg"
+            for (i, item) in datas.enumerated() {
+                let d = item.data
+                let name = "IMG_\(batch)_\(i).\(item.ext)"
                 do {
                     if let rec = try await AlcoveAPI.upload(data: d, filename: name,
                                                            caption: i == 0 ? caption : "", group: group) {

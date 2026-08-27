@@ -241,7 +241,7 @@ struct RoundtableView: View {
     @State private var showConsole = false
     @State private var showSettings = false
     @State private var inputBarHeight: CGFloat = 90
-    @State private var pendingImages: [(thumb: UIImage, jpeg: Data)] = []
+    @State private var pendingImages: [(thumb: UIImage, data: Data, ext: String)] = []
     @State private var showCamera = false
     @State private var showDocPicker = false
     @State private var showPhotoPicker = false
@@ -887,16 +887,16 @@ struct RoundtableView: View {
             return
         }
 
-        let images: [Data] = pendingImages.map { $0.jpeg }
+        let images: [(data: Data, ext: String)] = pendingImages.map { ($0.data, $0.ext) }
         pendingImages = []
         let stamp = Int(Date().timeIntervalSince1970 * 1000)
         let group = images.count > 1 ? UUID().uuidString : nil
         Task {
-            for (index, data) in images.enumerated() {
-                let filename = "IMG_\(stamp)_\(index).jpg"
+            for (index, item) in images.enumerated() {
+                let filename = "IMG_\(stamp)_\(index).\(item.ext)"
                 let caption = index == 0 ? outgoingText : ""
                 let isLast = index == images.count - 1
-                await store.upload(data, filename: filename, text: caption, group: group,
+                await store.upload(item.data, filename: filename, text: caption, group: group,
                                    triggerReply: isLast)
             }
         }

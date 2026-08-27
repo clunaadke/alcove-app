@@ -25,7 +25,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
     case pond
     case roof
     case factory
-    case crosstalk, radio, coread, cowatch, liao, daddyDay, lab
+    case crosstalk, radio, coread, cowatch, liao, daddyDay, lab, qipai
     case search, favorites, forge, roundtable, surf, letterbox
 
     var id: String { rawValue }
@@ -67,6 +67,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .radio: return "Radio"
         case .coread: return "共读"
         case .cowatch: return "共影"
+        case .qipai: return "棋牌室"
         case .liao: return "燎"
         case .daddyDay: return "Daddy的一天"
         case .lab: return "Lab"
@@ -83,7 +84,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
     var ownsFullScreen: Bool {
         switch self {
         case .studio, .pond, .roof, .memory, .digest, .factory, .search, .favorites, .surf,
-             .settings, .letterbox: return true
+             .settings, .letterbox, .qipai: return true
         default: return false
         }
     }
@@ -124,6 +125,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .radio: return "radio"
         case .coread: return "book"
         case .cowatch: return "film"
+        case .qipai: return "suit.club"
         case .liao: return "flame"
         case .daddyDay: return "clock"
         case .lab: return "waveform.path.ecg.rectangle"
@@ -233,6 +235,8 @@ struct NativeHouseSheet: View {
                     NativePlayView(destination: route)
                 case .coread:
                     NativeCoreadRoomView()
+                case .qipai:
+                    QipaiLobbyView()
                 case .cowatch:
                     NativeCowatchView()
                 case .checklist:
@@ -547,7 +551,7 @@ struct NativeHouseDrawer: View {
 
                     drawerTitle("工具与游戏", note: "little things")
                     VStack(spacing: 7) {
-                        ForEach([HouseDestination.forge, .crosstalk, .coread, .cowatch, .liao]) { target in
+                        ForEach([HouseDestination.forge, .crosstalk, .coread, .cowatch, .liao, .qipai]) { target in
                             drawerRow(target, detail: drawerDetail(target))
                         }
                     }
@@ -731,6 +735,7 @@ struct NativeHouseDrawer: View {
         case .favorites: return "收藏消息"
         case .surf: return "X、小红书、B站与 YouTube"
         case .cowatch: return "一起看 B站与 YouTube"
+        case .qipai: return "斗地主、炸金花与 UNO"
         case .wall: return model.wallLine
         case .usage: return model.usageLine
         default: return "打开"
@@ -762,7 +767,7 @@ private struct NativeSidebarView: View {
     ]
     // Pipe Lab remains compiled for rollback, but the -p experiment is paused and
     // must not appear as a normal household destination.
-    private let play: [HouseDestination] = [.crosstalk, .coread, .cowatch, .liao]
+    private let play: [HouseDestination] = [.crosstalk, .coread, .cowatch, .liao, .qipai]
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -5521,7 +5526,7 @@ private struct NativeStudioView: View {
     @State private var expandedThoughts: Set<Int> = []
     // 0818 她说工作室发图不能多选、没有预览。这三样跟主聊天对齐：
     // 选完先进待发条（可单张删），跟文字一起发，一次最多九张。
-    @State private var pendingImages: [(thumb: UIImage, jpeg: Data)] = []
+    @State private var pendingImages: [(thumb: UIImage, data: Data, ext: String)] = []
     @State private var previewImage: UIImage?
     @State private var photoViewer: StudioPhotoTarget?
     @State private var showPhotoPicker = false
@@ -5793,14 +5798,14 @@ private struct NativeStudioView: View {
     @MainActor private func send() async {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         if !pendingImages.isEmpty {
-            let images = pendingImages.map(\.jpeg)
+            let images = pendingImages.map { ($0.data, $0.ext) }
             pendingImages = []; draft = ""; inputFocused = false
             // 同一次发的九张串成一组：后端只在最后一张收齐时叫我一次，
             // 把整组路径一起递给我，不会被同一件事叫醒九遍
             let group = UUID().uuidString
             let stamp = Int(Date().timeIntervalSince1970)
-            for (index, data) in images.enumerated() {
-                await upload(data, filename: "studio-photo-\(stamp)-\(index + 1).jpg",
+            for (index, item) in images.enumerated() {
+                await upload(item.0, filename: "studio-photo-\(stamp)-\(index + 1).\(item.1)",
                              caption: index == 0 ? text : "", group: group,
                              index: index + 1, total: images.count)
             }
