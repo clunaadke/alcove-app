@@ -88,12 +88,15 @@ struct QipaiLobbyView: View {
 
     private var background: some View {
         // 她 0828 拍板：壁纸用干净不带线条那张原图，不加噪点不加雾。
-        // 夜版壁纸是她自己调暗的那张（带小爱心的）。
+        // 夜版走程序压暗（她亲自对比过，比她手调的好看，反悔记录在案 #762）。
         ZStack {
             QipaiPalette.fog.ignoresSafeArea()
-            Image(night ? "QipaiWallNight" : "QipaiWallPortrait2")
+            Image("QipaiWallPortrait2")
                 .resizable().scaledToFill()
                 .ignoresSafeArea()
+            if night {
+                Color.black.opacity(0.62).ignoresSafeArea()
+            }
         }
     }
 
