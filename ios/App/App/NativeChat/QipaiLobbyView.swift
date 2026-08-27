@@ -94,11 +94,11 @@ struct QipaiLobbyView: View {
             ZStack {
                 VStack(spacing: 3) {
                     Text("棋牌室")
-                        .font(.custom("Songti SC", size: 30).weight(.black))
+                        .font(.qipaiHand(34))
                         .foregroundColor(QipaiPalette.ink)
-                    Text("M O O N   D E N")
-                        .font(.system(size: 8.5, weight: .semibold, design: .monospaced))
-                        .tracking(2)
+                    Text("MOON DEN")
+                        .font(.qipaiHand(11))
+                        .tracking(3)
                         .foregroundColor(QipaiPalette.inkDim)
                 }
                 .frame(maxWidth: .infinity)

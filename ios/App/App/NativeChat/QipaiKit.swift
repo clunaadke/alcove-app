@@ -249,14 +249,14 @@ struct QipaiSlideControl: View {
 
                 // 流光文字
                 Text(label)
-                    .font(.system(size: 13.5, weight: .medium))
+                    .font(.qipaiHand(14))
                     .foregroundColor(QipaiPalette.inkDim)
                     .overlay(
                         LinearGradient(colors: [.clear, .white.opacity(0.9), .clear],
                                        startPoint: .leading, endPoint: .trailing)
                         .frame(width: 60)
                         .offset(x: shimmer ? 90 : -90)
-                        .mask(Text(label).font(.system(size: 13.5, weight: .medium)))
+                        .mask(Text(label).font(.qipaiHand(14)))
                     )
                     .opacity(1 - Double(offset / max(travel, 1)) * 1.6)
                     .onAppear {
@@ -329,14 +329,23 @@ struct QipaiHalo: View {
     }
 }
 
+// MARK: 手写字体（たぬゴ，英文/数字/「棋牌室」三个字全覆盖；
+// 简体中文缺字多，中文标题等她再挑一款简体手写体，见 0828 缺字清单）
+
+extension Font {
+    static func qipaiHand(_ size: CGFloat) -> Font {
+        .custom("Tanugo-S-TTF-Regular", size: size)
+    }
+}
+
 // MARK: 丧甜小字（角落里的那种）
 
 struct QipaiWhisper: View {
     var text: String
     var body: some View {
         Text(text)
-            .font(.system(size: 9.5, weight: .regular, design: .monospaced))
+            .font(.qipaiHand(11))
             .tracking(0.6)
-            .foregroundColor(QipaiPalette.inkDim.opacity(0.85))
+            .foregroundColor(QipaiPalette.inkDim.opacity(0.9))
     }
 }
