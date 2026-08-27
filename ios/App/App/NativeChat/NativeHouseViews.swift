@@ -8286,7 +8286,7 @@ private struct ForgeRoundDetailSheet: View {
                 }
                 .padding(.horizontal, 16).padding(.vertical, 14)
             }
-            .background(theme.fyBg.ignoresSafeArea())
+            .background(theme.fyCardSub.ignoresSafeArea())
             .navigationTitle("第 \(detail.idx) 轮 · \(detail.ts)")
             .navigationBarTitleDisplayMode(.inline)
         }
