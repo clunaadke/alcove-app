@@ -14,15 +14,16 @@ struct QipaiLobbyView: View {
     @State private var createGame: QipaiAPI.GameInfo?
     @State private var tableRoute: QipaiTableRoute?
     @State private var joiningCode: String?
+    @State private var showHistory = false
 
     private let gameIcons: [String: String] = [
         "ddz": "QipaiIconMustache",   // 地主的胡子
         "zjh": "QipaiIconClover",     // 炸金"花"
         "uno": "QipaiIconKitty",
+        "daifugo": "QipaiIconPiano",  // 大富豪的钢琴
     ]
-    // 第 4 期的两位，先在图标墙占座
+    // 还在建的，先在图标墙占座
     private let comingSoon: [(key: String, name: String, icon: String)] = [
-        ("daifugo", "大富豪", "QipaiIconPiano"),
         ("monopoly", "大富翁", "QipaiIconCity"),
     ]
 
@@ -82,6 +83,11 @@ struct QipaiLobbyView: View {
                     tableRoute = nil
                     Task { await reload() }
                 }
+            case "daifugo":
+                QipaiDaifugoTableView(code: route.code) {
+                    tableRoute = nil
+                    Task { await reload() }
+                }
             default:
                 QipaiDdzTableView(code: route.code) {
                     tableRoute = nil
@@ -89,6 +95,7 @@ struct QipaiLobbyView: View {
                 }
             }
         }
+        .sheet(isPresented: $showHistory) { QipaiHistorySheet() }
     }
 
     // MARK: 背景
@@ -200,6 +207,15 @@ struct QipaiLobbyView: View {
                 sectionTitle("房間", note: "on the table")
                 Spacer()
                 Button {
+                    showHistory = true
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "clock.arrow.circlepath").font(.system(size: 10, weight: .semibold))
+                        Text("戰績")
+                    }
+                }
+                .buttonStyle(QipaiEmbossedButtonStyle())
+                Button {
                     Task { await reload() }
                 } label: {
                     HStack(spacing: 4) {
@@ -296,9 +312,12 @@ struct QipaiLobbyView: View {
         loading = true
         defer { loading = false }
         do {
-            let lobby = try await QipaiAPI.lobby()
-            games = lobby.games
-            rooms = lobby.rooms
+            // cards 枢纽必须活着；daifugo 是独立服务，挂了不拖累整个大厅
+            let main = try await QipaiAPI.lobby()
+            let dai = try? await QipaiAPI.lobby(service: "daifugo")
+            games = main.games + (dai?.games ?? [])
+            rooms = (main.rooms + (dai?.rooms ?? []))
+                .sorted { ($0.updatedAt ?? 0) > ($1.updatedAt ?? 0) }
             errorText = nil
         } catch {
             errorText = error.localizedDescription
@@ -315,7 +334,8 @@ struct QipaiLobbyView: View {
         defer { joiningCode = nil }
         do {
             let name = QipaiAPI.nickname.isEmpty ? "陈霁" : QipaiAPI.nickname
-            _ = try await QipaiAPI.join(code: room.code, name: name)
+            _ = try await QipaiAPI.join(code: room.code, name: name,
+                                        service: QipaiAPI.service(for: room.game))
             tableRoute = QipaiTableRoute(code: room.code, game: room.game)
         } catch {
             errorText = error.localizedDescription
@@ -553,7 +573,7 @@ struct QipaiCreateRoomSheet: View {
                         .padding(11)
                         .qipaiPanel(corner: 13)
                     }
-                    QipaiWhisper(text: "陳璟的真身還沒接，急不得。")
+                    QipaiWhisper(text: "真身出牌要等工作室醒，急不得。")
                 }
                 .padding([.horizontal, .bottom], 11)
             }
@@ -579,14 +599,15 @@ struct QipaiCreateRoomSheet: View {
                 else if let text = numberRules[rule.key], let n = Int(text) { rules[rule.key] = n }
             }
             let ai = aiRoster.map(\.id).filter { aiSeats[$0] ?? false }
+            let service = QipaiAPI.service(for: game.key)
             let created = try await QipaiAPI.createRoom(
                 game: game.key,
                 name: roomName.trimmingCharacters(in: .whitespaces),
                 rules: rules, aiPlayers: ai)
-            _ = try await QipaiAPI.join(code: created.code, name: name)
+            _ = try await QipaiAPI.join(code: created.code, name: name, service: service)
             UserDefaults.standard.set(created.inviteToken, forKey: "qipai.invite.\(created.code)")
             // 房主入座后 AI 才落座；拉一次大厅拿回真实座次
-            let lobby = try await QipaiAPI.lobby()
+            let lobby = try await QipaiAPI.lobby(service: service)
             if let summary = lobby.rooms.first(where: { $0.code == created.code }) {
                 onCreated(summary)
             } else {

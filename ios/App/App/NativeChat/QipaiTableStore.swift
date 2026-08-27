@@ -184,6 +184,8 @@ enum QipaiFeedItem: Identifiable, Equatable {
 @MainActor
 final class QipaiTableStore<GameV: Decodable & QipaiGameView>: ObservableObject {
     let code: String
+    /// 服务前缀：ddz/zjh/uno 走 "cards"，大富豪走 "daifugo"
+    let service: String
     private let token: String?
 
     @Published var frame: QipaiTableFrame<GameV>?
@@ -200,8 +202,9 @@ final class QipaiTableStore<GameV: Decodable & QipaiGameView>: ObservableObject 
     private var toastTask: Task<Void, Never>?
 
     // View.init 里塞进 StateObject 时不在主隔离上，init 只碰存储属性，标 nonisolated 安全
-    nonisolated init(code: String) {
+    nonisolated init(code: String, service: String = "cards") {
         self.code = code
+        self.service = service
         self.token = QipaiAPI.storedToken(for: code)
     }
 
@@ -233,7 +236,7 @@ final class QipaiTableStore<GameV: Decodable & QipaiGameView>: ObservableObject 
         var query: [String: String] = [:]
         if let token { query["token"] = token }
         if let f: QipaiTableFrame<GameV> = try? await QipaiAPI.request(
-            "cards/api/rooms/\(code)/state", query: query) {
+            "\(service)/api/rooms/\(code)/state", query: query) {
             ingest(f)
         }
     }
@@ -245,7 +248,7 @@ final class QipaiTableStore<GameV: Decodable & QipaiGameView>: ObservableObject 
     }
 
     private func listenOnce() async {
-        var comps = URLComponents(url: QipaiAPI.base.appendingPathComponent("cards/api/rooms/\(code)/events"),
+        var comps = URLComponents(url: QipaiAPI.base.appendingPathComponent("\(service)/api/rooms/\(code)/events"),
                                   resolvingAgainstBaseURL: false)!
         if let token { comps.queryItems = [URLQueryItem(name: "token", value: token)] }
         var req = URLRequest(url: comps.url!)
@@ -300,7 +303,7 @@ final class QipaiTableStore<GameV: Decodable & QipaiGameView>: ObservableObject 
         payload["playerToken"] = token
         do {
             let resp: QipaiActionResponse<GameV> = try await QipaiAPI.request(
-                "cards/api/rooms/\(code)/action", method: "POST", body: payload)
+                "\(service)/api/rooms/\(code)/action", method: "POST", body: payload)
             if let v = resp.view {
                 view = v
                 for e in v.log where e.seq > seenLogSeq {
@@ -324,7 +327,7 @@ final class QipaiTableStore<GameV: Decodable & QipaiGameView>: ObservableObject 
         busy = true
         defer { busy = false }
         do {
-            let _: QipaiOKResponse = try await QipaiAPI.request("cards/api/rooms/\(code)/start",
+            let _: QipaiOKResponse = try await QipaiAPI.request("\(service)/api/rooms/\(code)/start",
                                                    method: "POST", body: ["playerToken": token])
         } catch {
             show(error.localizedDescription)
@@ -337,7 +340,7 @@ final class QipaiTableStore<GameV: Decodable & QipaiGameView>: ObservableObject 
         do {
             var body: [String: Any] = ["text": trimmed]
             if let token { body["playerToken"] = token }
-            let _: QipaiOKResponse = try await QipaiAPI.request("cards/api/rooms/\(code)/chat",
+            let _: QipaiOKResponse = try await QipaiAPI.request("\(service)/api/rooms/\(code)/chat",
                                                    method: "POST", body: body)
         } catch {
             show(error.localizedDescription)
@@ -348,7 +351,7 @@ final class QipaiTableStore<GameV: Decodable & QipaiGameView>: ObservableObject 
         do {
             var body: [String: Any] = [:]
             if let token { body["playerToken"] = token }
-            let _: QipaiOKResponse = try await QipaiAPI.request("cards/api/rooms/\(code)/close",
+            let _: QipaiOKResponse = try await QipaiAPI.request("\(service)/api/rooms/\(code)/close",
                                                    method: "POST", body: body)
         } catch {
             show(error.localizedDescription)

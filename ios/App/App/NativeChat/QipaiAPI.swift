@@ -76,6 +76,7 @@ enum QipaiAPI {
         let name: String
         let game: String
         let gameName: String
+        let updatedAt: Double?   // 大厅聚合两个服务后按它排序
         let started: Bool
         let finished: Bool
         let phase: String?
@@ -101,6 +102,43 @@ enum QipaiAPI {
         let code: String
         let name: String
         let inviteToken: String
+    }
+
+    // MARK: 战绩档案（cards 服务的 /api/history）
+
+    struct HistorySummary: Decodable, Identifiable {
+        let id: String
+        let code: String
+        let game: String
+        let gameName: String
+        let name: String
+        let createdAt: Double
+        let closedAt: Double
+        let finished: Bool
+        let round: Int
+        let players: [Seat]
+    }
+
+    struct HistoryList: Decodable {
+        let history: [HistorySummary]
+    }
+
+    /// 终局 state 只解通用字段（事件日志），各游戏的私有字段不碰
+    struct HistoryState: Decodable {
+        let log: [QipaiLogEntry]?
+    }
+
+    struct HistoryRecord: Decodable {
+        let id: String
+        let code: String
+        let gameName: String
+        let name: String
+        let closedAt: Double
+        let finished: Bool
+        let round: Int
+        let players: [Seat]
+        let state: HistoryState?
+        let chat: [QipaiChatMessage]?
     }
 
     struct JoinResult: Decodable {
@@ -181,9 +219,16 @@ enum QipaiAPI {
     }
 
     // MARK: 大厅动作
+    // bisca 是多服务架构：ddz/zjh/uno 在 cards 枢纽，大富豪是独立的 daifugo 服务。
+    // 三份 config 的 cookie_secret 已在服务端统一，一次 cards 登录全家通用。
 
-    static func lobby() async throws -> Lobby {
-        try await request("cards/api/rooms")
+    /// game key → 服务前缀
+    static func service(for game: String) -> String {
+        game == "daifugo" ? "daifugo" : "cards"
+    }
+
+    static func lobby(service: String = "cards") async throws -> Lobby {
+        try await request("\(service)/api/rooms")
     }
 
     static func createRoom(game: String, name: String,
@@ -191,20 +236,37 @@ enum QipaiAPI {
         var body: [String: Any] = ["game": game, "name": name]
         if !rules.isEmpty { body["rules"] = rules }
         if !aiPlayers.isEmpty { body["ai_players"] = aiPlayers }
-        return try await request("cards/api/rooms", method: "POST", body: body)
+        return try await request("\(service(for: game))/api/rooms", method: "POST", body: body)
     }
 
-    static func join(code: String, name: String) async throws -> JoinResult {
+    static func join(code: String, name: String, service: String = "cards") async throws -> JoinResult {
         var body: [String: Any] = ["name": name]
         if let old = storedToken(for: code) { body["playerToken"] = old }
-        let result: JoinResult = try await request("cards/api/rooms/\(code)/join",
+        let result: JoinResult = try await request("\(service)/api/rooms/\(code)/join",
                                                    method: "POST", body: body)
         rememberToken(result.playerToken, for: code)
         return result
     }
 
     /// 邀请链接（发给朋友用浏览器打开的那条）
-    static func inviteLink(code: String, inviteToken: String) -> String {
-        "https://qipai.ob-memory.uk/cards/room.html?c=\(code)&invite=\(inviteToken)"
+    static func inviteLink(code: String, inviteToken: String, service: String = "cards") -> String {
+        "https://qipai.ob-memory.uk/\(service)/room.html?c=\(code)&invite=\(inviteToken)"
+    }
+
+    // MARK: 战绩
+
+    static func history(limit: Int = 50) async throws -> [HistorySummary] {
+        // cards 必须活着；daifugo 的档案拿不到就只显示 cards 的
+        let main: HistoryList = try await request("cards/api/history",
+                                                  query: ["limit": String(limit)])
+        let dai: HistoryList? = try? await request("daifugo/api/history",
+                                                   query: ["limit": String(limit)])
+        return (main.history + (dai?.history ?? [])).sorted { $0.closedAt > $1.closedAt }
+    }
+
+    static func historyDetail(id: String, service: String = "cards") async throws -> HistoryRecord {
+        struct Wrap: Decodable { let record: HistoryRecord }
+        let w: Wrap = try await request("\(service)/api/history/\(id)")
+        return w.record
     }
 }

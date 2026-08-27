@@ -140,7 +140,9 @@ struct QipaiTableShell<GameV: Decodable & QipaiGameView, Content: View, Help: Vi
 
             if let invite = frame.inviteToken {
                 Button {
-                    UIPasteboard.general.string = QipaiAPI.inviteLink(code: frame.code, inviteToken: invite)
+                    UIPasteboard.general.string = QipaiAPI.inviteLink(
+                        code: frame.code, inviteToken: invite,
+                        service: QipaiAPI.service(for: frame.game))
                     inviteCopied = true
                 } label: {
                     Label(inviteCopied ? "邀请链接已复制" : "复制邀请链接",
