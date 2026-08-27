@@ -348,6 +348,24 @@ struct QipaiCreateRoomSheet: View {
         }
     }
 
+    // 0828 构建修复：这个小工具当初调了没写，编译器当场抓获
+    private func field<Content: View>(_ label: String,
+                                      @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(label)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(QipaiPalette.inkDim)
+            content()
+                .font(.system(size: 14))
+                .foregroundColor(QipaiPalette.ink)
+                .padding(.horizontal, 13).padding(.vertical, 11)
+                .background(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(.white.opacity(0.9)))
+                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(QipaiPalette.line, lineWidth: 1))
+        }
+    }
+
     private var rulesBox: some View {
         VStack(alignment: .leading, spacing: 0) {
             Button {
