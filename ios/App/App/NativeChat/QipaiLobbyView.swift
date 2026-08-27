@@ -140,8 +140,7 @@ struct QipaiLobbyView: View {
                 }
             }
             Image("QipaiWings")
-                .resizable().scaledToFit()   // 图是她亲手压扁过的，满宽放，不许我再缩（0828 原话）
-                .padding(.horizontal, 18)
+                .resizable().scaledToFit()   // 0829 她要的：宽度跟面板对齐（撤掉额外内缩）
         }
     }
 
@@ -165,7 +164,7 @@ struct QipaiLobbyView: View {
             }
         }
         .padding(14)
-        .qipaiPanel(corner: 20, dotted: true, translucent: true)
+        .qipaiPanel(corner: 20, dotted: true)   // 0829 她点名换回白瓷波点（f00e64e 误伤）
     }
 
     private func gameTile(name: String, caption: String, icon: String,
@@ -231,7 +230,7 @@ struct QipaiLobbyView: View {
             }
         }
         .padding(14)
-        .qipaiPanel(corner: 20, dotted: true, translucent: true)
+        .qipaiPanel(corner: 20, dotted: true)   // 同上：房間区跟图标墙一致
     }
 
     private func roomCard(_ room: QipaiAPI.RoomSummary) -> some View {
