@@ -7957,9 +7957,11 @@ private struct NativeForgeView: View {
                                         lineWidth: 0.8))
                         }
                         .buttonStyle(.plain)
-                        .onLongPressGesture(minimumDuration: 0.45) {
-                            Task { await loadRoundDetail(round.idx) }
-                        }
+                        // 挂 onLongPressGesture 会被 Button 自己的手势吃掉，得并行挂才认长按
+                        .simultaneousGesture(
+                            LongPressGesture(minimumDuration: 0.45).onEnded { _ in
+                                Task { await loadRoundDetail(round.idx) }
+                            })
                     }
                 }
                 Text("长按任意一轮查看完整对话、手写思绪和工具痕迹")
