@@ -1,18 +1,14 @@
 import SwiftUI
 import UIKit
 
-// 斗地主牌桌。古早味：雾灰蓝桌面 + 噪点，白瓷牌，輪到谁谁头上亮光环。
+// 斗地主牌桌。外壳（顶栏/等人/聊天/toast）在 QipaiTableShell，这里只画开局后的桌面。
 
 struct QipaiDdzTableView: View {
     let code: String
     var onExit: () -> Void
 
-    @StateObject private var store: QipaiTableStore
+    @StateObject private var store: QipaiTableStore<DdzView>
     @State private var selected: Set<String> = []
-    @State private var showChat = false
-    @State private var showHelp = false
-    @State private var chatDraft = ""
-    @State private var inviteCopied = false
 
     init(code: String, onExit: @escaping () -> Void) {
         self.code = code
@@ -22,148 +18,26 @@ struct QipaiDdzTableView: View {
 
     var body: some View {
         ZStack {
-            background
-            VStack(spacing: 0) {
-                topBar
-                if let frame = store.frame {
-                    if !frame.started {
-                        waitingRoom(frame)
-                    } else if let view = store.view {
-                        table(frame, view)
-                    } else {
-                        ProgressView().frame(maxHeight: .infinity)
-                    }
-                } else {
-                    ProgressView().frame(maxHeight: .infinity)
+            QipaiTableShell(store: store, fallbackTitle: "斗地主",
+                            round: store.view?.round, onExit: onExit) {
+                if let frame = store.frame, let view = store.view {
+                    table(frame, view)
                 }
+            } help: {
+                helpContent
             }
             overlays
-            toast
         }
-        .onAppear { store.start() }
-        .onDisappear { store.stop() }
-        .onChange(of: store.frame?.closed ?? false) { closed in
-            if closed { onExit() }
-        }
-        .onChange(of: store.view?.seq ?? 0) { _ in
+        .onChange(of: (store.view?.seq ?? 0)) { _ in
             // 每次出牌后清掉已经不在手里的选中牌
             let hand = Set(store.view?.me?.hand ?? [])
             selected = selected.intersection(hand)
-        }
-        .sheet(isPresented: $showChat) { chatSheet }
-        .sheet(isPresented: $showHelp) { helpSheet }
-    }
-
-    // MARK: 背景与顶栏
-
-    private var background: some View {
-        ZStack {
-            QipaiPalette.fog.ignoresSafeArea()
-            Image("QipaiWallPortrait2")
-                .resizable().scaledToFill().ignoresSafeArea().opacity(0.45)
-            QipaiPalette.fog.opacity(0.55).ignoresSafeArea()
-            QipaiDots(spacing: 18, radius: 1.2, opacity: 0.16).ignoresSafeArea()
-        }
-    }
-
-    private var topBar: some View {
-        HStack(spacing: 8) {
-            Button { onExit() } label: {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 13, weight: .semibold))
-            }
-            .buttonStyle(QipaiEmbossedButtonStyle())
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text(store.frame.map { $0.name.isEmpty ? $0.gameName : $0.name } ?? "斗地主")
-                    .font(.system(size: 14.5, weight: .bold, design: .serif))
-                    .foregroundColor(QipaiPalette.ink)
-                    .lineLimit(1)
-                HStack(spacing: 5) {
-                    Text(code).font(.system(size: 9.5, design: .monospaced))
-                        .foregroundColor(QipaiPalette.inkDim)
-                    if let round = store.view?.round {
-                        Text("第 \(round) 局").font(.system(size: 9.5))
-                            .foregroundColor(QipaiPalette.inkDim)
-                    }
-                }
-            }
-            Spacer()
-            Circle()
-                .fill(store.connected ? QipaiPalette.accent : QipaiPalette.red)
-                .frame(width: 7, height: 7)
-            Text(store.connected ? "已連接" : "重連中")
-                .font(.system(size: 9.5)).foregroundColor(QipaiPalette.inkDim)
-            Button { showChat = true } label: {
-                Image(systemName: "bubble.left").font(.system(size: 12, weight: .semibold))
-            }
-            .buttonStyle(QipaiEmbossedButtonStyle())
-            Button { showHelp = true } label: {
-                Image(systemName: "questionmark").font(.system(size: 12, weight: .semibold))
-            }
-            .buttonStyle(QipaiEmbossedButtonStyle())
-        }
-        .padding(.horizontal, 14)
-        .padding(.top, 8)
-        .padding(.bottom, 6)
-    }
-
-    // MARK: 等人开局
-
-    private func waitingRoom(_ frame: QipaiTableFrame) -> some View {
-        VStack(spacing: 16) {
-            Spacer()
-            Text("等人上桌")
-                .font(.qipaiDisplay(24))
-                .foregroundColor(QipaiPalette.ink)
-            Text("\(frame.seats.count)/\(frame.maxPlayers) 人 · 房號 \(frame.code)")
-                .font(.system(size: 12)).foregroundColor(QipaiPalette.inkDim)
-            VStack(spacing: 8) {
-                ForEach(frame.seats) { seat in
-                    HStack(spacing: 8) {
-                        Image(systemName: seat.isAI ? "sparkles" : "person.fill")
-                            .font(.system(size: 11))
-                            .foregroundColor(QipaiPalette.accent)
-                        Text(seat.name).font(.system(size: 13.5, weight: .semibold))
-                            .foregroundColor(QipaiPalette.ink)
-                        if seat.isHost { QipaiChip(text: "房主", tone: .live) }
-                        Spacer()
-                    }
-                    .padding(11)
-                    .qipaiPanel(corner: 13)
-                }
-            }
-            .padding(.horizontal, 30)
-
-            if let invite = frame.inviteToken {
-                Button {
-                    UIPasteboard.general.string = QipaiAPI.inviteLink(code: frame.code, inviteToken: invite)
-                    inviteCopied = true
-                } label: {
-                    Label(inviteCopied ? "邀請連結已複製" : "複製邀請連結",
-                          systemImage: inviteCopied ? "checkmark" : "link")
-                }
-                .buttonStyle(QipaiEmbossedButtonStyle())
-            }
-
-            Spacer()
-            if store.isHost {
-                if frame.seats.count >= frame.minPlayers {
-                    QipaiSlideControl(label: "slide to 開局") { Task { await store.startGame() } }
-                        .padding(.horizontal, 34)
-                } else {
-                    QipaiWhisper(text: "人齊了才能開。喊人，或者回大廳拉 AI。")
-                }
-            } else {
-                QipaiWhisper(text: "等房主開局…")
-            }
-            Spacer().frame(height: 30)
         }
     }
 
     // MARK: 牌桌
 
-    private func table(_ frame: QipaiTableFrame, _ view: DdzView) -> some View {
+    private func table(_ frame: QipaiTableFrame<DdzView>, _ view: DdzView) -> some View {
         VStack(spacing: 8) {
             opponentsRow(view)
             centerBoard(view)
@@ -244,7 +118,6 @@ struct QipaiDdzTableView: View {
 
     private func centerBoard(_ view: DdzView) -> some View {
         VStack(spacing: 8) {
-            // 状态行：底分 · 倍数 · 炸弹
             HStack(spacing: 6) {
                 if let base = view.base { QipaiChip(text: "底分 \(base)") }
                 QipaiChip(text: "×\(view.multiplier)",
@@ -263,7 +136,6 @@ struct QipaiDdzTableView: View {
                 }
             }
 
-            // 主区
             VStack(spacing: 7) {
                 banner(view)
                 if let field = view.field {
@@ -435,7 +307,7 @@ struct QipaiDdzTableView: View {
         }
     }
 
-    // MARK: 局间/终局盖板 + toast
+    // MARK: 局间/终局盖板
 
     @ViewBuilder private var overlays: some View {
         if let view = store.view, view.phase == "round_over" || view.phase == "game_over" {
@@ -528,118 +400,26 @@ struct QipaiDdzTableView: View {
         .background(QipaiPalette.ink.opacity(0.25).ignoresSafeArea())
     }
 
-    @ViewBuilder private var toast: some View {
-        if let text = store.toast {
-            VStack {
-                Spacer()
-                Text(text)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 16).padding(.vertical, 9)
-                    .background(Capsule().fill(QipaiPalette.ink.opacity(0.92)))
-                    .padding(.bottom, 130)
-            }
-            .transition(.opacity)
-            .animation(.easeInOut(duration: 0.2), value: store.toast)
-            .allowsHitTesting(false)
-        }
-    }
-
-    // MARK: 聊天
-
-    private var chatSheet: some View {
-        ZStack {
-            QipaiPalette.fog.ignoresSafeArea()
-            QipaiDots(spacing: 16, radius: 1.3, opacity: 0.25).ignoresSafeArea()
-            VStack(spacing: 10) {
-                Text("牌桌閒聊")
-                    .font(.qipaiMemo(17))
-                    .foregroundColor(QipaiPalette.ink)
-                    .padding(.top, 16)
-                ScrollViewReader { proxy in
-                    ScrollView(showsIndicators: false) {
-                        VStack(alignment: .leading, spacing: 8) {
-                            ForEach(store.frame?.chat ?? []) { msg in
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(msg.name)
-                                        .font(.system(size: 9.5, weight: .semibold))
-                                        .foregroundColor(QipaiPalette.accent)
-                                    Text(msg.text)
-                                        .font(.system(size: 12.5))
-                                        .foregroundColor(QipaiPalette.ink)
-                                        .padding(.horizontal, 11).padding(.vertical, 7)
-                                        .background(RoundedRectangle(cornerRadius: 13)
-                                            .fill(.white.opacity(0.85)))
-                                        .overlay(RoundedRectangle(cornerRadius: 13)
-                                            .stroke(QipaiPalette.line, lineWidth: 0.8))
-                                }
-                                .id(msg.id)
-                            }
-                        }
-                        .padding(.horizontal, 16)
-                    }
-                    .onChange(of: store.frame?.chat.count ?? 0) { _ in
-                        if let last = store.frame?.chat.last {
-                            withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
-                        }
-                    }
-                    .onAppear {
-                        if let last = store.frame?.chat.last { proxy.scrollTo(last.id, anchor: .bottom) }
-                    }
-                }
-                HStack(spacing: 8) {
-                    TextField("聊點什麼…", text: $chatDraft)
-                        .font(.system(size: 13))
-                        .padding(.horizontal, 12).padding(.vertical, 9)
-                        .background(Capsule().fill(.white.opacity(0.9)))
-                        .overlay(Capsule().stroke(QipaiPalette.line, lineWidth: 1))
-                    Button {
-                        let text = chatDraft
-                        chatDraft = ""
-                        Task { await store.sendChat(text) }
-                    } label: {
-                        Image(systemName: "paperplane.fill").font(.system(size: 13))
-                    }
-                    .buttonStyle(QipaiEmbossedButtonStyle(prominent: true))
-                    .disabled(chatDraft.trimmingCharacters(in: .whitespaces).isEmpty)
-                }
-                .padding(.horizontal, 16)
-                .padding(.bottom, 14)
-            }
-        }
-        .presentationDetents([.medium, .large])
-    }
-
     // MARK: 玩法说明
 
-    private var helpSheet: some View {
-        ZStack {
-            QipaiPalette.fog.ignoresSafeArea()
-            ScrollView {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("斗地主 · 玩法")
-                        .font(.qipaiMemo(18))
-                        .foregroundColor(QipaiPalette.ink)
-                    Group {
-                        Text("三個人，17×3 張牌加 3 張底牌。先叫分（1/2/3 分，也可以不叫），叫得最高的當地主、拿底牌，一打二。")
-                        Text("牌型：單張、對子、三條（可帶一/帶對）、順子（5 張起）、連對（3 對起）、飛機（±翅膀）、四帶二、炸彈、王炸。2 不能進順子。")
-                        Text("炸彈王炸砸一切，每響一次倍數 ×2。地主一張沒讓農民出叫春天，反過來叫反春，都再 ×2。")
-                        Text("計分：底分 × 倍數。地主贏收兩家，輸賠兩家。")
-                        Text("選牌點一下抬起來，再點放回去。出不了的牌伺服器會攔，放心亂試。")
-                    }
-                    .font(.system(size: 12.5))
-                    .foregroundColor(QipaiPalette.ink.opacity(0.85))
-                    .lineSpacing(4)
-                    QipaiWhisper(text: "no real money. only face.")
-                }
-                .padding(20)
-            }
+    @ViewBuilder private var helpContent: some View {
+        Text("斗地主 · 玩法")
+            .font(.qipaiMemo(18))
+            .foregroundColor(QipaiPalette.ink)
+        Group {
+            Text("三個人，17×3 張牌加 3 張底牌。先叫分（1/2/3 分，也可以不叫），叫得最高的當地主、拿底牌，一打二。")
+            Text("牌型：單張、對子、三條（可帶一/帶對）、順子（5 張起）、連對（3 對起）、飛機（±翅膀）、四帶二、炸彈、王炸。2 不能進順子。")
+            Text("炸彈王炸砸一切，每響一次倍數 ×2。地主一張沒讓農民出叫春天，反過來叫反春，都再 ×2。")
+            Text("計分：底分 × 倍數。地主贏收兩家，輸賠兩家。")
+            Text("選牌點一下抬起來，再點放回去。出不了的牌伺服器會攔，放心亂試。")
         }
-        .presentationDetents([.medium])
+        .font(.system(size: 12.5))
+        .foregroundColor(QipaiPalette.ink.opacity(0.85))
+        .lineSpacing(4)
     }
 }
 
-// MARK: - 一张牌
+// MARK: - 一张牌（扑克，斗地主/炸金花共用）
 
 struct QipaiCardFace: View {
     let id: String
@@ -686,6 +466,30 @@ struct QipaiCardFace: View {
             .fill(LinearGradient(colors: [.white.opacity(0.55), .clear],
                                  startPoint: .top, endPoint: .center))
             .allowsHitTesting(false))
+        .shadow(color: QipaiPalette.ink.opacity(0.14), radius: 2.5, y: 1.5)
+    }
+}
+
+// MARK: - 牌背（炸金花暗牌用）
+
+struct QipaiCardBack: View {
+    var width: CGFloat = 48
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: width * 0.14, style: .continuous)
+                .fill(LinearGradient(colors: [QipaiPalette.qhex(0xB9C1D2), QipaiPalette.qhex(0x9BA5BB)],
+                                     startPoint: .top, endPoint: .bottom))
+            QipaiDots(spacing: width * 0.18, radius: width * 0.028,
+                      color: .white, opacity: 0.5)
+                .clipShape(RoundedRectangle(cornerRadius: width * 0.14, style: .continuous))
+            RoundedRectangle(cornerRadius: width * 0.1, style: .continuous)
+                .stroke(.white.opacity(0.7), lineWidth: 1)
+                .padding(width * 0.07)
+        }
+        .frame(width: width, height: width * 1.38)
+        .overlay(RoundedRectangle(cornerRadius: width * 0.14, style: .continuous)
+            .stroke(QipaiPalette.line, lineWidth: 1))
         .shadow(color: QipaiPalette.ink.opacity(0.14), radius: 2.5, y: 1.5)
     }
 }

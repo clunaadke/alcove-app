@@ -1,8 +1,8 @@
 import SwiftUI
 import UIKit
 
-// 棋牌室大厅。古早味 6s：壁纸铺底 + 雾 + 噪点，拟物玻璃图标墙，白瓷房間卡。
-// 牌桌页是第 2 期，现在进房先给施工占位页。
+// 棋牌室大厅。古早味 6s：壁纸铺底，拟物玻璃图标墙，白瓷房間卡。
+// 三个游戏（斗地主/炸金花/UNO）都有原生牌桌，按 game 分流。
 
 struct QipaiLobbyView: View {
     @Environment(\.dismiss) private var dismiss
@@ -11,7 +11,6 @@ struct QipaiLobbyView: View {
     @State private var loading = true
     @State private var errorText: String?
     @State private var createGame: QipaiAPI.GameInfo?
-    @State private var openedRoom: QipaiAPI.RoomSummary?
     @State private var tableRoute: QipaiTableRoute?
     @State private var joiningCode: String?
 
@@ -54,23 +53,29 @@ struct QipaiLobbyView: View {
             QipaiCreateRoomSheet(game: game) { created in
                 createGame = nil
                 Task { await reload() }
-                // 等建房面板收完再开房間页，不然第二个 sheet 会被吃掉
+                // 等建房面板收完再开牌桌，不然第二层弹层会被吃掉
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
-                    if created.game == "ddz" {
-                        tableRoute = QipaiTableRoute(code: created.code)
-                    } else {
-                        openedRoom = created
-                    }
+                    tableRoute = QipaiTableRoute(code: created.code, game: created.game)
                 }
             }
         }
-        .sheet(item: $openedRoom) { room in
-            QipaiTableStubView(room: room)
-        }
         .fullScreenCover(item: $tableRoute) { route in
-            QipaiDdzTableView(code: route.code) {
-                tableRoute = nil
-                Task { await reload() }
+            switch route.game {
+            case "zjh":
+                QipaiZjhTableView(code: route.code) {
+                    tableRoute = nil
+                    Task { await reload() }
+                }
+            case "uno":
+                QipaiUnoTableView(code: route.code) {
+                    tableRoute = nil
+                    Task { await reload() }
+                }
+            default:
+                QipaiDdzTableView(code: route.code) {
+                    tableRoute = nil
+                    Task { await reload() }
+                }
             }
         }
     }
@@ -277,11 +282,9 @@ struct QipaiLobbyView: View {
     }
 
     @MainActor private func enter(_ room: QipaiAPI.RoomSummary) async {
-        // 斗地主走原生牌桌；炸金花/UNO 还是占位页（第 3 期换）。
-        // 已結束的房不再入座，直接进去看战绩/占位；其余先把座占上（有旧凭证就是复座）。
+        // 已結束的房不再入座，直接进去看战绩；其余先把座占上（有旧凭证就是复座）
         if room.finished {
-            if room.game == "ddz" { tableRoute = QipaiTableRoute(code: room.code) }
-            else { openedRoom = room }
+            tableRoute = QipaiTableRoute(code: room.code, game: room.game)
             return
         }
         joiningCode = room.code
@@ -289,8 +292,7 @@ struct QipaiLobbyView: View {
         do {
             let name = QipaiAPI.nickname.isEmpty ? "陈霁" : QipaiAPI.nickname
             _ = try await QipaiAPI.join(code: room.code, name: name)
-            if room.game == "ddz" { tableRoute = QipaiTableRoute(code: room.code) }
-            else { openedRoom = room }
+            tableRoute = QipaiTableRoute(code: room.code, game: room.game)
         } catch {
             errorText = error.localizedDescription
         }
@@ -299,6 +301,7 @@ struct QipaiLobbyView: View {
 
 struct QipaiTableRoute: Identifiable {
     let code: String
+    let game: String
     var id: String { code }
 }
 
@@ -563,71 +566,6 @@ struct QipaiCreateRoomSheet: View {
             }
         } catch {
             errorText = error.localizedDescription
-        }
-    }
-}
-
-// MARK: - 牌桌占位页（第 2 期换成真牌桌）
-
-struct QipaiTableStubView: View {
-    let room: QipaiAPI.RoomSummary
-    @Environment(\.dismiss) private var dismiss
-    @State private var copied = false
-
-    private var inviteLink: String? {
-        guard let token = UserDefaults.standard.string(forKey: "qipai.invite.\(room.code)"),
-              !token.isEmpty else { return nil }
-        return QipaiAPI.inviteLink(code: room.code, inviteToken: token)
-    }
-
-    var body: some View {
-        ZStack {
-            QipaiPalette.fog.ignoresSafeArea()
-            Image("QipaiWallPortrait2")
-                .resizable().scaledToFill().ignoresSafeArea().opacity(0.55)
-            QipaiPalette.fog.opacity(0.4).ignoresSafeArea()
-
-            VStack(spacing: 16) {
-                Spacer()
-                Image("QipaiIconScene")
-                    .resizable().scaledToFill()
-                    .frame(width: 96, height: 96)
-                    .clipShape(RoundedRectangle(cornerRadius: 21, style: .continuous))
-                    .qipaiPanel(corner: 21)
-                Text(room.name.isEmpty ? room.gameName : room.name)
-                    .font(.system(size: 18, weight: .bold, design: .serif))
-                    .foregroundColor(QipaiPalette.ink)
-                HStack(spacing: 6) {
-                    QipaiChip(text: room.gameName)
-                    QipaiChip(text: room.code, icon: "number")
-                    QipaiChip(text: "\(room.playerCount)/\(room.maxPlayers) 人")
-                }
-                Text("你的座位已經佔好了。\n原生牌桌正在第 2 期施工，這一局先用網頁版打：")
-                    .font(.system(size: 12.5))
-                    .foregroundColor(QipaiPalette.inkDim)
-                    .multilineTextAlignment(.center)
-                    .lineSpacing(3)
-                Link("qipai.ob-memory.uk/cards",
-                     destination: URL(string: "https://qipai.ob-memory.uk/cards/")!)
-                    .font(.system(size: 13, weight: .semibold, design: .monospaced))
-                    .foregroundColor(QipaiPalette.accent)
-                if let inviteLink {
-                    Button {
-                        UIPasteboard.general.string = inviteLink
-                        copied = true
-                    } label: {
-                        Label(copied ? "邀請連結已複製" : "複製邀請連結",
-                              systemImage: copied ? "checkmark" : "link")
-                    }
-                    .buttonStyle(QipaiEmbossedButtonStyle(prominent: true))
-                }
-                Spacer()
-                Button("回大廳") { dismiss() }
-                    .buttonStyle(QipaiEmbossedButtonStyle())
-                QipaiWhisper(text: "the table is being built. stay.")
-                    .padding(.bottom, 18)
-            }
-            .padding(.horizontal, 28)
         }
     }
 }

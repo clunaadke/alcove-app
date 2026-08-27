@@ -17,17 +17,28 @@ struct QipaiChatMessage: Decodable, Identifiable, Equatable {
 
 struct QipaiLegalMove: Decodable, Identifiable {
     let type: String
-    let value: Int?
-    let cards: [String]?
+    let value: Int?          // ddz 叫分
+    let cards: [String]?     // ddz 出牌
     let label: String?
     let asType: String?
+    // 炸金花
+    let amount: Int?
+    let kind: String?        // call / raise / allin / raise_allin
+    let blind: Bool?
+    let stake: Int?
+    let target: String?      // compare 的对象
+    let targetName: String?
+    // UNO
+    let card: String?
+    let color: String?       // 万能牌选色 R/G/B/Y
+    let count: Int?          // draw 时要摸几张
 
     enum CodingKeys: String, CodingKey {
-        case type, value, cards, label
+        case type, value, cards, label, amount, kind, blind, stake, target, targetName, card, color, count
         case asType = "as"
     }
     var id: String {
-        "\(type)-\(value ?? -1)-\(cards?.joined(separator: ",") ?? "")"
+        "\(type)-\(value ?? -1)-\(amount ?? -1)-\(stake ?? -1)-\(target ?? "")-\(card ?? "")-\(color ?? "")-\(cards?.joined(separator: ",") ?? "")"
     }
 }
 
@@ -118,7 +129,7 @@ struct QipaiSeat: Decodable, Identifiable {
     var id: String { playerId }
 }
 
-struct QipaiTableFrame: Decodable {
+struct QipaiTableFrame<GameV: Decodable>: Decodable {
     let code: String
     let name: String
     let game: String
@@ -132,26 +143,26 @@ struct QipaiTableFrame: Decodable {
     let yourTurn: Bool
     let seq: Int
     let chat: [QipaiChatMessage]
-    let state: DdzView?
+    let state: GameV?
     let legal: [QipaiLegalMove]?
     let inviteToken: String?
 }
 
-private struct QipaiActionResponse: Decodable {
+private struct QipaiActionResponse<GameV: Decodable>: Decodable {
     let ok: Bool
-    let view: DdzView?
+    let view: GameV?
     let legal: [QipaiLegalMove]?
 }
 
 // MARK: - Store
 
 @MainActor
-final class QipaiTableStore: ObservableObject {
+final class QipaiTableStore<GameV: Decodable>: ObservableObject {
     let code: String
     private let token: String?
 
-    @Published var frame: QipaiTableFrame?
-    @Published var view: DdzView?
+    @Published var frame: QipaiTableFrame<GameV>?
+    @Published var view: GameV?
     @Published var legal: [QipaiLegalMove] = []
     @Published var connected = false
     @Published var toast: String?
@@ -223,7 +234,7 @@ final class QipaiTableStore: ObservableObject {
 
     private func apply(json: String) {
         guard let data = json.data(using: .utf8),
-              let f = try? JSONDecoder().decode(QipaiTableFrame.self, from: data) else { return }
+              let f = try? JSONDecoder().decode(QipaiTableFrame<GameV>.self, from: data) else { return }
         frame = f
         view = f.state
         if let l = f.legal { legal = l }
@@ -231,14 +242,14 @@ final class QipaiTableStore: ObservableObject {
 
     // MARK: 动作
 
-    private func action(_ body: [String: Any]) async {
+    func act(_ body: [String: Any]) async {
         guard let token else { show("你沒有座位（觀戰中）"); return }
         busy = true
         defer { busy = false }
         var payload = body
         payload["playerToken"] = token
         do {
-            let resp: QipaiActionResponse = try await QipaiAPI.request(
+            let resp: QipaiActionResponse<GameV> = try await QipaiAPI.request(
                 "cards/api/rooms/\(code)/action", method: "POST", body: payload)
             if let v = resp.view { view = v }
             if let l = resp.legal { legal = l }
@@ -247,11 +258,11 @@ final class QipaiTableStore: ObservableObject {
         }
     }
 
-    func bid(_ value: Int) async { await action(["type": "bid", "value": value]) }
-    func play(_ cards: [String]) async { await action(["type": "play", "cards": cards]) }
-    func pass() async { await action(["type": "pass"]) }
-    func nextRound() async { await action(["type": "next_round"]) }
-    func endMatch() async { await action(["type": "end_match"]) }
+    func bid(_ value: Int) async { await act(["type": "bid", "value": value]) }
+    func play(_ cards: [String]) async { await act(["type": "play", "cards": cards]) }
+    func pass() async { await act(["type": "pass"]) }
+    func nextRound() async { await act(["type": "next_round"]) }
+    func endMatch() async { await act(["type": "end_match"]) }
 
     func startGame() async {
         guard let token else { return }
@@ -349,4 +360,181 @@ enum QipaiCard {
         "four_two_single": "四帶二", "four_two_pair": "四帶兩對",
         "bomb": "炸彈", "rocket": "王炸",
     ]
+}
+
+// MARK: - 炸金花视图模型
+
+struct ZjhPlayerView: Decodable, Identifiable {
+    let id: String
+    let name: String
+    let isAI: Bool
+    let chips: Int
+    let score: Int
+    let bet: Int
+    let looked: Bool
+    let folded: Bool
+    let allin: Bool
+    let out: Bool
+    let acts: Int
+    let handCount: Int
+    let cards: [String]?
+    let hand: String?        // 牌力标签（金花/对子…），摊牌或自己看过才有
+}
+
+struct ZjhWinner: Decodable, Identifiable {
+    let playerId: String
+    let name: String
+    let gain: Int
+    let net: Int
+    let chips: Int
+    var id: String { playerId }
+}
+
+struct ZjhReveal: Decodable, Identifiable {
+    let playerId: String
+    let name: String
+    let cards: [String]
+    let label: String
+    var id: String { playerId }
+}
+
+struct ZjhResults: Decodable {
+    let round: Int
+    let reason: String       // showdown / fold_out …
+    let pot: Int
+    let winners: [ZjhWinner]
+    let reveal: [ZjhReveal]
+}
+
+struct ZjhView: Decodable {
+    let seq: Int
+    let phase: String        // betting / round_over / game_over
+    let round: Int
+    let turnOrder: [String]
+    let current: String?
+    let dealer: String?
+    let you: String?
+    let pot: Int
+    let currentBet: Int
+    let callCost: Int?
+    let players: [ZjhPlayerView]
+    let lastResults: ZjhResults?
+    let winner: String?
+    let log: [QipaiLogEntry]
+
+    func player(_ id: String?) -> ZjhPlayerView? {
+        guard let id else { return nil }
+        return players.first { $0.id == id }
+    }
+    var me: ZjhPlayerView? { player(you) }
+}
+
+// MARK: - UNO 视图模型
+
+struct UnoPlayerView: Decodable, Identifiable {
+    let id: String
+    let name: String
+    let isAI: Bool
+    let score: Int
+    let handCount: Int
+    let uno: Bool            // 只剩一张
+    let hand: [String]?
+}
+
+struct UnoPending: Decodable {
+    let playerId: String
+    let mine: Bool
+    let card: String?        // 只有本人能看到刚摸的那张
+}
+
+struct UnoResultRow: Decodable, Identifiable {
+    let playerId: String
+    let name: String
+    let handCount: Int
+    let handPoints: Int
+    let gain: Int
+    let score: Int
+    var id: String { playerId }
+}
+
+struct UnoResults: Decodable {
+    let round: Int
+    let winner: String
+    let gain: Int
+    let players: [UnoResultRow]
+}
+
+struct UnoView: Decodable {
+    let seq: Int
+    let phase: String        // playing / round_over / game_over
+    let round: Int
+    let turnOrder: [String]
+    let current: String?
+    let dir: Int
+    let dirLabel: String?
+    let you: String?
+    let players: [UnoPlayerView]
+    let top: String?
+    let topLabel: String?
+    let activeColor: String?
+    let activeColorName: String?
+    let deckCount: Int
+    let drawStack: Int
+    let pending: UnoPending?
+    let lastResults: UnoResults?
+    let winner: String?
+    let log: [QipaiLogEntry]
+
+    func player(_ id: String?) -> UnoPlayerView? {
+        guard let id else { return nil }
+        return players.first { $0.id == id }
+    }
+    var me: UnoPlayerView? { player(you) }
+}
+
+// MARK: - UNO 牌面工具
+
+enum UnoCard {
+    struct Face {
+        let symbol: String    // 数字或 ↷/⇄/+2/★/+4
+        let colorKey: String? // R/G/B/Y，万能为 nil
+        let isWild: Bool
+    }
+
+    /// "R5#1" / "GS#2" / "W#1" / "WD#3"
+    static func parse(_ id: String) -> Face {
+        let base = id.split(separator: "#").first.map(String.init) ?? id
+        if base == "W" { return Face(symbol: "★", colorKey: nil, isWild: true) }
+        if base == "WD" { return Face(symbol: "+4", colorKey: nil, isWild: true) }
+        let color = String(base.prefix(1))
+        let v = String(base.dropFirst())
+        let symbol: String
+        switch v {
+        case "S": symbol = "⊘"
+        case "R": symbol = "⇄"
+        case "D": symbol = "+2"
+        default:  symbol = v
+        }
+        return Face(symbol: symbol, colorKey: color, isWild: false)
+    }
+
+    /// 低饱和版 UNO 四色，配古早灰蓝不打架
+    static func tint(_ key: String?) -> Color {
+        switch key {
+        case "R": return QipaiPalette.qhex(0xC25B55)
+        case "G": return QipaiPalette.qhex(0x7D9B84)
+        case "B": return QipaiPalette.qhex(0x6E7E9C)
+        case "Y": return QipaiPalette.qhex(0xC9A85C)
+        default:  return QipaiPalette.ink
+        }
+    }
+
+    static func colorName(_ key: String) -> String {
+        switch key {
+        case "R": return "紅"
+        case "G": return "綠"
+        case "B": return "藍"
+        default:  return "黃"
+        }
+    }
 }
