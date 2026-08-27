@@ -34,23 +34,28 @@ struct QipaiLobbyView: View {
     }
 
     var body: some View {
-        ZStack {
-            background
-            ScrollView(showsIndicators: false) {
-                VStack(spacing: 18) {
-                    header
-                    iconWall
-                    roomSection
-                    QipaiWhisper(text: night ? "the den never sleeps." : "will you stay or leave?")
-                        .padding(.bottom, 26)
+        // 0828 连环案：先是内容被撑宽、后是整体右偏 70pt。UIScreen 猜宽度不可靠，
+        // 改用 GeometryReader 拿真实容器几何，把 ScrollView 和内容全部钉死在容器内。
+        GeometryReader { geo in
+            ZStack {
+                background
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: 18) {
+                        header
+                        iconWall
+                        roomSection
+                        QipaiWhisper(text: night ? "the den never sleeps." : "will you stay or leave?")
+                            .padding(.bottom, 26)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, safeTop + 6)
+                    .frame(width: geo.size.width)
                 }
-                // 内容宽度钉死在屏宽：0828 夜里整页被某个子视图撑宽横向溢出，
-                // UNO 图标和月亮按钮直接被挤出屏幕。宽度硬约束一了百了。
-                .frame(width: UIScreen.main.bounds.width - 32)
-                .padding(.horizontal, 16)
-                .padding(.top, safeTop + 6)
+                .refreshable { await reload() }
+                .frame(width: geo.size.width, height: geo.size.height)
             }
-            .refreshable { await reload() }
+            .frame(width: geo.size.width, height: geo.size.height)
+            .clipped()
         }
         // 调色盘是静态计算属性，切日夜靠整树重建（牌桌只能从这里进，不会中途换肤）
         .id(night)
@@ -136,9 +141,8 @@ struct QipaiLobbyView: View {
                 }
             }
             Image("QipaiWings")
-                .resizable().scaledToFit()
-                .frame(height: 128)          // 拼贴卡限高，別占半屏（0828 她嫌大）
-                .frame(maxWidth: .infinity)
+                .resizable().scaledToFit()   // 图是她亲手压扁过的，满宽放，不许我再缩（0828 原话）
+                .padding(.horizontal, 18)
         }
     }
 
