@@ -493,14 +493,14 @@ struct ChatView: View {
             }
         }
         .confirmationDialog(
-            "删除选中的 \(selectedParagraphIDs.count) 段正文？",
+            "隐藏选中的 \(selectedParagraphIDs.count) 条消息？",
             isPresented: $showParagraphDeleteConfirmation,
             titleVisibility: .visible
         ) {
             Button("删除", role: .destructive) { deleteSelectedParagraphs() }
             Button("取消", role: .cancel) {}
         } message: {
-            Text("删除后这些段落会从聊天记录中消失。")
+            Text("只从当前页面移走；刷新或重进 App 后会重新出现，原始数据不删除。")
         }
     }
 
@@ -513,7 +513,7 @@ struct ChatView: View {
         HStack(spacing: 18) {
             Button("取消") { leaveParagraphSelection() }
                 .foregroundColor(theme.textDim)
-            Text("已选 \(selectedParagraphIDs.count) 段")
+            Text("已选 \(selectedParagraphIDs.count) 条")
                 .font(.system(size: 13, weight: .medium))
                 .foregroundColor(theme.text)
             Spacer()
@@ -555,7 +555,7 @@ struct ChatView: View {
     }
 
     private func deleteSelectedParagraphs() {
-        store.deleteMessages(selectedParagraphs())
+        store.hideMessagesTemporarily(selectedParagraphs())
         leaveParagraphSelection()
     }
 
@@ -630,6 +630,11 @@ struct ChatView: View {
             let recall = message.role == "assistant" && previous?.role == "user"
                 ? store.recall(forUserText: previous?.text ?? "")
                 : nil
+            let selectionEnd = message.inlineImages.isEmpty
+                ? min(groupEnd, store.messages.count - 1) : index
+            let rowSelectionIDs = Set(store.messages[index...selectionEnd].map(\.uid))
+            let rowSelected = !rowSelectionIDs.isEmpty
+                && rowSelectionIDs.isSubset(of: selectedParagraphIDs)
 
             let divided = needsDivider(prev: previous, cur: message)
             if divided {
@@ -657,7 +662,7 @@ struct ChatView: View {
                 // 0822 她要的：切通道留一道线，跟时间分割一个样子
                 ChannelDivider(text: message.text, color: theme.textDim)
             } else {
-                MessageRow(
+                let renderedRow = MessageRow(
                     msg: message,
                     sticker: message.stickerId.flatMap(store.sticker(for:)),
                     theme: theme,
@@ -680,20 +685,14 @@ struct ChatView: View {
                     onDelete: { store.deleteMessage(message) },
                     onFavorite: { store.favoriteMessage(message) },
                     wholeTurnText: wholeTurnText(for: message),
-                    paragraphSelectionMode: paragraphSelectionMode,
-                    paragraphSelected: selectedParagraphIDs.contains(message.uid),
+                    paragraphSelectionMode: false,
+                    paragraphSelected: false,
                     onBeginParagraphSelection: {
                         paragraphSelectionMode = true
-                        selectedParagraphIDs.insert(message.uid)
+                        selectedParagraphIDs.formUnion(rowSelectionIDs)
                         inputFocused = false
                     },
-                    onToggleParagraphSelection: {
-                        if selectedParagraphIDs.contains(message.uid) {
-                            selectedParagraphIDs.remove(message.uid)
-                        } else {
-                            selectedParagraphIDs.insert(message.uid)
-                        }
-                    },
+                    onToggleParagraphSelection: nil,
                     onQuote: { text in
                         selectedQuote = text
                         inputFocused = true
@@ -702,6 +701,25 @@ struct ChatView: View {
                     onPlayMusic: { song in Task { await music.play(song) } },
                     onContentChange: { scrollKick += 1 }
                 )
+                if paragraphSelectionMode {
+                    Button {
+                        if rowSelected { selectedParagraphIDs.subtract(rowSelectionIDs) }
+                        else { selectedParagraphIDs.formUnion(rowSelectionIDs) }
+                    } label: {
+                        HStack(alignment: .center, spacing: 8) {
+                            Image(systemName: rowSelected ? "checkmark.circle.fill" : "circle")
+                                .font(.system(size: 20, weight: .regular))
+                                .foregroundColor(rowSelected ? theme.fyAccent : theme.textDim)
+                                .frame(width: 28, height: 44)
+                            renderedRow.allowsHitTesting(false)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    renderedRow
+                }
             }
             }
             .padding(.top, newSoloTurn ? 22 : 0)

@@ -5,6 +5,7 @@ import SwiftUI
 final class ChatStore: ObservableObject {
     @Published var messages: [ChatMessage] = []
     private var deletedMessageTs: Set<String> = []
+    private var temporarilyHiddenMessageTs: Set<String> = []
     @Published var isTyping = false
     @Published var currentTool: String?
     @Published var stickers: [Sticker] = []
@@ -260,11 +261,13 @@ final class ChatStore: ObservableObject {
 
     // 前后台切换后强制刷新
     func refresh() {
-        Task { await pollOnce() }
+        temporarilyHiddenMessageTs.removeAll()
+        Task { await initialLoad() }
     }
 
     private func initialLoad() async {
         do {
+            temporarilyHiddenMessageTs.removeAll()
             let recs = try await AlcoveAPI.history(limit: 300)
             messages = recs
             lastTs = recs.last?.ts
@@ -286,7 +289,9 @@ final class ChatStore: ObservableObject {
                 let older = try await AlcoveAPI.history(before: first.ts, limit: 300)
                 if older.count < 300 { hasOlder = false }
                 let existing = Set(messages.map(\.ts))
-                messages.insert(contentsOf: older.filter { !existing.contains($0.ts) }, at: 0)
+                messages.insert(contentsOf: older.filter {
+                    !existing.contains($0.ts) && !temporarilyHiddenMessageTs.contains($0.ts)
+                }, at: 0)
             } catch { connectionError = true }
         }
     }
@@ -294,7 +299,7 @@ final class ChatStore: ObservableObject {
     func loadAround(_ ts: String) async {
         do {
             let page = try await AlcoveAPI.history(around: ts)
-            messages = page
+            messages = page.filter { !temporarilyHiddenMessageTs.contains($0.ts) }
             hasOlder = true
             isViewingHistory = true
         } catch { connectionError = true }
@@ -303,7 +308,7 @@ final class ChatStore: ObservableObject {
     func returnToLatest() async {
         do {
             let recs = try await AlcoveAPI.history(limit: 300)
-            messages = recs
+            messages = recs.filter { !temporarilyHiddenMessageTs.contains($0.ts) }
             lastTs = recs.last?.ts
             hasOlder = recs.count >= 300
             isViewingHistory = false
@@ -601,7 +606,7 @@ final class ChatStore: ObservableObject {
         var out = messages
         for rec in recs {
             // 删除请求与轮询可能交叉：服务器旧快照晚到时不能把已删气泡复活。
-            if deletedMessageTs.contains(rec.ts) { continue }
+            if deletedMessageTs.contains(rec.ts) || temporarilyHiddenMessageTs.contains(rec.ts) { continue }
             if rec.role == "user",
                let idx = out.lastIndex(where: { $0.pending && $0.text == rec.text }) {
                 out[idx] = rec
@@ -724,6 +729,13 @@ final class ChatStore: ObservableObject {
                 )
             }
         }
+    }
+
+    /// 多选工具栏的“删除”只是这次浏览里收起来；不写后端，刷新或重进后恢复。
+    func hideMessagesTemporarily(_ selected: [ChatMessage]) {
+        let ids = Set(selected.map(\.uid))
+        temporarilyHiddenMessageTs.formUnion(selected.map(\.ts))
+        messages.removeAll { ids.contains($0.uid) }
     }
 
     /// 0819 她要的：多选几条就收成一段聊天记录（收藏页点开逐条排），
