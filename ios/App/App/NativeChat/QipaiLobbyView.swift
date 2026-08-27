@@ -309,11 +309,13 @@ struct QipaiCreateRoomSheet: View {
     @State private var aiExpanded = true
     @State private var flagRules: [String: Bool] = [:]
     @State private var numberRules: [String: String] = [:]
-    @State private var aiSeats: [String: Bool] = ["opus": false, "sonnet": false, "haiku": false]
+    @State private var aiSeats: [String: Bool] = ["external": false, "opus": false,
+                                                  "sonnet": false, "haiku": false]
     @State private var working = false
     @State private var errorText: String?
 
     private let aiRoster: [(id: String, name: String, note: String)] = [
+        ("external", "工程师·本人档", "工作室那位，带记忆，出牌要等他几秒"),
         ("opus", "分身·Opus", "话多，牌品未知"),
         ("sonnet", "分身·Sonnet", "手快"),
         ("haiku", "分身·Haiku", "省着用的小脑子"),
@@ -514,7 +516,7 @@ struct QipaiCreateRoomSheet: View {
                         .padding(11)
                         .qipaiPanel(corner: 13)
                     }
-                    QipaiWhisper(text: "本人档（要他在线）第 2 期接。")
+                    QipaiWhisper(text: "陈璟的本人档还没接，先别惦记。")
                 }
                 .padding([.horizontal, .bottom], 11)
             }
