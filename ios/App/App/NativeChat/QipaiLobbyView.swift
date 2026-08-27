@@ -11,6 +11,7 @@ struct QipaiLobbyView: View {
     @State private var errorText: String?
     @State private var createGame: QipaiAPI.GameInfo?
     @State private var openedRoom: QipaiAPI.RoomSummary?
+    @State private var tableRoute: QipaiTableRoute?
     @State private var joiningCode: String?
 
     private let gameIcons: [String: String] = [
@@ -47,12 +48,22 @@ struct QipaiLobbyView: View {
                 Task { await reload() }
                 // 等建房面板收完再开房间页，不然第二个 sheet 会被吃掉
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
-                    openedRoom = created
+                    if created.game == "ddz" {
+                        tableRoute = QipaiTableRoute(code: created.code)
+                    } else {
+                        openedRoom = created
+                    }
                 }
             }
         }
         .sheet(item: $openedRoom) { room in
             QipaiTableStubView(room: room)
+        }
+        .fullScreenCover(item: $tableRoute) { route in
+            QipaiDdzTableView(code: route.code) {
+                tableRoute = nil
+                Task { await reload() }
+            }
         }
     }
 
@@ -260,18 +271,29 @@ struct QipaiLobbyView: View {
     }
 
     @MainActor private func enter(_ room: QipaiAPI.RoomSummary) async {
-        // 已结束的房不用入座，直接看占位页；没开局/进行中先把座占上（有旧凭证就是复座）
-        guard !room.finished else { openedRoom = room; return }
+        // 斗地主走原生牌桌；炸金花/UNO 还是占位页（第 3 期换）。
+        // 已结束的房不再入座，直接进去看战绩/占位；其余先把座占上（有旧凭证就是复座）。
+        if room.finished {
+            if room.game == "ddz" { tableRoute = QipaiTableRoute(code: room.code) }
+            else { openedRoom = room }
+            return
+        }
         joiningCode = room.code
         defer { joiningCode = nil }
         do {
             let name = QipaiAPI.nickname.isEmpty ? "陈霁" : QipaiAPI.nickname
             _ = try await QipaiAPI.join(code: room.code, name: name)
-            openedRoom = room
+            if room.game == "ddz" { tableRoute = QipaiTableRoute(code: room.code) }
+            else { openedRoom = room }
         } catch {
             errorText = error.localizedDescription
         }
     }
+}
+
+struct QipaiTableRoute: Identifiable {
+    let code: String
+    var id: String { code }
 }
 
 // MARK: - 建房面板

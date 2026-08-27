@@ -15,6 +15,8 @@
 		4BF591472FBA6D4215EAE680 /* ChatStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8774650A336AF4502E9F11B /* ChatStore.swift */; };
 		36522A3573B249D5AD75C38D /* LinkCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61E583DC8F8C4FDC96FCC7A0 /* LinkCard.swift */; };
 		7A1C4E9B02F1487CA3D60B11 /* PondView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A1C4E9B02F1487CA3D60B22 /* PondView.swift */; };
+		9A11C0DE00054F8CA3D60B11 /* QipaiDdzTableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A11C0DE00054F8CA3D60B22 /* QipaiDdzTableView.swift */; };
+		9A11C0DE00044F8CA3D60B11 /* QipaiTableStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A11C0DE00044F8CA3D60B22 /* QipaiTableStore.swift */; };
 		9A11C0DE00034F8CA3D60B11 /* QipaiLobbyView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A11C0DE00034F8CA3D60B22 /* QipaiLobbyView.swift */; };
 		9A11C0DE00024F8CA3D60B11 /* QipaiAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A11C0DE00024F8CA3D60B22 /* QipaiAPI.swift */; };
 		9A11C0DE00014F8CA3D60B11 /* QipaiKit.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A11C0DE00014F8CA3D60B22 /* QipaiKit.swift */; };
@@ -112,6 +114,8 @@
 		B8774650A336AF4502E9F11B /* ChatStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatStore.swift; sourceTree = "<group>"; };
 		61E583DC8F8C4FDC96FCC7A0 /* LinkCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkCard.swift; sourceTree = "<group>"; };
 		7A1C4E9B02F1487CA3D60B22 /* PondView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PondView.swift; sourceTree = "<group>"; };
+		9A11C0DE00054F8CA3D60B22 /* QipaiDdzTableView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QipaiDdzTableView.swift; sourceTree = "<group>"; };
+		9A11C0DE00044F8CA3D60B22 /* QipaiTableStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QipaiTableStore.swift; sourceTree = "<group>"; };
 		9A11C0DE00034F8CA3D60B22 /* QipaiLobbyView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QipaiLobbyView.swift; sourceTree = "<group>"; };
 		9A11C0DE00024F8CA3D60B22 /* QipaiAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QipaiAPI.swift; sourceTree = "<group>"; };
 		9A11C0DE00014F8CA3D60B22 /* QipaiKit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QipaiKit.swift; sourceTree = "<group>"; };
@@ -227,6 +231,8 @@
 				B8774650A336AF4502E9F11B /* ChatStore.swift */,
 				61E583DC8F8C4FDC96FCC7A0 /* LinkCard.swift */,
 				7A1C4E9B02F1487CA3D60B22 /* PondView.swift */,
+				9A11C0DE00054F8CA3D60B22 /* QipaiDdzTableView.swift */,
+				9A11C0DE00044F8CA3D60B22 /* QipaiTableStore.swift */,
 				9A11C0DE00034F8CA3D60B22 /* QipaiLobbyView.swift */,
 				9A11C0DE00024F8CA3D60B22 /* QipaiAPI.swift */,
 				9A11C0DE00014F8CA3D60B22 /* QipaiKit.swift */,
@@ -427,6 +433,8 @@
 				4BF591472FBA6D4215EAE680 /* ChatStore.swift in Sources */,
 				36522A3573B249D5AD75C38D /* LinkCard.swift in Sources */,
 				7A1C4E9B02F1487CA3D60B11 /* PondView.swift in Sources */,
+				9A11C0DE00054F8CA3D60B11 /* QipaiDdzTableView.swift in Sources */,
+				9A11C0DE00044F8CA3D60B11 /* QipaiTableStore.swift in Sources */,
 				9A11C0DE00034F8CA3D60B11 /* QipaiLobbyView.swift in Sources */,
 				9A11C0DE00024F8CA3D60B11 /* QipaiAPI.swift in Sources */,
 				9A11C0DE00014F8CA3D60B11 /* QipaiKit.swift in Sources */,
