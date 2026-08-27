@@ -254,18 +254,14 @@ final class QipaiTableStore<GameV: Decodable & QipaiGameView>: ObservableObject 
             let (bytes, resp) = try await URLSession.shared.bytes(for: req)
             guard (resp as? HTTPURLResponse)?.statusCode == 200 else { return }
             connected = true
-            var dataLines: [String] = []
             for try await line in bytes.lines {
                 if Task.isCancelled { return }
-                if line.isEmpty {
-                    if !dataLines.isEmpty {
-                        apply(json: dataLines.joined())
-                        dataLines = []
-                    }
-                } else if line.hasPrefix("data: ") {
-                    dataLines.append(String(line.dropFirst(6)))
+                // bytes.lines 会吞掉空行，等 SSE 的空行分隔符永远等不到（0829 开局不跳转就是它）。
+                // 服务端一条 data 就是一整行 JSON，直接按行应用。
+                if line.hasPrefix("data: ") {
+                    apply(json: String(line.dropFirst(6)))
                 } else if line.hasPrefix("data:") {
-                    dataLines.append(String(line.dropFirst(5)))
+                    apply(json: String(line.dropFirst(5)))
                 }
                 // event:/retry:/:ping 行都不用管——只有 state 一种事件
             }

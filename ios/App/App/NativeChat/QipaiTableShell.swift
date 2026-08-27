@@ -19,8 +19,15 @@ struct QipaiTableShell<GameV: Decodable & QipaiGameView, Content: View, Help: Vi
         return max(inset, 8)
     }
 
+    /// 底部同理：容器不给垫，home 条会盖住手牌区最下沿（0829 她抓的）
+    private var safeBottom: CGFloat {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        return scenes.flatMap(\.windows).first(where: { $0.isKeyWindow })?.safeAreaInsets.bottom ?? 0
+    }
+
     @State private var showHelp = false
     @State private var inviteCopied = false
+    @StateObject private var keyboard = QipaiKeyboardWatcher()
 
     var body: some View {
         ZStack {
@@ -39,6 +46,10 @@ struct QipaiTableShell<GameV: Decodable & QipaiGameView, Content: View, Help: Vi
                     ProgressView().frame(maxHeight: .infinity)
                 }
             }
+            // 键盘起来时整体垫高（容器豁免了安全区，系统的键盘避让不干活），
+            // 收起时垫 home 条的高度
+            .padding(.bottom, keyboard.height > 0 ? keyboard.height : safeBottom)
+            .animation(.easeOut(duration: 0.25), value: keyboard.height)
             toast
         }
         .onAppear { store.start() }
@@ -185,6 +196,34 @@ struct QipaiTableShell<GameV: Decodable & QipaiGameView, Content: View, Help: Vi
             }
         }
         .presentationDetents([.medium])
+    }
+}
+
+// MARK: - 键盘观察器（容器豁免安全区后系统避让失效，只能自己听通知）
+
+final class QipaiKeyboardWatcher: ObservableObject {
+    @Published var height: CGFloat = 0
+    private var observers: [NSObjectProtocol] = []
+
+    init() {
+        let center = NotificationCenter.default
+        observers.append(center.addObserver(
+            forName: UIResponder.keyboardWillChangeFrameNotification, object: nil, queue: .main
+        ) { [weak self] note in
+            guard let self,
+                  let frame = (note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue
+            else { return }
+            self.height = max(0, UIScreen.main.bounds.height - frame.origin.y)
+        })
+        observers.append(center.addObserver(
+            forName: UIResponder.keyboardWillHideNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.height = 0
+        })
+    }
+
+    deinit {
+        for o in observers { NotificationCenter.default.removeObserver(o) }
     }
 }
 
