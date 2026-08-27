@@ -1020,6 +1020,11 @@ private struct NativeSettingsView: View {
     @State private var herStatusLine = ""
     @State private var herStatusLoaded = false
     @State private var herStatusSaveTask: Task<Void, Never>?
+    // 0827 拍一拍后缀。后缀属于被拍的那个人：她填自己的，也能替他填他的。
+    @State private var patHerSuffix = ""
+    @State private var patHimSuffix = ""
+    @State private var patLoaded = false
+    @State private var patSaveTask: Task<Void, Never>?
     // 0821 她要的图片缓存面板（照微信存储页）：大小、按日期清、只留三天、全清
     @State private var cacheBytes: Int64 = 0
     @State private var cacheCount = 0
@@ -1211,6 +1216,24 @@ private struct NativeSettingsView: View {
                         PhotosPicker(selection: $aiPhoto, matching: .images) {
                             avatar(dataURL: assistantAvatar, fallback: "R")
                         }
+                    }
+                } }
+                // 0827 拍一拍：双击聊天页顶上他的头像就拍。后缀跟着被拍的人走。
+                if page == .people { section("拍一拍") {
+                    settingRow("我的后缀",
+                               patHerSuffix.isEmpty ? "他拍你时显示：\"\(assistantName)\" 拍了拍我"
+                                                    : "\"\(assistantName)\" 拍了拍我的\(patHerSuffix)") {
+                        TextField("小兔耳朵", text: $patHerSuffix)
+                            .multilineTextAlignment(.trailing).frame(width: 105)
+                            .onChange(of: patHerSuffix) { _ in schedulePatSave() }
+                    }
+                    Divider().opacity(0.25)
+                    settingRow("\(assistantName) 的后缀",
+                               patHimSuffix.isEmpty ? "你拍他时显示：我拍了拍 \"\(assistantName)\""
+                                                    : "我拍了拍 \"\(assistantName)\" 的\(patHimSuffix)") {
+                        TextField("良心", text: $patHimSuffix)
+                            .multilineTextAlignment(.trailing).frame(width: 105)
+                            .onChange(of: patHimSuffix) { _ in schedulePatSave() }
                     }
                 } }
                 if page == .chat { section("聊天外观") {
@@ -1473,7 +1496,8 @@ private struct NativeSettingsView: View {
             async let thought: Void = loadThoughtLength()
             async let pulse: Void = loadPulseRange()
             async let her: Void = loadHerStatus()
-            _ = await (services, reply, thought, pulse, her)
+            async let pat: Void = loadPat()
+            _ = await (services, reply, thought, pulse, her, pat)
         }
     }
 
@@ -1641,6 +1665,29 @@ private struct NativeSettingsView: View {
         herStatus = raw.string("text")
         herStatusLine = raw.string("line")
         herStatusLoaded = true
+    }
+
+    @MainActor private func loadPat() async {
+        let raw = (try? await NativeHouseAPI.object("/api/pat")) ?? [:]
+        patHerSuffix = raw.string("chenji_suffix")
+        patHimSuffix = raw.string("chenjing_suffix")
+        patLoaded = true
+    }
+
+    // 后缀连同当前设置的名字一起存，这样他在别处拍她时叫的也是她刚改的那个名字
+    private func schedulePatSave() {
+        guard patLoaded else { return }
+        patSaveTask?.cancel()
+        patSaveTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 600_000_000)
+            guard !Task.isCancelled else { return }
+            _ = try? await NativeHouseAPI.object(
+                "/api/pat/settings", method: "POST",
+                body: ["actor": "chenji",
+                       "chenji_suffix": patHerSuffix,
+                       "chenjing_suffix": patHimSuffix,
+                       "assistant_name": assistantName])
+        }
     }
 
     private func scheduleHerStatusSave(_ value: String) {

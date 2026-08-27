@@ -655,7 +655,12 @@ struct ChatView: View {
                 return a != b
             }()
             Group {
-            if message.msgType == "divider" && message.source == "dream" {
+            if message.msgType == "pat_outgoing" || message.msgType == "pat_incoming" {
+                // 0827 拍一拍：居中一行小字。她拍我常规、我拍她加粗，黑底白底各一套灰
+                PatLine(text: message.text,
+                        strong: message.msgType == "pat_incoming",
+                        isDark: theme.isDark)
+            } else if message.msgType == "divider" && message.source == "dream" {
                 // 0822 她定的：做梦之后聊天页只落这一道线，梦本身在梦面板
                 DreamDivider(text: message.text, date: message.date, color: theme.textDim)
             } else if message.msgType == "divider" {
@@ -3883,6 +3888,26 @@ struct DreamDivider: View {
 }
 
 // 0822 她要的：通道切换分割线（"已切换到 SDK / CLI"），后端 msg_type == "divider"
+// 0827 拍一拍那一行。微信是白底浅灰/深灰加粗，我们黑底得把明暗掉个个儿
+struct PatLine: View {
+    let text: String
+    let strong: Bool
+    let isDark: Bool
+    private var color: Color {
+        if isDark { return Color.white.opacity(strong ? 0.74 : 0.34) }
+        return Color.black.opacity(strong ? 0.62 : 0.32)
+    }
+    var body: some View {
+        Text(text)
+            .font(.system(size: 12.5, weight: strong ? .semibold : .regular))
+            .foregroundColor(color)
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 34)
+            .padding(.vertical, 7)
+    }
+}
+
 struct ChannelDivider: View {
     let text: String
     var color: Color = Color(red: 0.42, green: 0.40, blue: 0.41)

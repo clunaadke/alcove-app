@@ -35,6 +35,19 @@ struct RootView: View {
     private var glassStroke: Color { theme.glassBorder }
     private var textDim: Color { theme.textDim }
 
+    // 0827 拍一拍：双击顶栏头像。名字跟着设置走，所以每次把当前设置名一起递过去，
+    // 后端拿它生成那行字并存进消息里，以后改名不会倒改旧记录。
+    private func sendPat() {
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        Task {
+            _ = try? await NativeHouseAPI.object(
+                "/api/pat/send",
+                method: "POST",
+                body: ["actor": "chenji",
+                       "assistant_name": UserDefaults.standard.string(forKey: "assistantName") ?? "陈璟"])
+        }
+    }
+
     var body: some View {
         ZStack(alignment: .top) {
             ChatView(
@@ -229,34 +242,35 @@ struct RootView: View {
     // 左上角不放东西，右上角还是那三个胶囊。
     private var messagesTopBar: some View {
         ZStack(alignment: .top) {
-            Button { showTerminal = true } label: {
-                VStack(spacing: 4) {
-                    ZStack(alignment: .topTrailing) {
-                        Group {
-                            if let img = avatarImage {
-                                Image(uiImage: img).resizable().scaledToFill()
-                            } else {
-                                Circle().fill(theme.bubbleAI)
-                                    .overlay(Text("R").font(.system(size: 18, design: .serif)).foregroundColor(textDim))
-                            }
-                        }
-                        .frame(width: 56, height: 56)
-                        .clipShape(Circle())
-                        if assistantAsleep {
-                            Text("💤").font(.system(size: 15)).offset(x: 6, y: -4)
+            VStack(spacing: 4) {
+                ZStack(alignment: .topTrailing) {
+                    Group {
+                        if let img = avatarImage {
+                            Image(uiImage: img).resizable().scaledToFill()
+                        } else {
+                            Circle().fill(theme.bubbleAI)
+                                .overlay(Text("R").font(.system(size: 18, design: .serif)).foregroundColor(textDim))
                         }
                     }
-                    HStack(spacing: 2) {
-                        Text(UserDefaults.standard.string(forKey: "assistantName") ?? "陈璟")
-                            .font(.system(size: 12, weight: .medium))
-                        Image(systemName: "chevron.right").font(.system(size: 8, weight: .semibold))
+                    .frame(width: 56, height: 56)
+                    .clipShape(Circle())
+                    if assistantAsleep {
+                        Text("💤").font(.system(size: 15)).offset(x: 6, y: -4)
                     }
-                    .foregroundColor(theme.text)
-                    .padding(.horizontal, 8).padding(.vertical, 3)
-                    .background(theme.capsuleTint.opacity(theme.isDark ? 0.9 : 0.7), in: Capsule())
                 }
+                HStack(spacing: 2) {
+                    Text(UserDefaults.standard.string(forKey: "assistantName") ?? "陈璟")
+                        .font(.system(size: 12, weight: .medium))
+                    Image(systemName: "chevron.right").font(.system(size: 8, weight: .semibold))
+                }
+                .foregroundColor(theme.text)
+                .padding(.horizontal, 8).padding(.vertical, 3)
+                .background(theme.capsuleTint.opacity(theme.isDark ? 0.9 : 0.7), in: Capsule())
             }
-            .buttonStyle(.plain)
+            // 双击先声明才抢得到，单击照旧进终端页
+            .contentShape(Rectangle())
+            .onTapGesture(count: 2) { sendPat() }
+            .onTapGesture { showTerminal = true }
             .frame(maxWidth: .infinity)
             HStack {
                 Spacer(minLength: 0)
@@ -280,8 +294,7 @@ struct RootView: View {
 
     private var legacyTopBar: some View {
         HStack(alignment: .center, spacing: 0) {
-                Button { showTerminal = true } label: {
-                    ZStack(alignment: .topTrailing) {
+                ZStack(alignment: .topTrailing) {
                     glassCircle(size: 40) {
                         if let img = avatarImage {
                             Image(uiImage: img)
@@ -302,9 +315,10 @@ struct RootView: View {
                             .transition(.scale.combined(with: .opacity))
                             .accessibilityLabel("陈璟正在睡觉")
                     }
-                    }
                 }
-                .buttonStyle(.plain)
+                .contentShape(Rectangle())
+                .onTapGesture(count: 2) { sendPat() }
+                .onTapGesture { showTerminal = true }
                 .frame(width: 44, height: 44)
 
                 Spacer(minLength: 0)
