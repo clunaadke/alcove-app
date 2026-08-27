@@ -439,6 +439,6 @@ struct UnoCardFace: View {
             .fill(LinearGradient(colors: [.white.opacity(0.35), .clear],
                                  startPoint: .top, endPoint: .center))
             .allowsHitTesting(false))
-        .shadow(color: QipaiPalette.ink.opacity(0.16), radius: 2.5, y: 1.5)
+        .shadow(color: QipaiPalette.shadowTint.opacity(0.16), radius: 2.5, y: 1.5)
     }
 }

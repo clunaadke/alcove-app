@@ -105,7 +105,7 @@ struct QipaiTableShell<GameV: Decodable, Content: View, Help: View>: View {
     private func waitingRoom(_ frame: QipaiTableFrame<GameV>) -> some View {
         VStack(spacing: 16) {
             Spacer()
-            Text("等人上桌")
+            Text("等人齊")
                 .font(.qipaiDisplay(24))
                 .foregroundColor(QipaiPalette.ink)
             Text("\(frame.seats.count)/\(frame.maxPlayers) 人 · 房號 \(frame.code)")
@@ -178,7 +178,7 @@ struct QipaiTableShell<GameV: Decodable, Content: View, Help: View>: View {
             QipaiPalette.fog.ignoresSafeArea()
             QipaiDots(spacing: 16, radius: 1.3, opacity: 0.25).ignoresSafeArea()
             VStack(spacing: 10) {
-                Text("牌桌閒聊")
+                Text("閒聊兩句")
                     .font(.qipaiMemo(17))
                     .foregroundColor(QipaiPalette.ink)
                     .padding(.top, 16)
@@ -214,10 +214,13 @@ struct QipaiTableShell<GameV: Decodable, Content: View, Help: View>: View {
                     }
                 }
                 HStack(spacing: 8) {
-                    TextField("聊點什麼…", text: $chatDraft)
+                    TextField("", text: $chatDraft,
+                              prompt: Text("聊點什麼…")
+                                .foregroundColor(QipaiPalette.inkDim.opacity(0.7)))
                         .font(.system(size: 13))
+                        .foregroundColor(QipaiPalette.ink)
                         .padding(.horizontal, 12).padding(.vertical, 9)
-                        .background(Capsule().fill(.white.opacity(0.9)))
+                        .background(Capsule().fill(QipaiPalette.fieldBg))
                         .overlay(Capsule().stroke(QipaiPalette.line, lineWidth: 1))
                     Button {
                         let text = chatDraft

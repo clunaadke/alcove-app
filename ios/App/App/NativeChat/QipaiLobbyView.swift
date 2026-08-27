@@ -159,7 +159,7 @@ struct QipaiLobbyView: View {
             }
         }
         .padding(14)
-        .qipaiPanel(corner: 20, dotted: true)
+        .qipaiPanel(corner: 20, dotted: true, translucent: true)
     }
 
     private func gameTile(name: String, caption: String, icon: String,
@@ -174,10 +174,7 @@ struct QipaiLobbyView: View {
                 .frame(width: 74, height: 74)
                 .saturation(dimmed ? 0.4 : 1)
                 .opacity(dimmed ? 0.55 : 1)
-                // 夜里把日版图标压暗顶着（她给的夜版图标是备用款那五个，
-                // 游戏槽位的夜版还没定，见 0828 待她拍板）
-                .brightness(QipaiPalette.night ? -0.16 : 0)
-                .saturation(QipaiPalette.night ? 0.82 : 1)
+                // 夜里图标不压暗，保持亮着（0828 她拍板：73cbdbe 那版的样子）
                 Text(name)
                     .font(.qipaiMemo(14))
                     .foregroundColor(QipaiPalette.ink)
@@ -227,6 +224,8 @@ struct QipaiLobbyView: View {
                 ForEach(rooms) { room in roomCard(room) }
             }
         }
+        .padding(14)
+        .qipaiPanel(corner: 20, dotted: true, translucent: true)
     }
 
     private func roomCard(_ room: QipaiAPI.RoomSummary) -> some View {
@@ -368,10 +367,14 @@ struct QipaiCreateRoomSheet: View {
                         .font(.system(size: 11)).foregroundColor(QipaiPalette.inkDim)
 
                     field("房間名") {
-                        TextField("比如「週五晚上別睡」", text: $roomName)
+                        TextField("", text: $roomName,
+                                  prompt: Text("比如「週五晚上別睡」")
+                                    .foregroundColor(QipaiPalette.inkDim.opacity(0.7)))
                     }
                     field("你的暱稱") {
-                        TextField("上桌用的名字", text: $nickname)
+                        TextField("", text: $nickname,
+                                  prompt: Text("上桌用的名字")
+                                    .foregroundColor(QipaiPalette.inkDim.opacity(0.7)))
                     }
 
                     rulesBox
@@ -412,7 +415,7 @@ struct QipaiCreateRoomSheet: View {
                 .foregroundColor(QipaiPalette.ink)
                 .padding(.horizontal, 13).padding(.vertical, 11)
                 .background(RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(.white))
+                    .fill(QipaiPalette.fieldBg))
                 // 白底白框看不清（0828 她抓的），描边加深
                 .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .stroke(QipaiPalette.inkDim.opacity(0.55), lineWidth: 1.2))
@@ -510,7 +513,7 @@ struct QipaiCreateRoomSheet: View {
                     Image(systemName: "sparkles")
                         .font(.system(size: 12)).foregroundColor(QipaiPalette.accent)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("請誰上桌").font(.qipaiMemo(15))
+                        Text("請誰來玩").font(.qipaiMemo(15))
                             .foregroundColor(QipaiPalette.ink)
                         Text(aiSummary).font(.system(size: 10.5))
                             .foregroundColor(QipaiPalette.inkDim)

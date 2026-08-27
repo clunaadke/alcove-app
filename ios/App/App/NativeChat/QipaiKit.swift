@@ -30,6 +30,8 @@ enum QipaiPalette {
     static var chipBg: Color { night ? qhex(0x333A48).opacity(0.9) : .white.opacity(0.75) }
     static var buttonTop: Color { night ? qhex(0x3A4150) : .white }     // 凸起按钮亮面
     static var trackLight: Color { pick(0xEFF1F6, 0x2E3440) }           // 滑条轨道亮端
+    static var fieldBg: Color { night ? qhex(0x2F3542) : .white }       // 输入框底（夜里白框太刺眼，0828 她抓的）
+    static var shadowTint: Color { night ? .black : qhex(0x585F6E) }    // 阴影固定深色：夜里 ink 是月白，拿它当阴影会变白光晕
 
     static func qhex(_ v: UInt32) -> Color {
         Color(red: Double((v >> 16) & 0xFF) / 255,
@@ -107,13 +109,19 @@ struct QipaiDots: View {
 struct QipaiPanelModifier: ViewModifier {
     var corner: CGFloat = 18
     var dotted: Bool = false
+    var translucent: Bool = false   // 磨砂半透明：透出壁纸（0828 她要的房間区效果）
 
     func body(content: Content) -> some View {
         content
             .background(
                 ZStack {
+                    if translucent {
+                        RoundedRectangle(cornerRadius: corner, style: .continuous)
+                            .fill(.ultraThinMaterial)
+                    }
                     RoundedRectangle(cornerRadius: corner, style: .continuous)
-                        .fill(QipaiPalette.panel)
+                        .fill(QipaiPalette.panel.opacity(
+                            translucent ? (QipaiPalette.night ? 0.72 : 0.55) : 1))
                     if dotted { QipaiDots(opacity: 0.3)
                         .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous)) }
                     // 顶部一道很浅的高光，让面板微微凸起
@@ -126,13 +134,13 @@ struct QipaiPanelModifier: ViewModifier {
             )
             .overlay(RoundedRectangle(cornerRadius: corner, style: .continuous)
                 .stroke(QipaiPalette.line, lineWidth: 1))
-            .shadow(color: QipaiPalette.ink.opacity(0.10), radius: 7, y: 3)
+            .shadow(color: QipaiPalette.shadowTint.opacity(0.10), radius: 7, y: 3)
     }
 }
 
 extension View {
-    func qipaiPanel(corner: CGFloat = 18, dotted: Bool = false) -> some View {
-        modifier(QipaiPanelModifier(corner: corner, dotted: dotted))
+    func qipaiPanel(corner: CGFloat = 18, dotted: Bool = false, translucent: Bool = false) -> some View {
+        modifier(QipaiPanelModifier(corner: corner, dotted: dotted, translucent: translucent))
     }
 }
 
@@ -163,7 +171,7 @@ struct QipaiGlassTile<Content: View>: View {
                 .padding(0.8))
             .overlay(RoundedRectangle(cornerRadius: corner, style: .continuous)
                 .stroke(QipaiPalette.line, lineWidth: 1))
-            .shadow(color: QipaiPalette.ink.opacity(0.22), radius: 5, y: 3)
+            .shadow(color: QipaiPalette.shadowTint.opacity(0.22), radius: 5, y: 3)
     }
 }
 
@@ -196,7 +204,7 @@ struct QipaiEmbossedButtonStyle: ButtonStyle {
                                       lineWidth: 1))
             .overlay(Capsule().strokeBorder(.white.opacity(pressed ? 0.2 : 0.65), lineWidth: 1)
                 .padding(1).mask(Capsule().padding(1)))
-            .shadow(color: QipaiPalette.ink.opacity(pressed ? 0.05 : 0.18),
+            .shadow(color: QipaiPalette.shadowTint.opacity(pressed ? 0.05 : 0.18),
                     radius: pressed ? 1 : 3, y: pressed ? 0.5 : 2)
             .scaleEffect(pressed ? 0.985 : 1)
             .animation(.easeOut(duration: 0.12), value: pressed)
@@ -356,9 +364,10 @@ extension Font {
     static func qipaiDisplay(_ size: CGFloat) -> Font {
         .custom("CQW-Akabara", size: size)
     }
-    /// 仕事メモ書き：中文小标题
+    /// 中文小标题。原本给仕事メモ書き，0828 发现它一堆字有映射但字形是空白的
+    /// （炸/桌/麼/閒…直接消失），退役改用 Tanugo——它是三款里唯一零空字形的。
     static func qipaiMemo(_ size: CGFloat) -> Font {
-        .custom("ShigotoMemogaki", size: size)
+        .custom("Tanugo-S-TTF-Regular", size: size)
     }
 }
 

@@ -466,7 +466,7 @@ struct QipaiCardFace: View {
             .fill(LinearGradient(colors: [.white.opacity(0.55), .clear],
                                  startPoint: .top, endPoint: .center))
             .allowsHitTesting(false))
-        .shadow(color: QipaiPalette.ink.opacity(0.14), radius: 2.5, y: 1.5)
+        .shadow(color: QipaiPalette.shadowTint.opacity(0.14), radius: 2.5, y: 1.5)
     }
 }
 
@@ -490,6 +490,6 @@ struct QipaiCardBack: View {
         .frame(width: width, height: width * 1.38)
         .overlay(RoundedRectangle(cornerRadius: width * 0.14, style: .continuous)
             .stroke(QipaiPalette.line, lineWidth: 1))
-        .shadow(color: QipaiPalette.ink.opacity(0.14), radius: 2.5, y: 1.5)
+        .shadow(color: QipaiPalette.shadowTint.opacity(0.14), radius: 2.5, y: 1.5)
     }
 }
