@@ -50,10 +50,10 @@ struct QipaiTableShell<GameV: Decodable, Content: View, Help: View>: View {
     private var background: some View {
         ZStack {
             QipaiPalette.fog.ignoresSafeArea()
-            Image("QipaiWallPortrait2")
+            Image(QipaiPalette.night ? "QipaiWallNight" : "QipaiWallPortrait2")
                 .resizable().scaledToFill().ignoresSafeArea()
-                .opacity(QipaiPalette.night ? 0.18 : 0.45)
-            QipaiPalette.fog.opacity(QipaiPalette.night ? 0.72 : 0.55).ignoresSafeArea()
+                .opacity(QipaiPalette.night ? 0.5 : 0.45)
+            QipaiPalette.fog.opacity(QipaiPalette.night ? 0.45 : 0.55).ignoresSafeArea()
             QipaiDots(spacing: 18, radius: 1.2, opacity: 0.16).ignoresSafeArea()
         }
     }

@@ -88,15 +88,12 @@ struct QipaiLobbyView: View {
 
     private var background: some View {
         // 她 0828 拍板：壁纸用干净不带线条那张原图，不加噪点不加雾。
-        // 夜版壁纸她还在挑，到位前先把日版压暗顶着。
+        // 夜版壁纸是她自己调暗的那张（带小爱心的）。
         ZStack {
             QipaiPalette.fog.ignoresSafeArea()
-            Image("QipaiWallPortrait2")
+            Image(night ? "QipaiWallNight" : "QipaiWallPortrait2")
                 .resizable().scaledToFill()
                 .ignoresSafeArea()
-            if night {
-                Color.black.opacity(0.62).ignoresSafeArea()
-            }
         }
     }
 
@@ -174,6 +171,10 @@ struct QipaiLobbyView: View {
                 .frame(width: 74, height: 74)
                 .saturation(dimmed ? 0.4 : 1)
                 .opacity(dimmed ? 0.55 : 1)
+                // 夜里把日版图标压暗顶着（她给的夜版图标是备用款那五个，
+                // 游戏槽位的夜版还没定，见 0828 待她拍板）
+                .brightness(QipaiPalette.night ? -0.16 : 0)
+                .saturation(QipaiPalette.night ? 0.82 : 1)
                 Text(name)
                     .font(.qipaiMemo(14))
                     .foregroundColor(QipaiPalette.ink)
