@@ -34,8 +34,10 @@ enum QipaiTexture {
         for i in 0..<(side * side) {
             seed = seed &* 6364136223846793005 &+ 1442695040888963407
             let r = UInt8((seed >> 33) & 0xFF)
-            pixels[i * 2] = r > 128 ? 255 : 0          // 亮点或暗点
-            pixels[i * 2 + 1] = UInt8((seed >> 41) % 22) // 都很淡
+            let a = UInt8((seed >> 41) % 22)             // 都很淡
+            // 预乘格式：颜色分量不能超过 alpha，超了会渲成一屏爆白雪花（0828 踩过）
+            pixels[i * 2] = r > 128 ? a : 0              // 亮点或暗点
+            pixels[i * 2 + 1] = a
         }
         let ctx = CGContext(data: &pixels, width: side, height: side,
                             bitsPerComponent: 8, bytesPerRow: side * 2,

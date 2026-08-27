@@ -64,7 +64,6 @@ struct QipaiDdzTableView: View {
             QipaiPalette.fog.opacity(0.55).ignoresSafeArea()
             QipaiDots(spacing: 18, radius: 1.2, opacity: 0.16).ignoresSafeArea()
         }
-        .qipaiGrain(0.5)
     }
 
     private var topBar: some View {
@@ -608,7 +607,6 @@ struct QipaiDdzTableView: View {
                 .padding(.bottom, 14)
             }
         }
-        .qipaiGrain(0.4)
         .presentationDetents([.medium, .large])
     }
 
@@ -637,7 +635,6 @@ struct QipaiDdzTableView: View {
                 .padding(20)
             }
         }
-        .qipaiGrain(0.4)
         .presentationDetents([.medium])
     }
 }

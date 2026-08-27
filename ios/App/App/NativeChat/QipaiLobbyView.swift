@@ -5,6 +5,7 @@ import UIKit
 // 牌桌页是第 2 期，现在进房先给施工占位页。
 
 struct QipaiLobbyView: View {
+    @Environment(\.dismiss) private var dismiss
     @State private var games: [QipaiAPI.GameInfo] = []
     @State private var rooms: [QipaiAPI.RoomSummary] = []
     @State private var loading = true
@@ -25,6 +26,13 @@ struct QipaiLobbyView: View {
         ("monopoly", "大富翁", "QipaiIconCity"),
     ]
 
+    /// 全屏页自己管安全区（灵动岛 0828 她抓的）——容器不给垫，从窗口拿
+    private var safeTop: CGFloat {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        let inset = scenes.flatMap(\.windows).first(where: { $0.isKeyWindow })?.safeAreaInsets.top ?? 0
+        return max(inset, 14)
+    }
+
     var body: some View {
         ZStack {
             background
@@ -37,7 +45,7 @@ struct QipaiLobbyView: View {
                         .padding(.bottom, 26)
                 }
                 .padding(.horizontal, 16)
-                .padding(.top, 14)
+                .padding(.top, safeTop + 6)
             }
             .refreshable { await reload() }
         }
@@ -70,45 +78,43 @@ struct QipaiLobbyView: View {
     // MARK: 背景
 
     private var background: some View {
+        // 她 0828 拍板：壁纸用干净不带线条那张原图，不加噪点不加雾
         ZStack {
             QipaiPalette.fog.ignoresSafeArea()
-            Image("QipaiWallPortrait1")
+            Image("QipaiWallPortrait2")
                 .resizable().scaledToFill()
                 .ignoresSafeArea()
-                .opacity(0.9)
-            // 雾面：压对比，古早的那种"不太清晰"
-            QipaiPalette.fog.opacity(0.42).ignoresSafeArea()
-            QipaiDots(spacing: 17, radius: 1.3, opacity: 0.18).ignoresSafeArea()
         }
-        .qipaiGrain(0.5)
     }
 
-    // MARK: 题头
+    // MARK: 题头（居中古早宋体 + 天使翅膀）
 
     private var header: some View {
-        VStack(spacing: 10) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("棋牌室")
-                    .font(.system(size: 26, weight: .bold, design: .serif))
-                    .foregroundColor(QipaiPalette.ink)
-                Text("MOON DEN")
-                    .font(.system(size: 9, weight: .semibold, design: .monospaced))
-                    .tracking(1.8)
-                    .foregroundColor(QipaiPalette.inkDim)
-                Spacer()
-                QipaiWhisper(text: "24/7 · 營業中")
-            }
-            Image("QipaiBanner1")
-                .resizable().scaledToFill()
-                .frame(height: 96)
-                .clipped()
-                .overlay(alignment: .bottomTrailing) {
-                    QipaiWhisper(text: "告別煩惱、飢餓、痛苦?#@%")
-                        .padding(7)
-                        .background(.white.opacity(0.55), in: Capsule())
-                        .padding(6)
+        VStack(spacing: 8) {
+            ZStack {
+                VStack(spacing: 3) {
+                    Text("棋牌室")
+                        .font(.custom("Songti SC", size: 30).weight(.black))
+                        .foregroundColor(QipaiPalette.ink)
+                    Text("M O O N   D E N")
+                        .font(.system(size: 8.5, weight: .semibold, design: .monospaced))
+                        .tracking(2)
+                        .foregroundColor(QipaiPalette.inkDim)
                 }
-                .qipaiPanel(corner: 16)
+                .frame(maxWidth: .infinity)
+                HStack {
+                    Button { dismiss() } label: {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 13, weight: .semibold))
+                    }
+                    .buttonStyle(QipaiEmbossedButtonStyle())
+                    Spacer()
+                }
+            }
+            Image("QipaiWings")
+                .resizable().scaledToFit()
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 18)
         }
     }
 
@@ -363,7 +369,6 @@ struct QipaiCreateRoomSheet: View {
                 .padding(16)
             }
         }
-        .qipaiGrain(0.4)
         .onAppear {
             for rule in game.ruleMeta {
                 if rule.def.isFlag { flagRules[rule.key] = rule.def.boolValue }
@@ -384,9 +389,10 @@ struct QipaiCreateRoomSheet: View {
                 .foregroundColor(QipaiPalette.ink)
                 .padding(.horizontal, 13).padding(.vertical, 11)
                 .background(RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(.white.opacity(0.9)))
+                    .fill(.white))
+                // 白底白框看不清（0828 她抓的），描边加深
                 .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(QipaiPalette.line, lineWidth: 1))
+                    .stroke(QipaiPalette.inkDim.opacity(0.55), lineWidth: 1.2))
         }
     }
 
@@ -623,6 +629,5 @@ struct QipaiTableStubView: View {
             }
             .padding(.horizontal, 28)
         }
-        .qipaiGrain(0.45)
     }
 }
