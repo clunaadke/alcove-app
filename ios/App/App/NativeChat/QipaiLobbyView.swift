@@ -44,6 +44,9 @@ struct QipaiLobbyView: View {
                     QipaiWhisper(text: night ? "the den never sleeps." : "will you stay or leave?")
                         .padding(.bottom, 26)
                 }
+                // 内容宽度钉死在屏宽：0828 夜里整页被某个子视图撑宽横向溢出，
+                // UNO 图标和月亮按钮直接被挤出屏幕。宽度硬约束一了百了。
+                .frame(width: UIScreen.main.bounds.width - 32)
                 .padding(.horizontal, 16)
                 .padding(.top, safeTop + 6)
             }
@@ -134,8 +137,8 @@ struct QipaiLobbyView: View {
             }
             Image("QipaiWings")
                 .resizable().scaledToFit()
+                .frame(height: 128)          // 拼贴卡限高，別占半屏（0828 她嫌大）
                 .frame(maxWidth: .infinity)
-                .padding(.horizontal, 18)
         }
     }
 
