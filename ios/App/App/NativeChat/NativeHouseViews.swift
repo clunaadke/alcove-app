@@ -7545,6 +7545,49 @@ private struct ForgeRoundChoice: Identifiable {
     }
 }
 
+private struct ForgeDetailMessage: Identifiable {
+    let id = UUID()
+    let role: String
+    let text: String
+    init(_ raw: [String: Any]) { role = raw.string("role"); text = raw.string("text") }
+}
+
+private struct ForgeDetailThought: Identifiable {
+    let id: String
+    let text: String
+    let tokens: Int
+    init(_ raw: [String: Any]) { id = raw.string("id"); text = raw.string("text"); tokens = raw.int("tokens") }
+}
+
+private struct ForgeDetailTool: Identifiable {
+    let id: String
+    let name: String
+    let input: String
+    let result: String
+    init(_ raw: [String: Any]) {
+        id = raw.string("id"); name = raw.string("name"); result = raw.string("result")
+        if let value = raw["input"], JSONSerialization.isValidJSONObject(value),
+           let data = try? JSONSerialization.data(withJSONObject: value, options: [.prettyPrinted]),
+           let string = String(data: data, encoding: .utf8) { input = string }
+        else { input = "" }
+    }
+}
+
+private struct ForgeRoundDetail: Identifiable {
+    let idx: Int
+    let ts: String
+    let messages: [ForgeDetailMessage]
+    let thoughts: [ForgeDetailThought]
+    let tools: [ForgeDetailTool]
+    var id: Int { idx }
+    init(_ raw: [String: Any]) {
+        idx = raw.int("idx"); ts = raw.string("ts")
+        messages = (raw["messages"] as? [[String: Any]] ?? []).map(ForgeDetailMessage.init)
+        thoughts = (raw["thoughts"] as? [[String: Any]] ?? []).map(ForgeDetailThought.init)
+        tools = (raw["tools"] as? [[String: Any]] ?? []).map(ForgeDetailTool.init)
+    }
+}
+
 private struct NativeForgeView: View {
     private enum ForgeMode: String, CaseIterable {
         case latest = "默认保留"
@@ -7556,6 +7599,11 @@ private struct NativeForgeView: View {
     @State private var mode: ForgeMode = .latest
     @State private var rounds: [ForgeRoundChoice] = []
     @State private var selectedRounds: Set<Int> = []
+    @State private var selectedThoughts: Set<String> = []
+    @State private var thoughtTokens: [String: Int] = [:]
+    @State private var toolDemoRounds: Set<Int> = []
+    @State private var roundDetail: ForgeRoundDetail?
+    @State private var loadingDetailRound: Int?
     @State private var pickPreview: [String: Any] = [:]
     @State private var showSystemRounds = false
     @State private var loadingRounds = false
@@ -7578,6 +7626,9 @@ private struct NativeForgeView: View {
         showSystemRounds ? rounds : rounds.filter { $0.kind == "user" }
     }
     private var systemRoundCount: Int { rounds.filter { $0.kind == "system" }.count }
+    private var selectedThoughtTokenCount: Int {
+        selectedThoughts.reduce(0) { $0 + (thoughtTokens[$1] ?? 0) }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -7763,6 +7814,18 @@ private struct NativeForgeView: View {
         } message: {
             Text("只会把亮起的完整轮次搬进新窗口；断口与时间注记由 Forge 自动补齐。")
         }
+        .sheet(item: $roundDetail) { detail in
+            ForgeRoundDetailSheet(
+                detail: detail, theme: theme,
+                conversationSelected: selectedRounds.contains(detail.idx),
+                selectedThoughts: selectedThoughts,
+                toolDemoSelected: toolDemoRounds.contains(detail.idx),
+                onToggleConversation: { toggleRound(detail.idx) },
+                onToggleThought: { toggleThought($0, round: detail.idx) },
+                onToggleToolDemo: { toggleToolDemo(detail.idx) })
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
+        }
     }
 
     private var pickerPanel: some View {
@@ -7772,10 +7835,18 @@ private struct NativeForgeView: View {
                     Text("按完整轮次挑选").font(.system(size: 13, weight: .semibold))
                     Text("已选 \(selectedRounds.count) 轮 · 显示 \(visibleRounds.count) 轮")
                         .font(.system(size: 10)).foregroundColor(theme.textDim)
+                    if !selectedThoughts.isEmpty || !toolDemoRounds.isEmpty {
+                        Text("精选思绪 \(selectedThoughts.count) 段 · 约 \(selectedThoughtTokenCount) token · 工具示范 \(toolDemoRounds.count) 轮")
+                            .font(.system(size: 9))
+                            .foregroundColor(selectedThoughtTokenCount > 2000 ? .orange : theme.fyAccent)
+                    }
                 }
                 Spacer()
                 if !selectedRounds.isEmpty {
-                    Button("清空") { selectedRounds.removeAll(); pickPreview = [:] }
+                    Button("清空") {
+                        selectedRounds.removeAll(); selectedThoughts.removeAll()
+                        thoughtTokens.removeAll(); toolDemoRounds.removeAll(); pickPreview = [:]
+                    }
                         .font(.system(size: 11)).buttonStyle(.plain).foregroundColor(theme.fyAccent)
                 }
             }
@@ -7839,8 +7910,13 @@ private struct NativeForgeView: View {
                                         lineWidth: 0.8))
                         }
                         .buttonStyle(.plain)
+                        .onLongPressGesture(minimumDuration: 0.45) {
+                            Task { await loadRoundDetail(round.idx) }
+                        }
                     }
                 }
+                Text("长按任意一轮查看完整对话、手写思绪和工具痕迹")
+                    .font(.system(size: 9)).foregroundColor(theme.textDim)
             }
 
             Button { Task { await previewPickedRounds() } } label: {
@@ -7870,9 +7946,38 @@ private struct NativeForgeView: View {
     }
 
     private func toggleRound(_ idx: Int) {
-        if selectedRounds.contains(idx) { selectedRounds.remove(idx) }
-        else { selectedRounds.insert(idx) }
+        if selectedRounds.contains(idx) {
+            selectedRounds.remove(idx)
+            selectedThoughts = Set(selectedThoughts.filter { !$0.hasPrefix("\(idx):") })
+            toolDemoRounds.remove(idx)
+        } else { selectedRounds.insert(idx) }
         pickPreview = [:]
+    }
+
+    private func toggleThought(_ id: String, round idx: Int) {
+        if selectedThoughts.contains(id) { selectedThoughts.remove(id) }
+        else { selectedThoughts.insert(id); selectedRounds.insert(idx) }
+        pickPreview = [:]
+    }
+
+    private func toggleToolDemo(_ idx: Int) {
+        if toolDemoRounds.contains(idx) { toolDemoRounds.remove(idx) }
+        else { toolDemoRounds.insert(idx); selectedRounds.insert(idx) }
+        pickPreview = [:]
+    }
+
+    private func loadRoundDetail(_ idx: Int) async {
+        guard loadingDetailRound == nil else { return }
+        loadingDetailRound = idx
+        defer { loadingDetailRound = nil }
+        do {
+            let object = try await NativeHouseAPI.object("/api/forge/round?idx=\(idx)")
+            let detail = ForgeRoundDetail(object)
+            for thought in detail.thoughts { thoughtTokens[thought.id] = thought.tokens }
+            roundDetail = detail
+        } catch {
+            result = "这一轮详情没有读出来"
+        }
     }
 
     private func loadRounds() async {
@@ -7894,7 +7999,8 @@ private struct NativeForgeView: View {
         do {
             pickPreview = try await NativeHouseAPI.object(
                 "/api/forge", method: "POST",
-                body: ["pick": selectedRounds.sorted(), "preview": true])
+                body: ["pick": selectedRounds.sorted(), "thoughts": selectedThoughts.sorted(),
+                       "tool_rounds": toolDemoRounds.sorted(), "preview": true])
             result = (pickPreview["valid"] as? Bool) == true
                 ? nil : (pickPreview["validation_message"] as? String ?? "所选轮次未通过校验")
         } catch {
@@ -7925,10 +8031,16 @@ private struct NativeForgeView: View {
             if let n = report["shixu_stripped_blocks"] as? Int, n > 0 {
                 reportRow("剥离思绪", "\(n) 块（约 \((report["shixu_stripped_chars"] as? Int) ?? 0) 字，你那边存档不动）")
             }
+            if let n = report["selected_thoughts_kept"] as? Int, n > 0 {
+                reportRow("精选思绪", "\(n) 段由你亲手带进新窗口")
+            }
             if let tb = report["tool_blocks_compressed"] as? Int {
                 let kept = (report["tool_blocks_kept"] as? Int) ?? 0
                 let tc = ((report["tool_chars_compressed"] as? Int) ?? 0) / 1000
                 reportRow("工具痕迹", "\(tb) 块（约\(tc)K字）压成占位行，留 \(kept) 块真范本")
+            }
+            if let n = report["tool_demo_rounds"] as? Int, n > 0 {
+                reportRow("工具示范", "\(n) 轮真实调用结构")
             }
             if let h = report["handoff"] as? [String: Any] {
                 if (h["included"] as? Bool) == true {
@@ -7986,7 +8098,8 @@ private struct NativeForgeView: View {
         defer { forging = false }
         do {
             let body: [String: Any] = mode == .picker
-                ? ["pick": selectedRounds.sorted()]
+                ? ["pick": selectedRounds.sorted(), "thoughts": selectedThoughts.sorted(),
+                   "tool_rounds": toolDemoRounds.sorted()]
                 : ["retain": Int(retain)]
             let obj = try await NativeHouseAPI.object(
                 "/api/forge", method: "POST", body: body)
@@ -8007,6 +8120,143 @@ private struct NativeForgeView: View {
             Text(label).font(.system(size: 10)).foregroundColor(theme.textDim)
             Text(value).font(.system(size: 12, weight: .medium))
         }
+    }
+}
+
+private struct ForgeRoundDetailSheet: View {
+    let detail: ForgeRoundDetail
+    let theme: AlcoveTheme
+    let conversationSelected: Bool
+    let selectedThoughts: Set<String>
+    let toolDemoSelected: Bool
+    let onToggleConversation: () -> Void
+    let onToggleThought: (String) -> Void
+    let onToggleToolDemo: () -> Void
+    @State private var thoughtsOpen = false
+    @State private var toolsOpen = false
+
+    private var selectedThoughtTokenCount: Int {
+        detail.thoughts.filter { selectedThoughts.contains($0.id) }.reduce(0) { $0 + $1.tokens }
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 14) {
+                    ForEach(detail.messages) { message in
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text(message.role == "chenji" ? "陈霁" : "陈璟")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundColor(message.role == "chenji" ? theme.fyAccent : theme.textDim)
+                            Text(message.text)
+                                .font(.system(size: 14, design: .serif))
+                                .lineSpacing(4)
+                                .textSelection(.enabled)
+                        }
+                        .padding(13)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(message.role == "chenji" ? theme.fyAccentSoft : theme.fyCard,
+                                    in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous)
+                            .stroke(theme.fyBorder, lineWidth: 0.7))
+                    }
+
+                    if !detail.thoughts.isEmpty {
+                        DisclosureGroup(isExpanded: $thoughtsOpen) {
+                            VStack(spacing: 8) {
+                                ForEach(detail.thoughts) { thought in
+                                    Button { onToggleThought(thought.id) } label: {
+                                        HStack(alignment: .top, spacing: 9) {
+                                            Image(systemName: selectedThoughts.contains(thought.id)
+                                                  ? "checkmark.circle.fill" : "circle")
+                                                .font(.system(size: 16)).foregroundColor(theme.fyAccent)
+                                            VStack(alignment: .leading, spacing: 4) {
+                                                Text(thought.text)
+                                                    .font(.system(size: 12, design: .serif))
+                                                    .lineSpacing(3)
+                                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                                Text("约 \(thought.tokens) token")
+                                                    .font(.system(size: 9)).foregroundColor(theme.textDim)
+                                            }
+                                        }
+                                        .padding(10)
+                                        .background(selectedThoughts.contains(thought.id)
+                                                    ? theme.fyAccentSoft : theme.fyCardSub,
+                                                    in: RoundedRectangle(cornerRadius: 10))
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }.padding(.top, 8)
+                        } label: {
+                            HStack {
+                                Text("手写思绪 · \(detail.thoughts.count)")
+                                Spacer()
+                                if selectedThoughtTokenCount > 0 {
+                                    Text("已选约 \(selectedThoughtTokenCount) token")
+                                        .font(.system(size: 9)).foregroundColor(theme.fyAccent)
+                                }
+                            }
+                            .font(.system(size: 12, weight: .semibold))
+                        }
+                        .padding(13).foyerCard(theme)
+                    }
+
+                    if !detail.tools.isEmpty {
+                        DisclosureGroup(isExpanded: $toolsOpen) {
+                            VStack(spacing: 9) {
+                                ForEach(detail.tools) { tool in
+                                    VStack(alignment: .leading, spacing: 5) {
+                                        Text(tool.name).font(.system(size: 11, weight: .semibold, design: .monospaced))
+                                            .foregroundColor(theme.fyAccent)
+                                        if !tool.input.isEmpty {
+                                            Text(tool.input).font(.system(size: 10, design: .monospaced))
+                                                .foregroundColor(theme.textDim).textSelection(.enabled)
+                                        }
+                                        if !tool.result.isEmpty {
+                                            Text(tool.result).font(.system(size: 10))
+                                                .foregroundColor(theme.textDim).lineLimit(8).textSelection(.enabled)
+                                        }
+                                    }
+                                    .padding(10).frame(maxWidth: .infinity, alignment: .leading)
+                                    .background(theme.fyCardSub, in: RoundedRectangle(cornerRadius: 10))
+                                }
+                            }.padding(.top, 8)
+                        } label: {
+                            Text("工具痕迹 · \(detail.tools.count)")
+                                .font(.system(size: 12, weight: .semibold))
+                        }
+                        .padding(13).foyerCard(theme)
+                    }
+
+                    VStack(spacing: 9) {
+                        detailToggle("带走这轮对话", selected: conversationSelected,
+                                     icon: "text.bubble", action: onToggleConversation)
+                        if !detail.tools.isEmpty {
+                            detailToggle("设为工具示范", selected: toolDemoSelected,
+                                         icon: "wrench.and.screwdriver", action: onToggleToolDemo)
+                        }
+                    }
+                }
+                .padding(.horizontal, 16).padding(.vertical, 14)
+            }
+            .background(theme.fyBg.ignoresSafeArea())
+            .navigationTitle("第 \(detail.idx) 轮 · \(detail.ts)")
+            .navigationBarTitleDisplayMode(.inline)
+        }
+    }
+
+    private func detailToggle(_ title: String, selected: Bool, icon: String,
+                              action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 9) {
+                Image(systemName: selected ? "checkmark.circle.fill" : icon)
+                Text(title).font(.system(size: 13, weight: .semibold))
+                Spacer()
+            }
+            .foregroundColor(selected ? theme.fyAccent : theme.text)
+            .padding(12).background(selected ? theme.fyAccentSoft : theme.fyCard,
+                                    in: RoundedRectangle(cornerRadius: 12))
+        }.buttonStyle(.plain)
     }
 }
 
