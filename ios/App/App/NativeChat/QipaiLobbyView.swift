@@ -1,7 +1,7 @@
 import SwiftUI
 import UIKit
 
-// 棋牌室大厅。古早味 6s：壁纸铺底 + 雾 + 噪点，拟物玻璃图标墙，白瓷房间卡。
+// 棋牌室大厅。古早味 6s：壁纸铺底 + 雾 + 噪点，拟物玻璃图标墙，白瓷房間卡。
 // 牌桌页是第 2 期，现在进房先给施工占位页。
 
 struct QipaiLobbyView: View {
@@ -54,7 +54,7 @@ struct QipaiLobbyView: View {
             QipaiCreateRoomSheet(game: game) { created in
                 createGame = nil
                 Task { await reload() }
-                // 等建房面板收完再开房间页，不然第二个 sheet 会被吃掉
+                // 等建房面板收完再开房間页，不然第二个 sheet 会被吃掉
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
                     if created.game == "ddz" {
                         tableRoute = QipaiTableRoute(code: created.code)
@@ -94,7 +94,7 @@ struct QipaiLobbyView: View {
             ZStack {
                 VStack(spacing: 3) {
                     Text("棋牌室")
-                        .font(.qipaiHand(34))
+                        .font(.qipaiDisplay(36))
                         .foregroundColor(QipaiPalette.ink)
                     Text("MOON DEN")
                         .font(.qipaiHand(11))
@@ -122,7 +122,7 @@ struct QipaiLobbyView: View {
 
     private var iconWall: some View {
         VStack(alignment: .leading, spacing: 10) {
-            sectionTitle("玩什么", note: "pick a table")
+            sectionTitle("玩什麼", note: "pick a table")
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 13), count: 3),
                       spacing: 15) {
                 ForEach(games) { game in
@@ -154,7 +154,7 @@ struct QipaiLobbyView: View {
                 .saturation(dimmed ? 0.4 : 1)
                 .opacity(dimmed ? 0.55 : 1)
                 Text(name)
-                    .font(.system(size: 12.5, weight: .semibold))
+                    .font(.qipaiMemo(14))
                     .foregroundColor(QipaiPalette.ink)
                 Text(caption)
                     .font(.system(size: 9.5))
@@ -165,12 +165,12 @@ struct QipaiLobbyView: View {
         .disabled(dimmed)
     }
 
-    // MARK: 房间列表
+    // MARK: 房間列表
 
     private var roomSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                sectionTitle("房间", note: "on the table")
+                sectionTitle("房間", note: "on the table")
                 Spacer()
                 Button {
                     Task { await reload() }
@@ -188,13 +188,13 @@ struct QipaiLobbyView: View {
             } else if let errorText {
                 VStack(spacing: 8) {
                     Text(errorText).font(.system(size: 12)).foregroundColor(QipaiPalette.red)
-                    Button("再试一次") { Task { await reload() } }
+                    Button("再試一次") { Task { await reload() } }
                         .buttonStyle(QipaiEmbossedButtonStyle())
                 }
                 .frame(maxWidth: .infinity).padding(.vertical, 18)
             } else if rooms.isEmpty {
                 VStack(spacing: 5) {
-                    Text("还没有房间").font(.system(size: 12.5)).foregroundColor(QipaiPalette.inkDim)
+                    Text("還沒有房間").font(.system(size: 12.5)).foregroundColor(QipaiPalette.inkDim)
                     QipaiWhisper(text: "there are no answers.")
                 }
                 .frame(maxWidth: .infinity).padding(.vertical, 22)
@@ -229,7 +229,7 @@ struct QipaiLobbyView: View {
                     Text("\(room.code) · \(room.playerCount)/\(room.maxPlayers) 人")
                         .font(.system(size: 11)).foregroundColor(QipaiPalette.inkDim)
                     if room.round > 0 {
-                        Text("第 \(room.round) 轮")
+                        Text("第 \(room.round) 輪")
                             .font(.system(size: 11)).foregroundColor(QipaiPalette.inkDim)
                     }
                     if room.hasAI { QipaiChip(text: "AI 在座", tone: .live, icon: "sparkles") }
@@ -255,7 +255,7 @@ struct QipaiLobbyView: View {
     private func sectionTitle(_ title: String, note: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 7) {
             Text(title)
-                .font(.system(size: 13.5, weight: .bold, design: .serif))
+                .font(.qipaiMemo(16))
                 .foregroundColor(QipaiPalette.ink)
             QipaiWhisper(text: note)
         }
@@ -278,7 +278,7 @@ struct QipaiLobbyView: View {
 
     @MainActor private func enter(_ room: QipaiAPI.RoomSummary) async {
         // 斗地主走原生牌桌；炸金花/UNO 还是占位页（第 3 期换）。
-        // 已结束的房不再入座，直接进去看战绩/占位；其余先把座占上（有旧凭证就是复座）。
+        // 已結束的房不再入座，直接进去看战绩/占位；其余先把座占上（有旧凭证就是复座）。
         if room.finished {
             if room.game == "ddz" { tableRoute = QipaiTableRoute(code: room.code) }
             else { openedRoom = room }
@@ -321,10 +321,10 @@ struct QipaiCreateRoomSheet: View {
     @State private var errorText: String?
 
     private let aiRoster: [(id: String, name: String, note: String)] = [
-        ("external", "工程师·本人档", "工作室那位，带记忆，出牌要等他几秒"),
-        ("opus", "分身·Opus", "话多，牌品未知"),
+        ("external", "工程師·真身", "工作室那位，帶記憶，出牌要等他幾秒"),
+        ("opus", "分身·Opus", "話多，牌品未知"),
         ("sonnet", "分身·Sonnet", "手快"),
-        ("haiku", "分身·Haiku", "省着用的小脑子"),
+        ("haiku", "分身·Haiku", "省著用的小腦子"),
     ]
 
     var body: some View {
@@ -334,8 +334,8 @@ struct QipaiCreateRoomSheet: View {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 14) {
                     HStack {
-                        Text("开个新房间 · \(game.name)")
-                            .font(.system(size: 17, weight: .bold, design: .serif))
+                        Text("開個新房間 · \(game.name)")
+                            .font(.qipaiMemo(19))
                             .foregroundColor(QipaiPalette.ink)
                         Spacer()
                         Button("先不了") { dismiss() }
@@ -344,10 +344,10 @@ struct QipaiCreateRoomSheet: View {
                     Text(game.playersLabel)
                         .font(.system(size: 11)).foregroundColor(QipaiPalette.inkDim)
 
-                    field("房间名") {
-                        TextField("比如「周五晚上别睡」", text: $roomName)
+                    field("房間名") {
+                        TextField("比如「週五晚上別睡」", text: $roomName)
                     }
-                    field("你的昵称") {
+                    field("你的暱稱") {
                         TextField("上桌用的名字", text: $nickname)
                     }
 
@@ -361,7 +361,7 @@ struct QipaiCreateRoomSheet: View {
                     if working {
                         ProgressView().frame(maxWidth: .infinity).padding(.vertical, 8)
                     } else {
-                        QipaiSlideControl(label: "slide to 开房") { Task { await create() } }
+                        QipaiSlideControl(label: "slide to 開房") { Task { await create() } }
                     }
                     QipaiWhisper(text: "no real money. only face.")
                         .frame(maxWidth: .infinity, alignment: .center)
@@ -405,7 +405,7 @@ struct QipaiCreateRoomSheet: View {
                     Image(systemName: "scroll")
                         .font(.system(size: 12)).foregroundColor(QipaiPalette.accent)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("可选规则").font(.system(size: 13.5, weight: .semibold))
+                        Text("可選規則").font(.qipaiMemo(15))
                             .foregroundColor(QipaiPalette.ink)
                         Text(rulesSummary).font(.system(size: 10.5))
                             .foregroundColor(QipaiPalette.inkDim)
@@ -465,7 +465,7 @@ struct QipaiCreateRoomSheet: View {
     private var rulesSummary: String {
         let on = game.ruleMeta.filter { $0.def.isFlag && (flagRules[$0.key] ?? false) }
             .map(\.label)
-        return on.isEmpty ? "全关（最朴素的打法）" : on.joined(separator: " · ")
+        return on.isEmpty ? "全關（最樸素的打法）" : on.joined(separator: " · ")
     }
 
     private func ruleText(_ rule: QipaiAPI.RuleMeta) -> some View {
@@ -487,7 +487,7 @@ struct QipaiCreateRoomSheet: View {
                     Image(systemName: "sparkles")
                         .font(.system(size: 12)).foregroundColor(QipaiPalette.accent)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("请谁上桌").font(.system(size: 13.5, weight: .semibold))
+                        Text("請誰上桌").font(.qipaiMemo(15))
                             .foregroundColor(QipaiPalette.ink)
                         Text(aiSummary).font(.system(size: 10.5))
                             .foregroundColor(QipaiPalette.inkDim)
@@ -522,7 +522,7 @@ struct QipaiCreateRoomSheet: View {
                         .padding(11)
                         .qipaiPanel(corner: 13)
                     }
-                    QipaiWhisper(text: "陈璟的本人档还没接，先别惦记。")
+                    QipaiWhisper(text: "陳璟的真身還沒接，急不得。")
                 }
                 .padding([.horizontal, .bottom], 11)
             }
@@ -532,12 +532,12 @@ struct QipaiCreateRoomSheet: View {
 
     private var aiSummary: String {
         let picked = aiRoster.filter { aiSeats[$0.id] ?? false }.map(\.name)
-        return picked.isEmpty ? "这局只有人类（也可以之后再喊）" : picked.joined(separator: " · ")
+        return picked.isEmpty ? "這局只有人類（也可以之後再喊）" : picked.joined(separator: " · ")
     }
 
     @MainActor private func create() async {
         let name = nickname.trimmingCharacters(in: .whitespaces)
-        guard !name.isEmpty else { errorText = "先起个上桌的名字"; return }
+        guard !name.isEmpty else { errorText = "先起個上桌的名字"; return }
         QipaiAPI.nickname = name
         working = true
         defer { working = false }
@@ -602,7 +602,7 @@ struct QipaiTableStubView: View {
                     QipaiChip(text: room.code, icon: "number")
                     QipaiChip(text: "\(room.playerCount)/\(room.maxPlayers) 人")
                 }
-                Text("你的座位已经占好了。\n原生牌桌正在第 2 期施工，这一局先用网页版打：")
+                Text("你的座位已經佔好了。\n原生牌桌正在第 2 期施工，這一局先用網頁版打：")
                     .font(.system(size: 12.5))
                     .foregroundColor(QipaiPalette.inkDim)
                     .multilineTextAlignment(.center)
@@ -616,13 +616,13 @@ struct QipaiTableStubView: View {
                         UIPasteboard.general.string = inviteLink
                         copied = true
                     } label: {
-                        Label(copied ? "邀请链接已复制" : "复制邀请链接",
+                        Label(copied ? "邀請連結已複製" : "複製邀請連結",
                               systemImage: copied ? "checkmark" : "link")
                     }
                     .buttonStyle(QipaiEmbossedButtonStyle(prominent: true))
                 }
                 Spacer()
-                Button("回大厅") { dismiss() }
+                Button("回大廳") { dismiss() }
                     .buttonStyle(QipaiEmbossedButtonStyle())
                 QipaiWhisper(text: "the table is being built. stay.")
                     .padding(.bottom, 18)

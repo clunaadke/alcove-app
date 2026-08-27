@@ -14,7 +14,7 @@ enum QipaiAPI {
         var errorDescription: String? {
             switch self {
             case .server(let msg): return msg
-            case .badResponse: return "棋牌室没应声，稍后再试"
+            case .badResponse: return "棋牌室沒應聲，稍後再試"
             }
         }
     }
@@ -87,7 +87,7 @@ enum QipaiAPI {
         var id: String { code }
 
         var hasAI: Bool { players.contains { $0.isAI } }
-        var statusLabel: String { finished ? "已结束" : (started ? "进行中" : "等人中") }
+        var statusLabel: String { finished ? "已結束" : (started ? "進行中" : "等人中") }
         /// 这台设备在这间房里有没有坐过
         var hasMySeat: Bool { QipaiAPI.storedToken(for: code) != nil }
     }
@@ -150,7 +150,7 @@ enum QipaiAPI {
         guard http.statusCode == 200,
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               obj["ok"] as? Bool == true else {
-            throw APIError.server("棋牌室开门失败（登录被拒）")
+            throw APIError.server("棋牌室開門失敗（登入被拒）")
         }
     }
 

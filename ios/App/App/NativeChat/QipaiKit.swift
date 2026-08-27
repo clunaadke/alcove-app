@@ -329,12 +329,22 @@ struct QipaiHalo: View {
     }
 }
 
-// MARK: 手写字体（たぬゴ，英文/数字/「棋牌室」三个字全覆盖；
-// 简体中文缺字多，中文标题等她再挑一款简体手写体，见 0828 缺字清单）
+// MARK: 手写字体三件套（都是日文字体，只有繁体字形——所以固定文案一律繁体，
+// 0828 陈霁拍板。服务器发来的动态字符串（房名/玩家名/规则名）是简体，
+// 一律走系统字体，不上这三款，免得缺字混排。）
 
 extension Font {
+    /// たぬゴ：英文小句、数字、slide 滑条
     static func qipaiHand(_ size: CGFloat) -> Font {
         .custom("Tanugo-S-TTF-Regular", size: size)
+    }
+    /// 赤薔薇シンデレラ：大字（标题、地主勝这类）
+    static func qipaiDisplay(_ size: CGFloat) -> Font {
+        .custom("CQW-Akabara", size: size)
+    }
+    /// 仕事メモ書き：中文小标题
+    static func qipaiMemo(_ size: CGFloat) -> Font {
+        .custom("ShigotoMemogaki", size: size)
     }
 }
 

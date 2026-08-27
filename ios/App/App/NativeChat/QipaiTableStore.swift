@@ -232,7 +232,7 @@ final class QipaiTableStore: ObservableObject {
     // MARK: 动作
 
     private func action(_ body: [String: Any]) async {
-        guard let token else { show("你没有座位（观战中）"); return }
+        guard let token else { show("你沒有座位（觀戰中）"); return }
         busy = true
         defer { busy = false }
         var payload = body
@@ -340,13 +340,13 @@ enum QipaiCard {
         return ids.sorted { power($0) == power($1) ? $0 < $1 : power($0) > power($1) }
     }
 
-    // 跟引擎 TYPE_LABEL 一字不差
+    // 键跟引擎 TYPE_LABEL 对齐，文案走繁体（0828 全场繁体化）
     static let comboLabels: [String: String] = [
-        "single": "单张", "pair": "对子", "triple": "三条",
-        "triple_one": "三带一", "triple_pair": "三带对",
-        "straight": "顺子", "pair_straight": "连对",
-        "plane": "飞机", "plane_one": "飞机带单", "plane_pair": "飞机带对",
-        "four_two_single": "四带二", "four_two_pair": "四带两对",
-        "bomb": "炸弹", "rocket": "王炸",
+        "single": "單張", "pair": "對子", "triple": "三條",
+        "triple_one": "三帶一", "triple_pair": "三帶對",
+        "straight": "順子", "pair_straight": "連對",
+        "plane": "飛機", "plane_one": "飛機帶單", "plane_pair": "飛機帶對",
+        "four_two_single": "四帶二", "four_two_pair": "四帶兩對",
+        "bomb": "炸彈", "rocket": "王炸",
     ]
 }

@@ -7,6 +7,8 @@
 	<key>UIAppFonts</key>
 	<array>
 		<string>Tanugo-R-TTF.ttf</string>
+		<string>ShigotoMemogaki.ttf</string>
+		<string>Akabara-Cinderella.ttf</string>
 	</array>
 	<key>CFBundleDisplayName</key>
 	<string>Alcove</string>
