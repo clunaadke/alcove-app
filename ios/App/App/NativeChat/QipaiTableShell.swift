@@ -51,8 +51,9 @@ struct QipaiTableShell<GameV: Decodable, Content: View, Help: View>: View {
         ZStack {
             QipaiPalette.fog.ignoresSafeArea()
             Image("QipaiWallPortrait2")
-                .resizable().scaledToFill().ignoresSafeArea().opacity(0.45)
-            QipaiPalette.fog.opacity(0.55).ignoresSafeArea()
+                .resizable().scaledToFill().ignoresSafeArea()
+                .opacity(QipaiPalette.night ? 0.18 : 0.45)
+            QipaiPalette.fog.opacity(QipaiPalette.night ? 0.72 : 0.55).ignoresSafeArea()
             QipaiDots(spacing: 18, radius: 1.2, opacity: 0.16).ignoresSafeArea()
         }
     }
@@ -162,7 +163,8 @@ struct QipaiTableShell<GameV: Decodable, Content: View, Help: View>: View {
                     .font(.system(size: 12, weight: .medium))
                     .foregroundColor(.white)
                     .padding(.horizontal, 16).padding(.vertical, 9)
-                    .background(Capsule().fill(QipaiPalette.ink.opacity(0.92)))
+                    // 固定深底白字，日夜都成立（夜里 ink 是月白，不能当底色）
+                    .background(Capsule().fill(QipaiPalette.qhex(0x2A2F38).opacity(0.94)))
                     .padding(.bottom, 130)
             }
             .transition(.opacity)

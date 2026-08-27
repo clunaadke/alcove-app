@@ -6,16 +6,30 @@ import UIKit
 // 棋牌室是自成一体的房间，不跟 AlcoveTheme 联动——她要的就是整间屋子一个味道。
 
 enum QipaiPalette {
-    static let fog       = qhex(0xECEDF2)   // 底色·雾
-    static let panel     = qhex(0xF7F8FB)   // 面板·白瓷
-    static let panelDeep = qhex(0xE4E6ED)   // 面板按下/凹陷
-    static let ink       = qhex(0x585F6E)   // 正文·低饱和石板
-    static let inkDim    = qhex(0x9AA0AD)   // 次要文字
-    static let line      = qhex(0xD5D9E2)   // 描边
-    static let dot       = qhex(0xC7CBD6)   // 波点
-    static let accent    = qhex(0x7C8AA6)   // 点缀·灰蓝
-    static let red       = qhex(0xC25B55)   // 压过饱和的红（红桃/警示）
-    static let glowRing  = qhex(0xAeB9D2)   // 光环
+    /// 日夜开关：她在大厅点日月按钮切，持久化在 UserDefaults。
+    /// 静态色全是计算属性，切换后靠大厅 .id(night) 整树重建生效；
+    /// 牌桌只能从大厅进，不存在中途换肤的半吊子状态。
+    static var night: Bool = UserDefaults.standard.bool(forKey: "qipai.night") {
+        didSet { UserDefaults.standard.set(night, forKey: "qipai.night") }
+    }
+    private static func pick(_ day: UInt32, _ dark: UInt32) -> Color { qhex(night ? dark : day) }
+
+    static var fog: Color       { pick(0xECEDF2, 0x20242E) }   // 底色·雾/夜
+    static var panel: Color     { pick(0xF7F8FB, 0x2A2F3A) }   // 面板·白瓷/夜瓷
+    static var panelDeep: Color { pick(0xE4E6ED, 0x222732) }   // 面板按下/凹陷
+    static var ink: Color       { pick(0x585F6E, 0xD8DCE6) }   // 正文·石板/月白
+    static var inkDim: Color    { pick(0x9AA0AD, 0x8A92A3) }   // 次要文字
+    static var line: Color      { pick(0xD5D9E2, 0x3D4452) }   // 描边
+    static var dot: Color       { pick(0xC7CBD6, 0x394050) }   // 波点
+    static var accent: Color    { pick(0x7C8AA6, 0x93A5C8) }   // 点缀·灰蓝
+    static var red: Color       { pick(0xC25B55, 0xD0736C) }   // 压过饱和的红
+    static var glowRing: Color  { pick(0xAEB9D2, 0xBCC9E5) }   // 光环
+
+    // 组件里不好直接用主 token 的几处
+    static var glossOpacity: Double { night ? 0.12 : 0.6 }              // 面板顶部高光
+    static var chipBg: Color { night ? qhex(0x333A48).opacity(0.9) : .white.opacity(0.75) }
+    static var buttonTop: Color { night ? qhex(0x3A4150) : .white }     // 凸起按钮亮面
+    static var trackLight: Color { pick(0xEFF1F6, 0x2E3440) }           // 滑条轨道亮端
 
     static func qhex(_ v: UInt32) -> Color {
         Color(red: Double((v >> 16) & 0xFF) / 255,
@@ -107,7 +121,7 @@ struct QipaiPanelModifier: ViewModifier {
                         .fill(LinearGradient(colors: [.white.opacity(0.85), .white.opacity(0)],
                                              startPoint: .top, endPoint: .center))
                         .padding(1)
-                        .opacity(0.6)
+                        .opacity(QipaiPalette.glossOpacity)
                 }
             )
             .overlay(RoundedRectangle(cornerRadius: corner, style: .continuous)
@@ -174,7 +188,7 @@ struct QipaiEmbossedButtonStyle: ButtonStyle {
                                      startPoint: .top, endPoint: .bottom)
                     : LinearGradient(colors: pressed
                                      ? [QipaiPalette.panelDeep, QipaiPalette.panel]
-                                     : [.white, QipaiPalette.panelDeep],
+                                     : [QipaiPalette.buttonTop, QipaiPalette.panelDeep],
                                      startPoint: .top, endPoint: .bottom)
                 )
             )
@@ -213,7 +227,7 @@ struct QipaiChip: View {
         }
         .foregroundColor(fg)
         .padding(.horizontal, 8).padding(.vertical, 3.5)
-        .background(Capsule().fill(.white.opacity(0.75)))
+        .background(Capsule().fill(QipaiPalette.chipBg))
         .overlay(Capsule().stroke(fg.opacity(0.45), lineWidth: 0.8))
     }
 }
@@ -236,7 +250,7 @@ struct QipaiSlideControl: View {
             ZStack {
                 // 凹槽轨道
                 RoundedRectangle(cornerRadius: height / 2, style: .continuous)
-                    .fill(LinearGradient(colors: [QipaiPalette.panelDeep, QipaiPalette.qhex(0xEFF1F6)],
+                    .fill(LinearGradient(colors: [QipaiPalette.panelDeep, QipaiPalette.trackLight],
                                          startPoint: .top, endPoint: .bottom))
                     .overlay(RoundedRectangle(cornerRadius: height / 2)
                         .stroke(QipaiPalette.line, lineWidth: 1))

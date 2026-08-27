@@ -344,7 +344,7 @@ struct QipaiZjhTableView: View {
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(QipaiPalette.ink.opacity(0.25).ignoresSafeArea())
+        .background(Color.black.opacity(0.32).ignoresSafeArea())
     }
 
     // MARK: 玩法说明

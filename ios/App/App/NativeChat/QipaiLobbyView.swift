@@ -6,6 +6,7 @@ import UIKit
 
 struct QipaiLobbyView: View {
     @Environment(\.dismiss) private var dismiss
+    @AppStorage("qipai.night") private var night = false
     @State private var games: [QipaiAPI.GameInfo] = []
     @State private var rooms: [QipaiAPI.RoomSummary] = []
     @State private var loading = true
@@ -40,7 +41,7 @@ struct QipaiLobbyView: View {
                     header
                     iconWall
                     roomSection
-                    QipaiWhisper(text: "will you stay or leave?")
+                    QipaiWhisper(text: night ? "the den never sleeps." : "will you stay or leave?")
                         .padding(.bottom, 26)
                 }
                 .padding(.horizontal, 16)
@@ -48,6 +49,9 @@ struct QipaiLobbyView: View {
             }
             .refreshable { await reload() }
         }
+        // 调色盘是静态计算属性，切日夜靠整树重建（牌桌只能从这里进，不会中途换肤）
+        .id(night)
+        .onAppear { QipaiPalette.night = night }
         .task { await reload() }
         .sheet(item: $createGame) { game in
             QipaiCreateRoomSheet(game: game) { created in
@@ -83,12 +87,16 @@ struct QipaiLobbyView: View {
     // MARK: 背景
 
     private var background: some View {
-        // 她 0828 拍板：壁纸用干净不带线条那张原图，不加噪点不加雾
+        // 她 0828 拍板：壁纸用干净不带线条那张原图，不加噪点不加雾。
+        // 夜版壁纸她还在挑，到位前先把日版压暗顶着。
         ZStack {
             QipaiPalette.fog.ignoresSafeArea()
             Image("QipaiWallPortrait2")
                 .resizable().scaledToFill()
                 .ignoresSafeArea()
+            if night {
+                Color.black.opacity(0.62).ignoresSafeArea()
+            }
         }
     }
 
@@ -114,6 +122,14 @@ struct QipaiLobbyView: View {
                     }
                     .buttonStyle(QipaiEmbossedButtonStyle())
                     Spacer()
+                    Button {
+                        night.toggle()
+                        QipaiPalette.night = night
+                    } label: {
+                        Image(systemName: night ? "moon.stars.fill" : "sun.max")
+                            .font(.system(size: 13, weight: .semibold))
+                    }
+                    .buttonStyle(QipaiEmbossedButtonStyle())
                 }
             }
             Image("QipaiWings")
