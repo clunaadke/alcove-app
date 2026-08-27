@@ -1222,7 +1222,7 @@ private struct NativeSettingsView: View {
                 if page == .people { section("拍一拍") {
                     settingRow("我的后缀",
                                patHerSuffix.isEmpty ? "他拍你时显示：\"\(assistantName)\" 拍了拍我"
-                                                    : "\"\(assistantName)\" 拍了拍我的\(patHerSuffix)") {
+                                                    : "\"\(assistantName)\" 拍了拍我\(patHerSuffix)") {
                         TextField("小兔耳朵", text: $patHerSuffix)
                             .multilineTextAlignment(.trailing).frame(width: 105)
                             .onChange(of: patHerSuffix) { _ in schedulePatSave() }
@@ -1230,7 +1230,7 @@ private struct NativeSettingsView: View {
                     Divider().opacity(0.25)
                     settingRow("\(assistantName) 的后缀",
                                patHimSuffix.isEmpty ? "你拍他时显示：我拍了拍 \"\(assistantName)\""
-                                                    : "我拍了拍 \"\(assistantName)\" 的\(patHimSuffix)") {
+                                                    : "我拍了拍 \"\(assistantName)\"\(patHimSuffix)") {
                         TextField("良心", text: $patHimSuffix)
                             .multilineTextAlignment(.trailing).frame(width: 105)
                             .onChange(of: patHimSuffix) { _ in schedulePatSave() }
