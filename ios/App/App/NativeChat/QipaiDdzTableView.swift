@@ -41,8 +41,7 @@ struct QipaiDdzTableView: View {
         VStack(spacing: 8) {
             opponentsRow(view)
             centerBoard(view)
-            logStrip(view)
-            Spacer(minLength: 4)
+            QipaiFeedStrip(store: store)
             handArea(view)
         }
         .padding(.horizontal, 12)
@@ -83,7 +82,7 @@ struct QipaiDdzTableView: View {
                 Text("\(p.handCount)")
                     .font(.system(size: 17, weight: .bold, design: .monospaced))
                     .foregroundColor(QipaiPalette.ink)
-                Text("張").font(.system(size: 9.5)).foregroundColor(QipaiPalette.inkDim)
+                Text("张").font(.system(size: 9.5)).foregroundColor(QipaiPalette.inkDim)
                 roleBadge(p, view: view)
             }
             Text(statusLine(p, view: view))
@@ -98,7 +97,7 @@ struct QipaiDdzTableView: View {
 
     @ViewBuilder private func roleBadge(_ p: DdzPlayerView, view: DdzView) -> some View {
         if view.landlord != nil {
-            QipaiChip(text: p.isLandlord ? "地主" : "農民",
+            QipaiChip(text: p.isLandlord ? "地主" : "农民",
                       tone: p.isLandlord ? .red : .neutral)
         } else if let bid = p.bid {
             QipaiChip(text: bid == 0 ? "不叫" : "\(bid) 分", tone: .neutral)
@@ -110,7 +109,7 @@ struct QipaiDdzTableView: View {
             return view.current == p.id ? (p.isAI ? "思考中…" : "叫分中…") : " "
         }
         if view.current == p.id { return p.isAI ? "思考中…" : "出牌中…" }
-        if p.passed { return "過" }
+        if p.passed { return "过" }
         return " "
     }
 
@@ -147,7 +146,7 @@ struct QipaiDdzTableView: View {
                     Text("\(view.player(field.by)?.name ?? "?") 出的 · \(QipaiCard.comboLabels[field.combo.type] ?? field.combo.type)")
                         .font(.system(size: 10.5)).foregroundColor(QipaiPalette.inkDim)
                 } else if view.phase == "playing" {
-                    Text("場上空著，\(view.player(view.leader)?.name ?? "…") 領出")
+                    Text("场上空着，\(view.player(view.leader)?.name ?? "…") 领出")
                         .font(.system(size: 11.5)).foregroundColor(QipaiPalette.inkDim)
                         .padding(.vertical, 14)
                 }
@@ -162,7 +161,7 @@ struct QipaiDdzTableView: View {
         switch view.phase {
         case "bidding":
             VStack(spacing: 3) {
-                Text("叫分中 · 輪到 \(name(view.current, view))")
+                Text("叫分中 · 轮到 \(name(view.current, view))")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundColor(QipaiPalette.ink)
                 if !view.bids.isEmpty {
@@ -173,7 +172,7 @@ struct QipaiDdzTableView: View {
                 }
             }
         case "playing":
-            Text("輪到 \(name(view.current, view))\(view.current == view.you ? "（你）" : "")")
+            Text("轮到 \(name(view.current, view))\(view.current == view.you ? "（你）" : "")")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundColor(view.current == view.you ? QipaiPalette.red : QipaiPalette.ink)
         default:
@@ -187,34 +186,6 @@ struct QipaiDdzTableView: View {
 
     // MARK: 事件流
 
-    private func logStrip(_ view: DdzView) -> some View {
-        ScrollViewReader { proxy in
-            ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 3) {
-                    ForEach(view.log.suffix(30)) { entry in
-                        Text(entry.text)
-                            .font(.system(size: 10))
-                            .foregroundColor(entry.type == "bomb" || entry.type == "finish"
-                                             ? QipaiPalette.red : QipaiPalette.inkDim)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .id(entry.seq)
-                    }
-                }
-                .padding(8)
-            }
-            .frame(height: 74)
-            .qipaiPanel(corner: 13)
-            .onChange(of: view.log.count) { _ in
-                if let last = view.log.last {
-                    withAnimation { proxy.scrollTo(last.seq, anchor: .bottom) }
-                }
-            }
-            .onAppear {
-                if let last = view.log.last { proxy.scrollTo(last.seq, anchor: .bottom) }
-            }
-        }
-    }
-
     // MARK: 手牌与操作
 
     private func handArea(_ view: DdzView) -> some View {
@@ -222,11 +193,11 @@ struct QipaiDdzTableView: View {
             if let me = view.me {
                 HStack(spacing: 6) {
                     QipaiHalo(active: view.current == me.id)
-                    Text("你的手牌 \(me.handCount) 張")
+                    Text("你的手牌 \(me.handCount) 张")
                         .font(.system(size: 11.5, weight: .medium))
                         .foregroundColor(QipaiPalette.inkDim)
                     if view.landlord != nil {
-                        QipaiChip(text: me.isLandlord ? "地主" : "農民",
+                        QipaiChip(text: me.isLandlord ? "地主" : "农民",
                                   tone: me.isLandlord ? .red : .neutral,
                                   icon: me.isLandlord ? "crown" : nil)
                     }
@@ -239,7 +210,7 @@ struct QipaiDdzTableView: View {
                 handFan(me)
                 actionBar(view)
             } else {
-                QipaiWhisper(text: "觀戰中 · 誰的手牌都看不見")
+                Text("观战中 · 谁的手牌都看不见").font(.system(size: 11)).foregroundColor(QipaiPalette.inkDim)
                     .padding(.bottom, 20)
             }
         }
@@ -283,7 +254,7 @@ struct QipaiDdzTableView: View {
                     }
                 }
             } else {
-                QipaiWhisper(text: "等 \(name(view.current, view)) 叫分…")
+                Text("等 \(name(view.current, view)) 叫分…").font(.system(size: 11)).foregroundColor(QipaiPalette.inkDim)
             }
         case "playing":
             if mine {
@@ -300,7 +271,7 @@ struct QipaiDdzTableView: View {
                     .disabled(selected.isEmpty || store.busy)
                 }
             } else {
-                QipaiWhisper(text: "等 \(name(view.current, view)) 出牌…")
+                Text("等 \(name(view.current, view)) 出牌…").font(.system(size: 11)).foregroundColor(QipaiPalette.inkDim)
             }
         default:
             EmptyView()
@@ -330,7 +301,7 @@ struct QipaiDdzTableView: View {
                         .font(.qipaiDisplay(28))
                         .foregroundColor(QipaiPalette.ink)
                     if let winner = view.player(view.winner) {
-                        Text("\(winner.name) 是最後的大贏家")
+                        Text("\(winner.name) 是最后的大赢家")
                             .font(.system(size: 12)).foregroundColor(QipaiPalette.inkDim)
                     }
                 }
@@ -367,22 +338,22 @@ struct QipaiDdzTableView: View {
                 if view.phase == "round_over" {
                     HStack(spacing: 10) {
                         if store.mySeat != nil {
-                            Button("再來一局") { Task { await store.nextRound() } }
+                            Button("再来一局") { Task { await store.nextRound() } }
                                 .buttonStyle(QipaiEmbossedButtonStyle(prominent: true))
                                 .disabled(store.busy)
                         }
                         if store.isHost {
-                            Button("收盤") { Task { await store.endMatch() } }
+                            Button("收盘") { Task { await store.endMatch() } }
                                 .buttonStyle(QipaiEmbossedButtonStyle())
                                 .disabled(store.busy)
                         }
                     }
                 } else {
                     HStack(spacing: 10) {
-                        Button("回大廳") { onExit() }
+                        Button("回大厅") { onExit() }
                             .buttonStyle(QipaiEmbossedButtonStyle(prominent: true))
                         if store.isHost {
-                            Button("關房") {
+                            Button("关房") {
                                 Task { await store.closeRoom(); onExit() }
                             }
                             .buttonStyle(QipaiEmbossedButtonStyle())
@@ -407,11 +378,11 @@ struct QipaiDdzTableView: View {
             .font(.qipaiMemo(18))
             .foregroundColor(QipaiPalette.ink)
         Group {
-            Text("三個人，17×3 張牌加 3 張底牌。先叫分（1/2/3 分，也可以不叫），叫得最高的當地主、拿底牌，一打二。")
-            Text("牌型：單張、對子、三條（可帶一/帶對）、順子（5 張起）、連對（3 對起）、飛機（±翅膀）、四帶二、炸彈、王炸。2 不能進順子。")
-            Text("炸彈王炸砸一切，每響一次倍數 ×2。地主一張沒讓農民出叫春天，反過來叫反春，都再 ×2。")
-            Text("計分：底分 × 倍數。地主贏收兩家，輸賠兩家。")
-            Text("選牌點一下抬起來，再點放回去。出不了的牌伺服器會攔，放心亂試。")
+            Text("三个人，17×3 张牌加 3 张底牌。先叫分（1/2/3 分，也可以不叫），叫得最高的当地主、拿底牌，一打二。")
+            Text("牌型：单张、对子、三条（可带一/带对）、顺子（5 张起）、连对（3 对起）、飞机（±翅膀）、四带二、炸弹、王炸。2 不能进顺子。")
+            Text("炸弹王炸砸一切，每响一次倍数 ×2。地主一张没让农民出叫春天，反过来叫反春，都再 ×2。")
+            Text("计分：底分 × 倍数。地主赢收两家，输赔两家。")
+            Text("选牌点一下抬起来，再点放回去。出不了的牌服务器会拦，放心乱试。")
         }
         .font(.system(size: 12.5))
         .foregroundColor(QipaiPalette.ink.opacity(0.85))

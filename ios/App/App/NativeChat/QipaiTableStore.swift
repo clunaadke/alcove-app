@@ -159,10 +159,30 @@ private struct QipaiOKResponse: Decodable {
     let ok: Bool
 }
 
+/// 三个游戏视图的公共面：泛型 Store 靠它拿事件日志来拼信息流
+protocol QipaiGameView {
+    var log: [QipaiLogEntry] { get }
+}
+extension DdzView: QipaiGameView {}
+extension ZjhView: QipaiGameView {}
+extension UnoView: QipaiGameView {}
+
+/// 牌桌信息流：事件和聊天混排（0828 她要的：像参考图那样一条一条摆在牌桌上）
+enum QipaiFeedItem: Identifiable, Equatable {
+    case log(QipaiLogEntry)
+    case chat(QipaiChatMessage)
+    var id: String {
+        switch self {
+        case .log(let e): return "l\(e.seq)"
+        case .chat(let m): return "c\(m.ts)"
+        }
+    }
+}
+
 // MARK: - Store
 
 @MainActor
-final class QipaiTableStore<GameV: Decodable>: ObservableObject {
+final class QipaiTableStore<GameV: Decodable & QipaiGameView>: ObservableObject {
     let code: String
     private let token: String?
 
@@ -170,6 +190,9 @@ final class QipaiTableStore<GameV: Decodable>: ObservableObject {
     @Published var view: GameV?
     @Published var legal: [QipaiLegalMove] = []
     @Published var connected = false
+    @Published var feed: [QipaiFeedItem] = []
+    private var seenLogSeq = 0
+    private var seenChatTs: Double = 0
     @Published var toast: String?
     @Published var busy = false
 
@@ -195,11 +218,23 @@ final class QipaiTableStore<GameV: Decodable>: ObservableObject {
         sseTask = Task { [weak self] in
             guard let self else { return }
             while !Task.isCancelled {
+                // 双保险：先用普通 /state 拉一帧兜底（顺带把 inviteToken 带回来），
+                // 再挂 SSE 长连接；SSE 断线期间这个循环本身就是 3 秒一次的轮询。
+                await self.refreshOnce()
                 await self.listenOnce()
                 self.connected = false
                 if Task.isCancelled { break }
                 try? await Task.sleep(nanoseconds: 3_000_000_000)
             }
+        }
+    }
+
+    private func refreshOnce() async {
+        var query: [String: String] = [:]
+        if let token { query["token"] = token }
+        if let f: QipaiTableFrame<GameV> = try? await QipaiAPI.request(
+            "cards/api/rooms/\(code)/state", query: query) {
+            ingest(f)
         }
     }
 
@@ -240,15 +275,29 @@ final class QipaiTableStore<GameV: Decodable>: ObservableObject {
     private func apply(json: String) {
         guard let data = json.data(using: .utf8),
               let f = try? JSONDecoder().decode(QipaiTableFrame<GameV>.self, from: data) else { return }
+        ingest(f)
+    }
+
+    private func ingest(_ f: QipaiTableFrame<GameV>) {
         frame = f
         view = f.state
         if let l = f.legal { legal = l }
+        // 增量并入信息流：日志按 seq、聊天按 ts，各自只收新的，按到达顺序混排。
+        // 没有统一时钟，初始帧是"先日志后聊天"的近似排序，之后来一条排一条。
+        var added = false
+        for e in (f.state?.log ?? []) where e.seq > seenLogSeq {
+            feed.append(.log(e)); seenLogSeq = max(seenLogSeq, e.seq); added = true
+        }
+        for m in f.chat where m.ts > seenChatTs {
+            feed.append(.chat(m)); seenChatTs = max(seenChatTs, m.ts); added = true
+        }
+        if added && feed.count > 260 { feed.removeFirst(feed.count - 260) }
     }
 
     // MARK: 动作
 
     func act(_ body: [String: Any]) async {
-        guard let token else { show("你沒有座位（觀戰中）"); return }
+        guard let token else { show("你没有座位（观战中）"); return }
         busy = true
         defer { busy = false }
         var payload = body
@@ -256,7 +305,12 @@ final class QipaiTableStore<GameV: Decodable>: ObservableObject {
         do {
             let resp: QipaiActionResponse<GameV> = try await QipaiAPI.request(
                 "cards/api/rooms/\(code)/action", method: "POST", body: payload)
-            if let v = resp.view { view = v }
+            if let v = resp.view {
+                view = v
+                for e in v.log where e.seq > seenLogSeq {
+                    feed.append(.log(e)); seenLogSeq = max(seenLogSeq, e.seq)
+                }
+            }
             if let l = resp.legal { legal = l }
         } catch {
             show(error.localizedDescription)
@@ -355,12 +409,12 @@ enum QipaiCard {
 
     // 键跟引擎 TYPE_LABEL 对齐，文案走繁体（0828 全场繁体化）
     static let comboLabels: [String: String] = [
-        "single": "單張", "pair": "對子", "triple": "三條",
-        "triple_one": "三帶一", "triple_pair": "三帶對",
-        "straight": "順子", "pair_straight": "連對",
-        "plane": "飛機", "plane_one": "飛機帶單", "plane_pair": "飛機帶對",
-        "four_two_single": "四帶二", "four_two_pair": "四帶兩對",
-        "bomb": "炸彈", "rocket": "王炸",
+        "single": "单张", "pair": "对子", "triple": "三条",
+        "triple_one": "三带一", "triple_pair": "三带对",
+        "straight": "顺子", "pair_straight": "连对",
+        "plane": "飞机", "plane_one": "飞机带单", "plane_pair": "飞机带对",
+        "four_two_single": "四带二", "four_two_pair": "四带两对",
+        "bomb": "炸弹", "rocket": "王炸",
     ]
 }
 
@@ -533,10 +587,10 @@ enum UnoCard {
 
     static func colorName(_ key: String) -> String {
         switch key {
-        case "R": return "紅"
-        case "G": return "綠"
-        case "B": return "藍"
-        default:  return "黃"
+        case "R": return "红"
+        case "G": return "绿"
+        case "B": return "蓝"
+        default:  return "黄"
         }
     }
 }

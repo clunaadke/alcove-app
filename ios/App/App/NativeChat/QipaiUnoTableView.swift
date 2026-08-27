@@ -27,7 +27,7 @@ struct QipaiUnoTableView: View {
             }
             overlays
         }
-        .confirmationDialog("萬能牌变什么色？", isPresented: Binding(
+        .confirmationDialog("万能牌变什么色？", isPresented: Binding(
             get: { pickingWild != nil },
             set: { if !$0 { pickingWild = nil } }
         ), titleVisibility: .visible) {
@@ -49,8 +49,7 @@ struct QipaiUnoTableView: View {
         VStack(spacing: 8) {
             opponentsRow(view)
             centerBoard(view)
-            logStrip(view)
-            Spacer(minLength: 4)
+            QipaiFeedStrip(store: store)
             myArea(view)
         }
         .padding(.horizontal, 12)
@@ -92,10 +91,10 @@ struct QipaiUnoTableView: View {
                 Text("\(p.handCount)")
                     .font(.system(size: 17, weight: .bold, design: .monospaced))
                     .foregroundColor(QipaiPalette.ink)
-                Text("張").font(.system(size: 9.5)).foregroundColor(QipaiPalette.inkDim)
+                Text("张").font(.system(size: 9.5)).foregroundColor(QipaiPalette.inkDim)
                 if p.uno { QipaiChip(text: "UNO!", tone: .red) }
             }
-            Text("累計 \(p.score) 分")
+            Text("累计 \(p.score) 分")
                 .font(.system(size: 9)).foregroundColor(QipaiPalette.inkDim)
         }
         .frame(maxWidth: .infinity)
@@ -112,7 +111,7 @@ struct QipaiUnoTableView: View {
             HStack(spacing: 14) {
                 VStack(spacing: 3) {
                     QipaiCardBack(width: 40)
-                    Text("牌庫 \(view.deckCount)")
+                    Text("牌库 \(view.deckCount)")
                         .font(.system(size: 9)).foregroundColor(QipaiPalette.inkDim)
                 }
                 if let top = view.top {
@@ -126,7 +125,7 @@ struct QipaiUnoTableView: View {
                     if let colorName = view.activeColorName {
                         HStack(spacing: 4) {
                             Circle().fill(UnoCard.tint(view.activeColor)).frame(width: 10, height: 10)
-                            Text("當前色 \(colorName)")
+                            Text("当前色 \(colorName)")
                                 .font(.system(size: 10.5)).foregroundColor(QipaiPalette.ink)
                         }
                     }
@@ -135,12 +134,12 @@ struct QipaiUnoTableView: View {
                             .font(.system(size: 10.5)).foregroundColor(QipaiPalette.inkDim)
                     }
                     if view.drawStack > 0 {
-                        QipaiChip(text: "疊了 +\(view.drawStack)", tone: .red, icon: "flame")
+                        QipaiChip(text: "叠了 +\(view.drawStack)", tone: .red, icon: "flame")
                     }
                 }
             }
             if view.phase == "playing" {
-                Text("輪到 \(view.player(view.current)?.name ?? "…")\(view.current == view.you ? "（你）" : "")")
+                Text("轮到 \(view.player(view.current)?.name ?? "…")\(view.current == view.you ? "（你）" : "")")
                     .font(.system(size: 12.5, weight: .semibold))
                     .foregroundColor(view.current == view.you ? QipaiPalette.red : QipaiPalette.ink)
             }
@@ -152,34 +151,6 @@ struct QipaiUnoTableView: View {
 
     // MARK: 事件流
 
-    private func logStrip(_ view: UnoView) -> some View {
-        ScrollViewReader { proxy in
-            ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 3) {
-                    ForEach(view.log.suffix(30)) { entry in
-                        Text(entry.text)
-                            .font(.system(size: 10))
-                            .foregroundColor(entry.type == "uno" || entry.type == "finish"
-                                             ? QipaiPalette.red : QipaiPalette.inkDim)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .id(entry.seq)
-                    }
-                }
-                .padding(8)
-            }
-            .frame(height: 66)
-            .qipaiPanel(corner: 13)
-            .onChange(of: view.log.count) { _ in
-                if let last = view.log.last {
-                    withAnimation { proxy.scrollTo(last.seq, anchor: .bottom) }
-                }
-            }
-            .onAppear {
-                if let last = view.log.last { proxy.scrollTo(last.seq, anchor: .bottom) }
-            }
-        }
-    }
-
     // MARK: 我的手牌与操作
 
     private func myArea(_ view: UnoView) -> some View {
@@ -187,7 +158,7 @@ struct QipaiUnoTableView: View {
             if let me = view.me {
                 HStack(spacing: 6) {
                     QipaiHalo(active: view.current == me.id)
-                    Text("你的手牌 \(me.handCount) 張 · 累計 \(me.score) 分")
+                    Text("你的手牌 \(me.handCount) 张 · 累计 \(me.score) 分")
                         .font(.system(size: 11.5, weight: .medium))
                         .foregroundColor(QipaiPalette.inkDim)
                     Spacer()
@@ -196,7 +167,7 @@ struct QipaiUnoTableView: View {
                 handFan(me, view: view)
                 actionBar(view)
             } else {
-                QipaiWhisper(text: "觀戰中 · 誰的手牌都看不見")
+                Text("观战中 · 谁的手牌都看不见").font(.system(size: 11)).foregroundColor(QipaiPalette.inkDim)
                     .padding(.bottom, 20)
             }
         }
@@ -241,7 +212,7 @@ struct QipaiUnoTableView: View {
             if let pending = view.pending, pending.mine {
                 VStack(spacing: 6) {
                     HStack(spacing: 6) {
-                        Text("剛摸到")
+                        Text("刚摸到")
                             .font(.system(size: 11.5)).foregroundColor(QipaiPalette.inkDim)
                         if let card = pending.card { UnoCardFace(id: card, width: 34) }
                     }
@@ -258,14 +229,14 @@ struct QipaiUnoTableView: View {
                     }
                 }
             } else if let draw = store.legal.first(where: { $0.type == "draw" }) {
-                Button((draw.count ?? 0) > 0 ? "認吃 \(draw.count ?? 0) 張" : "摸一張") {
+                Button((draw.count ?? 0) > 0 ? "认吃 \(draw.count ?? 0) 张" : "摸一张") {
                     Task { await store.act(["type": "draw"]) }
                 }
                 .buttonStyle(QipaiEmbossedButtonStyle(prominent: !store.legal.contains { $0.type == "play" }))
                 .disabled(store.busy)
             }
         } else if view.phase == "playing" {
-            QipaiWhisper(text: "等 \(view.player(view.current)?.name ?? "…") 出牌…")
+            Text("等 \(view.player(view.current)?.name ?? "…") 出牌…").font(.system(size: 11)).foregroundColor(QipaiPalette.inkDim)
         }
     }
 
@@ -285,7 +256,7 @@ struct QipaiUnoTableView: View {
                     Text("\(view.player(results.winner)?.name ?? "?") 先出完")
                         .font(.qipaiDisplay(26))
                         .foregroundColor(QipaiPalette.ink)
-                    QipaiChip(text: "這局進賬 \(results.gain) 分", tone: .live)
+                    QipaiChip(text: "这局进账 \(results.gain) 分", tone: .live)
                     VStack(spacing: 6) {
                         ForEach(results.players) { r in
                             HStack {
@@ -297,10 +268,10 @@ struct QipaiUnoTableView: View {
                                         .font(.system(size: 12.5, weight: .bold, design: .monospaced))
                                         .foregroundColor(QipaiPalette.accent)
                                 } else {
-                                    Text("剩 \(r.handCount) 張 · \(r.handPoints) 分")
+                                    Text("剩 \(r.handCount) 张 · \(r.handPoints) 分")
                                         .font(.system(size: 10.5)).foregroundColor(QipaiPalette.inkDim)
                                 }
-                                Text("累計 \(r.score)")
+                                Text("累计 \(r.score)")
                                     .font(.system(size: 10.5)).foregroundColor(QipaiPalette.inkDim)
                             }
                         }
@@ -311,7 +282,7 @@ struct QipaiUnoTableView: View {
                         .font(.qipaiDisplay(28))
                         .foregroundColor(QipaiPalette.ink)
                     if let winner = view.player(view.winner) {
-                        Text("\(winner.name) 是最後的大贏家")
+                        Text("\(winner.name) 是最后的大赢家")
                             .font(.system(size: 12)).foregroundColor(QipaiPalette.inkDim)
                     }
                     VStack(spacing: 6) {
@@ -332,22 +303,22 @@ struct QipaiUnoTableView: View {
                 if view.phase == "round_over" {
                     HStack(spacing: 10) {
                         if store.mySeat != nil {
-                            Button("再來一局") { Task { await store.nextRound() } }
+                            Button("再来一局") { Task { await store.nextRound() } }
                                 .buttonStyle(QipaiEmbossedButtonStyle(prominent: true))
                                 .disabled(store.busy)
                         }
                         if store.isHost {
-                            Button("收盤") { Task { await store.endMatch() } }
+                            Button("收盘") { Task { await store.endMatch() } }
                                 .buttonStyle(QipaiEmbossedButtonStyle())
                                 .disabled(store.busy)
                         }
                     }
                 } else {
                     HStack(spacing: 10) {
-                        Button("回大廳") { onExit() }
+                        Button("回大厅") { onExit() }
                             .buttonStyle(QipaiEmbossedButtonStyle(prominent: true))
                         if store.isHost {
-                            Button("關房") {
+                            Button("关房") {
                                 Task { await store.closeRoom(); onExit() }
                             }
                             .buttonStyle(QipaiEmbossedButtonStyle())
@@ -372,10 +343,10 @@ struct QipaiUnoTableView: View {
             .font(.qipaiMemo(18))
             .foregroundColor(QipaiPalette.ink)
         Group {
-            Text("每人 7 張。跟弃牌堆頂的牌同色或同字就能出；萬能牌隨時能出、出時選色。")
-            Text("跳過、反轉、+2 各有各的坏；萬能+4 讓下家吃四張。摸一張之後能出可以立刻出，也可以留著。")
-            Text("一人出完這局結束，按對手剩的手牌計分（數字面值、功能牌 20、萬能 50），累計到總分。")
-            Text("剩一張牌會自動喊 UNO，不罰。")
+            Text("每人 7 张。跟弃牌堆顶的牌同色或同字就能出；万能牌随时能出、出时选色。")
+            Text("跳过、反转、+2 各有各的坏；万能+4 让下家吃四张。摸一张之后能出可以立刻出，也可以留着。")
+            Text("一人出完这局结束，按对手剩的手牌计分（数字面值、功能牌 20、万能 50），累计到总分。")
+            Text("剩一张牌会自动喊 UNO，不罚。")
         }
         .font(.system(size: 12.5))
         .foregroundColor(QipaiPalette.ink.opacity(0.85))

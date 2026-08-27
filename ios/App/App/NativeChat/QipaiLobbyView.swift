@@ -210,13 +210,13 @@ struct QipaiLobbyView: View {
             } else if let errorText {
                 VStack(spacing: 8) {
                     Text(errorText).font(.system(size: 12)).foregroundColor(QipaiPalette.red)
-                    Button("再試一次") { Task { await reload() } }
+                    Button("再试一次") { Task { await reload() } }
                         .buttonStyle(QipaiEmbossedButtonStyle())
                 }
                 .frame(maxWidth: .infinity).padding(.vertical, 18)
             } else if rooms.isEmpty {
                 VStack(spacing: 5) {
-                    Text("還沒有房間").font(.system(size: 12.5)).foregroundColor(QipaiPalette.inkDim)
+                    Text("还没有房间").font(.system(size: 12.5)).foregroundColor(QipaiPalette.inkDim)
                     QipaiWhisper(text: "there are no answers.")
                 }
                 .frame(maxWidth: .infinity).padding(.vertical, 22)
@@ -253,7 +253,7 @@ struct QipaiLobbyView: View {
                     Text("\(room.code) · \(room.playerCount)/\(room.maxPlayers) 人")
                         .font(.system(size: 11)).foregroundColor(QipaiPalette.inkDim)
                     if room.round > 0 {
-                        Text("第 \(room.round) 輪")
+                        Text("第 \(room.round) 轮")
                             .font(.system(size: 11)).foregroundColor(QipaiPalette.inkDim)
                     }
                     if room.hasAI { QipaiChip(text: "AI 在座", tone: .live, icon: "sparkles") }
@@ -343,10 +343,10 @@ struct QipaiCreateRoomSheet: View {
     @State private var errorText: String?
 
     private let aiRoster: [(id: String, name: String, note: String)] = [
-        ("external", "工程師·真身", "工作室那位，帶記憶，出牌要等他幾秒"),
-        ("opus", "分身·Opus", "話多，牌品未知"),
+        ("external", "工程师·真身", "工作室那位，带记忆，出牌要等他几秒"),
+        ("opus", "分身·Opus", "话多，牌品未知"),
         ("sonnet", "分身·Sonnet", "手快"),
-        ("haiku", "分身·Haiku", "省著用的小腦子"),
+        ("haiku", "分身·Haiku", "省着用的小脑子"),
     ]
 
     var body: some View {
@@ -366,12 +366,12 @@ struct QipaiCreateRoomSheet: View {
                     Text(game.playersLabel)
                         .font(.system(size: 11)).foregroundColor(QipaiPalette.inkDim)
 
-                    field("房間名") {
+                    field("房间名") {
                         TextField("", text: $roomName,
-                                  prompt: Text("比如「週五晚上別睡」")
+                                  prompt: Text("比如「周五晚上别睡」")
                                     .foregroundColor(QipaiPalette.inkDim.opacity(0.7)))
                     }
-                    field("你的暱稱") {
+                    field("你的昵称") {
                         TextField("", text: $nickname,
                                   prompt: Text("上桌用的名字")
                                     .foregroundColor(QipaiPalette.inkDim.opacity(0.7)))
@@ -491,7 +491,7 @@ struct QipaiCreateRoomSheet: View {
     private var rulesSummary: String {
         let on = game.ruleMeta.filter { $0.def.isFlag && (flagRules[$0.key] ?? false) }
             .map(\.label)
-        return on.isEmpty ? "全關（最樸素的打法）" : on.joined(separator: " · ")
+        return on.isEmpty ? "全关（最朴素的打法）" : on.joined(separator: " · ")
     }
 
     private func ruleText(_ rule: QipaiAPI.RuleMeta) -> some View {

@@ -14,7 +14,7 @@ enum QipaiAPI {
         var errorDescription: String? {
             switch self {
             case .server(let msg): return msg
-            case .badResponse: return "棋牌室沒應聲，稍後再試"
+            case .badResponse: return "棋牌室没应声，稍后再试"
             }
         }
     }
@@ -87,7 +87,7 @@ enum QipaiAPI {
         var id: String { code }
 
         var hasAI: Bool { players.contains { $0.isAI } }
-        var statusLabel: String { finished ? "已結束" : (started ? "進行中" : "等人中") }
+        var statusLabel: String { finished ? "已结束" : (started ? "进行中" : "等人中") }
         /// 这台设备在这间房里有没有坐过
         var hasMySeat: Bool { QipaiAPI.storedToken(for: code) != nil }
     }
@@ -131,8 +131,15 @@ enum QipaiAPI {
     // MARK: 请求底座
 
     private static func rawRequest(_ path: String, method: String,
-                                   body: [String: Any]?) async throws -> (Data, HTTPURLResponse) {
-        var req = URLRequest(url: base.appendingPathComponent(path))
+                                   body: [String: Any]?,
+                                   query: [String: String]? = nil) async throws -> (Data, HTTPURLResponse) {
+        var url = base.appendingPathComponent(path)
+        if let query, !query.isEmpty,
+           var comps = URLComponents(url: url, resolvingAgainstBaseURL: false) {
+            comps.queryItems = query.map { URLQueryItem(name: $0.key, value: $0.value) }
+            url = comps.url ?? url
+        }
+        var req = URLRequest(url: url)
         req.httpMethod = method
         req.timeoutInterval = 15
         if let body {
@@ -150,17 +157,18 @@ enum QipaiAPI {
         guard http.statusCode == 200,
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               obj["ok"] as? Bool == true else {
-            throw APIError.server("棋牌室開門失敗（登入被拒）")
+            throw APIError.server("棋牌室开门失败（登录被拒）")
         }
     }
 
     static func request<T: Decodable>(_ path: String, method: String = "GET",
                                       body: [String: Any]? = nil,
+                                      query: [String: String]? = nil,
                                       canRetry: Bool = true) async throws -> T {
-        let (data, http) = try await rawRequest(path, method: method, body: body)
+        let (data, http) = try await rawRequest(path, method: method, body: body, query: query)
         if (http.statusCode == 401 || http.statusCode == 403), canRetry {
             try await login()
-            return try await request(path, method: method, body: body, canRetry: false)
+            return try await request(path, method: method, body: body, query: query, canRetry: false)
         }
         if http.statusCode >= 400 {
             if let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],

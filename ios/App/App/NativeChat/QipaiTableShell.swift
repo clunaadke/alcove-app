@@ -4,7 +4,7 @@ import UIKit
 // 三张牌桌共用的外壳：背景、顶栏（返回/连接状态/聊天/帮助）、等人开局页、
 // 牌桌聊天、toast、SSE 生命周期。游戏各自只画"开局之后"的桌面和自己的帮助页。
 
-struct QipaiTableShell<GameV: Decodable, Content: View, Help: View>: View {
+struct QipaiTableShell<GameV: Decodable & QipaiGameView, Content: View, Help: View>: View {
     @ObservedObject var store: QipaiTableStore<GameV>
     let fallbackTitle: String
     var round: Int?
@@ -12,9 +12,14 @@ struct QipaiTableShell<GameV: Decodable, Content: View, Help: View>: View {
     @ViewBuilder let content: () -> Content
     @ViewBuilder let help: () -> Help
 
-    @State private var showChat = false
+    /// 全屏页自己管安全区（灵动岛会压顶栏，0828 她抓的）
+    private var safeTop: CGFloat {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        let inset = scenes.flatMap(\.windows).first(where: { $0.isKeyWindow })?.safeAreaInsets.top ?? 0
+        return max(inset, 8)
+    }
+
     @State private var showHelp = false
-    @State private var chatDraft = ""
     @State private var inviteCopied = false
 
     var body: some View {
@@ -41,7 +46,6 @@ struct QipaiTableShell<GameV: Decodable, Content: View, Help: View>: View {
         .onChange(of: store.frame?.closed ?? false) { closed in
             if closed { onExit() }
         }
-        .sheet(isPresented: $showChat) { chatSheet }
         .sheet(isPresented: $showHelp) { helpSheet }
     }
 
@@ -84,19 +88,15 @@ struct QipaiTableShell<GameV: Decodable, Content: View, Help: View>: View {
             Circle()
                 .fill(store.connected ? QipaiPalette.accent : QipaiPalette.red)
                 .frame(width: 7, height: 7)
-            Text(store.connected ? "已連接" : "重連中")
+            Text(store.connected ? "已连接" : "重连中")
                 .font(.system(size: 9.5)).foregroundColor(QipaiPalette.inkDim)
-            Button { showChat = true } label: {
-                Image(systemName: "bubble.left").font(.system(size: 12, weight: .semibold))
-            }
-            .buttonStyle(QipaiEmbossedButtonStyle())
             Button { showHelp = true } label: {
                 Image(systemName: "questionmark").font(.system(size: 12, weight: .semibold))
             }
             .buttonStyle(QipaiEmbossedButtonStyle())
         }
         .padding(.horizontal, 14)
-        .padding(.top, 8)
+        .padding(.top, safeTop)
         .padding(.bottom, 6)
     }
 
@@ -108,7 +108,7 @@ struct QipaiTableShell<GameV: Decodable, Content: View, Help: View>: View {
             Text("等人齊")
                 .font(.qipaiDisplay(24))
                 .foregroundColor(QipaiPalette.ink)
-            Text("\(frame.seats.count)/\(frame.maxPlayers) 人 · 房號 \(frame.code)")
+            Text("\(frame.seats.count)/\(frame.maxPlayers) 人 · 房号 \(frame.code)")
                 .font(.system(size: 12)).foregroundColor(QipaiPalette.inkDim)
             VStack(spacing: 8) {
                 ForEach(frame.seats) { seat in
@@ -132,7 +132,7 @@ struct QipaiTableShell<GameV: Decodable, Content: View, Help: View>: View {
                     UIPasteboard.general.string = QipaiAPI.inviteLink(code: frame.code, inviteToken: invite)
                     inviteCopied = true
                 } label: {
-                    Label(inviteCopied ? "邀請連結已複製" : "複製邀請連結",
+                    Label(inviteCopied ? "邀请链接已复制" : "复制邀请链接",
                           systemImage: inviteCopied ? "checkmark" : "link")
                 }
                 .buttonStyle(QipaiEmbossedButtonStyle())
@@ -173,72 +173,6 @@ struct QipaiTableShell<GameV: Decodable, Content: View, Help: View>: View {
         }
     }
 
-    private var chatSheet: some View {
-        ZStack {
-            QipaiPalette.fog.ignoresSafeArea()
-            QipaiDots(spacing: 16, radius: 1.3, opacity: 0.25).ignoresSafeArea()
-            VStack(spacing: 10) {
-                Text("閒聊兩句")
-                    .font(.qipaiMemo(17))
-                    .foregroundColor(QipaiPalette.ink)
-                    .padding(.top, 16)
-                ScrollViewReader { proxy in
-                    ScrollView(showsIndicators: false) {
-                        VStack(alignment: .leading, spacing: 8) {
-                            ForEach(store.frame?.chat ?? []) { msg in
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(msg.name)
-                                        .font(.system(size: 9.5, weight: .semibold))
-                                        .foregroundColor(QipaiPalette.accent)
-                                    Text(msg.text)
-                                        .font(.system(size: 12.5))
-                                        .foregroundColor(QipaiPalette.ink)
-                                        .padding(.horizontal, 11).padding(.vertical, 7)
-                                        .background(RoundedRectangle(cornerRadius: 13)
-                                            .fill(.white.opacity(0.85)))
-                                        .overlay(RoundedRectangle(cornerRadius: 13)
-                                            .stroke(QipaiPalette.line, lineWidth: 0.8))
-                                }
-                                .id(msg.id)
-                            }
-                        }
-                        .padding(.horizontal, 16)
-                    }
-                    .onChange(of: store.frame?.chat.count ?? 0) { _ in
-                        if let last = store.frame?.chat.last {
-                            withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
-                        }
-                    }
-                    .onAppear {
-                        if let last = store.frame?.chat.last { proxy.scrollTo(last.id, anchor: .bottom) }
-                    }
-                }
-                HStack(spacing: 8) {
-                    TextField("", text: $chatDraft,
-                              prompt: Text("聊點什麼…")
-                                .foregroundColor(QipaiPalette.inkDim.opacity(0.7)))
-                        .font(.system(size: 13))
-                        .foregroundColor(QipaiPalette.ink)
-                        .padding(.horizontal, 12).padding(.vertical, 9)
-                        .background(Capsule().fill(QipaiPalette.fieldBg))
-                        .overlay(Capsule().stroke(QipaiPalette.line, lineWidth: 1))
-                    Button {
-                        let text = chatDraft
-                        chatDraft = ""
-                        Task { await store.sendChat(text) }
-                    } label: {
-                        Image(systemName: "paperplane.fill").font(.system(size: 13))
-                    }
-                    .buttonStyle(QipaiEmbossedButtonStyle(prominent: true))
-                    .disabled(chatDraft.trimmingCharacters(in: .whitespaces).isEmpty)
-                }
-                .padding(.horizontal, 16)
-                .padding(.bottom, 14)
-            }
-        }
-        .presentationDetents([.medium, .large])
-    }
-
     private var helpSheet: some View {
         ZStack {
             QipaiPalette.fog.ignoresSafeArea()
@@ -251,5 +185,87 @@ struct QipaiTableShell<GameV: Decodable, Content: View, Help: View>: View {
             }
         }
         .presentationDetents([.medium])
+    }
+}
+
+// MARK: - 牌桌信息流（事件 + 聊天混排 + 打字框，三张牌桌共用）
+
+struct QipaiFeedStrip<GameV: Decodable & QipaiGameView>: View {
+    @ObservedObject var store: QipaiTableStore<GameV>
+    @State private var draft = ""
+
+    var body: some View {
+        VStack(spacing: 6) {
+            ScrollViewReader { proxy in
+                ScrollView(showsIndicators: false) {
+                    LazyVStack(alignment: .leading, spacing: 5) {
+                        ForEach(store.feed) { item in row(item) }
+                    }
+                    .padding(8)
+                }
+                .frame(maxHeight: .infinity)
+                .qipaiPanel(corner: 13)
+                .onChange(of: store.feed.count) { _ in
+                    if let last = store.feed.last {
+                        withAnimation { proxy.scrollTo(last.id, anchor: .bottom) }
+                    }
+                }
+                .onAppear {
+                    if let last = store.feed.last { proxy.scrollTo(last.id, anchor: .bottom) }
+                }
+            }
+            HStack(spacing: 8) {
+                TextField("", text: $draft,
+                          prompt: Text("说点什么…")
+                            .foregroundColor(QipaiPalette.inkDim.opacity(0.7)))
+                    .font(.system(size: 12.5))
+                    .foregroundColor(QipaiPalette.ink)
+                    .padding(.horizontal, 11).padding(.vertical, 7)
+                    .background(Capsule().fill(QipaiPalette.fieldBg))
+                    .overlay(Capsule().stroke(QipaiPalette.line, lineWidth: 1))
+                Button {
+                    let text = draft
+                    draft = ""
+                    Task { await store.sendChat(text) }
+                } label: {
+                    Image(systemName: "paperplane.fill").font(.system(size: 12))
+                }
+                .buttonStyle(QipaiEmbossedButtonStyle(prominent: true))
+                .disabled(draft.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        }
+    }
+
+    /// 事件一条淡淡的横条，聊天是名字 + 白瓷气泡，一眼分得开
+    @ViewBuilder private func row(_ item: QipaiFeedItem) -> some View {
+        switch item {
+        case .log(let e):
+            HStack(alignment: .firstTextBaseline, spacing: 5) {
+                Text("›").font(.system(size: 10, weight: .bold))
+                    .foregroundColor(QipaiPalette.inkDim.opacity(0.6))
+                Text(e.text)
+                    .font(.system(size: 10.5))
+                    .foregroundColor(["bomb", "finish", "showdown", "uno", "compare"].contains(e.type)
+                                     ? QipaiPalette.red : QipaiPalette.inkDim)
+            }
+            .padding(.horizontal, 8).padding(.vertical, 3)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Capsule().fill(QipaiPalette.panelDeep.opacity(0.45)))
+        case .chat(let m):
+            VStack(alignment: .leading, spacing: 2) {
+                Text(m.name)
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundColor(QipaiPalette.accent)
+                Text(m.text)
+                    .font(.system(size: 12))
+                    .foregroundColor(QipaiPalette.ink)
+                    .padding(.horizontal, 10).padding(.vertical, 6)
+                    .background(RoundedRectangle(cornerRadius: 11, style: .continuous)
+                        .fill(QipaiPalette.fieldBg))
+                    .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous)
+                        .stroke(QipaiPalette.line, lineWidth: 0.8))
+            }
+            .padding(.vertical, 1)
+        }
     }
 }
