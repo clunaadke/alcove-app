@@ -637,7 +637,14 @@ final class ChatStore: ObservableObject {
                     continue
                 }
             }
-            out.append(rec)
+            // 0829：刚放行的卡片/表情带着旧时间戳来，要按 ts 插回正确的位置，
+            // 不能贴队尾（顺序是她钉的官方排法）。新消息走快路照旧追加。
+            if let last = out.last, rec.ts < last.ts {
+                let idx = out.lastIndex(where: { $0.ts <= rec.ts }).map { $0 + 1 } ?? 0
+                out.insert(rec, at: idx)
+            } else {
+                out.append(rec)
+            }
         }
         messages = out
     }
