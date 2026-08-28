@@ -63,7 +63,7 @@ struct QipaiTableShell<GameV: Decodable & QipaiGameView, Content: View, Help: Vi
                             ProgressView().frame(maxHeight: .infinity)
                         }
                     }
-                    .padding(.bottom, safeBottom)
+                    .padding(.bottom, safeBottom + 6)
                     .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
                     .clipped()
                 }
@@ -148,7 +148,7 @@ struct QipaiTableShell<GameV: Decodable & QipaiGameView, Content: View, Help: Vi
             .buttonStyle(QipaiEmbossedButtonStyle())
         }
         .padding(.horizontal, 14)
-        .padding(.top, safeTop)
+        .padding(.top, safeTop + 6)
         .padding(.bottom, 6)
     }
 
@@ -264,7 +264,13 @@ struct QipaiTableShell<GameV: Decodable & QipaiGameView, Content: View, Help: Vi
 /// 键盘升到哪它贴到哪，不听通知不算高度。
 private struct QipaiFloatingComposerBar<GameV: Decodable & QipaiGameView>: View {
     @ObservedObject var store: QipaiTableStore<GameV>
+    @State private var draft: String
     @FocusState private var focused: Bool
+
+    init(store: QipaiTableStore<GameV>) {
+        self.store = store
+        _draft = State(initialValue: store.chatDraft)
+    }
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -280,12 +286,12 @@ private struct QipaiFloatingComposerBar<GameV: Decodable & QipaiGameView>: View 
             // 等浮层进树再拿焦点，立刻拿会抢不到
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { focused = true }
         }
+        .onDisappear { preserveDraft() }
     }
 
     private var bar: some View {
         HStack(spacing: 8) {
-            TextField("", text: Binding(get: { store.chatDraft },
-                                        set: { store.chatDraft = $0 }),
+            TextField("", text: $draft,
                       prompt: Text("说点什么…")
                         .foregroundColor(QipaiPalette.inkDim.opacity(0.7)))
                 .font(.system(size: 14))
@@ -302,7 +308,7 @@ private struct QipaiFloatingComposerBar<GameV: Decodable & QipaiGameView>: View 
                 Image(systemName: "paperplane.fill").font(.system(size: 13))
             }
             .buttonStyle(QipaiEmbossedButtonStyle(prominent: true))
-            .disabled(store.chatDraft.trimmingCharacters(in: .whitespaces).isEmpty)
+            .disabled(draft.trimmingCharacters(in: .whitespaces).isEmpty)
         }
         .padding(.horizontal, 12).padding(.vertical, 8)
         .frame(maxWidth: .infinity)
@@ -314,16 +320,24 @@ private struct QipaiFloatingComposerBar<GameV: Decodable & QipaiGameView>: View 
     }
 
     private func dismissComposer() {
+        preserveDraft()
         focused = false
         store.composing = false
     }
 
     private func send() {
-        let text = store.chatDraft
+        let text = draft
+        draft = ""
         store.chatDraft = ""
         focused = false
         store.composing = false
         Task { await store.sendChat(text) }
+    }
+
+    private func preserveDraft() {
+        if store.chatDraft != draft {
+            store.chatDraft = draft
+        }
     }
 }
 
@@ -364,10 +378,11 @@ struct QipaiFeedStrip<GameV: Decodable & QipaiGameView>: View {
                     .padding(.horizontal, 11).padding(.vertical, 7)
                     .background(Capsule().fill(QipaiPalette.fieldBg))
                     .overlay(Capsule().stroke(QipaiPalette.line, lineWidth: 1))
-                Image(systemName: "paperplane.fill")
-                    .font(.system(size: 12))
-                    .foregroundColor(QipaiPalette.inkDim)
-                    .padding(.horizontal, 10)
+                Button { store.composing = true } label: {
+                    Image(systemName: "paperplane.fill")
+                        .font(.system(size: 12))
+                }
+                .buttonStyle(QipaiEmbossedButtonStyle(prominent: true))
             }
             .contentShape(Rectangle())
             .onTapGesture { store.composing = true }
