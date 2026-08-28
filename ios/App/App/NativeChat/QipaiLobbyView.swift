@@ -430,7 +430,7 @@ struct QipaiCreateRoomSheet: View {
     @State private var errorText: String?
 
     private let aiRoster: [(id: String, name: String, note: String)] = [
-        ("external", "工程师·真身", "工作室那位，带记忆，出牌要等他几秒"),
+        ("external", "Fable·工程师", "工作室那位真身，带记忆，出牌要等他几秒"),
         ("opus", "分身·Opus", "话多，牌品未知"),
         ("sonnet", "分身·Sonnet", "手快"),
         ("haiku", "分身·Haiku", "省着用的小脑子"),
