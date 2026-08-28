@@ -12,6 +12,29 @@ struct QipaiTableShell<GameV: Decodable & QipaiGameView, Content: View, Help: Vi
     @ViewBuilder let content: () -> Content
     @ViewBuilder let help: () -> Help
 
+    // 0828 塌房修复：外层只负责套键盘免疫罩，真外壳全在 Core 里。
+    // Core 的 @ObservedObject 和 onAppear/onDisappear 都活在罩内那个子
+    // hosting controller 的树里：store 一动它自己就重画、订阅自己就启动，
+    // 不依赖外层转发。第一版把生命周期挂在 representable 上，实机 onAppear
+    // 不触发，store.start() 压根没跑，牌桌永远「重连中」空转。
+    var body: some View {
+        QipaiKeyboardImmune {
+            QipaiTableShellCore(store: store, fallbackTitle: fallbackTitle,
+                                round: round, onExit: onExit,
+                                content: content, help: help)
+        }
+        .ignoresSafeArea()
+    }
+}
+
+private struct QipaiTableShellCore<GameV: Decodable & QipaiGameView, Content: View, Help: View>: View {
+    @ObservedObject var store: QipaiTableStore<GameV>
+    let fallbackTitle: String
+    var round: Int?
+    var onExit: () -> Void
+    let content: () -> Content
+    let help: () -> Help
+
     /// 全屏页自己管安全区（灵动岛会压顶栏，0828 她抓的）
     private var safeTop: CGFloat {
         let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
@@ -36,40 +59,35 @@ struct QipaiTableShell<GameV: Decodable & QipaiGameView, Content: View, Help: Vi
     }
 
     var body: some View {
-        // 0828 四连修的终版：键盘来了**整页纹丝不动**，只有悬浮输入条贴在键盘上方。
-        // 前三版病史——垫高整树（放大+掉帧）→ 只在 shell 的 ZStack 上挂
-        // .ignoresSafeArea(.keyboard)（fullScreenCover 里不可靠，页面照样被顶得
-        // 放大裁切）。终版从 UIKit 层根治：整页装进 QipaiKeyboardImmune（子
-        // UIHostingController 的 safeAreaRegions 摘掉 .keyboard），系统从此
-        // 不再为键盘调这棵树的安全区，页面物理上动不了。
-        QipaiKeyboardImmune {
-            ZStack {
-                background
-                GeometryReader { geo in
-                    VStack(spacing: 0) {
-                        topBar
-                        if let frame = store.frame {
-                            if !frame.started {
-                                waitingRoom(frame)
-                            } else if store.view != nil {
-                                content()
-                            } else {
-                                ProgressView().frame(maxHeight: .infinity)
-                            }
+        // 0828 键盘四连修的终版：键盘来了**整页纹丝不动**，只有悬浮输入条贴在
+        // 键盘上方。病史——垫高整树（放大+掉帧）→ ZStack 挂 .ignoresSafeArea(
+        // .keyboard)（fullScreenCover 里不可靠，照样放大裁切）→ 终版：外层的
+        // QipaiKeyboardImmune 从 UIKit 层摘掉键盘安全区，这棵树物理上动不了。
+        ZStack {
+            background
+            GeometryReader { geo in
+                VStack(spacing: 0) {
+                    topBar
+                    if let frame = store.frame {
+                        if !frame.started {
+                            waitingRoom(frame)
+                        } else if store.view != nil {
+                            content()
                         } else {
                             ProgressView().frame(maxHeight: .infinity)
                         }
+                    } else {
+                        ProgressView().frame(maxHeight: .infinity)
                     }
-                    .padding(.bottom, safeBottom)
-                    .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
-                    .clipped()
                 }
-                toast
-                floatingComposer
+                .padding(.bottom, safeBottom)
+                .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
+                .clipped()
             }
-            // 免疫罩内的安全区一律不认，顶底都由 safeTop/safeBottom 自己管（老规矩）
-            .ignoresSafeArea()
+            toast
+            floatingComposer
         }
+        // 罩内安全区一律不认，顶底都由 safeTop/safeBottom 自己管（老规矩）
         .ignoresSafeArea()
         .onAppear { store.start() }
         .onDisappear { store.stop() }
@@ -270,6 +288,7 @@ private struct QipaiKeyboardImmune<Content: View>: UIViewControllerRepresentable
 
     func updateUIViewController(_ host: UIHostingController<Content>, context: Context) {
         host.rootView = content
+        host.view.setNeedsLayout()
     }
 }
 
