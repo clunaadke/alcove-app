@@ -51,12 +51,14 @@ struct QipaiTableShell<GameV: Decodable & QipaiGameView, Content: View, Help: Vi
                     ProgressView().frame(maxHeight: .infinity)
                 }
             }
-            // 键盘起来时整体垫高（容器豁免了安全区，系统的键盘避让不干活），
-            // 收起时垫 home 条的高度
-            .padding(.bottom, keyboard.height > 0 ? keyboard.height : safeBottom)
+            // 键盘起来时整体垫高，收起时垫 home 条。0829 她抓的「牌和键盘中间空太多」：
+            // 系统避让和这里的手动垫叠了两层——下面 ignoresSafeArea(.keyboard) 关掉系统那层，
+            // 只留这一层，高度正好贴着键盘。
+            .padding(.bottom, keyboard.height > 0 ? keyboard.height + 6 : safeBottom)
             .animation(.easeOut(duration: 0.25), value: keyboard.height)
             toast
         }
+        .ignoresSafeArea(.keyboard)
         .onAppear { store.start() }
         .onDisappear { store.stop() }
         .onChange(of: store.frame?.closed ?? false) { closed in
@@ -75,6 +77,13 @@ struct QipaiTableShell<GameV: Decodable & QipaiGameView, Content: View, Help: Vi
                 .opacity(QipaiPalette.night ? 0.18 : 0.45)
             QipaiPalette.fog.opacity(QipaiPalette.night ? 0.72 : 0.55).ignoresSafeArea()
             QipaiDots(spacing: 18, radius: 1.2, opacity: 0.16).ignoresSafeArea()
+        }
+        .contentShape(Rectangle())
+        // 0829 她抓的「键盘下不去」：点牌桌空白处收键盘。挂在背景层——
+        // 面板、牌、输入框都盖在上面，只有真空白才落到这里，不会跟聚焦打架
+        .onTapGesture {
+            UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
+                                            to: nil, from: nil, for: nil)
         }
     }
 
@@ -254,6 +263,7 @@ final class QipaiKeyboardWatcher: ObservableObject {
 struct QipaiFeedStrip<GameV: Decodable & QipaiGameView>: View {
     @ObservedObject var store: QipaiTableStore<GameV>
     @State private var draft = ""
+    @FocusState private var inputFocused: Bool
 
     var body: some View {
         VStack(spacing: 6) {
@@ -265,6 +275,7 @@ struct QipaiFeedStrip<GameV: Decodable & QipaiGameView>: View {
                     .padding(8)
                 }
                 .frame(maxHeight: .infinity)
+                .scrollDismissesKeyboard(.immediately)   // 拖信息流也能收键盘
                 .qipaiPanel(corner: 13)
                 .onChange(of: store.feed.count) { _ in
                     if let last = store.feed.last {
@@ -281,12 +292,14 @@ struct QipaiFeedStrip<GameV: Decodable & QipaiGameView>: View {
                             .foregroundColor(QipaiPalette.inkDim.opacity(0.7)))
                     .font(.system(size: 12.5))
                     .foregroundColor(QipaiPalette.ink)
+                    .focused($inputFocused)
                     .padding(.horizontal, 11).padding(.vertical, 7)
                     .background(Capsule().fill(QipaiPalette.fieldBg))
                     .overlay(Capsule().stroke(QipaiPalette.line, lineWidth: 1))
                 Button {
                     let text = draft
                     draft = ""
+                    inputFocused = false   // 发完顺手收键盘（0829 她抓的「键盘下不去」）
                     Task { await store.sendChat(text) }
                 } label: {
                     Image(systemName: "paperplane.fill").font(.system(size: 12))

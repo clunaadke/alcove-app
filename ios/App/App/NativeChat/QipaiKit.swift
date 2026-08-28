@@ -334,20 +334,31 @@ struct QipaiHalo: View {
     var active: Bool
     @State private var breathe = false
 
+    // 0829 她说牌桌烫手：原来不管活跃与否都在 repeatForever 地动画阴影半径，
+    // 三四个座位常年逼着整页 60fps 重绘。现在不活跃只占位不动画，
+    // 活跃时也只呼吸透明度（阴影固定），便宜一个数量级。
     var body: some View {
-        Ellipse()
-            .strokeBorder(
-                LinearGradient(colors: [.white, QipaiPalette.glowRing],
-                               startPoint: .top, endPoint: .bottom),
-                lineWidth: 2.4)
-            .frame(width: 30, height: 10)
-            .shadow(color: QipaiPalette.glowRing.opacity(0.9), radius: breathe ? 5 : 2)
-            .opacity(active ? 1 : 0)
-            .onAppear {
-                withAnimation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true)) {
-                    breathe = true
-                }
+        Group {
+            if active {
+                Ellipse()
+                    .strokeBorder(
+                        LinearGradient(colors: [.white, QipaiPalette.glowRing],
+                                       startPoint: .top, endPoint: .bottom),
+                        lineWidth: 2.4)
+                    .shadow(color: QipaiPalette.glowRing.opacity(0.9), radius: 4)
+                    .opacity(breathe ? 1 : 0.5)
+                    .onAppear {
+                        breathe = false
+                        withAnimation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true)) {
+                            breathe = true
+                        }
+                    }
+                    .onDisappear { breathe = false }
+            } else {
+                Color.clear
             }
+        }
+        .frame(width: 30, height: 10)
     }
 }
 
