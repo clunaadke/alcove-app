@@ -18,7 +18,7 @@ struct QipaiHistorySheet: View {
     /// 计分板的游戏标签（固定文案走繁体手写系，monopoly 在建灰着）
     private static let boardGames: [(key: String, name: String, ready: Bool)] = [
         ("ddz", "斗地主", true), ("zjh", "炸金花", true), ("uno", "UNO", true),
-        ("daifugo", "大富豪", true), ("monopoly", "大富翁", false),
+        ("daifugo", "大富豪", true), ("monopoly", "大富翁", true),
     ]
 
     var body: some View {

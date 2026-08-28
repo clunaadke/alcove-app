@@ -32,13 +32,15 @@ struct QipaiLegalMove: Decodable, Identifiable {
     let card: String?
     let color: String?       // 万能牌选色 R/G/B/Y
     let count: Int?          // draw 时要摸几张
+    // 大富翁
+    let cellIdx: Int?        // build / sell_house 的目标格
 
     enum CodingKeys: String, CodingKey {
-        case type, value, cards, label, amount, kind, blind, stake, target, targetName, card, color, count
+        case type, value, cards, label, amount, kind, blind, stake, target, targetName, card, color, count, cellIdx
         case asType = "as"
     }
     var id: String {
-        "\(type)-\(value ?? -1)-\(amount ?? -1)-\(stake ?? -1)-\(target ?? "")-\(card ?? "")-\(color ?? "")-\(cards?.joined(separator: ",") ?? "")"
+        "\(type)-\(value ?? -1)-\(amount ?? -1)-\(stake ?? -1)-\(cellIdx ?? -1)-\(target ?? "")-\(card ?? "")-\(color ?? "")-\(cards?.joined(separator: ",") ?? "")"
     }
 }
 

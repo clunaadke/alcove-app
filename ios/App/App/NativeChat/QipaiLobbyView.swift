@@ -23,11 +23,10 @@ struct QipaiLobbyView: View {
         "zjh": "QipaiIconClover",     // 炸金"花"
         "uno": "QipaiIconKitty",
         "daifugo": "QipaiIconPiano",  // 大富豪的钢琴
+        "monopoly": "QipaiIconCity",  // 大富翁的城市
     ]
-    // 还在建的，先在图标墙占座
-    private let comingSoon: [(key: String, name: String, icon: String)] = [
-        ("monopoly", "大富翁", "QipaiIconCity"),
-    ]
+    // 还在建的，先在图标墙占座（0828 大富翁转正后暂时空着）
+    private let comingSoon: [(key: String, name: String, icon: String)] = []
 
     /// 全屏页自己管安全区（灵动岛 0828 她抓的）——容器不给垫，从窗口拿
     private var safeTop: CGFloat {
@@ -87,6 +86,11 @@ struct QipaiLobbyView: View {
                 }
             case "daifugo":
                 QipaiDaifugoTableView(code: route.code) {
+                    tableRoute = nil
+                    Task { await reload() }
+                }
+            case "monopoly":
+                QipaiMonopolyTableView(code: route.code) {
                     tableRoute = nil
                     Task { await reload() }
                 }
@@ -401,11 +405,12 @@ struct QipaiLobbyView: View {
         loading = true
         defer { loading = false }
         do {
-            // cards 枢纽必须活着；daifugo 是独立服务，挂了不拖累整个大厅
+            // cards 枢纽必须活着；daifugo / monopoly 是独立服务，挂了不拖累整个大厅
             let main = try await QipaiAPI.lobby()
             let dai = try? await QipaiAPI.lobby(service: "daifugo")
-            games = main.games + (dai?.games ?? [])
-            rooms = (main.rooms + (dai?.rooms ?? []))
+            let mono = try? await QipaiAPI.lobby(service: "monopoly")
+            games = main.games + (dai?.games ?? []) + (mono?.games ?? [])
+            rooms = (main.rooms + (dai?.rooms ?? []) + (mono?.rooms ?? []))
                 .sorted { ($0.updatedAt ?? 0) > ($1.updatedAt ?? 0) }
             errorText = nil
         } catch {
@@ -492,7 +497,8 @@ struct QipaiCreateRoomSheet: View {
                                     .foregroundColor(QipaiPalette.inkDim.opacity(0.7)))
                     }
 
-                    rulesBox
+                    // 大富翁没有可选规则，整块不出现
+                    if !game.ruleMeta.isEmpty { rulesBox }
                     aiBox
 
                     if let errorText {

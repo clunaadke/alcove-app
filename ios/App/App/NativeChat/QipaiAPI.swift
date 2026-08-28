@@ -255,7 +255,11 @@ enum QipaiAPI {
 
     /// game key → 服务前缀
     static func service(for game: String) -> String {
-        game == "daifugo" ? "daifugo" : "cards"
+        switch game {
+        case "daifugo": return "daifugo"
+        case "monopoly": return "monopoly"
+        default: return "cards"
+        }
     }
 
     static func lobby(service: String = "cards") async throws -> Lobby {
@@ -289,12 +293,15 @@ enum QipaiAPI {
     // MARK: 战绩
 
     static func history(limit: Int = 50) async throws -> [HistorySummary] {
-        // cards 必须活着；daifugo 的档案拿不到就只显示 cards 的
+        // cards 必须活着；daifugo / monopoly 的档案拿不到就只显示拿得到的
         let main: HistoryList = try await request("cards/api/history",
                                                   query: ["limit": String(limit)])
         let dai: HistoryList? = try? await request("daifugo/api/history",
                                                    query: ["limit": String(limit)])
-        return (main.history + (dai?.history ?? [])).sorted { $0.closedAt > $1.closedAt }
+        let mono: HistoryList? = try? await request("monopoly/api/history",
+                                                    query: ["limit": String(limit)])
+        return (main.history + (dai?.history ?? []) + (mono?.history ?? []))
+            .sorted { $0.closedAt > $1.closedAt }
     }
 
     static func historyDetail(id: String, service: String = "cards") async throws -> HistoryRecord {
@@ -303,13 +310,15 @@ enum QipaiAPI {
         return w.record
     }
 
-    /// 计分板：两个服务各聚合各的，这里并成一张 {game: rows} 表
+    /// 计分板：三个服务各聚合各的，这里并成一张 {game: rows} 表
     static func leaderboard() async throws -> [String: [LeaderboardRow]] {
         struct Wrap: Decodable { let board: [String: [LeaderboardRow]] }
         let main: Wrap = try await request("cards/api/history/leaderboard/all")
         let dai: Wrap? = try? await request("daifugo/api/history/leaderboard/all")
+        let mono: Wrap? = try? await request("monopoly/api/history/leaderboard/all")
         var out = main.board
         for (key, rows) in dai?.board ?? [:] { out[key] = rows }
+        for (key, rows) in mono?.board ?? [:] { out[key] = rows }
         return out
     }
 }
