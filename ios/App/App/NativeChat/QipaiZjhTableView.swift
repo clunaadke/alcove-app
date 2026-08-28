@@ -27,6 +27,8 @@ struct QipaiZjhTableView: View {
             }
             overlays
         }
+        // cover 根上的键盘豁免（免疫罩之外的保险：overlays 也不许被键盘顶）
+        .ignoresSafeArea(.keyboard)
     }
 
     // MARK: 牌桌

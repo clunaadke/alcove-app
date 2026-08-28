@@ -30,6 +30,8 @@ struct QipaiUnoTableView: View {
             }
             overlays
         }
+        // cover 根上的键盘豁免（免疫罩之外的保险：overlays 也不许被键盘顶）
+        .ignoresSafeArea(.keyboard)
         // 局面翻页（别人出了牌/换局）选中就作废，免得出牌键出一张已经不在手里的牌
         .onChange(of: (store.view?.seq ?? 0)) { _ in
             let hand = store.view?.me?.hand ?? []

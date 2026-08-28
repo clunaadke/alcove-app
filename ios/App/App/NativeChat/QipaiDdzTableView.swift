@@ -28,6 +28,8 @@ struct QipaiDdzTableView: View {
             }
             overlays
         }
+        // cover 根上的键盘豁免（免疫罩之外的保险：overlays 也不许被键盘顶）
+        .ignoresSafeArea(.keyboard)
         .onChange(of: (store.view?.seq ?? 0)) { _ in
             // 每次出牌后清掉已经不在手里的选中牌
             let hand = Set(store.view?.me?.hand ?? [])

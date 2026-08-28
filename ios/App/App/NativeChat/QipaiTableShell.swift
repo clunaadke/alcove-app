@@ -36,34 +36,41 @@ struct QipaiTableShell<GameV: Decodable & QipaiGameView, Content: View, Help: Vi
     }
 
     var body: some View {
-        ZStack {
-            background
-            // 0828 三连修的终版（她自己给的方案）：键盘来了**整页纹丝不动**，
-            // 只有悬浮输入条单独贴在键盘上方。之前两版都在键盘出现时给整树垫高，
-            // 一垫就整页重排：放大、掉帧、点哪儿键盘都不肯走——全是那一垫的病。
-            GeometryReader { geo in
-                VStack(spacing: 0) {
-                    topBar
-                    if let frame = store.frame {
-                        if !frame.started {
-                            waitingRoom(frame)
-                        } else if store.view != nil {
-                            content()
+        // 0828 四连修的终版：键盘来了**整页纹丝不动**，只有悬浮输入条贴在键盘上方。
+        // 前三版病史——垫高整树（放大+掉帧）→ 只在 shell 的 ZStack 上挂
+        // .ignoresSafeArea(.keyboard)（fullScreenCover 里不可靠，页面照样被顶得
+        // 放大裁切）。终版从 UIKit 层根治：整页装进 QipaiKeyboardImmune（子
+        // UIHostingController 的 safeAreaRegions 摘掉 .keyboard），系统从此
+        // 不再为键盘调这棵树的安全区，页面物理上动不了。
+        QipaiKeyboardImmune {
+            ZStack {
+                background
+                GeometryReader { geo in
+                    VStack(spacing: 0) {
+                        topBar
+                        if let frame = store.frame {
+                            if !frame.started {
+                                waitingRoom(frame)
+                            } else if store.view != nil {
+                                content()
+                            } else {
+                                ProgressView().frame(maxHeight: .infinity)
+                            }
                         } else {
                             ProgressView().frame(maxHeight: .infinity)
                         }
-                    } else {
-                        ProgressView().frame(maxHeight: .infinity)
                     }
+                    .padding(.bottom, safeBottom)
+                    .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
+                    .clipped()
                 }
-                .padding(.bottom, safeBottom)
-                .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
-                .clipped()
+                toast
+                floatingComposer
             }
-            toast
-            floatingComposer
+            // 免疫罩内的安全区一律不认，顶底都由 safeTop/safeBottom 自己管（老规矩）
+            .ignoresSafeArea()
         }
-        .ignoresSafeArea(.keyboard)
+        .ignoresSafeArea()
         .onAppear { store.start() }
         .onDisappear { store.stop() }
         .onChange(of: store.frame?.closed ?? false) { closed in
@@ -74,62 +81,11 @@ struct QipaiTableShell<GameV: Decodable & QipaiGameView, Content: View, Help: Vi
 
     // MARK: 悬浮输入条（信息流里的假框点一下召出来，真输入框只活在这里）
 
-    @FocusState private var composerFocused: Bool
-
     @ViewBuilder private var floatingComposer: some View {
         if store.composing {
-            ZStack(alignment: .bottom) {
-                // 点空白处收键盘：整层遮罩，点了就收（0828 她报的「键盘不下落」）
-                Color.black.opacity(0.12)
-                    .ignoresSafeArea()
-                    .onTapGesture {
-                        composerFocused = false
-                        store.composing = false
-                    }
-                HStack(spacing: 8) {
-                    TextField("", text: Binding(get: { store.chatDraft },
-                                                set: { store.chatDraft = $0 }),
-                              prompt: Text("说点什么…")
-                                .foregroundColor(QipaiPalette.inkDim.opacity(0.7)))
-                        .font(.system(size: 14))
-                        .foregroundColor(QipaiPalette.ink)
-                        .focused($composerFocused)
-                        .submitLabel(.send)
-                        .onSubmit { sendComposer() }
-                        .padding(.horizontal, 13).padding(.vertical, 10)
-                        .background(Capsule().fill(QipaiPalette.fieldBg))
-                        .overlay(Capsule().stroke(QipaiPalette.line, lineWidth: 1))
-                    Button {
-                        sendComposer()
-                    } label: {
-                        Image(systemName: "paperplane.fill").font(.system(size: 13))
-                    }
-                    .buttonStyle(QipaiEmbossedButtonStyle(prominent: true))
-                    .disabled(store.chatDraft.trimmingCharacters(in: .whitespaces).isEmpty)
-                }
-                .padding(.horizontal, 12).padding(.vertical, 8)
-                .background(
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .fill(QipaiPalette.panel)
-                        .shadow(color: QipaiPalette.shadowTint.opacity(0.25), radius: 8, y: -2))
-                .padding(.horizontal, 10)
-                // 贴着键盘顶；键盘还没升起来的一瞬垫 home 条，随它一起滑上去
-                .padding(.bottom, keyboard.height > 0 ? keyboard.height + 6 : safeBottom + 6)
-                .animation(.easeOut(duration: 0.25), value: keyboard.height)
-            }
-            .onAppear {
-                // 等浮层进树再拿焦点，立刻拿会抢不到
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { composerFocused = true }
-            }
+            QipaiFloatingComposerBar(store: store, keyboard: keyboard,
+                                     safeBottom: safeBottom)
         }
-    }
-
-    private func sendComposer() {
-        let text = store.chatDraft
-        store.chatDraft = ""
-        composerFocused = false
-        store.composing = false
-        Task { await store.sendChat(text) }
     }
 
     // MARK: 背景与顶栏
@@ -292,6 +248,102 @@ struct QipaiTableShell<GameV: Decodable & QipaiGameView, Content: View, Help: Vi
             }
         }
         .presentationDetents([.medium])
+    }
+}
+
+// MARK: - 键盘免疫罩
+
+/// 把整页装进自己的 UIHostingController，从 safeAreaRegions 里摘掉 .keyboard。
+/// SwiftUI 的键盘避让在 fullScreenCover 里对 .ignoresSafeArea(.keyboard) 阳奉阴违
+/// （0828 两版实测：页面被顶得放大裁切），UIKit 这个开关是硬的：关了之后系统
+/// 根本不往这棵树里塞键盘安全区，页面想动都没有入口。
+private struct QipaiKeyboardImmune<Content: View>: UIViewControllerRepresentable {
+    private let content: Content
+    init(@ViewBuilder content: () -> Content) { self.content = content() }
+
+    func makeUIViewController(context: Context) -> UIHostingController<Content> {
+        let host = UIHostingController(rootView: content)
+        host.safeAreaRegions = .container   // 只留容器安全区，键盘不算数
+        host.view.backgroundColor = .clear
+        return host
+    }
+
+    func updateUIViewController(_ host: UIHostingController<Content>, context: Context) {
+        host.rootView = content
+    }
+}
+
+// MARK: - 悬浮输入条本体
+
+/// 真输入框只活在这里，全宽贴着键盘顶（她 0828 定的：中间不留缝、不罩黑影）。
+/// FocusState 必须住在免疫罩里面这个子树里，跟外壳隔着 hosting controller 边界
+/// 的焦点绑定靠不住。
+private struct QipaiFloatingComposerBar<GameV: Decodable & QipaiGameView>: View {
+    @ObservedObject var store: QipaiTableStore<GameV>
+    @ObservedObject var keyboard: QipaiKeyboardWatcher
+    let safeBottom: CGFloat
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            // 点空白处收键盘：完全透明的命中层，只接点按不压亮度
+            Color.clear
+                .contentShape(Rectangle())
+                .ignoresSafeArea()
+                .onTapGesture { dismissComposer() }
+            bar
+                // 底边直接坐在键盘上沿；键盘还没升起来的一瞬先垫 home 条，随它滑上去
+                .padding(.bottom, keyboard.height > 0 ? keyboard.height : safeBottom)
+                .animation(.easeOut(duration: 0.25), value: keyboard.height)
+        }
+        .onAppear {
+            // 等浮层进树再拿焦点，立刻拿会抢不到
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { focused = true }
+        }
+    }
+
+    private var bar: some View {
+        HStack(spacing: 8) {
+            TextField("", text: Binding(get: { store.chatDraft },
+                                        set: { store.chatDraft = $0 }),
+                      prompt: Text("说点什么…")
+                        .foregroundColor(QipaiPalette.inkDim.opacity(0.7)))
+                .font(.system(size: 14))
+                .foregroundColor(QipaiPalette.ink)
+                .focused($focused)
+                .submitLabel(.send)
+                .onSubmit { send() }
+                .padding(.horizontal, 13).padding(.vertical, 10)
+                .background(Capsule().fill(QipaiPalette.fieldBg))
+                .overlay(Capsule().stroke(QipaiPalette.line, lineWidth: 1))
+            Button {
+                send()
+            } label: {
+                Image(systemName: "paperplane.fill").font(.system(size: 13))
+            }
+            .buttonStyle(QipaiEmbossedButtonStyle(prominent: true))
+            .disabled(store.chatDraft.trimmingCharacters(in: .whitespaces).isEmpty)
+        }
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .frame(maxWidth: .infinity)
+        .background(
+            UnevenRoundedRectangle(topLeadingRadius: 14, topTrailingRadius: 14,
+                                   style: .continuous)
+                .fill(QipaiPalette.panel)
+                .shadow(color: QipaiPalette.shadowTint.opacity(0.25), radius: 8, y: -2))
+    }
+
+    private func dismissComposer() {
+        focused = false
+        store.composing = false
+    }
+
+    private func send() {
+        let text = store.chatDraft
+        store.chatDraft = ""
+        focused = false
+        store.composing = false
+        Task { await store.sendChat(text) }
     }
 }
 
