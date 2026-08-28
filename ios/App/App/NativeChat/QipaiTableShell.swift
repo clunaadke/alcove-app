@@ -4,6 +4,11 @@ import UIKit
 // 三张牌桌共用的外壳：背景、顶栏（返回/连接状态/聊天/帮助）、等人开局页、
 // 牌桌聊天、toast、SSE 生命周期。游戏各自只画"开局之后"的桌面和自己的帮助页。
 
+// ‼️0828 深夜两次塌房的教训：不要再把这个外壳塞进嵌套 UIHostingController
+// （UIViewControllerRepresentable + safeAreaRegions 摘键盘那套）。d629340 和
+// 568359c 两个构建实机都卡死在「重连中」——订阅/刷新在罩内不工作，机制没查清
+//（这台机器没 Xcode），但结论是硬的：罩子=塌房。键盘豁免走各牌桌 cover 根上的
+// .ignoresSafeArea(.keyboard)，这里保持 fc95a5a 验证过能跑的普通 SwiftUI 结构。
 struct QipaiTableShell<GameV: Decodable & QipaiGameView, Content: View, Help: View>: View {
     @ObservedObject var store: QipaiTableStore<GameV>
     let fallbackTitle: String
@@ -11,29 +16,6 @@ struct QipaiTableShell<GameV: Decodable & QipaiGameView, Content: View, Help: Vi
     var onExit: () -> Void
     @ViewBuilder let content: () -> Content
     @ViewBuilder let help: () -> Help
-
-    // 0828 塌房修复：外层只负责套键盘免疫罩，真外壳全在 Core 里。
-    // Core 的 @ObservedObject 和 onAppear/onDisappear 都活在罩内那个子
-    // hosting controller 的树里：store 一动它自己就重画、订阅自己就启动，
-    // 不依赖外层转发。第一版把生命周期挂在 representable 上，实机 onAppear
-    // 不触发，store.start() 压根没跑，牌桌永远「重连中」空转。
-    var body: some View {
-        QipaiKeyboardImmune {
-            QipaiTableShellCore(store: store, fallbackTitle: fallbackTitle,
-                                round: round, onExit: onExit,
-                                content: content, help: help)
-        }
-        .ignoresSafeArea()
-    }
-}
-
-private struct QipaiTableShellCore<GameV: Decodable & QipaiGameView, Content: View, Help: View>: View {
-    @ObservedObject var store: QipaiTableStore<GameV>
-    let fallbackTitle: String
-    var round: Int?
-    var onExit: () -> Void
-    let content: () -> Content
-    let help: () -> Help
 
     /// 全屏页自己管安全区（灵动岛会压顶栏，0828 她抓的）
     private var safeTop: CGFloat {
@@ -59,10 +41,10 @@ private struct QipaiTableShellCore<GameV: Decodable & QipaiGameView, Content: Vi
     }
 
     var body: some View {
-        // 0828 键盘四连修的终版：键盘来了**整页纹丝不动**，只有悬浮输入条贴在
-        // 键盘上方。病史——垫高整树（放大+掉帧）→ ZStack 挂 .ignoresSafeArea(
-        // .keyboard)（fullScreenCover 里不可靠，照样放大裁切）→ 终版：外层的
-        // QipaiKeyboardImmune 从 UIKit 层摘掉键盘安全区，这棵树物理上动不了。
+        // 键盘策略（0828 数次往复后的定案）：整页纹丝不动，只有悬浮输入条贴在
+        // 键盘上方。豁免挂两层：这里的 .ignoresSafeArea(.keyboard)（fc95a5a
+        // 同款）+ 各牌桌 cover 根上的同名修饰符（文档记载的正确挂点，fc95a5a
+        // 缺的就是它）。
         ZStack {
             background
             GeometryReader { geo in
@@ -87,8 +69,7 @@ private struct QipaiTableShellCore<GameV: Decodable & QipaiGameView, Content: Vi
             toast
             floatingComposer
         }
-        // 罩内安全区一律不认，顶底都由 safeTop/safeBottom 自己管（老规矩）
-        .ignoresSafeArea()
+        .ignoresSafeArea(.keyboard)
         .onAppear { store.start() }
         .onDisappear { store.stop() }
         .onChange(of: store.frame?.closed ?? false) { closed in
@@ -269,34 +250,9 @@ private struct QipaiTableShellCore<GameV: Decodable & QipaiGameView, Content: Vi
     }
 }
 
-// MARK: - 键盘免疫罩
-
-/// 把整页装进自己的 UIHostingController，从 safeAreaRegions 里摘掉 .keyboard。
-/// SwiftUI 的键盘避让在 fullScreenCover 里对 .ignoresSafeArea(.keyboard) 阳奉阴违
-/// （0828 两版实测：页面被顶得放大裁切），UIKit 这个开关是硬的：关了之后系统
-/// 根本不往这棵树里塞键盘安全区，页面想动都没有入口。
-private struct QipaiKeyboardImmune<Content: View>: UIViewControllerRepresentable {
-    private let content: Content
-    init(@ViewBuilder content: () -> Content) { self.content = content() }
-
-    func makeUIViewController(context: Context) -> UIHostingController<Content> {
-        let host = UIHostingController(rootView: content)
-        host.safeAreaRegions = .container   // 只留容器安全区，键盘不算数
-        host.view.backgroundColor = .clear
-        return host
-    }
-
-    func updateUIViewController(_ host: UIHostingController<Content>, context: Context) {
-        host.rootView = content
-        host.view.setNeedsLayout()
-    }
-}
-
 // MARK: - 悬浮输入条本体
 
 /// 真输入框只活在这里，全宽贴着键盘顶（她 0828 定的：中间不留缝、不罩黑影）。
-/// FocusState 必须住在免疫罩里面这个子树里，跟外壳隔着 hosting controller 边界
-/// 的焦点绑定靠不住。
 private struct QipaiFloatingComposerBar<GameV: Decodable & QipaiGameView>: View {
     @ObservedObject var store: QipaiTableStore<GameV>
     @ObservedObject var keyboard: QipaiKeyboardWatcher
