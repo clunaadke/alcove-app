@@ -60,6 +60,13 @@ final class ImageDiskCache {
         return await task.value
     }
 
+    /// 发图时顺手把原图落进缓存：自己发的图立刻能显示，不用再回服务器拉一遍
+    func store(_ data: Data, for url: URL) {
+        guard let img = UIImage(data: data) else { return }
+        try? data.write(to: fileURL(for: url), options: .atomic)
+        mem.setObject(img, forKey: url as NSURL)
+    }
+
     /// 预热：还没存的才下，四个一起，不阻塞界面
     func prefetch(_ urls: [URL]) async {
         let todo = urls.filter { !FileManager.default.fileExists(atPath: fileURL(for: $0).path) }

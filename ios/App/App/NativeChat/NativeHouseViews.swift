@@ -47,7 +47,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .wall: return "小黑屋"
         case .usage: return "Usage"
         case .workbench: return "总控台"
-        case .studio: return "陈璟工作室"
+        case .studio: return "工作室"
         case .memory: return "不忘"
         case .dreams: return "Dreams"
         case .shelf: return "渡鸦的架子"
@@ -5512,7 +5512,6 @@ private struct NativeStudioView: View {
     @State private var status: [String: Any] = [:]
     @State private var tasks: [[String: Any]] = []
     @State private var messages: [[String: Any]] = []
-    @State private var draft = ""
     @State private var showTerminal = false
     @State private var deliveryDraft: [String: Any]?
     @State private var deliveryTitle = ""
@@ -5532,7 +5531,6 @@ private struct NativeStudioView: View {
     @State private var showPhotoPicker = false
     @State private var showFilePicker = false
     @Environment(\.dismiss) private var dismiss
-    @FocusState private var inputFocused: Bool
     @AppStorage("alcoveTheme") private var themeName = "haven"
     private var theme: AlcoveTheme { .panelNamed(themeName) }
 
@@ -5549,8 +5547,15 @@ private struct NativeStudioView: View {
                         // 0818 她截到工作室空屏：以前每 2 秒把整个数组换掉、再连打四次
                         // scrollTo，LazyVStack 内容高度一抖 contentOffset 停在旧值上，
                         // 屏幕就白了。现在按 id 稳定身份、只追加新消息、只在真有新消息时滚一次。
-                        ForEach(messages, id: \.studioMessageID) { message in
-                            messageBubble(message).id("studio-message-\(message.int("id"))")
+                        // 0829：同组图片（att_group）合并成一条横排气泡，跟主聊天一致
+                        ForEach(displayItems) { item in
+                            Group {
+                                if item.group.count > 1 {
+                                    photoGroupBubble(item)
+                                } else {
+                                    messageBubble(item.primary)
+                                }
+                            }.id("studio-message-\(item.id)")
                         }
                         if let current = status["current_task"] as? [String: Any] {
                             HStack(spacing: 7) { ProgressView().scaleEffect(0.7); Text("正在处理 · \(current.string("title"))") }
@@ -5607,7 +5612,7 @@ private struct NativeStudioView: View {
             }
                 .buttonStyle(.plain).accessibilityLabel("返回总控台")
             VStack(alignment: .leading, spacing: 2) {
-                Text("陈璟工作室").font(.system(size: 20, weight: .semibold, design: .serif))
+                Text("工作室").font(.system(size: 20, weight: .semibold, design: .serif))
                 HStack(spacing: 5) {
                     Circle().fill(stateColor).frame(width: 6, height: 6)
                     Text(stateText)
@@ -5621,6 +5626,80 @@ private struct NativeStudioView: View {
             Button { showTerminal = true } label: { Image(systemName: "terminal").frame(width: 34, height: 34).background(.white.opacity(0.42), in: Circle()) }
                 .buttonStyle(.plain).accessibilityLabel("查看工作室终端")
         }.padding(.horizontal, 15).padding(.bottom, 10).padding(.top, 54)
+    }
+
+    /// 公网入口只认 /api 前缀（0829 实测 /work/attachments 直连是 404）
+    static func workAttachmentURL(_ raw: String) -> URL {
+        AlcoveAPI.fullURL(raw.hasPrefix("/work/attachments") ? "/api" + raw : raw)
+    }
+
+    /// 同一组（att_group）的连续图片消息折成一条横排；其余原样
+    private var displayItems: [StudioDisplayItem] {
+        var out: [StudioDisplayItem] = []
+        var i = 0
+        while i < messages.count {
+            let message = messages[i]
+            let group = message.string("att_group")
+            if !group.isEmpty, message.string("attachment_type") == "image" {
+                var bunch = [message]
+                var j = i + 1
+                while j < messages.count, messages[j].string("att_group") == group {
+                    bunch.append(messages[j]); j += 1
+                }
+                out.append(StudioDisplayItem(id: message.int("id"), group: bunch))
+                i = j
+            } else {
+                out.append(StudioDisplayItem(id: message.int("id"), group: [message]))
+                i += 1
+            }
+        }
+        return out
+    }
+
+    /// 多图横排气泡：≤2 并排，>2 横滑（跟主聊天一个观感），配文垫在图下面
+    private func photoGroupBubble(_ item: StudioDisplayItem) -> some View {
+        let mine = item.primary.string("role") == "user"
+        let caption = item.group.map { $0.string("text") }.first { !$0.isEmpty } ?? ""
+        let side: CGFloat = 124
+        let gap: CGFloat = 8
+        return HStack(alignment: .bottom) {
+            if mine { Spacer(minLength: 52) }
+            VStack(alignment: mine ? .trailing : .leading, spacing: 6) {
+                Group {
+                    if item.group.count > 2 {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            LazyHStack(spacing: gap) {
+                                ForEach(item.group, id: \.studioMessageID) { m in thumb(m, side: side) }
+                            }
+                        }.frame(width: side * 2 + gap, height: side)
+                    } else {
+                        HStack(spacing: gap) {
+                            ForEach(item.group, id: \.studioMessageID) { m in thumb(m, side: side) }
+                        }
+                    }
+                }
+                if !caption.isEmpty {
+                    Text(alcoveMarkdown(caption)).font(.system(size: 14, design: .serif)).lineSpacing(5).textSelection(.enabled)
+                        .padding(.horizontal, 14).padding(.vertical, 11)
+                        .background(mine ? theme.bubbleUser : theme.bubbleAI, in: RoundedRectangle(cornerRadius: 18))
+                        .frame(maxWidth: 300, alignment: mine ? .trailing : .leading)
+                }
+            }
+            if !mine { Spacer(minLength: 52) }
+        }
+    }
+
+    private func thumb(_ message: [String: Any], side: CGFloat) -> some View {
+        let url = Self.workAttachmentURL(message.string("attachment_url"))
+        return CachedImage(url: url) { image in
+            image.resizable().scaledToFill()
+        } placeholder: {
+            ZStack { Color.black.opacity(0.06); ProgressView() }
+        }
+        .frame(width: side, height: side)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .contentShape(Rectangle())
+        .onTapGesture { photoViewer = StudioPhotoTarget(url: url) }
     }
 
     private func messageBubble(_ message: [String: Any]) -> some View {
@@ -5657,13 +5736,14 @@ private struct NativeStudioView: View {
                     }.buttonStyle(.plain)
                 }
                 if !message.string("attachment_url").isEmpty {
-                    let attachmentURL = AlcoveAPI.fullURL(message.string("attachment_url"))
+                    let attachmentURL = Self.workAttachmentURL(message.string("attachment_url"))
                     if message.string("attachment_type") == "image" {
-                        // 以前这儿只挂一个文件名标签，她发过来的图自己看不见。
-                        AsyncImage(url: attachmentURL) { image in
+                        // 0829：AsyncImage 换 CachedImage（磁盘缓存+重试），URL 补 /api 前缀
+                        // ——公网入口只认 /api，这就是「图片一直转圈」的根因
+                        CachedImage(url: attachmentURL) { image in
                             image.resizable().scaledToFit()
                         } placeholder: {
-                            ZStack { Color.black.opacity(0.06); ProgressView() }.frame(width: 150, height: 150)
+                            ZStack { Color.black.opacity(0.06); ProgressView() }.frame(width: 220, height: 220)
                         }
                         .frame(maxWidth: 220, maxHeight: 300)
                         .clipShape(RoundedRectangle(cornerRadius: 14))
@@ -5688,47 +5768,12 @@ private struct NativeStudioView: View {
     }
 
     private var inputBar: some View {
-        VStack(spacing: 0) {
-            // 待发图片叠加条，可单张删——跟主聊天同款
-            if !pendingImages.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 6) {
-                        ForEach(Array(pendingImages.enumerated()), id: \.offset) { index, item in
-                            ZStack(alignment: .topTrailing) {
-                                Image(uiImage: item.thumb).resizable().scaledToFill()
-                                    .frame(width: 64, height: 64)
-                                    .clipShape(RoundedRectangle(cornerRadius: 10))
-                                    .onTapGesture { previewImage = item.thumb }
-                                Button { pendingImages.remove(at: index) } label: {
-                                    Image(systemName: "xmark.circle.fill")
-                                        .font(.system(size: 19)).foregroundColor(.white)
-                                        .shadow(radius: 2).frame(width: 30, height: 30)
-                                        .contentShape(Rectangle())
-                                }.buttonStyle(.plain).offset(x: 6, y: -6)
-                            }
-                        }
-                    }.padding(.init(top: 8, leading: 12, bottom: 2, trailing: 12))
-                }
-            }
-            inputRow
-        }.background(.ultraThinMaterial)
-    }
-
-    private var canSend: Bool {
-        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !pendingImages.isEmpty
-    }
-
-    private var inputRow: some View {
-        HStack(alignment: .bottom, spacing: 9) {
-            Menu {
-                Button { showPhotoPicker = true } label: { Label("图片", systemImage: "photo") }
-                Button { showFilePicker = true } label: { Label("文件", systemImage: "doc") }
-            } label: { Image(systemName: "plus").font(.system(size: 16, weight: .semibold)).frame(width: 38, height: 38).background(.white.opacity(0.50), in: Circle()) }
-            TextField("在工作室里和他说……", text: $draft, axis: .vertical).lineLimit(1...6).focused($inputFocused)
-                .padding(.horizontal, 14).padding(.vertical, 10).background(.white.opacity(0.58), in: RoundedRectangle(cornerRadius: 19))
-            Button { Task { await send() } } label: { Image(systemName: "arrow.up").font(.system(size: 15, weight: .bold)).foregroundColor(.white).frame(width: 38, height: 38).background(theme.fyAccent, in: Circle()) }
-                .disabled(!canSend)
-        }.padding(.horizontal, 12).padding(.top, 8).padding(.bottom, 18)
+        StudioInputBar(pendingImages: $pendingImages,
+                       accent: theme.fyAccent,
+                       onPickPhotos: { showPhotoPicker = true },
+                       onPickFile: { showFilePicker = true },
+                       onPreview: { previewImage = $0 },
+                       onSend: { text in await send(text) })
     }
 
     private var deliveryPreview: some View {
@@ -5780,7 +5825,12 @@ private struct NativeStudioView: View {
         let messagePath = lastID > 0 ? "/api/work/messages?since=\(lastID)" : "/api/work/messages"
         async let s = try? NativeHouseAPI.object("/api/work/status"); async let t = try? NativeHouseAPI.object("/api/work/tasks"); async let m = try? NativeHouseAPI.object(messagePath)
         let (newStatus, newTasks, newMessages) = await (s, t, m)
-        if let newStatus { status = newStatus }; if let newTasks { tasks = Array(newTasks.array("tasks").reversed()) }
+        // 没变就不赋值——每 2 秒整包替换会白白触发整页重算（0829 闪屏成因之一）
+        if let newStatus, !(newStatus as NSDictionary).isEqual(to: status as NSDictionary) { status = newStatus }
+        if let newTasks {
+            let list = Array(newTasks.array("tasks").reversed())
+            if !(list as NSArray).isEqual(to: tasks as NSArray) { tasks = list }
+        }
         if let newMessages {
             let incoming = newMessages.array("messages")
             if lastID == 0 {
@@ -5795,11 +5845,12 @@ private struct NativeStudioView: View {
         }
         loading = false
     }
-    @MainActor private func send() async {
-        let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+    /// 返回 false = 发送失败，输入条会把文字放回草稿框
+    @MainActor private func send(_ raw: String) async -> Bool {
+        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         if !pendingImages.isEmpty {
             let images = pendingImages.map { ($0.data, $0.ext) }
-            pendingImages = []; draft = ""; inputFocused = false
+            pendingImages = []
             // 同一次发的九张串成一组：后端只在最后一张收齐时叫我一次，
             // 把整组路径一起递给我，不会被同一件事叫醒九遍
             let group = UUID().uuidString
@@ -5810,13 +5861,13 @@ private struct NativeStudioView: View {
                              index: index + 1, total: images.count)
             }
             await refresh()
-            return
+            return true
         }
-        guard !text.isEmpty else { return }
-        draft = ""; inputFocused = false
+        guard !text.isEmpty else { return true }
         let title = String(text.prefix(28))
-        guard (try? await NativeHouseAPI.object("/api/work/task", method: "POST", body: ["title": title, "prompt": text])) != nil else { draft = text; return }
+        guard (try? await NativeHouseAPI.object("/api/work/task", method: "POST", body: ["title": title, "prompt": text])) != nil else { return false }
         await refresh()
+        return true
     }
     @MainActor private func uploadFile(_ url: URL) async {
         let access = url.startAccessingSecurityScopedResource(); defer { if access { url.stopAccessingSecurityScopedResource() } }
@@ -5835,10 +5886,17 @@ private struct NativeStudioView: View {
         components.queryItems = items
         var request = URLRequest(url: components.url!); request.httpMethod = "POST"; request.httpBody = data
         request.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
-        guard let (data, _) = try? await URLSession.shared.data(for: request),
-              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+        guard let (respData, _) = try? await URLSession.shared.data(for: request),
+              let object = try? JSONSerialization.jsonObject(with: respData) as? [String: Any],
               object["ok"] as? Bool == true else { return }
-        if let message = object["message"] as? [String: Any] { messages.append(message) }
+        if let message = object["message"] as? [String: Any] {
+            messages.append(message)
+            // 发出去的图顺手落本地缓存，气泡秒显不用回服务器拉（跟主聊天一致）
+            let raw = message.string("attachment_url")
+            if message.string("attachment_type") == "image", !raw.isEmpty {
+                ImageDiskCache.shared.store(data, for: Self.workAttachmentURL(raw))
+            }
+        }
         await refresh()
     }
     @MainActor private func action(_ task: [String: Any], _ action: String) async { guard (try? await NativeHouseAPI.object("/api/work/task/\(task.int("id"))/\(action)", method: "POST", body: [:])) != nil else { return }; await refresh() }
@@ -5872,6 +5930,71 @@ private struct NativeStudioView: View {
 private extension Dictionary where Key == String, Value == Any {
     /// ForEach 要一个稳定身份；工作室消息用后端 id，别用数组下标
     var studioMessageID: Int { int("id") }
+}
+
+/// 消息列表的显示单元：普通消息单独一条；同组图片折成一条横排
+private struct StudioDisplayItem: Identifiable {
+    let id: Int
+    let group: [[String: Any]]
+    var primary: [String: Any] { group[0] }
+}
+
+/// 输入条独立成子视图：打字只刷新这一小块，不再把整页消息列表拖着重算
+/// （0829 修「打字闪屏」的根子）。发送失败时文字退回草稿框。
+private struct StudioInputBar: View {
+    @Binding var pendingImages: [(thumb: UIImage, data: Data, ext: String)]
+    let accent: Color
+    var onPickPhotos: () -> Void
+    var onPickFile: () -> Void
+    var onPreview: (UIImage) -> Void
+    var onSend: (String) async -> Bool
+
+    @State private var draft = ""
+    @FocusState private var focused: Bool
+
+    private var canSend: Bool {
+        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !pendingImages.isEmpty
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // 待发图片叠加条，可单张删——跟主聊天同款
+            if !pendingImages.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(Array(pendingImages.enumerated()), id: \.offset) { index, item in
+                            ZStack(alignment: .topTrailing) {
+                                Image(uiImage: item.thumb).resizable().scaledToFill()
+                                    .frame(width: 64, height: 64)
+                                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                                    .onTapGesture { onPreview(item.thumb) }
+                                Button { pendingImages.remove(at: index) } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .font(.system(size: 19)).foregroundColor(.white)
+                                        .shadow(radius: 2).frame(width: 30, height: 30)
+                                        .contentShape(Rectangle())
+                                }.buttonStyle(.plain).offset(x: 6, y: -6)
+                            }
+                        }
+                    }.padding(.init(top: 8, leading: 12, bottom: 2, trailing: 12))
+                }
+            }
+            HStack(alignment: .bottom, spacing: 9) {
+                Menu {
+                    Button { onPickPhotos() } label: { Label("图片", systemImage: "photo") }
+                    Button { onPickFile() } label: { Label("文件", systemImage: "doc") }
+                } label: { Image(systemName: "plus").font(.system(size: 16, weight: .semibold)).frame(width: 38, height: 38).background(.white.opacity(0.50), in: Circle()) }
+                TextField("在工作室里和他说……", text: $draft, axis: .vertical).lineLimit(1...6).focused($focused)
+                    .padding(.horizontal, 14).padding(.vertical, 10).background(.white.opacity(0.58), in: RoundedRectangle(cornerRadius: 19))
+                Button {
+                    let text = draft
+                    draft = ""; focused = false
+                    Task { if await onSend(text) == false { draft = text } }
+                } label: { Image(systemName: "arrow.up").font(.system(size: 15, weight: .bold)).foregroundColor(.white).frame(width: 38, height: 38).background(accent, in: Circle()) }
+                    .disabled(!canSend)
+            }.padding(.horizontal, 12).padding(.top, 8).padding(.bottom, 18)
+        }.background(.ultraThinMaterial)
+    }
 }
 
 // 工作室看图：点气泡里的图全屏看，点待发条里的缩略图先预览一眼再决定发不发
