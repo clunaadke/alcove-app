@@ -221,6 +221,17 @@ final class QipaiTableStore<GameV: Decodable & QipaiGameView>: ObservableObject 
     }
     var isHost: Bool { mySeat?.isHost ?? false }
 
+    /// 座位序（入座顺序），座位色用。数据层只回序号，染色在视图层查调色盘
+    func seatIndex(ofPlayer id: String?) -> Int? {
+        guard let id, let seats = frame?.seats else { return nil }
+        return seats.firstIndex { $0.playerId == id }
+    }
+    /// 聊天消息 → 座位序：先按 by（playerId）对，老消息没 by 再按名字兜底
+    func seatIndex(of msg: QipaiChatMessage) -> Int? {
+        if let i = seatIndex(ofPlayer: msg.by) { return i }
+        return frame?.seats.firstIndex { $0.name == msg.name }
+    }
+
     // MARK: SSE
 
     func start() {

@@ -69,6 +69,12 @@ struct QipaiDdzTableView: View {
         }
     }
 
+
+    /// 座位色：对手卡名字/行动描边跟牌桌闲聊同一套（0828 她要的分色）
+    private func seatTone(_ id: String) -> Color? {
+        store.seatIndex(ofPlayer: id).map(QipaiPalette.seatTone)
+    }
+
     private func seatCard(_ p: DdzPlayerView, view: DdzView) -> some View {
         VStack(spacing: 4) {
             QipaiHalo(active: view.current == p.id)
@@ -78,7 +84,7 @@ struct QipaiDdzTableView: View {
                         .foregroundColor(QipaiPalette.accent)
                 }
                 Text(p.name).font(.system(size: 12.5, weight: .semibold))
-                    .foregroundColor(QipaiPalette.ink).lineLimit(1)
+                    .foregroundColor(seatTone(p.id) ?? QipaiPalette.ink).lineLimit(1)
             }
             HStack(spacing: 5) {
                 Text("\(p.handCount)")
@@ -94,7 +100,7 @@ struct QipaiDdzTableView: View {
         .padding(.vertical, 8).padding(.horizontal, 6)
         .qipaiPanel(corner: 15)
         .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous)
-            .stroke(QipaiPalette.glowRing, lineWidth: view.current == p.id ? 1.6 : 0))
+            .stroke(seatTone(p.id) ?? QipaiPalette.glowRing, lineWidth: view.current == p.id ? 1.6 : 0))
     }
 
     @ViewBuilder private func roleBadge(_ p: DdzPlayerView, view: DdzView) -> some View {
@@ -400,13 +406,11 @@ struct QipaiCardFace: View {
 
     var body: some View {
         let card = QipaiCard.parse(id)
-        let color = card.isRed ? QipaiPalette.red : QipaiPalette.ink
+        // 牌面永远是白瓷底，字色定死不跟夜色走（夜里 ink 是月白，白底上会隐形）
+        let color = card.isRed ? QipaiPalette.qhex(0xC25B55) : QipaiPalette.qhex(0x585F6E)
         return VStack(spacing: 0) {
             if card.isJoker {
-                Text(card.rank)
-                    .font(.system(size: width * 0.26, weight: .bold))
-                    .foregroundColor(color)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                jokerFace(big: card.isRed, color: color)
             } else {
                 VStack(spacing: -2) {
                     Text(card.rank)
@@ -440,6 +444,39 @@ struct QipaiCardFace: View {
                                  startPoint: .top, endPoint: .center))
             .allowsHitTesting(false))
         .shadow(color: QipaiPalette.shadowTint.opacity(0.14), radius: 2.5, y: 1.5)
+    }
+
+    /// 王牌卡面（0828 她点的：别再是「大王/小王」俩字杵着）：
+    /// 左上竖排 JOKER、中央皇冠（大王实心红、小王描线石板）、右下大/小角标。
+    /// 全矢量跟着 width 缩放，不进 xcassets。
+    private func jokerFace(big: Bool, color: Color) -> some View {
+        ZStack {
+            VStack(spacing: -1) {
+                ForEach(Array("JOKER"), id: \.self) { ch in
+                    Text(String(ch))
+                        .font(.system(size: width * 0.13, weight: .heavy, design: .rounded))
+                }
+            }
+            .foregroundColor(color.opacity(0.85))
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .padding(.leading, width * 0.09)
+            .padding(.top, width * 0.07)
+            VStack(spacing: width * 0.05) {
+                Image(systemName: big ? "crown.fill" : "crown")
+                    .font(.system(size: width * 0.32, weight: .semibold))
+                Image(systemName: "sparkle")
+                    .font(.system(size: width * 0.11))
+                    .opacity(0.55)
+            }
+            .foregroundColor(color)
+            Text(big ? "大" : "小")
+                .font(.system(size: width * 0.2, weight: .bold))
+                .foregroundColor(color.opacity(0.4))
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                .padding(.trailing, width * 0.08)
+                .padding(.bottom, width * 0.05)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 

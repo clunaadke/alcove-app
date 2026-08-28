@@ -441,7 +441,9 @@ struct QipaiFeedStrip<GameV: Decodable & QipaiGameView>: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(m.name)
                     .font(.system(size: 9, weight: .semibold))
-                    .foregroundColor(QipaiPalette.accent)
+                    // 发言人按座位分色（0828 她要的）；对不上座位就回落原来的灰蓝
+                    .foregroundColor(store.seatIndex(of: m).map(QipaiPalette.seatTone)
+                                     ?? QipaiPalette.accent)
                 Text(m.text)
                     .font(.system(size: 12))
                     .foregroundColor(QipaiPalette.ink)

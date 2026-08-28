@@ -25,6 +25,15 @@ enum QipaiPalette {
     static var red: Color       { pick(0xC25B55, 0xD0736C) }   // 压过饱和的红
     static var glowRing: Color  { pick(0xAEB9D2, 0xBCC9E5) }   // 光环
 
+    /// 座位色（0828 她要的：牌桌闲聊按发言人分色）。按入座顺序取，一局内稳定；
+    /// 0 号就是原来的 accent 灰蓝，人少的桌观感不变。都压过饱和，不抢白瓷。
+    private static let seatTonesDay:   [UInt32] = [0x7C8AA6, 0xC25B55, 0x6E9A87, 0xB08D57, 0x967FB0, 0x5F93A8]
+    private static let seatTonesNight: [UInt32] = [0x93A5C8, 0xD0736C, 0x8FBCA9, 0xCCA97A, 0xB2A0CC, 0x84B4C8]
+    static func seatTone(_ idx: Int) -> Color {
+        let t = night ? seatTonesNight : seatTonesDay
+        return qhex(t[abs(idx) % t.count])
+    }
+
     // 组件里不好直接用主 token 的几处
     static var glossOpacity: Double { night ? 0.12 : 0.6 }              // 面板顶部高光
     static var chipBg: Color { night ? qhex(0x333A48).opacity(0.9) : .white.opacity(0.75) }

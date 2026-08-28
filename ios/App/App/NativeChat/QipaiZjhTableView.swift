@@ -64,11 +64,17 @@ struct QipaiZjhTableView: View {
         }
     }
 
+
+    /// 座位色：对手卡名字/行动描边跟牌桌闲聊同一套（0828 她要的分色）
+    private func seatTone(_ id: String) -> Color? {
+        store.seatIndex(ofPlayer: id).map(QipaiPalette.seatTone)
+    }
+
     private func seatCard(_ p: ZjhPlayerView, view: ZjhView) -> some View {
         VStack(spacing: 4) {
             QipaiHalo(active: view.current == p.id)
             Text(p.name).font(.system(size: 12, weight: .semibold))
-                .foregroundColor(QipaiPalette.ink).lineLimit(1)
+                .foregroundColor(seatTone(p.id) ?? QipaiPalette.ink).lineLimit(1)
             HStack(spacing: -8) {
                 if let cards = p.cards {
                     ForEach(cards, id: \.self) { QipaiCardFace(id: $0, width: 26) }
@@ -90,7 +96,7 @@ struct QipaiZjhTableView: View {
         .padding(.vertical, 8).padding(.horizontal, 4)
         .qipaiPanel(corner: 15)
         .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous)
-            .stroke(QipaiPalette.glowRing, lineWidth: view.current == p.id ? 1.6 : 0))
+            .stroke(seatTone(p.id) ?? QipaiPalette.glowRing, lineWidth: view.current == p.id ? 1.6 : 0))
         .opacity(p.out ? 0.5 : 1)
     }
 
