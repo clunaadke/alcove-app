@@ -7,7 +7,9 @@ struct QipaiUnoTableView: View {
     var onExit: () -> Void
 
     @StateObject private var store: QipaiTableStore<UnoView>
-    @State private var pickingWild: String?    // 待选色的万能牌 id
+    // 0828 她要的斗地主式两段出牌：点牌只抬起选中，确认键在操作条上——
+    // 原来一点就飞，「没有返回时机」。万能牌选中后操作条直接排四个变色键，系统弹框拆了。
+    @State private var selected: String?
 
     init(code: String, onExit: @escaping () -> Void) {
         self.code = code
@@ -27,19 +29,9 @@ struct QipaiUnoTableView: View {
             }
             overlays
         }
-        .confirmationDialog("万能牌变什么色？", isPresented: Binding(
-            get: { pickingWild != nil },
-            set: { if !$0 { pickingWild = nil } }
-        ), titleVisibility: .visible) {
-            ForEach(["R", "G", "B", "Y"], id: \.self) { key in
-                Button(UnoCard.colorName(key)) {
-                    if let card = pickingWild {
-                        Task { await store.act(["type": "play", "card": card, "color": key]) }
-                    }
-                    pickingWild = nil
-                }
-            }
-            Button("算了", role: .cancel) { pickingWild = nil }
+        // 局面翻页（别人出了牌/换局）选中就作废，免得确认键出一张已经不在手里的牌
+        .onChange(of: (store.view?.seq ?? 0)) { _ in
+            if let s = selected, !(store.view?.me?.hand ?? []).contains(s) { selected = nil }
         }
     }
 
@@ -186,23 +178,45 @@ struct QipaiUnoTableView: View {
                 ForEach(me.hand ?? [], id: \.self) { id in
                     UnoCardFace(id: id, width: 52)
                         .opacity(mine && !playable(id) ? 0.45 : 1)
+                        .offset(y: selected == id ? -14 : 0)
                         .onTapGesture {
                             guard mine, playable(id) else { return }
-                            tapCard(id)
+                            // 再点一下取消，跟斗地主一个手感
+                            selected = (selected == id) ? nil : id
                         }
+                        .animation(.spring(response: 0.25, dampingFraction: 0.75),
+                                   value: selected == id)
                 }
             }
             .padding(.horizontal, 14)
-            .padding(.top, 10)
+            .padding(.top, 16)
             .padding(.bottom, 4)
         }
     }
 
-    private func tapCard(_ id: String) {
-        if UnoCard.parse(id).isWild {
-            pickingWild = id
-        } else {
-            Task { await store.act(["type": "play", "card": id]) }
+    /// 出一张牌（万能牌带上选的色），出完清选中
+    private func play(_ id: String, color: String? = nil) {
+        selected = nil
+        var body: [String: Any] = ["type": "play", "card": id]
+        if let color { body["color"] = color }
+        Task { await store.act(body) }
+    }
+
+    /// 万能牌的四个变色键（选中确认和摸牌待定两处共用）
+    private func wildColorButtons(_ id: String) -> some View {
+        HStack(spacing: 6) {
+            ForEach(["R", "G", "B", "Y"], id: \.self) { key in
+                Button {
+                    play(id, color: key)
+                } label: {
+                    HStack(spacing: 4) {
+                        Circle().fill(UnoCard.tint(key)).frame(width: 9, height: 9)
+                        Text("变\(UnoCard.colorName(key))")
+                    }
+                }
+                .buttonStyle(QipaiEmbossedButtonStyle(prominent: true))
+                .disabled(store.busy)
+            }
         }
     }
 
@@ -216,17 +230,37 @@ struct QipaiUnoTableView: View {
                             .font(.system(size: 11.5)).foregroundColor(QipaiPalette.inkDim)
                         if let card = pending.card { UnoCardFace(id: card, width: 34) }
                     }
-                    HStack(spacing: 10) {
-                        if let card = pending.card,
-                           store.legal.contains(where: { $0.type == "play" && $0.card == card }) {
-                            Button("出它") { tapCard(card) }
-                                .buttonStyle(QipaiEmbossedButtonStyle(prominent: true))
-                                .disabled(store.busy)
-                        }
+                    if let card = pending.card,
+                       store.legal.contains(where: { $0.type == "play" && $0.card == card }),
+                       UnoCard.parse(card).isWild {
+                        // 摸到万能牌想出：直接在这排选色，选了就出
+                        wildColorButtons(card)
                         Button("留下") { Task { await store.act(["type": "keep"]) } }
                             .buttonStyle(QipaiEmbossedButtonStyle())
                             .disabled(store.busy)
+                    } else {
+                        HStack(spacing: 10) {
+                            if let card = pending.card,
+                               store.legal.contains(where: { $0.type == "play" && $0.card == card }) {
+                                Button("出它") { play(card) }
+                                    .buttonStyle(QipaiEmbossedButtonStyle(prominent: true))
+                                    .disabled(store.busy)
+                            }
+                            Button("留下") { Task { await store.act(["type": "keep"]) } }
+                                .buttonStyle(QipaiEmbossedButtonStyle())
+                                .disabled(store.busy)
+                        }
                     }
+                }
+            } else if let sel = selected {
+                // 选中了一张：这里才是真正的出牌确认（0828 她要的返回时机——再点那张牌取消）
+                let face = UnoCard.parse(sel)
+                if face.isWild {
+                    wildColorButtons(sel)
+                } else {
+                    Button("出牌 · \(face.colorKey.map(UnoCard.colorName) ?? "")\(face.symbol)") { play(sel) }
+                        .buttonStyle(QipaiEmbossedButtonStyle(prominent: true))
+                        .disabled(store.busy)
                 }
             } else if let draw = store.legal.first(where: { $0.type == "draw" }) {
                 Button((draw.count ?? 0) > 0 ? "认吃 \(draw.count ?? 0) 张" : "摸一张") {
