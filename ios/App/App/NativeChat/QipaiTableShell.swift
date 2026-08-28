@@ -31,7 +31,8 @@ struct QipaiTableShell<GameV: Decodable & QipaiGameView, Content: View, Help: Vi
 
     /// 等人页现喊 AI 的名录（id, 短名），和建房面板那份同源
     static var aiRoster: [(id: String, name: String)] {
-        [("external", "Fable·工程师"), ("opus", "Opus"), ("sonnet", "Sonnet"), ("haiku", "Haiku")]
+        [("chenjing", "陈璟"), ("external", "Fable·工程师"),
+         ("opus", "Opus"), ("sonnet", "Sonnet"), ("haiku", "Haiku")]
     }
 
     var body: some View {
