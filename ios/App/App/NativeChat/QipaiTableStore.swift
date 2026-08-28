@@ -200,6 +200,10 @@ final class QipaiTableStore<GameV: Decodable & QipaiGameView>: ObservableObject 
     private var seenChatTs: Double = 0
     @Published var toast: String?
     @Published var busy = false
+    // 0828 悬浮输入条（她的方案：整页不动，只把打字框抬到键盘上）——
+    // 草稿和开关放 Store，信息流里的假框和外壳层的真输入条共享一份
+    @Published var chatDraft = ""
+    @Published var composing = false
 
     private var sseTask: Task<Void, Never>?
     private var toastTask: Task<Void, Never>?

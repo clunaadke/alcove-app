@@ -38,9 +38,9 @@ struct QipaiTableShell<GameV: Decodable & QipaiGameView, Content: View, Help: Vi
     var body: some View {
         ZStack {
             background
-            // 0828 她报「键盘一起来整页放大、发送键被挤出屏」——大厅那桩横向溢出
-            // 悬案的同款症状（handoff §七2：再报放大/偏了先想这条线）。照大厅的方子：
-            // GeometryReader 把内容钉死在屏幕尺寸里再裁剪，背景留在外面全屏铺。
+            // 0828 三连修的终版（她自己给的方案）：键盘来了**整页纹丝不动**，
+            // 只有悬浮输入条单独贴在键盘上方。之前两版都在键盘出现时给整树垫高，
+            // 一垫就整页重排：放大、掉帧、点哪儿键盘都不肯走——全是那一垫的病。
             GeometryReader { geo in
                 VStack(spacing: 0) {
                     topBar
@@ -56,15 +56,12 @@ struct QipaiTableShell<GameV: Decodable & QipaiGameView, Content: View, Help: Vi
                         ProgressView().frame(maxHeight: .infinity)
                     }
                 }
-                // 键盘起来时整体垫高，收起时垫 home 条。0829 她抓的「牌和键盘中间空太多」：
-                // 系统避让和这里的手动垫叠了两层——下面 ignoresSafeArea(.keyboard) 关掉系统那层，
-                // 只留这一层。0828 再收 6pt：她要牌贴着键盘。
-                .padding(.bottom, keyboard.height > 0 ? keyboard.height : safeBottom)
+                .padding(.bottom, safeBottom)
                 .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
                 .clipped()
-                .animation(.easeOut(duration: 0.25), value: keyboard.height)
             }
             toast
+            floatingComposer
         }
         .ignoresSafeArea(.keyboard)
         .onAppear { store.start() }
@@ -73,6 +70,66 @@ struct QipaiTableShell<GameV: Decodable & QipaiGameView, Content: View, Help: Vi
             if closed { onExit() }
         }
         .sheet(isPresented: $showHelp) { helpSheet }
+    }
+
+    // MARK: 悬浮输入条（信息流里的假框点一下召出来，真输入框只活在这里）
+
+    @FocusState private var composerFocused: Bool
+
+    @ViewBuilder private var floatingComposer: some View {
+        if store.composing {
+            ZStack(alignment: .bottom) {
+                // 点空白处收键盘：整层遮罩，点了就收（0828 她报的「键盘不下落」）
+                Color.black.opacity(0.12)
+                    .ignoresSafeArea()
+                    .onTapGesture {
+                        composerFocused = false
+                        store.composing = false
+                    }
+                HStack(spacing: 8) {
+                    TextField("", text: Binding(get: { store.chatDraft },
+                                                set: { store.chatDraft = $0 }),
+                              prompt: Text("说点什么…")
+                                .foregroundColor(QipaiPalette.inkDim.opacity(0.7)))
+                        .font(.system(size: 14))
+                        .foregroundColor(QipaiPalette.ink)
+                        .focused($composerFocused)
+                        .submitLabel(.send)
+                        .onSubmit { sendComposer() }
+                        .padding(.horizontal, 13).padding(.vertical, 10)
+                        .background(Capsule().fill(QipaiPalette.fieldBg))
+                        .overlay(Capsule().stroke(QipaiPalette.line, lineWidth: 1))
+                    Button {
+                        sendComposer()
+                    } label: {
+                        Image(systemName: "paperplane.fill").font(.system(size: 13))
+                    }
+                    .buttonStyle(QipaiEmbossedButtonStyle(prominent: true))
+                    .disabled(store.chatDraft.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+                .padding(.horizontal, 12).padding(.vertical, 8)
+                .background(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(QipaiPalette.panel)
+                        .shadow(color: QipaiPalette.shadowTint.opacity(0.25), radius: 8, y: -2))
+                .padding(.horizontal, 10)
+                // 贴着键盘顶；键盘还没升起来的一瞬垫 home 条，随它一起滑上去
+                .padding(.bottom, keyboard.height > 0 ? keyboard.height + 6 : safeBottom + 6)
+                .animation(.easeOut(duration: 0.25), value: keyboard.height)
+            }
+            .onAppear {
+                // 等浮层进树再拿焦点，立刻拿会抢不到
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { composerFocused = true }
+            }
+        }
+    }
+
+    private func sendComposer() {
+        let text = store.chatDraft
+        store.chatDraft = ""
+        composerFocused = false
+        store.composing = false
+        Task { await store.sendChat(text) }
     }
 
     // MARK: 背景与顶栏
@@ -270,8 +327,6 @@ final class QipaiKeyboardWatcher: ObservableObject {
 
 struct QipaiFeedStrip<GameV: Decodable & QipaiGameView>: View {
     @ObservedObject var store: QipaiTableStore<GameV>
-    @State private var draft = ""
-    @FocusState private var inputFocused: Bool
 
     var body: some View {
         VStack(spacing: 6) {
@@ -283,7 +338,6 @@ struct QipaiFeedStrip<GameV: Decodable & QipaiGameView>: View {
                     .padding(8)
                 }
                 .frame(maxHeight: .infinity)
-                .scrollDismissesKeyboard(.immediately)   // 拖信息流也能收键盘
                 .qipaiPanel(corner: 13)
                 .onChange(of: store.feed.count) { _ in
                     if let last = store.feed.last {
@@ -294,27 +348,25 @@ struct QipaiFeedStrip<GameV: Decodable & QipaiGameView>: View {
                     if let last = store.feed.last { proxy.scrollTo(last.id, anchor: .bottom) }
                 }
             }
+            // 0828 她的方案：这里只是个「假框」占位，点一下召出外壳层的悬浮输入条
+            //（真输入框只活在那儿，贴着键盘）。整页因此在打字时纹丝不动。
             HStack(spacing: 8) {
-                TextField("", text: $draft,
-                          prompt: Text("说点什么…")
-                            .foregroundColor(QipaiPalette.inkDim.opacity(0.7)))
+                Text(store.chatDraft.isEmpty ? "说点什么…" : store.chatDraft)
                     .font(.system(size: 12.5))
-                    .foregroundColor(QipaiPalette.ink)
-                    .focused($inputFocused)
+                    .foregroundColor(store.chatDraft.isEmpty
+                                     ? QipaiPalette.inkDim.opacity(0.7) : QipaiPalette.ink)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 11).padding(.vertical, 7)
                     .background(Capsule().fill(QipaiPalette.fieldBg))
                     .overlay(Capsule().stroke(QipaiPalette.line, lineWidth: 1))
-                Button {
-                    let text = draft
-                    draft = ""
-                    inputFocused = false   // 发完顺手收键盘（0829 她抓的「键盘下不去」）
-                    Task { await store.sendChat(text) }
-                } label: {
-                    Image(systemName: "paperplane.fill").font(.system(size: 12))
-                }
-                .buttonStyle(QipaiEmbossedButtonStyle(prominent: true))
-                .disabled(draft.trimmingCharacters(in: .whitespaces).isEmpty)
+                Image(systemName: "paperplane.fill")
+                    .font(.system(size: 12))
+                    .foregroundColor(QipaiPalette.inkDim)
+                    .padding(.horizontal, 10)
             }
+            .contentShape(Rectangle())
+            .onTapGesture { store.composing = true }
         }
     }
 
