@@ -15,6 +15,8 @@ struct QipaiLobbyView: View {
     @State private var tableRoute: QipaiTableRoute?
     @State private var joiningCode: String?
     @State private var showHistory = false
+    @State private var swipedCode: String?      // 当前滑开的房卡
+    @State private var deletingCode: String?    // 正在关的房
 
     private let gameIcons: [String: String] = [
         "ddz": "QipaiIconMustache",   // 地主的胡子
@@ -242,11 +244,65 @@ struct QipaiLobbyView: View {
                 }
                 .frame(maxWidth: .infinity).padding(.vertical, 22)
             } else {
-                ForEach(rooms) { room in roomCard(room) }
+                ForEach(rooms) { room in roomRow(room) }
             }
         }
         .padding(14)
         .qipaiPanel(corner: 20, dotted: true)   // 同上：房間区跟图标墙一致
+    }
+
+    /// 房卡 + 左滑删除（0829 她要的）：滑开露出红色删除钮，点了就关房。
+    /// 开过局的服务端自动归档进战绩，没开局的直接消失。
+    private func roomRow(_ room: QipaiAPI.RoomSummary) -> some View {
+        ZStack(alignment: .trailing) {
+            Button {
+                Task { await deleteRoom(room) }
+            } label: {
+                VStack(spacing: 3) {
+                    if deletingCode == room.code {
+                        ProgressView().scaleEffect(0.8)
+                    } else {
+                        Image(systemName: "trash")
+                        Text("删除").font(.system(size: 10, weight: .semibold))
+                    }
+                }
+                .foregroundColor(.white)
+                .frame(width: 64)
+                .frame(maxHeight: .infinity)
+                .background(RoundedRectangle(cornerRadius: 17, style: .continuous)
+                    .fill(QipaiPalette.red))
+            }
+            .buttonStyle(.plain)
+            .disabled(deletingCode != nil)
+
+            roomCard(room)
+                .offset(x: swipedCode == room.code ? -76 : 0)
+                .animation(.spring(response: 0.3, dampingFraction: 0.8), value: swipedCode)
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 20)
+                        .onEnded { v in
+                            guard abs(v.translation.width) > abs(v.translation.height) else { return }
+                            if v.translation.width < -40 {
+                                swipedCode = room.code
+                            } else if v.translation.width > 30, swipedCode == room.code {
+                                swipedCode = nil
+                            }
+                        }
+                )
+        }
+    }
+
+    @MainActor private func deleteRoom(_ room: QipaiAPI.RoomSummary) async {
+        swipedCode = nil
+        deletingCode = room.code
+        defer { deletingCode = nil }
+        do {
+            try await QipaiAPI.closeRoom(code: room.code,
+                                         service: QipaiAPI.service(for: room.game))
+            await reload()
+        } catch {
+            errorText = error.localizedDescription
+        }
     }
 
     private func roomCard(_ room: QipaiAPI.RoomSummary) -> some View {

@@ -98,6 +98,16 @@ enum QipaiAPI {
         let rooms: [RoomSummary]
     }
 
+    struct OK: Decodable {
+        let ok: Bool
+    }
+
+    /// 关房（她的 app 是 owner，任何房都关得掉；开过局的服务端会先归档进战绩）
+    static func closeRoom(code: String, service: String) async throws {
+        let _: OK = try await request("\(service)/api/rooms/\(code)/close",
+                                      method: "POST", body: [:])
+    }
+
     struct CreatedRoom: Decodable {
         let code: String
         let name: String
