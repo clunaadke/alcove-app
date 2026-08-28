@@ -124,8 +124,6 @@ struct QipaiMonopolyTableView: View {
             cardOverlay
             gameOverOverlay
         }
-        // cover 根上的键盘豁免（免疫罩之外的保险：overlays 也不许被键盘顶）
-        .ignoresSafeArea(.keyboard)
         .sheet(item: $pickedCell) { sel in
             if let view = store.view {
                 cellDetailSheet(view, idx: sel.idx)

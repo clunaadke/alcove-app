@@ -32,7 +32,6 @@ struct QipaiTableShell<GameV: Decodable & QipaiGameView, Content: View, Help: Vi
 
     @State private var showHelp = false
     @State private var inviteCopied = false
-    @StateObject private var keyboard = QipaiKeyboardWatcher()
 
     /// 等人页现喊 AI 的名录（id, 短名），和建房面板那份同源
     static var aiRoster: [(id: String, name: String)] {
@@ -41,35 +40,38 @@ struct QipaiTableShell<GameV: Decodable & QipaiGameView, Content: View, Help: Vi
     }
 
     var body: some View {
-        // 键盘策略（0828 数次往复后的定案）：整页纹丝不动，只有悬浮输入条贴在
-        // 键盘上方。豁免挂两层：这里的 .ignoresSafeArea(.keyboard)（fc95a5a
-        // 同款）+ 各牌桌 cover 根上的同名修饰符（文档记载的正确挂点，fc95a5a
-        // 缺的就是它）。
+        // 键盘策略（0828 数次往复后照主聊天抄的定案）：
+        // · 页面这层挂 .ignoresSafeArea(.keyboard) 对键盘装死——牌桌是钉死的
+        //   固定布局，不豁免会被键盘压扁（主聊天页是滚动视图，不需要这层）。
+        // · 浮条那层**不豁免**：照抄主聊天 floatingInput，扔给系统键盘避让，
+        //   系统自动把它贴在键盘上沿，同步同曲线，不用自己听通知算高度。
         ZStack {
-            background
-            GeometryReader { geo in
-                VStack(spacing: 0) {
-                    topBar
-                    if let frame = store.frame {
-                        if !frame.started {
-                            waitingRoom(frame)
-                        } else if store.view != nil {
-                            content()
+            ZStack {
+                background
+                GeometryReader { geo in
+                    VStack(spacing: 0) {
+                        topBar
+                        if let frame = store.frame {
+                            if !frame.started {
+                                waitingRoom(frame)
+                            } else if store.view != nil {
+                                content()
+                            } else {
+                                ProgressView().frame(maxHeight: .infinity)
+                            }
                         } else {
                             ProgressView().frame(maxHeight: .infinity)
                         }
-                    } else {
-                        ProgressView().frame(maxHeight: .infinity)
                     }
+                    .padding(.bottom, safeBottom)
+                    .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
+                    .clipped()
                 }
-                .padding(.bottom, safeBottom)
-                .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
-                .clipped()
+                toast
             }
-            toast
+            .ignoresSafeArea(.keyboard)
             floatingComposer
         }
-        .ignoresSafeArea(.keyboard)
         .onAppear { store.start() }
         .onDisappear { store.stop() }
         .onChange(of: store.frame?.closed ?? false) { closed in
@@ -82,8 +84,7 @@ struct QipaiTableShell<GameV: Decodable & QipaiGameView, Content: View, Help: Vi
 
     @ViewBuilder private var floatingComposer: some View {
         if store.composing {
-            QipaiFloatingComposerBar(store: store, keyboard: keyboard,
-                                     safeBottom: safeBottom)
+            QipaiFloatingComposerBar(store: store)
         }
     }
 
@@ -253,23 +254,21 @@ struct QipaiTableShell<GameV: Decodable & QipaiGameView, Content: View, Help: Vi
 // MARK: - 悬浮输入条本体
 
 /// 真输入框只活在这里，全宽贴着键盘顶（她 0828 定的：中间不留缝、不罩黑影）。
+/// 定位照抄主聊天 floatingInput：这层不豁免键盘安全区，底对齐交给系统避让，
+/// 键盘升到哪它贴到哪，不听通知不算高度。
 private struct QipaiFloatingComposerBar<GameV: Decodable & QipaiGameView>: View {
     @ObservedObject var store: QipaiTableStore<GameV>
-    @ObservedObject var keyboard: QipaiKeyboardWatcher
-    let safeBottom: CGFloat
     @FocusState private var focused: Bool
 
     var body: some View {
         ZStack(alignment: .bottom) {
-            // 点空白处收键盘：完全透明的命中层，只接点按不压亮度
+            // 点空白处收键盘：完全透明的命中层，只接点按不压亮度。
+            // 只豁免容器安全区（盖到状态栏），键盘那边留给系统量
             Color.clear
                 .contentShape(Rectangle())
-                .ignoresSafeArea()
+                .ignoresSafeArea(.container)
                 .onTapGesture { dismissComposer() }
             bar
-                // 底边直接坐在键盘上沿；键盘还没升起来的一瞬先垫 home 条，随它滑上去
-                .padding(.bottom, keyboard.height > 0 ? keyboard.height : safeBottom)
-                .animation(.easeOut(duration: 0.25), value: keyboard.height)
         }
         .onAppear {
             // 等浮层进树再拿焦点，立刻拿会抢不到
@@ -319,34 +318,6 @@ private struct QipaiFloatingComposerBar<GameV: Decodable & QipaiGameView>: View 
         focused = false
         store.composing = false
         Task { await store.sendChat(text) }
-    }
-}
-
-// MARK: - 键盘观察器（容器豁免安全区后系统避让失效，只能自己听通知）
-
-final class QipaiKeyboardWatcher: ObservableObject {
-    @Published var height: CGFloat = 0
-    private var observers: [NSObjectProtocol] = []
-
-    init() {
-        let center = NotificationCenter.default
-        observers.append(center.addObserver(
-            forName: UIResponder.keyboardWillChangeFrameNotification, object: nil, queue: .main
-        ) { [weak self] note in
-            guard let self,
-                  let frame = (note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue
-            else { return }
-            self.height = max(0, UIScreen.main.bounds.height - frame.origin.y)
-        })
-        observers.append(center.addObserver(
-            forName: UIResponder.keyboardWillHideNotification, object: nil, queue: .main
-        ) { [weak self] _ in
-            self?.height = 0
-        })
-    }
-
-    deinit {
-        for o in observers { NotificationCenter.default.removeObserver(o) }
     }
 }
 
