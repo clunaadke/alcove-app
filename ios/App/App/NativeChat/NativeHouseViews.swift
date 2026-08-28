@@ -5826,10 +5826,10 @@ private struct NativeStudioView: View {
         async let s = try? NativeHouseAPI.object("/api/work/status"); async let t = try? NativeHouseAPI.object("/api/work/tasks"); async let m = try? NativeHouseAPI.object(messagePath)
         let (newStatus, newTasks, newMessages) = await (s, t, m)
         // 没变就不赋值——每 2 秒整包替换会白白触发整页重算（0829 闪屏成因之一）
-        if let newStatus, !(newStatus as NSDictionary).isEqual(to: status as NSDictionary) { status = newStatus }
+        if let newStatus, !(newStatus as NSDictionary).isEqual(to: status) { status = newStatus }
         if let newTasks {
             let list = Array(newTasks.array("tasks").reversed())
-            if !(list as NSArray).isEqual(to: tasks as NSArray) { tasks = list }
+            if !(list as NSArray).isEqual(to: tasks) { tasks = list }
         }
         if let newMessages {
             let incoming = newMessages.array("messages")
