@@ -69,7 +69,7 @@ struct QipaiTableShell<GameV: Decodable & QipaiGameView, Content: View, Help: Vi
                 }
                 toast
             }
-            .ignoresSafeArea(.keyboard)
+            .ignoresSafeArea([.container, .keyboard])
             floatingComposer
         }
         .onAppear { store.start() }
