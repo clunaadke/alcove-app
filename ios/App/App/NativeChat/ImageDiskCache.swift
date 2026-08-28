@@ -17,6 +17,19 @@ final class ImageDiskCache {
         dir = caches.appendingPathComponent("alcove-images", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         mem.countLimit = 400
+        // 0828：只限张数不限字节的话，400 张原图解码开能吃掉几百 MB。
+        // 按解码后的像素字节算账，超了 NSCache 自己踢旧的。
+        mem.totalCostLimit = 128 * 1024 * 1024
+    }
+
+    /// 解码后的内存开销（RGBA 四字节一像素），给 NSCache 记账用
+    private static func cost(of img: UIImage) -> Int {
+        if let cg = img.cgImage { return cg.width * cg.height * 4 }
+        return Int(img.size.width * img.scale * img.size.height * img.scale) * 4
+    }
+
+    private func memStore(_ img: UIImage, for url: URL) {
+        mem.setObject(img, forKey: url as NSURL, cost: Self.cost(of: img))
     }
 
     // MARK: - 读
@@ -27,33 +40,41 @@ final class ImageDiskCache {
         return dir.appendingPathComponent(name + ".img")
     }
 
-    /// 同步命中：内存或硬盘里有就立刻给，没有返回 nil（不发网络）
-    func cached(_ url: URL) -> UIImage? {
-        if let hit = mem.object(forKey: url as NSURL) { return hit }
-        let f = fileURL(for: url)
-        guard let data = try? Data(contentsOf: f), let img = UIImage(data: data) else { return nil }
-        mem.setObject(img, forKey: url as NSURL)
-        return img
+    /// 只查内存、绝不碰磁盘——View 的 init（跑在主线程）只准用这个。
+    /// 0828 体检抓的卡顿源：原来这里顺手读盘+解码，滚动列表每行首现都在主线程干重活。
+    func memCached(_ url: URL) -> UIImage? {
+        mem.object(forKey: url as NSURL)
     }
 
-    /// 本地没有就下载一次、落盘、进内存。同一个 URL 并发只下一次。
+    /// 磁盘命中：读盘 + 解码 + 预解码位图。只在后台任务里调。
+    private func diskLoad(_ url: URL) -> UIImage? {
+        let f = fileURL(for: url)
+        guard let data = try? Data(contentsOf: f), let img = UIImage(data: data) else { return nil }
+        let ready = img.preparingForDisplay() ?? img
+        memStore(ready, for: url)
+        return ready
+    }
+
+    /// 内存 → 磁盘 → 网络，逐级找。读盘/解码/下载全在后台，同一个 URL 并发只下一次。
     func image(for url: URL) async -> UIImage? {
-        if let hit = cached(url) { return hit }
+        if let hit = memCached(url) { return hit }
         lock.lock()
         if let running = inflight[url] {
             lock.unlock()
             return await running.value
         }
-        let task = Task<UIImage?, Never> { [self] in
+        let task: Task<UIImage?, Never> = Task.detached(priority: .userInitiated) { [self] in
             defer {
                 lock.lock(); inflight[url] = nil; lock.unlock()
             }
+            if let disk = diskLoad(url) { return disk }
             guard let (data, resp) = try? await URLSession.shared.data(from: url),
                   let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode),
                   let img = UIImage(data: data) else { return nil }
             try? data.write(to: fileURL(for: url), options: .atomic)
-            mem.setObject(img, forKey: url as NSURL)
-            return img
+            let ready = img.preparingForDisplay() ?? img
+            memStore(ready, for: url)
+            return ready
         }
         inflight[url] = task
         lock.unlock()
@@ -64,7 +85,7 @@ final class ImageDiskCache {
     func store(_ data: Data, for url: URL) {
         guard let img = UIImage(data: data) else { return }
         try? data.write(to: fileURL(for: url), options: .atomic)
-        mem.setObject(img, forKey: url as NSURL)
+        memStore(img, for: url)
     }
 
     /// 预热：还没存的才下，四个一起，不阻塞界面
@@ -149,7 +170,8 @@ struct CachedImage<Content: View, Placeholder: View>: View {
         self.url = url
         self.content = content
         self.placeholder = placeholder
-        _ui = State(initialValue: url.flatMap { ImageDiskCache.shared.cached($0) })
+        // init 跑在主线程：只摸内存缓存；磁盘/网络都交给 .task 在后台干
+        _ui = State(initialValue: url.flatMap { ImageDiskCache.shared.memCached($0) })
     }
 
     var body: some View {
@@ -161,7 +183,7 @@ struct CachedImage<Content: View, Placeholder: View>: View {
         // 信封的白天/黑夜两张就栽在这儿：她把开关掰过去，字色翻了，图还是黑的。
         .task(id: url) {
             guard let url else { ui = nil; return }
-            if let hit = ImageDiskCache.shared.cached(url) { ui = hit; return }
+            if let hit = ImageDiskCache.shared.memCached(url) { ui = hit; return }
             ui = await ImageDiskCache.shared.image(for: url)
         }
     }
@@ -176,7 +198,8 @@ struct CachedPhaseImage<Content: View>: View {
     init(url: URL?, @ViewBuilder content: @escaping (CachedImagePhase) -> Content) {
         self.url = url
         self.content = content
-        if let url, let hit = ImageDiskCache.shared.cached(url) {
+        // init 跑在主线程：只摸内存缓存；磁盘/网络都交给 .task 在后台干
+        if let url, let hit = ImageDiskCache.shared.memCached(url) {
             _phase = State(initialValue: .success(Image(uiImage: hit)))
         } else {
             _phase = State(initialValue: .empty)
@@ -188,7 +211,7 @@ struct CachedPhaseImage<Content: View>: View {
             .task(id: url) {
                 guard let url else { phase = .empty; return }
                 // 同上：URL 换了就得重新取，不能因为手里已有一张成功的图就跳过
-                if let hit = ImageDiskCache.shared.cached(url) {
+                if let hit = ImageDiskCache.shared.memCached(url) {
                     phase = .success(Image(uiImage: hit)); return
                 }
                 if let img = await ImageDiskCache.shared.image(for: url) {

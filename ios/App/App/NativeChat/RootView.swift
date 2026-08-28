@@ -143,9 +143,11 @@ struct RootView: View {
             }
         }
         .task {
+            // 0828 心跳降频：这个循环只驱动「他睡着没」的小图标，3s 一问烫手机；
+            // 30s 足够——回前台（scenePhase）立刻补刷，消息气泡的沉睡标记走 send 的返回值，不靠它。
             while !Task.isCancelled {
                 await refreshSleepState()
-                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                try? await Task.sleep(nanoseconds: 30_000_000_000)
             }
         }
         .onChange(of: themeName) { _ in prewarmPanelTexture() }

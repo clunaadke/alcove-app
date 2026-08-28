@@ -100,6 +100,14 @@ final class ChatStore: ObservableObject {
         refreshTypingLine()
     }
 
+    // 0828 心跳降频：他在生成 / 她刚发完 / 正在输入时保持 2.5s 的贴身节奏；
+    // 安静时段退到 8s——新消息大头走 SSE 的 finish 即时拉取，这条轮询只是兜底扫尾。
+    private func pollInterval() -> UInt64 {
+        let busy = isTyping || live?.active == true || live?.finishing == true
+            || Date() < optimisticUntil
+        return busy ? 2_500_000_000 : 8_000_000_000
+    }
+
     private var lastTs: String?
     private var pollTask: Task<Void, Never>?
     private var liveTask: Task<Void, Never>?
@@ -111,7 +119,7 @@ final class ChatStore: ObservableObject {
         pollTask = Task { [weak self] in
             await self?.initialLoad()
             while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 2_500_000_000)
+                try? await Task.sleep(nanoseconds: self?.pollInterval() ?? 2_500_000_000)
                 await self?.pollOnce()
             }
         }
@@ -584,7 +592,8 @@ final class ChatStore: ObservableObject {
             }
             if isTyping { refreshTypingLine() }
             connectionError = false
-            if Date().timeIntervalSince(lastModelPoll) > 5 {
+            // 0828 心跳降频：模型标签和暂存计数都不是急事，30s 看一眼够了
+            if Date().timeIntervalSince(lastModelPoll) > 30 {
                 lastModelPoll = Date()
                 if let label = try? await AlcoveAPI.modelLabel(), !label.isEmpty {
                     modelLabel = label

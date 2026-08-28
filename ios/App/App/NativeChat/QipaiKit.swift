@@ -246,7 +246,7 @@ struct QipaiSlideControl: View {
     var label: String
     var onComplete: () -> Void
     @State private var offset: CGFloat = 0
-    @State private var shimmer = false
+    @State private var shimmerX: CGFloat = -90
     @GestureState private var dragging = false
 
     private let height: CGFloat = 46
@@ -277,13 +277,21 @@ struct QipaiSlideControl: View {
                         LinearGradient(colors: [.clear, .white.opacity(0.9), .clear],
                                        startPoint: .leading, endPoint: .trailing)
                         .frame(width: 60)
-                        .offset(x: shimmer ? 90 : -90)
+                        .offset(x: shimmerX)
                         .mask(Text(label).font(.qipaiHand(14)))
                     )
                     .opacity(1 - Double(offset / max(travel, 1)) * 1.6)
-                    .onAppear {
-                        withAnimation(.linear(duration: 1.9).repeatForever(autoreverses: false)) {
-                            shimmer = true
+                    // 0828 降温：原来 repeatForever，页面挂多久就逼着这块 60fps 重绘多久
+                    //（光环同款病）。改成扫三遍就歇——提示到了就行，等人页挂着不再烫手。
+                    .task {
+                        for _ in 0..<3 {
+                            if Task.isCancelled { return }
+                            withAnimation(.linear(duration: 1.9)) { shimmerX = 90 }
+                            try? await Task.sleep(nanoseconds: 2_300_000_000)
+                            var t = Transaction()
+                            t.disablesAnimations = true
+                            withTransaction(t) { shimmerX = -90 }
+                            try? await Task.sleep(nanoseconds: 400_000_000)
                         }
                     }
 
