@@ -114,7 +114,14 @@ enum QipaiAPI {
         let inviteToken: String
     }
 
-    // MARK: 战绩档案（cards 服务的 /api/history）
+    // MARK: 战绩档案（cards + daifugo 的 /api/history）
+
+    /// 一局里一个人的最终成绩（服务端从终局 state 现算，胜者=最高分可并列）
+    struct HistoryResult: Decodable {
+        let name: String
+        let score: Int
+        let winner: Bool
+    }
 
     struct HistorySummary: Decodable, Identifiable {
         let id: String
@@ -127,6 +134,17 @@ enum QipaiAPI {
         let finished: Bool
         let round: Int
         let players: [Seat]
+        let results: [HistoryResult]?
+    }
+
+    /// 计分板一行（总分制排行，服务端已排好序）
+    struct LeaderboardRow: Decodable, Identifiable {
+        let name: String
+        let score: Int
+        let games: Int
+        let wins: Int
+        let losses: Int
+        var id: String { name }
     }
 
     struct HistoryList: Decodable {
@@ -149,6 +167,7 @@ enum QipaiAPI {
         let players: [Seat]
         let state: HistoryState?
         let chat: [QipaiChatMessage]?
+        let results: [HistoryResult]?
     }
 
     struct JoinResult: Decodable {
@@ -280,5 +299,15 @@ enum QipaiAPI {
         struct Wrap: Decodable { let record: HistoryRecord }
         let w: Wrap = try await request("\(service)/api/history/\(id)")
         return w.record
+    }
+
+    /// 计分板：两个服务各聚合各的，这里并成一张 {game: rows} 表
+    static func leaderboard() async throws -> [String: [LeaderboardRow]] {
+        struct Wrap: Decodable { let board: [String: [LeaderboardRow]] }
+        let main: Wrap = try await request("cards/api/history/leaderboard/all")
+        let dai: Wrap? = try? await request("daifugo/api/history/leaderboard/all")
+        var out = main.board
+        for (key, rows) in dai?.board ?? [:] { out[key] = rows }
+        return out
     }
 }

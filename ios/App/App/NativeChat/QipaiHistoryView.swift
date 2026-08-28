@@ -1,15 +1,25 @@
 import SwiftUI
 
-// 战绩房：关掉的房不再销尸灭迹，cards 服务把终局归档，这里翻旧账。
-// 列表（新→旧）+ 单局详情（名单、事件回放、牌桌闲聊）。
+// 战绩房（0829 她定的版式）：一个页面往下滑——
+// 顶上计分板卡（五个游戏切换，总分制排行，带局数/胜/负/胜率），
+// 下面历史房卡（卡上直接看游戏和胜者），点卡进详情（结果大卡置顶）。
+// 全套白瓷波点，跟棋牌室一屋子一个味道。
 
 struct QipaiHistorySheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var items: [QipaiAPI.HistorySummary] = []
+    @State private var board: [String: [QipaiAPI.LeaderboardRow]] = [:]
+    @State private var boardGame = "ddz"
     @State private var loading = true
     @State private var errorText: String?
     @State private var record: QipaiAPI.HistoryRecord?
     @State private var loadingDetail = false
+
+    /// 计分板的游戏标签（固定文案走繁体手写系，monopoly 在建灰着）
+    private static let boardGames: [(key: String, name: String, ready: Bool)] = [
+        ("ddz", "斗地主", true), ("zjh", "炸金花", true), ("uno", "UNO", true),
+        ("daifugo", "大富豪", true), ("monopoly", "大富翁", false),
+    ]
 
     var body: some View {
         ZStack {
@@ -49,10 +59,10 @@ struct QipaiHistorySheet: View {
         }
     }
 
-    // MARK: 列表
+    // MARK: 列表页（计分板 + 历史，一个滚动）
 
     @ViewBuilder private var listView: some View {
-        if loading && items.isEmpty {
+        if loading && items.isEmpty && board.isEmpty {
             ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let errorText {
             VStack(spacing: 8) {
@@ -61,20 +71,122 @@ struct QipaiHistorySheet: View {
                     .buttonStyle(QipaiEmbossedButtonStyle())
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if items.isEmpty {
-            VStack(spacing: 5) {
-                Text("还没有留档的牌局").font(.system(size: 12.5)).foregroundColor(QipaiPalette.inkDim)
-                QipaiWhisper(text: "play one, close it, it lands here.")
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             ScrollView(showsIndicators: false) {
-                VStack(spacing: 8) {
-                    ForEach(items) { item in row(item) }
+                VStack(alignment: .leading, spacing: 14) {
+                    scoreboard
+                    sectionTitle("歷史", note: "on the record")
+                    if items.isEmpty {
+                        VStack(spacing: 5) {
+                            Text("还没有留档的牌局").font(.system(size: 12.5)).foregroundColor(QipaiPalette.inkDim)
+                            QipaiWhisper(text: "play one, close it, it lands here.")
+                        }
+                        .frame(maxWidth: .infinity).padding(.vertical, 20)
+                    } else {
+                        VStack(spacing: 8) {
+                            ForEach(items) { item in row(item) }
+                        }
+                    }
+                    QipaiWhisper(text: "no real money. only face.")
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.vertical, 4)
                 }
             }
         }
     }
+
+    private func sectionTitle(_ title: String, note: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 7) {
+            Text(title)
+                .font(.qipaiMemo(16))
+                .foregroundColor(QipaiPalette.ink)
+            QipaiWhisper(text: note)
+        }
+    }
+
+    // MARK: 计分板
+
+    private var scoreboard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            sectionTitle("計分板", note: "total points, no mercy.")
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(Self.boardGames, id: \.key) { game in
+                        Button {
+                            boardGame = game.key
+                        } label: {
+                            Text(game.ready ? game.name : "\(game.name)·在建")
+                                .font(.system(size: 11.5, weight: .medium))
+                                .foregroundColor(boardGame == game.key ? .white :
+                                                    (game.ready ? QipaiPalette.ink : QipaiPalette.inkDim))
+                                .padding(.horizontal, 11).padding(.vertical, 6)
+                                .background(Capsule().fill(boardGame == game.key
+                                                           ? QipaiPalette.accent
+                                                           : QipaiPalette.chipBg))
+                                .overlay(Capsule().stroke(QipaiPalette.line, lineWidth: 0.8))
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(!game.ready)
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+
+            let rows = board[boardGame] ?? []
+            if rows.isEmpty {
+                VStack(spacing: 4) {
+                    Text("这个游戏还没打完过一场").font(.system(size: 12)).foregroundColor(QipaiPalette.inkDim)
+                    QipaiWhisper(text: "the board waits.")
+                }
+                .frame(maxWidth: .infinity).padding(.vertical, 14)
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
+                        boardRow(rank: index + 1, row: row)
+                        if index < rows.count - 1 {
+                            Divider().overlay(QipaiPalette.line.opacity(0.6))
+                        }
+                    }
+                }
+            }
+        }
+        .padding(14)
+        .qipaiPanel(corner: 20, dotted: true)
+    }
+
+    private func boardRow(rank: Int, row: QipaiAPI.LeaderboardRow) -> some View {
+        let champion = rank == 1
+        let rate = row.games > 0 ? Int((Double(row.wins) / Double(row.games) * 100).rounded()) : 0
+        return HStack(spacing: 10) {
+            ZStack {
+                if champion {
+                    Image(systemName: "crown.fill")
+                        .font(.system(size: 15))
+                        .foregroundColor(QipaiPalette.red)
+                } else {
+                    Text("\(rank)")
+                        .font(.system(size: 14, weight: .bold, design: .serif))
+                        .foregroundColor(QipaiPalette.inkDim)
+                }
+            }
+            .frame(width: 24)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(row.name)
+                    .font(.system(size: 13.5, weight: champion ? .bold : .medium))
+                    .foregroundColor(champion ? QipaiPalette.red : QipaiPalette.ink)
+                Text("\(row.games) 局 · 胜 \(row.wins) 负 \(row.losses) · 胜率 \(rate)%")
+                    .font(.system(size: 9.5))
+                    .foregroundColor(QipaiPalette.inkDim)
+            }
+            Spacer()
+            Text(row.score > 0 ? "+\(row.score)" : "\(row.score)")
+                .font(.system(size: 17, weight: .bold, design: .monospaced))
+                .foregroundColor(champion ? QipaiPalette.red : QipaiPalette.ink)
+        }
+        .padding(.vertical, 8)
+    }
+
+    // MARK: 历史房卡
 
     private func row(_ item: QipaiAPI.HistorySummary) -> some View {
         Button {
@@ -95,10 +207,11 @@ struct QipaiHistorySheet: View {
                             .foregroundColor(QipaiPalette.inkDim)
                     }
                 }
+                // 胜者行：不点进去就知道谁赢了
+                winnerLine(item)
                 HStack(spacing: 6) {
                     QipaiChip(text: item.gameName, tone: .live)
-                    QipaiChip(text: item.finished ? "打完了" : "半途关的",
-                              tone: item.finished ? .neutral : .done)
+                    if !item.finished { QipaiChip(text: "半途关的", tone: .done) }
                     if item.round > 0 {
                         Text("第 \(item.round) 轮")
                             .font(.system(size: 11)).foregroundColor(QipaiPalette.inkDim)
@@ -124,35 +237,40 @@ struct QipaiHistorySheet: View {
         .buttonStyle(.plain)
     }
 
-    // MARK: 详情
+    @ViewBuilder private func winnerLine(_ item: QipaiAPI.HistorySummary) -> some View {
+        let winners = (item.results ?? []).filter { $0.winner }
+        if item.finished, !winners.isEmpty {
+            HStack(spacing: 5) {
+                Image(systemName: "crown.fill")
+                    .font(.system(size: 11))
+                    .foregroundColor(QipaiPalette.red)
+                Text(winners.map { "\($0.name) \($0.score > 0 ? "+\($0.score)" : "\($0.score)")" }
+                    .joined(separator: "、"))
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundColor(QipaiPalette.red)
+            }
+        } else if !item.finished {
+            Text("没打完，不计分")
+                .font(.system(size: 11)).foregroundColor(QipaiPalette.inkDim)
+        }
+    }
+
+    // MARK: 详情页
 
     private func detailView(_ record: QipaiAPI.HistoryRecord) -> some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 10) {
+                resultHero(record)
+
                 VStack(alignment: .leading, spacing: 6) {
                     Text(record.name.isEmpty ? record.gameName : record.name)
                         .font(.system(size: 15, weight: .bold, design: .serif))
                         .foregroundColor(QipaiPalette.ink)
                     HStack(spacing: 6) {
                         QipaiChip(text: record.gameName, tone: .live)
-                        QipaiChip(text: record.finished ? "打完了" : "半途关的",
-                                  tone: record.finished ? .neutral : .done)
+                        if !record.finished { QipaiChip(text: "半途关的", tone: .done) }
                         Text("\(record.code) · \(Self.dateText(record.closedAt))")
                             .font(.system(size: 10.5)).foregroundColor(QipaiPalette.inkDim)
-                    }
-                    HStack(spacing: 5) {
-                        ForEach(record.players) { seat in
-                            HStack(spacing: 3) {
-                                if seat.isAI {
-                                    Image(systemName: "sparkles").font(.system(size: 8))
-                                        .foregroundColor(QipaiPalette.accent)
-                                }
-                                Text(seat.name).font(.system(size: 10.5, weight: .medium))
-                                    .foregroundColor(QipaiPalette.ink.opacity(0.85))
-                            }
-                            .padding(.horizontal, 8).padding(.vertical, 3)
-                            .background(Capsule().fill(QipaiPalette.panelDeep.opacity(0.8)))
-                        }
                     }
                 }
                 .padding(13)
@@ -207,6 +325,58 @@ struct QipaiHistorySheet: View {
         }
     }
 
+    /// 结果大卡：赢家大字置顶，每人一行得分，赢家红字带冠
+    @ViewBuilder private func resultHero(_ record: QipaiAPI.HistoryRecord) -> some View {
+        let results = record.results ?? []
+        if !results.isEmpty {
+            VStack(spacing: 10) {
+                if record.finished {
+                    let winners = results.filter { $0.winner }.map(\.name).joined(separator: "、")
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Image(systemName: "crown.fill")
+                            .font(.system(size: 18))
+                            .foregroundColor(QipaiPalette.red)
+                        Text(winners)
+                            .font(.system(size: 21, weight: .heavy))
+                            .foregroundColor(QipaiPalette.red)
+                        Text("勝")
+                            .font(.qipaiDisplay(26))
+                            .foregroundColor(QipaiPalette.red)
+                    }
+                } else {
+                    Text("半途收档 · 不計分")
+                        .font(.qipaiMemo(16))
+                        .foregroundColor(QipaiPalette.inkDim)
+                }
+                VStack(spacing: 6) {
+                    ForEach(results.sorted { $0.score > $1.score }, id: \.name) { r in
+                        HStack(spacing: 7) {
+                            if r.winner && record.finished {
+                                Image(systemName: "crown.fill")
+                                    .font(.system(size: 10)).foregroundColor(QipaiPalette.red)
+                            } else {
+                                Color.clear.frame(width: 12, height: 1)
+                            }
+                            Text(r.name)
+                                .font(.system(size: 13.5, weight: r.winner ? .bold : .medium))
+                                .foregroundColor(r.winner && record.finished
+                                                 ? QipaiPalette.red : QipaiPalette.ink.opacity(0.8))
+                            Spacer()
+                            Text(r.score > 0 ? "+\(r.score)" : "\(r.score)")
+                                .font(.system(size: 15, weight: .bold, design: .monospaced))
+                                .foregroundColor(r.winner && record.finished
+                                                 ? QipaiPalette.red : QipaiPalette.inkDim)
+                        }
+                    }
+                }
+                .padding(.horizontal, 8)
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity)
+            .qipaiPanel(corner: 20, dotted: true)
+        }
+    }
+
     // MARK: 动作
 
     @MainActor private func reload() async {
@@ -214,6 +384,7 @@ struct QipaiHistorySheet: View {
         defer { loading = false }
         do {
             items = try await QipaiAPI.history()
+            board = (try? await QipaiAPI.leaderboard()) ?? [:]
             errorText = nil
         } catch {
             errorText = error.localizedDescription
