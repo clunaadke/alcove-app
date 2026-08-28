@@ -75,7 +75,7 @@ struct QipaiHistorySheet: View {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 14) {
                     scoreboard
-                    sectionTitle("歷史", note: "on the record")
+                    sectionTitle("往局", note: "on the record")
                     if items.isEmpty {
                         VStack(spacing: 5) {
                             Text("还没有留档的牌局").font(.system(size: 12.5)).foregroundColor(QipaiPalette.inkDim)

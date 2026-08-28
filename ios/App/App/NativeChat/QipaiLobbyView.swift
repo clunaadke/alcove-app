@@ -244,11 +244,39 @@ struct QipaiLobbyView: View {
                 }
                 .frame(maxWidth: .infinity).padding(.vertical, 22)
             } else {
-                ForEach(rooms) { room in roomRow(room) }
+                // 0829 她要的：面板里按状态分组——已開場 / 候場 / 關房，空组不占地
+                roomGroup("已開場", note: "in play",
+                          rooms.filter { $0.started && !$0.finished })
+                roomGroup("候場", note: "waiting",
+                          rooms.filter { !$0.started })
+                roomGroup("關房", note: "wrapped",
+                          rooms.filter { $0.finished })
             }
         }
         .padding(14)
         .qipaiPanel(corner: 20, dotted: true)   // 同上：房間区跟图标墙一致
+    }
+
+    /// 房間面板里的状态小组：小标签头 + 该状态下的房卡；一间都没有就整组不出现
+    @ViewBuilder private func roomGroup(_ title: String, note: String,
+                                        _ list: [QipaiAPI.RoomSummary]) -> some View {
+        if !list.isEmpty {
+            VStack(alignment: .leading, spacing: 7) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(title)
+                        .font(.qipaiMemo(13))
+                        .foregroundColor(QipaiPalette.inkDim)
+                    QipaiWhisper(text: note)
+                    Spacer()
+                    Text("\(list.count)")
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .foregroundColor(QipaiPalette.inkDim.opacity(0.8))
+                }
+                .padding(.horizontal, 3)
+                ForEach(list) { room in roomRow(room) }
+            }
+            .padding(.top, 2)
+        }
     }
 
     /// 房卡 + 左滑删除（0829 她要的）：滑开露出红色删除钮，点了就关房。
