@@ -38,25 +38,32 @@ struct QipaiTableShell<GameV: Decodable & QipaiGameView, Content: View, Help: Vi
     var body: some View {
         ZStack {
             background
-            VStack(spacing: 0) {
-                topBar
-                if let frame = store.frame {
-                    if !frame.started {
-                        waitingRoom(frame)
-                    } else if store.view != nil {
-                        content()
+            // 0828 她报「键盘一起来整页放大、发送键被挤出屏」——大厅那桩横向溢出
+            // 悬案的同款症状（handoff §七2：再报放大/偏了先想这条线）。照大厅的方子：
+            // GeometryReader 把内容钉死在屏幕尺寸里再裁剪，背景留在外面全屏铺。
+            GeometryReader { geo in
+                VStack(spacing: 0) {
+                    topBar
+                    if let frame = store.frame {
+                        if !frame.started {
+                            waitingRoom(frame)
+                        } else if store.view != nil {
+                            content()
+                        } else {
+                            ProgressView().frame(maxHeight: .infinity)
+                        }
                     } else {
                         ProgressView().frame(maxHeight: .infinity)
                     }
-                } else {
-                    ProgressView().frame(maxHeight: .infinity)
                 }
+                // 键盘起来时整体垫高，收起时垫 home 条。0829 她抓的「牌和键盘中间空太多」：
+                // 系统避让和这里的手动垫叠了两层——下面 ignoresSafeArea(.keyboard) 关掉系统那层，
+                // 只留这一层。0828 再收 6pt：她要牌贴着键盘。
+                .padding(.bottom, keyboard.height > 0 ? keyboard.height : safeBottom)
+                .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
+                .clipped()
+                .animation(.easeOut(duration: 0.25), value: keyboard.height)
             }
-            // 键盘起来时整体垫高，收起时垫 home 条。0829 她抓的「牌和键盘中间空太多」：
-            // 系统避让和这里的手动垫叠了两层——下面 ignoresSafeArea(.keyboard) 关掉系统那层，
-            // 只留这一层，高度正好贴着键盘。
-            .padding(.bottom, keyboard.height > 0 ? keyboard.height + 6 : safeBottom)
-            .animation(.easeOut(duration: 0.25), value: keyboard.height)
             toast
         }
         .ignoresSafeArea(.keyboard)
