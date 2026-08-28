@@ -174,7 +174,7 @@ struct QipaiHistorySheet: View {
                 Text(row.name)
                     .font(.system(size: 13.5, weight: champion ? .bold : .medium))
                     .foregroundColor(champion ? QipaiPalette.red : QipaiPalette.ink)
-                Text("\(row.games) 局 · 胜 \(row.wins) 负 \(row.losses) · 胜率 \(rate)%")
+                Text("\(row.games) 局 · 胜 \(row.wins) 负 \(row.losses)\((row.draws ?? 0) > 0 ? " 平 \(row.draws ?? 0)" : "") · 胜率 \(rate)%")
                     .font(.system(size: 9.5))
                     .foregroundColor(QipaiPalette.inkDim)
             }
@@ -239,7 +239,17 @@ struct QipaiHistorySheet: View {
 
     @ViewBuilder private func winnerLine(_ item: QipaiAPI.HistorySummary) -> some View {
         let winners = (item.results ?? []).filter { $0.winner }
-        if item.finished, !winners.isEmpty {
+        let isDraw = item.finished && (item.results ?? []).contains { $0.draw == true }
+        if isDraw {
+            HStack(spacing: 5) {
+                Image(systemName: "equal.circle")
+                    .font(.system(size: 11))
+                    .foregroundColor(QipaiPalette.accent)
+                Text("平局收场")
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundColor(QipaiPalette.accent)
+            }
+        } else if item.finished, !winners.isEmpty {
             HStack(spacing: 5) {
                 Image(systemName: "crown.fill")
                     .font(.system(size: 11))
@@ -330,7 +340,11 @@ struct QipaiHistorySheet: View {
         let results = record.results ?? []
         if !results.isEmpty {
             VStack(spacing: 10) {
-                if record.finished {
+                if record.finished && results.contains(where: { $0.draw == true }) {
+                    Text("平局")
+                        .font(.qipaiDisplay(26))
+                        .foregroundColor(QipaiPalette.accent)
+                } else if record.finished {
                     let winners = results.filter { $0.winner }.map(\.name).joined(separator: "、")
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Image(systemName: "crown.fill")

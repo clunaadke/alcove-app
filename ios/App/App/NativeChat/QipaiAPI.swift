@@ -121,6 +121,7 @@ enum QipaiAPI {
         let name: String
         let score: Int
         let winner: Bool
+        let draw: Bool?     // 全员同分的真平局（部分并列第一算共同胜利，不算平）
     }
 
     struct HistorySummary: Decodable, Identifiable {
@@ -144,6 +145,7 @@ enum QipaiAPI {
         let games: Int
         let wins: Int
         let losses: Int
+        let draws: Int?
         var id: String { name }
     }
 
