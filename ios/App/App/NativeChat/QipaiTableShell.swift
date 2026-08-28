@@ -93,9 +93,15 @@ struct QipaiTableShell<GameV: Decodable & QipaiGameView, Content: View, Help: Vi
     private var background: some View {
         ZStack {
             QipaiPalette.fog.ignoresSafeArea()
-            Image("QipaiWallPortrait2")
-                .resizable().scaledToFill().ignoresSafeArea()
+            // ‼️壁纸必须锁在 overlay+clipped 笼子里：裸的 scaledToFill 会把超出
+            // 屏幕的尺寸上报给布局，把整个 ZStack 画布撑大——内容整体偏移、右缘
+            // 裁切，键盘一动 proposal 变化还会再放大一轮（0828 追了一晚的「页面
+            // 放大」和大厅「撑宽/右偏」悬案都是它）。笼子里它对布局零贡献。
+            Color.clear
+                .overlay(Image("QipaiWallPortrait2").resizable().scaledToFill())
+                .clipped()
                 .opacity(QipaiPalette.night ? 0.18 : 0.45)
+                .ignoresSafeArea()
             QipaiPalette.fog.opacity(QipaiPalette.night ? 0.72 : 0.55).ignoresSafeArea()
             QipaiDots(spacing: 18, radius: 1.2, opacity: 0.16).ignoresSafeArea()
         }

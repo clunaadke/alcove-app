@@ -111,8 +111,11 @@ struct QipaiLobbyView: View {
         // 夜版走程序压暗（她亲自对比过，比她手调的好看，反悔记录在案 #762）。
         ZStack {
             QipaiPalette.fog.ignoresSafeArea()
-            Image("QipaiWallPortrait2")
-                .resizable().scaledToFill()
+            // ‼️壁纸锁进 overlay+clipped 笼子（同 QipaiTableShell 的注释）：
+            // 裸 scaledToFill 上报超屏尺寸撑大画布，就是「撑宽/右偏」悬案的根因
+            Color.clear
+                .overlay(Image("QipaiWallPortrait2").resizable().scaledToFill())
+                .clipped()
                 .ignoresSafeArea()
             if night {
                 Color.black.opacity(0.62).ignoresSafeArea()
