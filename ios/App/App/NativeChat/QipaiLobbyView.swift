@@ -358,7 +358,7 @@ struct QipaiCreateRoomSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var roomName = ""
     @State private var nickname = QipaiAPI.nickname
-    @State private var aiPrompt = ""
+    @State private var aiPrompts: [String: String] = [:]   // 每个 AI 单独的人设
     @State private var rulesExpanded = false
     @State private var aiExpanded = true
     @State private var flagRules: [String: Bool] = [:]
@@ -557,29 +557,41 @@ struct QipaiCreateRoomSheet: View {
             if aiExpanded {
                 VStack(spacing: 9) {
                     ForEach(aiRoster, id: \.id) { ai in
-                        HStack {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(ai.name).font(.system(size: 12.5, weight: .semibold))
-                                    .foregroundColor(QipaiPalette.ink)
-                                Text(ai.note).font(.system(size: 10))
-                                    .foregroundColor(QipaiPalette.inkDim)
+                        VStack(spacing: 8) {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(ai.name).font(.system(size: 12.5, weight: .semibold))
+                                        .foregroundColor(QipaiPalette.ink)
+                                    Text(ai.note).font(.system(size: 10))
+                                        .foregroundColor(QipaiPalette.inkDim)
+                                }
+                                Spacer()
+                                Toggle("", isOn: Binding(
+                                    get: { aiSeats[ai.id] ?? false },
+                                    set: { aiSeats[ai.id] = $0 }))
+                                .labelsHidden()
+                                .tint(QipaiPalette.accent)
                             }
-                            Spacer()
-                            Toggle("", isOn: Binding(
-                                get: { aiSeats[ai.id] ?? false },
-                                set: { aiSeats[ai.id] = $0 }))
-                            .labelsHidden()
-                            .tint(QipaiPalette.accent)
+                            // 勾上才弹出这个 AI 自己的人设框（0829 她要的：这个毒舌那个温柔）
+                            if aiSeats[ai.id] ?? false {
+                                TextField("", text: Binding(
+                                    get: { aiPrompts[ai.id] ?? "" },
+                                    set: { aiPrompts[ai.id] = $0 }),
+                                          prompt: Text("给 \(ai.name) 的人设/规矩（可空）")
+                                            .foregroundColor(QipaiPalette.inkDim.opacity(0.7)),
+                                          axis: .vertical)
+                                    .lineLimit(1...3)
+                                    .font(.system(size: 12))
+                                    .foregroundColor(QipaiPalette.ink)
+                                    .padding(.horizontal, 10).padding(.vertical, 7)
+                                    .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                        .fill(QipaiPalette.fieldBg))
+                                    .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                        .stroke(QipaiPalette.inkDim.opacity(0.45), lineWidth: 1))
+                            }
                         }
                         .padding(11)
                         .qipaiPanel(corner: 13)
-                    }
-                    field("给 AI 立的桌规（可空）") {
-                        TextField("", text: $aiPrompt,
-                                  prompt: Text("比如「毒舌一点，公屏一次最多两句」")
-                                    .foregroundColor(QipaiPalette.inkDim.opacity(0.7)),
-                                  axis: .vertical)
-                            .lineLimit(2...4)
                     }
                     QipaiWhisper(text: "真身出牌要等工作室醒，急不得。")
                 }
@@ -608,11 +620,17 @@ struct QipaiCreateRoomSheet: View {
             }
             let ai = aiRoster.map(\.id).filter { aiSeats[$0] ?? false }
             let service = QipaiAPI.service(for: game.key)
+            // 只送勾上的 AI 的非空人设
+            var prompts: [String: String] = [:]
+            for id in ai {
+                let p = (aiPrompts[id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                if !p.isEmpty { prompts[id] = p }
+            }
             let created = try await QipaiAPI.createRoom(
                 game: game.key,
                 name: roomName.trimmingCharacters(in: .whitespaces),
                 rules: rules, aiPlayers: ai,
-                aiPrompt: aiPrompt.trimmingCharacters(in: .whitespacesAndNewlines))
+                aiPrompts: prompts)
             _ = try await QipaiAPI.join(code: created.code, name: name, service: service)
             UserDefaults.standard.set(created.inviteToken, forKey: "qipai.invite.\(created.code)")
             // 房主入座后 AI 才落座；拉一次大厅拿回真实座次
