@@ -278,6 +278,11 @@ struct QipaiLobbyView: View {
             roomCard(room)
                 .offset(x: swipedCode == room.code ? -76 : 0)
                 .animation(.spring(response: 0.3, dampingFraction: 0.8), value: swipedCode)
+                .onTapGesture {
+                    // 有滑开的卡时，第一下点击只收回，不进房
+                    if swipedCode != nil { swipedCode = nil }
+                    else { Task { await enter(room) } }
+                }
                 .simultaneousGesture(
                     DragGesture(minimumDistance: 20)
                         .onEnded { v in
@@ -305,10 +310,10 @@ struct QipaiLobbyView: View {
         }
     }
 
+    // 0829 误触修复：不再用 Button（它对手指位移太宽容，左滑抬手也算点击），
+    // 点击改在 roomRow 里用 onTapGesture 挂——真滑动不会被认成 tap
     private func roomCard(_ room: QipaiAPI.RoomSummary) -> some View {
-        Button {
-            Task { await enter(room) }
-        } label: {
+        Group {
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
                     Text(room.name.isEmpty ? room.gameName : room.name)
@@ -350,7 +355,7 @@ struct QipaiLobbyView: View {
             .padding(13)
             .qipaiPanel(corner: 17)
         }
-        .buttonStyle(.plain)
+        .contentShape(Rectangle())
     }
 
     private func sectionTitle(_ title: String, note: String) -> some View {
