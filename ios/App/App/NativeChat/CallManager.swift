@@ -27,7 +27,7 @@ final class CallManager: NSObject, CXProviderDelegate {
         cfg.supportsVideo = false
         cfg.maximumCallGroups = 1
         cfg.maximumCallsPerCallGroup = 1
-        cfg.supportedHandleTypes = [.generic]
+        cfg.supportedHandleTypes = [.generic, .emailAddress]
         // 铃声不设 = iOS 默认来电铃声（她定的）。要换必须在这里设，创建后改无效。
         cfg.includesCallsInRecents = false
         provider = CXProvider(configuration: cfg)
@@ -44,7 +44,10 @@ final class CallManager: NSObject, CXProviderDelegate {
             let uuid = UUID()
             currentUUID = uuid
             let update = CXCallUpdate()
-            update.remoteHandle = CXHandle(type: .generic, value: "陈璟")
+            // 邮箱 handle：她通讯录里存了这个邮箱的联系人卡，锁屏来电就显示
+            // 那张卡的名字＋大头照；没配上就退回下面的文字名牌，不会更糟
+            update.remoteHandle = CXHandle(type: .emailAddress,
+                                           value: "chenjingg@agent.qq.com")
             update.localizedCallerName = "陈璟"
             update.hasVideo = false
             provider.reportNewIncomingCall(with: uuid, update: update) { err in
