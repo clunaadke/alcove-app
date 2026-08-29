@@ -575,12 +575,18 @@ final class ChatStore: ObservableObject {
             if !isViewingHistory && !r.records.isEmpty {
                 appendNew(r.records)
                 notifyIncoming(r.records)
-                // 0829 通话页在听：他的新话拿去合成语音（同样要判重，见 notifiedTs 注释）
+                // 0829 通话页在听：他的新话拿去合成语音（判重见 notifiedTs 注释）。
+                // 任务#1144：他爱拆气泡，同一批到的合并成一段话一次合成，
+                // 一口气念完，不然电话里一顿一顿像卡带
+                var speakBatch: [String] = []
                 for rec in r.records where rec.role == "assistant" && !rec.text.isEmpty
                     && !spokenTs.contains(rec.ts) {
                     spokenTs.insert(rec.ts)
+                    speakBatch.append(rec.text)
+                }
+                if !speakBatch.isEmpty {
                     NotificationCenter.default.post(name: .alcoveAssistantSpoke,
-                                                    object: rec.text)
+                                                    object: speakBatch.joined(separator: "\n"))
                 }
             }
             if let lt = r.lastTs, !lt.isEmpty { lastTs = lt }
