@@ -575,8 +575,10 @@ final class ChatStore: ObservableObject {
             if !isViewingHistory && !r.records.isEmpty {
                 appendNew(r.records)
                 notifyIncoming(r.records)
-                // 0829 通话页在听：他的新话拿去合成语音
-                for rec in r.records where rec.role == "assistant" && !rec.text.isEmpty {
+                // 0829 通话页在听：他的新话拿去合成语音（同样要判重，见 notifiedTs 注释）
+                for rec in r.records where rec.role == "assistant" && !rec.text.isEmpty
+                    && !spokenTs.contains(rec.ts) {
+                    spokenTs.insert(rec.ts)
                     NotificationCenter.default.post(name: .alcoveAssistantSpoke,
                                                     object: rec.text)
                 }
@@ -616,11 +618,20 @@ final class ChatStore: ObservableObject {
     }
 
     // 0829 他的新消息在她不看聊天页时喊一声。她要的：逐条弹内容，不折叠成计数
+    // ‼️必须按 ts 判重（任务#1143 风暴）：released_at 补送的消息在下一条新消息
+    // 出现前会被每次轮询重复送回，聊天页有判重，通知这边也得有，否则几秒一轮重弹
+    private var notifiedTs = Set<String>()
+    private var spokenTs = Set<String>()
     private func notifyIncoming(_ recs: [ChatMessage]) {
-        let fresh = recs.filter { $0.role == "assistant" && !deletedMessageTs.contains($0.ts) }
+        let fresh = recs.filter {
+            $0.role == "assistant" && !deletedMessageTs.contains($0.ts)
+                && !notifiedTs.contains($0.ts)
+        }
         guard !fresh.isEmpty else { return }
-        // 他就爱拆一堆气泡，她说全弹别折叠（任务#1131）
-        for rec in fresh { AlcoveNotify.shared.newMessage(rec.text) }
+        for rec in fresh {
+            notifiedTs.insert(rec.ts)
+            AlcoveNotify.shared.newMessage(rec.text)
+        }
     }
 
     // 追加服务器消息，同时清理已被确认的本地乐观气泡
