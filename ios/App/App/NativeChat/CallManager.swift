@@ -109,6 +109,13 @@ final class AlcoveNotify: NSObject, UNUserNotificationCenterDelegate {
         let center = UNUserNotificationCenter.current()
         center.delegate = self
         center.requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
+        // 0829 任务#1130：长按横幅直接回复
+        let reply = UNTextInputNotificationAction(
+            identifier: "alcove_reply", title: "回复",
+            options: [], textInputButtonTitle: "发送", textInputPlaceholder: "说点什么…")
+        let cat = UNNotificationCategory(identifier: "alcove_msg", actions: [reply],
+                                         intentIdentifiers: [], options: [])
+        center.setNotificationCategories([cat])
     }
 
     /// 新消息进来喊一声。她盯着聊天页时闭嘴，其他情况（别的页面/后台/锁屏）都响。
@@ -121,6 +128,7 @@ final class AlcoveNotify: NSObject, UNUserNotificationCenterDelegate {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         content.body = trimmed.isEmpty ? "发来一条消息" : String(trimmed.prefix(120))
         content.sound = .default
+        content.categoryIdentifier = "alcove_msg"
         let req = UNNotificationRequest(identifier: UUID().uuidString,
                                         content: content, trigger: nil)
         UNUserNotificationCenter.current().add(req)
@@ -148,7 +156,27 @@ final class AlcoveNotify: NSObject, UNUserNotificationCenterDelegate {
     func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 didReceive response: UNNotificationResponse,
                                 withCompletionHandler completionHandler: @escaping () -> Void) {
-        // 点通知=回聊天页（跟接听是两码事，接听会开通话页）
+        // 长按回复：后台直接把话送出去，不打开 app
+        if let input = response as? UNTextInputNotificationResponse,
+           response.actionIdentifier == "alcove_reply" {
+            let text = input.userText.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { completionHandler(); return }
+            Task {
+                let sent = (try? await AlcoveAPI.send(text: text)) != nil
+                if !sent {
+                    let c = UNMutableNotificationContent()
+                    c.title = "没发出去"
+                    c.body = "刚才那句「\(String(text.prefix(40)))」网络没送到，进 app 再发一次"
+                    c.sound = .default
+                    UNUserNotificationCenter.current()
+                        .add(UNNotificationRequest(identifier: UUID().uuidString,
+                                                   content: c, trigger: nil))
+                }
+                completionHandler()
+            }
+            return
+        }
+        // 普通点按=回聊天页（跟接听是两码事，接听会开通话页）
         NotificationCenter.default.post(name: .alcoveNotificationTapped, object: nil)
         completionHandler()
     }
