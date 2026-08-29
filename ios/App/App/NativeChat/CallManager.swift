@@ -96,6 +96,8 @@ final class AlcoveNotify: NSObject, UNUserNotificationCenterDelegate {
 
     /// RootView 维护：她正停在聊天页（前台且没盖小屋全屏页）就别弹横幅
     var chatVisible = true
+    /// 通话页开着：他的话正在被读出来，别再弹横幅吵她
+    var inCall = false
 
     func setup() {
         let center = UNUserNotificationCenter.current()
@@ -105,6 +107,7 @@ final class AlcoveNotify: NSObject, UNUserNotificationCenterDelegate {
 
     /// 新消息进来喊一声。她盯着聊天页时闭嘴，其他情况（别的页面/后台/锁屏）都响。
     func newMessage(_ text: String) {
+        guard !inCall else { return }
         let onChat = chatVisible && UIApplication.shared.applicationState == .active
         guard !onChat else { return }
         let content = UNMutableNotificationContent()
@@ -128,8 +131,8 @@ final class AlcoveNotify: NSObject, UNUserNotificationCenterDelegate {
     func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 didReceive response: UNNotificationResponse,
                                 withCompletionHandler completionHandler: @escaping () -> Void) {
-        // 点通知=回聊天页，复用接听的跳转
-        NotificationCenter.default.post(name: .alcoveCallAnswered, object: nil)
+        // 点通知=回聊天页（跟接听是两码事，接听会开通话页）
+        NotificationCenter.default.post(name: .alcoveNotificationTapped, object: nil)
         completionHandler()
     }
 }

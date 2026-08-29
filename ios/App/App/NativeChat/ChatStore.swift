@@ -575,6 +575,11 @@ final class ChatStore: ObservableObject {
             if !isViewingHistory && !r.records.isEmpty {
                 appendNew(r.records)
                 notifyIncoming(r.records)
+                // 0829 通话页在听：他的新话拿去合成语音
+                for rec in r.records where rec.role == "assistant" && !rec.text.isEmpty {
+                    NotificationCenter.default.post(name: .alcoveAssistantSpoke,
+                                                    object: rec.text)
+                }
             }
             if let lt = r.lastTs, !lt.isEmpty { lastTs = lt }
             currentTool = r.currentTool

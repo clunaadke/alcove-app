@@ -3,6 +3,7 @@ import SwiftUI
 // App 根视图：原生聊天页 + 原生小屋页面。
 struct RootView: View {
     @State private var housePage: HouseDestination?
+    @State private var activeCall: CallKind?
     @State private var showHouseDrawer = false
     @State private var showSplash = true
     @State private var showPermissions = false
@@ -178,6 +179,13 @@ struct RootView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .alcoveCallAnswered)) { _ in
             housePage = nil
+            activeCall = .incoming   // CallKit 接听 → 进通话页
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .alcoveNotificationTapped)) { _ in
+            housePage = nil
+        }
+        .fullScreenCover(item: $activeCall) { kind in
+            CallView(kind: kind) { activeCall = nil }
         }
         .onReceive(NotificationCenter.default.publisher(for: .alcoveShowPermissions)) { _ in
             housePage = nil
@@ -293,6 +301,7 @@ struct RootView: View {
             HStack {
                 Spacer(minLength: 0)
                 HStack(alignment: .center, spacing: 0) {
+                    topBarControl("phone", size: 14) { activeCall = .outgoing }
                     topBarControl("music.note", size: 14) { presentHouse(.music) }
                     topBarControl("magnifyingglass", size: 14) { presentHouse(.search) }
                     topBarControl("line.3.horizontal", size: 15) { presentHouse(.sidebar) }
@@ -342,6 +351,9 @@ struct RootView: View {
                 Spacer(minLength: 0)
 
                 HStack(alignment: .center, spacing: 0) {
+                    topBarControl("phone", size: 14) {
+                        activeCall = .outgoing
+                    }
                     topBarControl("music.note", size: 14) {
                         presentHouse(.music)
                     }

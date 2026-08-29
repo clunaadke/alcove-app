@@ -255,9 +255,36 @@ enum AlcoveAPI {
             callId: call["call_id"] as? String ?? "")
     }
 
-    /// 来电回执：answer / decline
+    /// 来电回执：answer / decline / end
     static func callAction(_ action: String) async throws {
         _ = try await postJSON("/api/call/\(action)", body: [:])
+    }
+
+    /// 她拨出：asleep=true 是睡眠闸门没放行（没接通）
+    static func callDial() async throws -> (ok: Bool, asleep: Bool) {
+        let obj = try await postJSON("/api/call/dial", body: [:])
+        return (obj["ok"] as? Bool ?? false, obj["asleep"] as? Bool ?? false)
+    }
+
+    /// 通话里她说的一段：录音 → 听写并注入主聊天，返回转写文本
+    static func callSay(audio: Data) async throws -> String {
+        let obj = try await postJSON("/api/call/say",
+                                     body: ["audio_b64": audio.base64EncodedString()])
+        guard let text = obj["text"] as? String, !text.isEmpty else {
+            throw URLError(.badServerResponse)
+        }
+        return text
+    }
+
+    /// 他的回复 → 他的声音（服务端 minimax 合成，按文本缓存）
+    static func callTTSAudio(text: String) async throws -> Data {
+        let obj = try await postJSON("/api/call/tts", body: ["text": text])
+        guard let path = obj["url"] as? String,
+              let url = URL(string: "/api" + path, relativeTo: base) else {
+            throw URLError(.badServerResponse)
+        }
+        let (data, _) = try await session.data(from: url)
+        return data
     }
 
     // 返回服务器确认的记录；睡眠闸门拦下时 asleep=true
