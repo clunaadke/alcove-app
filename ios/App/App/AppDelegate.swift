@@ -1,6 +1,7 @@
 import UIKit
 import SwiftUI
 import Capacitor
+import Intents
 
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
@@ -59,6 +60,11 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
     func application(_ application: UIApplication, continue userActivity: NSUserActivity, restorationHandler: @escaping ([UIUserActivityRestoring]?) -> Void) -> Bool {
+        // 系统"最近通话"里点 Alcove 的条目回拨（任务#1137）
+        if userActivity.interaction?.intent is INStartCallIntent {
+            NotificationCenter.default.post(name: .alcoveDialRequested, object: nil)
+            return true
+        }
         // Called when the app was launched with an activity, including Universal Links.
         // Feel free to add additional processing here, but if you want the App API to support
         // tracking app url opens, make sure to keep this call

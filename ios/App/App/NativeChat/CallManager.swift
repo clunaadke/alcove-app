@@ -21,6 +21,7 @@ final class CallManager: NSObject, CXProviderDelegate {
     private let provider: CXProvider
     private var currentUUID: UUID?
     private var currentCallId: String?
+    private var answered = false
 
     private override init() {
         let cfg = CXProviderConfiguration()
@@ -29,7 +30,7 @@ final class CallManager: NSObject, CXProviderDelegate {
         cfg.maximumCallsPerCallGroup = 1
         cfg.supportedHandleTypes = [.generic, .emailAddress]
         // 铃声不设 = iOS 默认来电铃声（她定的）。要换必须在这里设，创建后改无效。
-        cfg.includesCallsInRecents = false
+        cfg.includesCallsInRecents = true  // 任务#1137：来电进系统"最近通话"
         provider = CXProvider(configuration: cfg)
         super.init()
         provider.setDelegate(self, queue: nil)
@@ -43,6 +44,7 @@ final class CallManager: NSObject, CXProviderDelegate {
             currentCallId = callId
             let uuid = UUID()
             currentUUID = uuid
+            answered = false
             let update = CXCallUpdate()
             // 邮箱 handle：她通讯录里存了这个邮箱的联系人卡，锁屏来电就显示
             // 那张卡的名字＋大头照；没配上就退回下面的文字名牌，不会更糟
@@ -58,9 +60,11 @@ final class CallManager: NSObject, CXProviderDelegate {
                 }
             }
         default:
-            // idle/ended：他那边撤回或响铃超时，把还在响的铃收掉
+            // idle/ended：他那边撤回或响铃超时，把还在响的铃收掉。
+            // 没接过 = 记成"未接来电"（最近通话里红字），接过 = 正常结束
             if state == "idle", let uuid = currentUUID {
-                provider.reportCall(with: uuid, endedAt: Date(), reason: .remoteEnded)
+                provider.reportCall(with: uuid, endedAt: Date(),
+                                    reason: answered ? .remoteEnded : .unanswered)
                 currentUUID = nil
                 currentCallId = nil
             }
@@ -75,6 +79,7 @@ final class CallManager: NSObject, CXProviderDelegate {
     }
 
     func provider(_ provider: CXProvider, perform action: CXAnswerCallAction) {
+        answered = true
         Task { try? await AlcoveAPI.callAction("answer") }
         action.fulfill()
         NotificationCenter.default.post(name: .alcoveCallAnswered, object: nil)

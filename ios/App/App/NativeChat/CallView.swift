@@ -17,6 +17,8 @@ extension Notification.Name {
     static let alcoveAssistantSpoke = Notification.Name("alcoveAssistantSpoke")
     /// 点了通知横幅：只回聊天页，不开通话
     static let alcoveNotificationTapped = Notification.Name("alcoveNotificationTapped")
+    /// 系统"最近通话"里点了条目回拨 → 开拨出页
+    static let alcoveDialRequested = Notification.Name("alcoveDialRequested")
 }
 
 @MainActor

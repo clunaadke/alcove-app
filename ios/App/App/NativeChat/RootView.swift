@@ -184,6 +184,10 @@ struct RootView: View {
         .onReceive(NotificationCenter.default.publisher(for: .alcoveNotificationTapped)) { _ in
             housePage = nil
         }
+        .onReceive(NotificationCenter.default.publisher(for: .alcoveDialRequested)) { _ in
+            housePage = nil
+            if activeCall == nil { activeCall = .outgoing }
+        }
         .fullScreenCover(item: $activeCall) { kind in
             CallView(kind: kind) { activeCall = nil }
         }
