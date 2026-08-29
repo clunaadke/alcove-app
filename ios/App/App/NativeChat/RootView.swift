@@ -127,6 +127,8 @@ struct RootView: View {
         .animation(.easeOut(duration: 0.20), value: housePage != nil)
         .onAppear {
             prewarmPanelTexture()
+            // 0829 原生来电与推送：要通知权限、把前台横幅代理挂上
+            AlcoveNotify.shared.setup()
             Task { await refreshThinkingState() }
             // 0821 她要的图片缓存：开门就把最近三天的图悄悄存进手机
             Task.detached(priority: .utility) { await ImageDiskCache.shared.prewarmRecent(days: 3) }
@@ -160,8 +162,22 @@ struct RootView: View {
                 // iOS 杀掉后台进程后，重新进入 Alcove 就把灵动岛恢复到
                 // 当前状态，不必再去设置页手动关开一次。
                 restoreLiveActivityIfEnabled()
+                // 0829 回前台：不用无声音频吊着了
+                KeepAlive.shared.stop()
+                AlcoveNotify.shared.chatVisible = (housePage == nil)
             }
-            else { SensorReporter.shared.appBackground() }
+            else {
+                SensorReporter.shared.appBackground()
+                AlcoveNotify.shared.chatVisible = false
+                // 0829 锁屏保活：进后台瞬间起无声音频，轮询不断，来电和横幅照收
+                if phase == .background { KeepAlive.shared.start() }
+            }
+        }
+        .onChange(of: housePage) { page in
+            AlcoveNotify.shared.chatVisible = (page == nil)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .alcoveCallAnswered)) { _ in
+            housePage = nil
         }
         .onReceive(NotificationCenter.default.publisher(for: .alcoveShowPermissions)) { _ in
             housePage = nil

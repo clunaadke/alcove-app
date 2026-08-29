@@ -570,8 +570,11 @@ final class ChatStore: ObservableObject {
     private func pollOnce() async {
         do {
             let r = try await AlcoveAPI.poll(since: lastTs)
+            // 0829 原生来电：状态先于消息处理，铃要响得快
+            CallManager.shared.apply(state: r.callState, callId: r.callId)
             if !isViewingHistory && !r.records.isEmpty {
                 appendNew(r.records)
+                notifyIncoming(r.records)
             }
             if let lt = r.lastTs, !lt.isEmpty { lastTs = lt }
             currentTool = r.currentTool
@@ -604,6 +607,17 @@ final class ChatStore: ObservableObject {
             }
         } catch {
             connectionError = true
+        }
+    }
+
+    // 0829 他的新消息在她不看聊天页时喊一声（横幅走本地通知，AlcoveNotify 里判重不判）
+    private func notifyIncoming(_ recs: [ChatMessage]) {
+        let fresh = recs.filter { $0.role == "assistant" && !deletedMessageTs.contains($0.ts) }
+        guard !fresh.isEmpty else { return }
+        if fresh.count > 3 {
+            AlcoveNotify.shared.newMessage("发来 \(fresh.count) 条消息")
+        } else {
+            for rec in fresh { AlcoveNotify.shared.newMessage(rec.text) }
         }
     }
 

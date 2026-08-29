@@ -26,6 +26,9 @@ enum AlcoveAPI {
         var lastTs: String?
         var isTyping: Bool
         var currentTool: String?
+        // 0829 原生来电：poll 捎带的通话状态（idle/ringing/accepted/declined）
+        var callState: String = "idle"
+        var callId: String = ""
     }
 
     // 0730 实时预览：他一说完一段就先给她看，不等整轮工具跑完。
@@ -242,11 +245,19 @@ enum AlcoveAPI {
         let chat = obj["chat"] as? [String: Any] ?? [:]
         let raw = chat["new_records"] as? [[String: Any]] ?? []
         let status = obj["status"] as? [String: Any] ?? [:]
+        let call = status["call"] as? [String: Any] ?? [:]
         return PollResult(
             records: raw.compactMap(ChatMessage.init(json:)),
             lastTs: chat["last_ts"] as? String,
             isTyping: status["is_typing"] as? Bool ?? false,
-            currentTool: status["current_tool"] as? String)
+            currentTool: status["current_tool"] as? String,
+            callState: call["state"] as? String ?? "idle",
+            callId: call["call_id"] as? String ?? "")
+    }
+
+    /// 来电回执：answer / decline
+    static func callAction(_ action: String) async throws {
+        _ = try await postJSON("/api/call/\(action)", body: [:])
     }
 
     // 返回服务器确认的记录；睡眠闸门拦下时 asleep=true
