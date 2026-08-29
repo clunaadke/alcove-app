@@ -168,7 +168,7 @@ final class AlcoveNotify: NSObject, UNUserNotificationCenterDelegate {
                     c.title = "没发出去"
                     c.body = "刚才那句「\(String(text.prefix(40)))」网络没送到，进 app 再发一次"
                     c.sound = .default
-                    UNUserNotificationCenter.current()
+                    try? await UNUserNotificationCenter.current()
                         .add(UNNotificationRequest(identifier: UUID().uuidString,
                                                    content: c, trigger: nil))
                 }
