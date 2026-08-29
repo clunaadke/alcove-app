@@ -619,10 +619,8 @@ final class ChatStore: ObservableObject {
     private func notifyIncoming(_ recs: [ChatMessage]) {
         let fresh = recs.filter { $0.role == "assistant" && !deletedMessageTs.contains($0.ts) }
         guard !fresh.isEmpty else { return }
-        for rec in fresh.prefix(6) { AlcoveNotify.shared.newMessage(rec.text) }
-        if fresh.count > 6 {
-            AlcoveNotify.shared.newMessage("……还有 \(fresh.count - 6) 条，回来看")
-        }
+        // 他就爱拆一堆气泡，她说全弹别折叠（任务#1131）
+        for rec in fresh { AlcoveNotify.shared.newMessage(rec.text) }
     }
 
     // 追加服务器消息，同时清理已被确认的本地乐观气泡
