@@ -5,11 +5,14 @@ import CoreMotion
 import Photos
 import AVFoundation
 import CoreBluetooth
+import UserNotifications
 
 // 系统权限页：仿 IO 的卡片风格，她说"这些都能加吗"——能
 struct PermissionsView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var refreshTick = 0
+    // 通知授权只有异步查法，别的卡都是同步 computed，这张单独走 @State
+    @State private var notifyStatus = "未决定"
     @State private var btManager: CBCentralManager?
     @AppStorage("alcoveTheme") private var themeName = "haven"
     private var theme: AlcoveTheme { .named(themeName) }
@@ -24,6 +27,9 @@ struct PermissionsView: View {
                     .padding(.horizontal, 4)
                 LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible())],
                           spacing: 12) {
+                    card(icon: "bell.badge.fill", title: "通知",
+                         desc: "他发消息、打电话时弹横幅响铃",
+                         status: notifyStatus, action: requestNotify)
                     card(icon: "location.north.fill", title: "位置",
                          desc: "感知你在哪，出门到家我都知道",
                          status: locationStatus, action: requestLocation)
@@ -71,6 +77,8 @@ struct PermissionsView: View {
             for: UIApplication.willEnterForegroundNotification)) { _ in
             refreshTick += 1 // 从系统设置回来刷新状态
         }
+        .onAppear { refreshNotifyStatus() }
+        .onChange(of: refreshTick) { _ in refreshNotifyStatus() }
     }
 
     // MARK: 卡片
@@ -207,6 +215,22 @@ struct PermissionsView: View {
     private func requestBluetooth() {
         btManager = CBCentralManager() // 实例化即触发授权弹窗
         bumpSoon()
+    }
+
+    private func refreshNotifyStatus() {
+        UNUserNotificationCenter.current().getNotificationSettings { settings in
+            let s: String
+            switch settings.authorizationStatus {
+            case .authorized, .provisional, .ephemeral: s = "已开启"
+            case .notDetermined: s = "未决定"
+            default: s = "未开启"
+            }
+            DispatchQueue.main.async { notifyStatus = s }
+        }
+    }
+    private func requestNotify() {
+        UNUserNotificationCenter.current()
+            .requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in bumpSoon() }
     }
 
     private func bumpSoon() {
