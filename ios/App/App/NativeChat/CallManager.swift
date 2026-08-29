@@ -47,7 +47,13 @@ final class CallManager: NSObject, CXProviderDelegate {
             update.remoteHandle = CXHandle(type: .generic, value: "陈璟")
             update.localizedCallerName = "陈璟"
             update.hasVideo = false
-            provider.reportNewIncomingCall(with: uuid, update: update) { _ in }
+            provider.reportNewIncomingCall(with: uuid, update: update) { err in
+                // CallKit 弹铃失败（缺 voip 后台模式等）绝不静默：退成大横幅
+                if let err {
+                    NSLog("CallKit ring failed: \(err.localizedDescription)")
+                    AlcoveNotify.shared.incomingCallFallback()
+                }
+            }
         default:
             // idle/ended：他那边撤回或响铃超时，把还在响的铃收掉
             if state == "idle", let uuid = currentUUID {
@@ -116,6 +122,17 @@ final class AlcoveNotify: NSObject, UNUserNotificationCenterDelegate {
         content.body = trimmed.isEmpty ? "发来一条消息" : String(trimmed.prefix(120))
         content.sound = .default
         let req = UNNotificationRequest(identifier: UUID().uuidString,
+                                        content: content, trigger: nil)
+        UNUserNotificationCenter.current().add(req)
+    }
+
+    /// CallKit 弹不出来时的兜底：响一声大横幅，别让来电无声无息漏掉
+    func incomingCallFallback() {
+        let content = UNMutableNotificationContent()
+        content.title = "📞 陈璟打来语音通话"
+        content.body = "回 Alcove 里接听"
+        content.sound = .default
+        let req = UNNotificationRequest(identifier: "call_fallback",
                                         content: content, trigger: nil)
         UNUserNotificationCenter.current().add(req)
     }

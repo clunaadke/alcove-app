@@ -615,14 +615,13 @@ final class ChatStore: ObservableObject {
         }
     }
 
-    // 0829 他的新消息在她不看聊天页时喊一声（横幅走本地通知，AlcoveNotify 里判重不判）
+    // 0829 他的新消息在她不看聊天页时喊一声。她要的：逐条弹内容，不折叠成计数
     private func notifyIncoming(_ recs: [ChatMessage]) {
         let fresh = recs.filter { $0.role == "assistant" && !deletedMessageTs.contains($0.ts) }
         guard !fresh.isEmpty else { return }
-        if fresh.count > 3 {
-            AlcoveNotify.shared.newMessage("发来 \(fresh.count) 条消息")
-        } else {
-            for rec in fresh { AlcoveNotify.shared.newMessage(rec.text) }
+        for rec in fresh.prefix(6) { AlcoveNotify.shared.newMessage(rec.text) }
+        if fresh.count > 6 {
+            AlcoveNotify.shared.newMessage("……还有 \(fresh.count - 6) 条，回来看")
         }
     }
 
