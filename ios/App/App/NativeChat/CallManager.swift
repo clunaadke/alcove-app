@@ -19,9 +19,11 @@ final class CallManager: NSObject, CXProviderDelegate {
     static let shared = CallManager()
 
     private let provider: CXProvider
+    private let controller = CXCallController()
     private var currentUUID: UUID?
     private var currentCallId: String?
     private var answered = false
+    private var outgoingUUID: UUID?   // 拨出记账用（任务#1138）
 
     private override init() {
         let cfg = CXProviderConfiguration()
@@ -71,6 +73,30 @@ final class CallManager: NSObject, CXProviderDelegate {
         }
     }
 
+    // MARK: 拨出记账（她打给他也进"最近通话"）
+
+    func startOutgoing() {
+        guard outgoingUUID == nil else { return }
+        let uuid = UUID()
+        outgoingUUID = uuid
+        let handle = CXHandle(type: .emailAddress, value: "chenjingg@agent.qq.com")
+        let tx = CXTransaction(action: CXStartCallAction(call: uuid, handle: handle))
+        controller.request(tx) { [weak self] err in
+            if err != nil { self?.outgoingUUID = nil }
+        }
+    }
+
+    func outgoingConnected() {
+        guard let uuid = outgoingUUID else { return }
+        provider.reportOutgoingCall(with: uuid, connectedAt: Date())
+    }
+
+    func endOutgoing() {
+        guard let uuid = outgoingUUID else { return }
+        outgoingUUID = nil
+        provider.reportCall(with: uuid, endedAt: Date(), reason: .remoteEnded)
+    }
+
     // MARK: CXProviderDelegate
 
     func providerDidReset(_ provider: CXProvider) {
@@ -92,7 +118,19 @@ final class CallManager: NSObject, CXProviderDelegate {
         }
     }
 
+    func provider(_ provider: CXProvider, perform action: CXStartCallAction) {
+        provider.reportOutgoingCall(with: action.callUUID, startedConnectingAt: Date())
+        action.fulfill()
+    }
+
     func provider(_ provider: CXProvider, perform action: CXEndCallAction) {
+        if action.callUUID == outgoingUUID {
+            // 她从系统界面（绿条/灵动岛）挂了拨出的电话：让通话页收线
+            outgoingUUID = nil
+            NotificationCenter.default.post(name: .alcoveSystemHangup, object: nil)
+            action.fulfill()
+            return
+        }
         // 响铃中挂断=拒接；接听后的收尾走上面的 reportCall，不会进这里
         Task { try? await AlcoveAPI.callAction("decline") }
         currentUUID = nil

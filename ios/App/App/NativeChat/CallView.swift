@@ -19,6 +19,8 @@ extension Notification.Name {
     static let alcoveNotificationTapped = Notification.Name("alcoveNotificationTapped")
     /// 系统"最近通话"里点了条目回拨 → 开拨出页
     static let alcoveDialRequested = Notification.Name("alcoveDialRequested")
+    /// 她从系统界面（绿条/灵动岛）挂断了拨出的电话
+    static let alcoveSystemHangup = Notification.Name("alcoveSystemHangup")
 }
 
 @MainActor
@@ -39,6 +41,8 @@ final class CallSessionModel: NSObject, ObservableObject, AVAudioPlayerDelegate 
     private var ttsQueue: [String] = []
     private var fetchingTTS = false
     private var observer: NSObjectProtocol?
+    private var hangupObserver: NSObjectProtocol?
+    private var isOutgoing = false
     private var closed = false
 
     func start(kind: CallKind) {
@@ -55,7 +59,12 @@ final class CallSessionModel: NSObject, ObservableObject, AVAudioPlayerDelegate 
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.seconds += 1 }
         }
+        hangupObserver = NotificationCenter.default.addObserver(
+            forName: .alcoveSystemHangup, object: nil, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.end() }
+        }
         if kind == .outgoing {
+            isOutgoing = true
             line = "拨号中…"
             Task {
                 do {
@@ -68,6 +77,9 @@ final class CallSessionModel: NSObject, ObservableObject, AVAudioPlayerDelegate 
                         line = "没打通，占线？"
                     } else {
                         line = "通了，等他开口…"
+                        // 系统"最近通话"记一笔拨出（任务#1138）
+                        CallManager.shared.startOutgoing()
+                        CallManager.shared.outgoingConnected()
                     }
                 } catch {
                     line = "没打通，网络不给力"
@@ -166,6 +178,8 @@ final class CallSessionModel: NSObject, ObservableObject, AVAudioPlayerDelegate 
         recorder?.stop()
         timer?.invalidate()
         if let o = observer { NotificationCenter.default.removeObserver(o) }
+        if let o = hangupObserver { NotificationCenter.default.removeObserver(o) }
+        if isOutgoing { CallManager.shared.endOutgoing() }
         AlcoveNotify.shared.inCall = false
         try? AVAudioSession.sharedInstance()
             .setActive(false, options: .notifyOthersOnDeactivation)
