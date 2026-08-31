@@ -43,19 +43,46 @@ enum MahjongCloth {
 /// 用 Canvas 不用几十个 Circle 视图——四家牌河已经上百张牌了，别再给布局器加担子。
 struct MahjongLaceCloth: View {
     var scallop: CGFloat = 11
+    /// 只为让 @AppStorage 一变就重画（她换了桌布图）
+    var version: Int = 0
 
     var body: some View {
-        Canvas { ctx, size in
-            let r = scallop
-            let rect = CGRect(x: r, y: r, width: max(size.width - r * 2, 1),
-                              height: max(size.height - r * 2, 1))
-            ctx.fill(scallopPath(rect, r), with: .color(MahjongCloth.lace))
-            ctx.fill(clothPath(rect), with: clothShading(rect))
-            ctx.stroke(eyeletRing(rect), with: .color(MahjongCloth.thread.opacity(0.75)),
-                       lineWidth: 1)
-            ctx.fill(eyeletHoles(rect), with: .color(MahjongCloth.thread.opacity(0.55)))
+        ZStack {
+            // 底层：一圈花瓣（蕾丝牙子），永远画，换不换图都有
+            Canvas { ctx, size in
+                let r = scallop
+                ctx.fill(scallopPath(clothRect(size, r), r), with: .color(MahjongCloth.lace))
+            }
+            // 中层：布面 —— 她换过图就铺图，没换就是原来那块藕粉
+            clothFace
+                .padding(scallop)
+            // 顶层：走线和一圈眼孔压在布面上（图也要有这圈线，不然不像块布）
+            Canvas { ctx, size in
+                let r = scallop
+                let rect = clothRect(size, r)
+                ctx.stroke(eyeletRing(rect), with: .color(MahjongCloth.thread.opacity(0.75)),
+                           lineWidth: 1)
+                ctx.fill(eyeletHoles(rect), with: .color(MahjongCloth.thread.opacity(0.55)))
+            }
         }
         .allowsHitTesting(false)
+    }
+
+    private func clothRect(_ size: CGSize, _ r: CGFloat) -> CGRect {
+        CGRect(x: r, y: r, width: max(size.width - r * 2, 1), height: max(size.height - r * 2, 1))
+    }
+
+    @ViewBuilder private var clothFace: some View {
+        let shape = RoundedRectangle(cornerRadius: 26, style: .continuous)
+        if let img = MahjongFaces.clothImage() {
+            // 存的时候已经按桌布比例裁好了，这里 fill 一下兜住零头差异
+            Color.clear
+                .overlay(Image(uiImage: img).resizable().scaledToFill())
+                .clipShape(shape)
+        } else {
+            shape.fill(LinearGradient(colors: [MahjongCloth.felt, MahjongCloth.feltDeep],
+                                      startPoint: .top, endPoint: .bottom))
+        }
     }
 
     /// 沿四边排一圈半圆花瓣。拆成独立函数，别塞进 Canvas 闭包里让类型检查器吃不下
@@ -74,16 +101,6 @@ struct MahjongLaceCloth: View {
             y += r * 2
         }
         return p
-    }
-
-    private func clothPath(_ rect: CGRect) -> Path {
-        Path(roundedRect: rect, cornerRadius: 26, style: .continuous)
-    }
-
-    private func clothShading(_ rect: CGRect) -> GraphicsContext.Shading {
-        .linearGradient(Gradient(colors: [MahjongCloth.felt, MahjongCloth.feltDeep]),
-                        startPoint: CGPoint(x: rect.midX, y: rect.minY),
-                        endPoint: CGPoint(x: rect.midX, y: rect.maxY))
     }
 
     private func eyeletRing(_ rect: CGRect) -> Path {
@@ -187,6 +204,32 @@ enum MahjongFaces {
         }
     }
 
+    // MARK: 桌布（0901 她要的：自己换图，按桌布比例裁）
+
+    /// 桌布是个很扁的长方形。裁剪框、存图、渲染三处都用这一个数，别各写各的。
+    static let clothAspect: CGFloat = 2.2
+
+    private static var clothURL: URL {
+        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("qipai_cloth.jpg")
+    }
+
+    static func clothImage() -> UIImage? { UIImage(contentsOfFile: clothURL.path) }
+
+    /// 存已经裁好的那块。长边压到 1600——横屏桌布最宽也就这么点，
+    /// 再大只是白占沙盒和内存（她那台是 2 核 4G 的手机不是服务器，但道理一样）
+    static func setCloth(_ img: UIImage) {
+        let out = shrink(img, maxSide: 1600)?.jpegData(compressionQuality: 0.88)
+        guard let out else { return }
+        try? out.write(to: clothURL)
+        bump()
+    }
+
+    static func clearCloth() {
+        try? FileManager.default.removeItem(at: clothURL)
+        bump()
+    }
+
     /// 改完让界面重画：视图里 @AppStorage 盯着这个数
     static func bump() {
         let n = UserDefaults.standard.integer(forKey: "qipai.facesVersion")
@@ -231,6 +274,144 @@ struct MahjongAvatar: View {
     }
 }
 
+/// .fullScreenCover(item:) 要 Identifiable，UIImage 不是，包一层
+struct MahjongPickedImage: Identifiable {
+    let id = UUID()
+    let image: UIImage
+}
+
+// MARK: - 桌布裁剪（0901 她点名要的「桌布大小的裁剪预览」）
+
+/// 桌布是 2.2:1 的扁长方形，她随手拍的照片多半是竖的，直接铺上去会被裁得乱七八糟。
+/// 所以选完图先进这一页：框就是桌布的真实比例，图能拖能捏，她自己挑哪一块露出来。
+/// 确定时**照屏幕上那一刻的样子原样重画一遍**（同一套 scale/offset，只是放大到 1600 宽），
+/// 所见即所得——别去算什么裁剪矩形再 cropping，那条路最容易在图片方向上翻车。
+struct MahjongClothCropper: View {
+    let image: UIImage
+    var onDone: (UIImage) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var scale: CGFloat = 1
+    @State private var steadyScale: CGFloat = 1
+    @State private var offset: CGSize = .zero
+    @State private var steadyOffset: CGSize = .zero
+
+    private let aspect = MahjongFaces.clothAspect
+
+    var body: some View {
+        GeometryReader { geo in
+            let w = geo.size.width - 32
+            let h = w / aspect
+            VStack(spacing: 16) {
+                Text("拖动和捏合，挑桌布上要露出来的那一块")
+                    .font(.system(size: 12.5))
+                    .foregroundColor(.white.opacity(0.7))
+                    .padding(.top, 22)
+
+                frame(w: w, h: h)
+
+                Text("框的比例就是牌桌上桌布的比例，框里是什么样，桌上就是什么样")
+                    .font(.system(size: 11))
+                    .foregroundColor(.white.opacity(0.45))
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 30)
+
+                Spacer()
+                HStack(spacing: 14) {
+                    Button("取消") { dismiss() }
+                        .foregroundColor(.white.opacity(0.75))
+                    Spacer()
+                    Button("重置") { reset() }
+                        .foregroundColor(.white.opacity(0.75))
+                    Button("用这块") {
+                        onDone(render(w: w, h: h))
+                        dismiss()
+                    }
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(.black)
+                    .padding(.horizontal, 18).padding(.vertical, 9)
+                    .background(Capsule().fill(.white))
+                }
+                .font(.system(size: 15))
+                .padding(.horizontal, 22).padding(.bottom, 26)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .background(Color.black.ignoresSafeArea())
+    }
+
+    private func frame(w: CGFloat, h: CGFloat) -> some View {
+        Color.black
+            .overlay(
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .scaleEffect(scale)
+                    .offset(offset)
+            )
+            .frame(width: w, height: h)
+            .clipped()
+            .overlay(Rectangle().stroke(.white.opacity(0.9), lineWidth: 2))
+            .overlay(grid)
+            .gesture(
+                SimultaneousGesture(
+                    DragGesture()
+                        .onChanged { v in
+                            offset = CGSize(width: steadyOffset.width + v.translation.width,
+                                            height: steadyOffset.height + v.translation.height)
+                        }
+                        .onEnded { _ in steadyOffset = offset },
+                    // 用老的 MagnificationGesture：ChatView 里三处都是它，编得过。
+                    // 新的 MagnifyGesture 大概率也行，但没必要在这儿冒险试
+                    MagnificationGesture()
+                        .onChanged { v in scale = max(1, min(steadyScale * v, 6)) }
+                        .onEnded { _ in steadyScale = scale }
+                )
+            )
+    }
+
+    /// 三分格参考线，方便她摆正
+    private var grid: some View {
+        GeometryReader { g in
+            Path { p in
+                for i in 1...2 {
+                    let x = g.size.width * CGFloat(i) / 3
+                    let y = g.size.height * CGFloat(i) / 3
+                    p.move(to: CGPoint(x: x, y: 0)); p.addLine(to: CGPoint(x: x, y: g.size.height))
+                    p.move(to: CGPoint(x: 0, y: y)); p.addLine(to: CGPoint(x: g.size.width, y: y))
+                }
+            }
+            .stroke(.white.opacity(0.22), lineWidth: 0.8)
+        }
+        .allowsHitTesting(false)
+    }
+
+    private func reset() {
+        scale = 1; steadyScale = 1
+        offset = .zero; steadyOffset = .zero
+    }
+
+    /// 把框里那一块按原样重画成一张 1600 宽的图
+    private func render(w: CGFloat, h: CGFloat) -> UIImage {
+        let outW: CGFloat = 1600
+        let out = CGSize(width: outW, height: outW / aspect)
+        let k = outW / max(w, 1)                       // 屏幕 → 成品的放大倍数
+        let iw = max(image.size.width, 1)
+        let ih = max(image.size.height, 1)
+        let base = max(w / iw, h / ih)                 // scaledToFill 的底倍数
+        let s = base * scale * k
+        let dw = iw * s
+        let dh = ih * s
+        let cx = out.width / 2 + offset.width * k
+        let cy = out.height / 2 + offset.height * k
+        let fmt = UIGraphicsImageRendererFormat.default()
+        fmt.scale = 1
+        return UIGraphicsImageRenderer(size: out, format: fmt).image { _ in
+            image.draw(in: CGRect(x: cx - dw / 2, y: cy - dh / 2, width: dw, height: dh))
+        }
+    }
+}
+
 // MARK: - 设置面板（横屏「竖屏」按钮下面那个）
 
 struct MahjongFaceSettings: View {
@@ -241,18 +422,26 @@ struct MahjongFaceSettings: View {
     @AppStorage("qipai.facesVersion") private var version = 0
     @State private var picking: String?
     @State private var pick: PhotosPickerItem?
+    @State private var cropping: MahjongPickedImage?
+
+    /// picking 存的是"在给谁选图"：座位名，或者这个哨兵表示在选桌布
+    private static let clothSlot = "\u{0}cloth"
 
     var body: some View {
         NavigationStack {
             List {
-                Section {
+                Section("桌布") { clothRow }
+                Section("头像和名字") {
                     ForEach(names, id: \.self) { n in row(n) }
+                }
+                Section {
+                    EmptyView()
                 } footer: {
-                    Text("只改这台手机上的显示。战绩、日志、他那边看到的名字都还是原来的。")
+                    Text("都只改这台手机上的显示。战绩、日志、他那边看到的名字，都还是原来的。")
                         .font(.system(size: 11))
                 }
             }
-            .navigationTitle("头像和名字")
+            .navigationTitle("牌桌设置")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
@@ -264,6 +453,42 @@ struct MahjongFaceSettings: View {
                                            set: { if !$0 { picking = nil } }),
                       selection: $pick, matching: .images)
         .onChange(of: pick) { _ in loadPick() }
+        .fullScreenCover(item: $cropping) { box in
+            MahjongClothCropper(image: box.image) { MahjongFaces.setCloth($0) }
+        }
+    }
+
+    // MARK: 桌布那一行
+
+    private var clothRow: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            // 预览就按桌布真实比例摆，她一眼看得出贴上去是什么样
+            MahjongLaceCloth(version: version)
+                .aspectRatio(MahjongFaces.clothAspect, contentMode: .fit)
+                .frame(maxWidth: .infinity)
+            HStack(spacing: 10) {
+                Button {
+                    picking = Self.clothSlot
+                } label: {
+                    Label(MahjongFaces.clothImage() == nil ? "选一张图" : "换一张",
+                          systemImage: "photo")
+                        .font(.system(size: 14))
+                }
+                .buttonStyle(.plain)
+                .foregroundColor(QipaiPalette.accent)
+                Spacer()
+                if MahjongFaces.clothImage() != nil {
+                    Button("用回粉布") { MahjongFaces.clearCloth() }
+                        .font(.system(size: 12.5))
+                        .buttonStyle(.plain)
+                        .foregroundColor(QipaiPalette.red)
+                }
+            }
+            Text("选完会先让你按桌布的比例裁一次，框里什么样桌上就什么样。花边和波点不会盖掉。")
+                .font(.system(size: 10.5))
+                .foregroundColor(.secondary)
+        }
+        .padding(.vertical, 4)
     }
 
     private func row(_ n: String) -> some View {
@@ -304,10 +529,21 @@ struct MahjongFaceSettings: View {
     private func loadPick() {
         guard let item = pick, let who = picking else { return }
         Task {
-            if let data = try? await item.loadTransferable(type: Data.self) {
-                await MainActor.run { MahjongFaces.setImage(data, for: who) }
+            let data = try? await item.loadTransferable(type: Data.self)
+            await MainActor.run {
+                if let data {
+                    if who == Self.clothSlot {
+                        // 桌布不直接存：先让她按桌布比例裁一次
+                        if let img = UIImage(data: data) {
+                            cropping = MahjongPickedImage(image: img)
+                        }
+                    } else {
+                        MahjongFaces.setImage(data, for: who)
+                    }
+                }
+                pick = nil
+                picking = nil
             }
-            await MainActor.run { pick = nil; picking = nil }
         }
     }
 }
@@ -462,7 +698,7 @@ struct QipaiMahjongLandscapeView: View {
     private var stage: some View {
         GeometryReader { geo in
             ZStack {
-                MahjongLaceCloth()
+                MahjongLaceCloth(version: facesVersion)   // 她换了桌布，这块跟着重画
                     .padding(.horizontal, 18)
                     .padding(.vertical, 12)
                 if let view = store.view {
