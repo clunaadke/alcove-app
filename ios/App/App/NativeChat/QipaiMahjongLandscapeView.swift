@@ -270,6 +270,11 @@ enum MahjongFaces {
     /// 桌布是个很扁的长方形。裁剪框、存图、渲染三处都用这一个数，别各写各的。
     static let clothAspect: CGFloat = 2.2
 
+    /// ‼️牌桌的俯角。**桌子和裁剪预览必须共用这一对数**——
+    /// 分开写的话，桌子一调角度、预览就开始骗人（0901 她抓过一次）。
+    static let clothTilt: Double = 28
+    static let clothPerspective: CGFloat = 0.62
+
     private static var clothURL: URL {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("qipai_cloth.jpg")
@@ -371,11 +376,23 @@ struct MahjongClothCropper: View {
 
                 frame(w: w, h: h)
 
-                Text("框的比例就是牌桌上桌布的比例，框里是什么样，桌上就是什么样")
+                Text("方框里拖着好挑，下面那张才是贴到桌上的真实样子")
                     .font(.system(size: 11))
                     .foregroundColor(.white.opacity(0.45))
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 30)
+
+                // ‼️0901：桌子改成 28° 透视之后，上面那个方框就不再是"最终样子"了 ——
+                // 在方框里裁得正正好，贴上去会被压扁、上边还收窄。
+                // 所以这里再放一张**跟牌桌一模一样倾斜**的实时预览：她看到的就是最后的结果。
+                // 倾斜参数必须跟 QipaiMahjongLandscapeView 的 tiltDegrees/tiltPerspective 一致，
+                // 那边改了这里也要改，不然预览又开始骗人。
+                VStack(spacing: 5) {
+                    Text("贴到桌上")
+                        .font(.system(size: 10))
+                        .foregroundColor(.white.opacity(0.4))
+                    livePreview(w: w * 0.62, base: w)
+                }
 
                 Spacer()
                 HStack(spacing: 14) {
@@ -429,6 +446,29 @@ struct MahjongClothCropper: View {
                         .onEnded { _ in steadyScale = scale }
                 )
             )
+    }
+
+    /// 跟牌桌同一个角度的实时预览：她在上面方框里怎么挪，这里就怎么变
+    private func livePreview(w: CGFloat, base: CGFloat) -> some View {
+        let h = w / aspect
+        return Color.black.opacity(0.35)
+            .overlay(
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .scaleEffect(scale)
+                    .offset(x: offset.width * (w / max(base, 1)),
+                            y: offset.height * (w / max(base, 1)))
+            )
+            .frame(width: w, height: h)
+            .clipped()
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(.white.opacity(0.5), lineWidth: 1))
+            .rotation3DEffect(.degrees(MahjongFaces.clothTilt),
+                              axis: (x: 1, y: 0, z: 0),
+                              anchor: .center,
+                              perspective: MahjongFaces.clothPerspective)
     }
 
     /// 三分格参考线，方便她摆正
@@ -774,8 +814,8 @@ struct QipaiMahjongLandscapeView: View {
     /// 只转桌子的话牌会浮在斜面上方，比全平还假。
     /// SwiftUI 的 rotation3DEffect 会把点击也一起换算，所以牌照样点得准；
     /// 真要是点偏了跟我说，我把角度收小。
-    private let tiltDegrees: Double = 28
-    private let tiltPerspective: CGFloat = 0.62
+    private var tiltDegrees: Double { MahjongFaces.clothTilt }
+    private var tiltPerspective: CGFloat { MahjongFaces.clothPerspective }
 
     private var stage: some View {
         GeometryReader { geo in
