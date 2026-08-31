@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import PhotosUI
 
 // 横屏麻将桌（0831 陈霁的规格）。跟竖屏那张是两套布局、一个 store——
 // 从竖屏 fullScreenCover 弹出来，共用同一个 QipaiTableStore，不重连 SSE。
@@ -132,34 +133,182 @@ struct MahjongTabShape: Shape {
     }
 }
 
-// MARK: - 圆形头像（先放名字第一个字，以后换真图只改这里）
+// MARK: - 头像与名字（0901 她要的：横屏里能自己改，只存这台手机）
 
+/// 服务器给的座位名是权威（战绩、日志、他那边的上下文全用它），这里只做**显示层覆盖**：
+/// 改名字不会改比赛记录，换头像也只是本机的图。所以随便改，改坏了点「还原」就回去。
+enum MahjongFaces {
+    private static func aliasKey(_ name: String) -> String { "qipai.alias." + name }
+
+    static func alias(_ name: String) -> String {
+        let v = (UserDefaults.standard.string(forKey: aliasKey(name)) ?? "")
+            .trimmingCharacters(in: .whitespaces)
+        return v.isEmpty ? name : v
+    }
+
+    static func setAlias(_ v: String, for name: String) {
+        UserDefaults.standard.set(v.trimmingCharacters(in: .whitespaces), forKey: aliasKey(name))
+        bump()
+    }
+
+    /// 头像落在 Documents 里，文件名按原名算个稳定哈希（名字里有中文和点，不能直接当文件名）
+    private static func fileURL(_ name: String) -> URL {
+        let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        var h: UInt64 = 5381
+        for b in name.utf8 { h = h &* 33 &+ UInt64(b) }
+        return dir.appendingPathComponent("qipai_face_\(h).jpg")
+    }
+
+    static func image(_ name: String) -> UIImage? {
+        UIImage(contentsOfFile: fileURL(name).path)
+    }
+
+    static func setImage(_ data: Data, for name: String) {
+        // 存之前压一道：头像最大边 320 够用了，别把一张 5MB 原图塞进沙盒
+        let img = UIImage(data: data)
+        let out = img.flatMap { shrink($0, maxSide: 320) }?.jpegData(compressionQuality: 0.85) ?? data
+        try? out.write(to: fileURL(name))
+        bump()
+    }
+
+    static func clear(_ name: String) {
+        try? FileManager.default.removeItem(at: fileURL(name))
+        UserDefaults.standard.removeObject(forKey: aliasKey(name))
+        bump()
+    }
+
+    private static func shrink(_ img: UIImage, maxSide: CGFloat) -> UIImage? {
+        let side = max(img.size.width, img.size.height)
+        guard side > maxSide else { return img }
+        let k = maxSide / side
+        let size = CGSize(width: img.size.width * k, height: img.size.height * k)
+        return UIGraphicsImageRenderer(size: size).image { _ in
+            img.draw(in: CGRect(origin: .zero, size: size))
+        }
+    }
+
+    /// 改完让界面重画：视图里 @AppStorage 盯着这个数
+    static func bump() {
+        let n = UserDefaults.standard.integer(forKey: "qipai.facesVersion")
+        UserDefaults.standard.set(n + 1, forKey: "qipai.facesVersion")
+    }
+}
+
+/// 圆形头像：她换过图就用图，没换就用名字第一个字
 struct MahjongAvatar: View {
     let name: String
     var tone: Color
     var size: CGFloat = 34
     var active: Bool = false
+    /// 只为让 @AppStorage 变化时这个视图跟着重建，本身不用
+    var version: Int = 0
 
     private var initial: String {
-        String(name.trimmingCharacters(in: .whitespaces).prefix(1))
+        String(MahjongFaces.alias(name).trimmingCharacters(in: .whitespaces).prefix(1))
     }
 
     var body: some View {
         ZStack {
-            Circle().fill(LinearGradient(colors: [tone.opacity(0.32), tone.opacity(0.62)],
-                                         startPoint: .top, endPoint: .bottom))
-            Circle().fill(LinearGradient(colors: [.white.opacity(0.55), .clear],
-                                         startPoint: .top, endPoint: .center))
-            Text(initial)
-                .font(.system(size: size * 0.46, weight: .bold, design: .serif))
-                .foregroundColor(.white)
-                .shadow(color: QipaiPalette.shadowTint.opacity(0.35), radius: 1, y: 0.5)
+            if let img = MahjongFaces.image(name) {
+                Image(uiImage: img).resizable().scaledToFill()
+            } else {
+                Circle().fill(LinearGradient(colors: [tone.opacity(0.32), tone.opacity(0.62)],
+                                             startPoint: .top, endPoint: .bottom))
+                Circle().fill(LinearGradient(colors: [.white.opacity(0.55), .clear],
+                                             startPoint: .top, endPoint: .center))
+                Text(initial)
+                    .font(.system(size: size * 0.46, weight: .bold, design: .serif))
+                    .foregroundColor(.white)
+                    .shadow(color: QipaiPalette.shadowTint.opacity(0.35), radius: 1, y: 0.5)
+            }
         }
         .frame(width: size, height: size)
+        .clipShape(Circle())
         .overlay(Circle().stroke(tone, lineWidth: active ? 2.4 : 1.2))
         .overlay(Circle().stroke(.white.opacity(0.7), lineWidth: 1).padding(1.4))
         .shadow(color: QipaiPalette.shadowTint.opacity(active ? 0.3 : 0.16),
                 radius: active ? 5 : 2.5, y: 1.5)
+    }
+}
+
+// MARK: - 设置面板（横屏「竖屏」按钮下面那个）
+
+struct MahjongFaceSettings: View {
+    /// 桌上所有人的**原名**（服务器给的，改的是显示层）
+    let names: [String]
+    var tone: (String) -> Color
+    @Environment(\.dismiss) private var dismiss
+    @AppStorage("qipai.facesVersion") private var version = 0
+    @State private var picking: String?
+    @State private var pick: PhotosPickerItem?
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    ForEach(names, id: \.self) { n in row(n) }
+                } footer: {
+                    Text("只改这台手机上的显示。战绩、日志、他那边看到的名字都还是原来的。")
+                        .font(.system(size: 11))
+                }
+            }
+            .navigationTitle("头像和名字")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("完成") { dismiss() }
+                }
+            }
+        }
+        .photosPicker(isPresented: Binding(get: { picking != nil },
+                                           set: { if !$0 { picking = nil } }),
+                      selection: $pick, matching: .images)
+        .onChange(of: pick) { _ in loadPick() }
+    }
+
+    private func row(_ n: String) -> some View {
+        HStack(spacing: 12) {
+            Button {
+                picking = n
+            } label: {
+                ZStack(alignment: .bottomTrailing) {
+                    MahjongAvatar(name: n, tone: tone(n), size: 46, version: version)
+                    Image(systemName: "camera.fill")
+                        .font(.system(size: 9))
+                        .foregroundColor(.white)
+                        .padding(3.5)
+                        .background(Circle().fill(QipaiPalette.accent))
+                        .offset(x: 3, y: 3)
+                }
+            }
+            .buttonStyle(.plain)
+
+            VStack(alignment: .leading, spacing: 2) {
+                TextField(n, text: Binding(
+                    get: { MahjongFaces.alias(n) },
+                    set: { MahjongFaces.setAlias($0, for: n) }))
+                    .font(.system(size: 15))
+                Text("原名 " + n)
+                    .font(.system(size: 10.5))
+                    .foregroundColor(.secondary)
+            }
+            Spacer()
+            Button("还原") { MahjongFaces.clear(n) }
+                .font(.system(size: 12))
+                .buttonStyle(.plain)
+                .foregroundColor(QipaiPalette.red)
+        }
+        .padding(.vertical, 3)
+    }
+
+    private func loadPick() {
+        guard let item = pick, let who = picking else { return }
+        Task {
+            if let data = try? await item.loadTransferable(type: Data.self) {
+                await MainActor.run { MahjongFaces.setImage(data, for: who) }
+            }
+            await MainActor.run { pick = nil; picking = nil }
+        }
     }
 }
 
@@ -243,6 +392,9 @@ struct QipaiMahjongLandscapeView: View {
     @State private var draft = ""
     @State private var bubbles: [String: MahjongBubble] = [:]
     @State private var bubbleToken = 0
+    @State private var showFaces = false
+    /// 她在设置里改了头像/名字，这个数一变整页重画
+    @AppStorage("qipai.facesVersion") private var facesVersion = 0
 
     var body: some View {
         GeometryReader { geo in
@@ -272,6 +424,14 @@ struct QipaiMahjongLandscapeView: View {
         .onDisappear { turn(.portrait) }
         .onChange(of: (store.view?.seq ?? 0)) { _ in syncSelection() }
         .onChange(of: store.feed.count) { _ in catchBubble() }
+        .sheet(isPresented: $showFaces) {
+            MahjongFaceSettings(names: (store.view?.players ?? []).map { $0.name },
+                                tone: { n in
+                                    let pid = (store.view?.players ?? [])
+                                        .first { $0.name == n }?.id
+                                    return seatTone(pid ?? "")
+                                })
+        }
     }
 
     private func turn(_ mask: UIInterfaceOrientationMask) {
@@ -322,22 +482,21 @@ struct QipaiMahjongLandscapeView: View {
     // MARK: 顶上那条（回竖屏 / 局数 / 状态）
 
     private var topBar: some View {
-        HStack(spacing: 9) {
-            Button {
-                turn(.portrait)
-                onClose()
-            } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: "rectangle.portrait.rotate")
-                        .font(.system(size: 11, weight: .semibold))
-                    Text("竖屏").font(.system(size: 11.5, weight: .medium))
+        HStack(alignment: .top, spacing: 9) {
+            // 竖屏 + 设置竖着摞在左上角（她定的：设置放竖屏按钮下面）
+            VStack(alignment: .leading, spacing: 6) {
+                Button {
+                    turn(.portrait)
+                    onClose()
+                } label: {
+                    pill("rectangle.portrait.rotate", "竖屏")
                 }
-                .foregroundColor(QipaiPalette.ink)
-                .padding(.horizontal, 10).padding(.vertical, 6)
-                .background(Capsule().fill(QipaiPalette.panel.opacity(0.92)))
-                .overlay(Capsule().stroke(QipaiPalette.line, lineWidth: 1))
+                .buttonStyle(.plain)
+                Button { showFaces = true } label: {
+                    pill("person.crop.circle", "设置")
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
 
             if let r = store.view?.round, r > 0 {
                 QipaiChip(text: "第 \(r) 局", tone: .neutral)
@@ -355,6 +514,18 @@ struct QipaiMahjongLandscapeView: View {
         .padding(.top, 14)
     }
 
+    /// 左上角那两个小胶囊按钮，一个样子
+    private func pill(_ icon: String, _ text: String) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon).font(.system(size: 11, weight: .semibold))
+            Text(text).font(.system(size: 11.5, weight: .medium))
+        }
+        .foregroundColor(QipaiPalette.ink)
+        .padding(.horizontal, 10).padding(.vertical, 6)
+        .background(Capsule().fill(QipaiPalette.panel.opacity(0.92)))
+        .overlay(Capsule().stroke(QipaiPalette.line, lineWidth: 1))
+    }
+
     /// 「等 XX 表态…」这种一行字，拆出来算，别在插值里套三元（类型检查器吃不消）
     private var statusText: String? {
         guard let view = store.view, view.phase == "playing" else { return nil }
@@ -363,10 +534,15 @@ struct QipaiMahjongLandscapeView: View {
                 if claim.kind == "rob" { return "有人补杠 " + claim.label + " —— 抢不抢？" }
                 return claim.label + " 摆着，你要不要？"
             }
-            let who = claim.pending.compactMap { view.player($0)?.name }.joined(separator: "、")
+            // 闭包套闭包最能拖垮类型检查器，拆成三步走
+            let who = claim.pending
+                .compactMap { view.player($0)?.name }
+                .map(MahjongFaces.alias)
+                .joined(separator: "、")
             return who.isEmpty ? nil : who + " 正在思考…"
         }
-        guard let name = view.player(view.current)?.name else { return nil }
+        guard let raw = view.player(view.current)?.name else { return nil }
+        let name = MahjongFaces.alias(raw)
         return view.current == view.you ? "轮到你了" : name + " 正在思考…"
     }
 
@@ -430,17 +606,17 @@ struct QipaiMahjongLandscapeView: View {
             EmptyView()
         case .top:
             VStack(spacing: 5) {
-                seatHeader(p, view: view)
+                seatHeader(p, slot: slot, view: view)
                 backRow(p.handCount, width: 17, axis: .horizontal)
-                if !p.melds.isEmpty { meldRow(p.melds, width: 15, axis: .horizontal) }
+                if !p.melds.isEmpty { meldRow(p.melds, width: 18, axis: .horizontal) }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .padding(.top, 12)
         case .left:
             HStack(spacing: 5) {
                 VStack(spacing: 5) {
-                    seatHeader(p, view: view)
-                    if !p.melds.isEmpty { meldRow(p.melds, width: 14, axis: .vertical) }
+                    seatHeader(p, slot: slot, view: view)
+                    if !p.melds.isEmpty { meldRow(p.melds, width: 17, axis: .vertical) }
                 }
                 backRow(p.handCount, width: 15, axis: .vertical)
             }
@@ -450,8 +626,8 @@ struct QipaiMahjongLandscapeView: View {
             HStack(spacing: 5) {
                 backRow(p.handCount, width: 15, axis: .vertical)
                 VStack(spacing: 5) {
-                    seatHeader(p, view: view)
-                    if !p.melds.isEmpty { meldRow(p.melds, width: 14, axis: .vertical) }
+                    seatHeader(p, slot: slot, view: view)
+                    if !p.melds.isEmpty { meldRow(p.melds, width: 17, axis: .vertical) }
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
@@ -459,16 +635,24 @@ struct QipaiMahjongLandscapeView: View {
         }
     }
 
-    /// 头像 + 名字 + 张数。轮到他就把头像圈亮，说话就在头顶冒气泡
-    private func seatHeader(_ p: MahjongPlayerView, view: MahjongView) -> some View {
+    /// 气泡往哪边冒。0901 她抓的：原来冒在头顶，对家那个直接被屏幕顶切没了。
+    /// 一律朝**屏幕中间**冒——右边那家得往左，不然照样出屏。
+    private func bubbleDX(_ slot: MahjongSeatSlot) -> CGFloat {
+        slot == .right ? -92 : 92
+    }
+
+    /// 头像 + 名字 + 张数。轮到他就把头像圈亮，说话就在头像旁边冒气泡
+    private func seatHeader(_ p: MahjongPlayerView, slot: MahjongSeatSlot,
+                            view: MahjongView) -> some View {
         let owed = view.owed.contains(p.id)
         return VStack(spacing: 3) {
-            ZStack(alignment: .bottom) {
-                MahjongAvatar(name: p.name, tone: seatTone(p.id), size: 36, active: owed)
+            ZStack {
+                MahjongAvatar(name: p.name, tone: seatTone(p.id), size: 36,
+                              active: owed, version: facesVersion)
                 if let b = bubbles[p.id] {
                     bubbleView(b.text)
-                        .offset(y: -44)
-                        .transition(AnyTransition.opacity.combined(with: .scale(scale: 0.85, anchor: .bottom)))
+                        .offset(x: bubbleDX(slot))
+                        .transition(AnyTransition.opacity.combined(with: .scale(scale: 0.85)))
                 }
                 if view.leader == p.id {
                     Text("庄")
@@ -476,11 +660,11 @@ struct QipaiMahjongLandscapeView: View {
                         .foregroundColor(.white)
                         .padding(.horizontal, 4).padding(.vertical, 1.5)
                         .background(Capsule().fill(QipaiPalette.red))
-                        .offset(x: 16, y: 4)
+                        .offset(x: 16, y: 16)
                 }
             }
             .frame(height: 40)
-            Text(p.name)
+            Text(MahjongFaces.alias(p.name))
                 .font(.system(size: 10.5, weight: .semibold))
                 .foregroundColor(seatTone(p.id))
                 .lineLimit(1)
@@ -509,7 +693,7 @@ struct QipaiMahjongLandscapeView: View {
         HStack(spacing: 7) {
             ZStack(alignment: .bottom) {
                 MahjongAvatar(name: p.name, tone: seatTone(p.id), size: 38,
-                              active: view.owed.contains(p.id))
+                              active: view.owed.contains(p.id), version: facesVersion)
                 if let b = bubbles[p.id] {
                     bubbleView(b.text)
                         .offset(y: -46)
@@ -519,7 +703,7 @@ struct QipaiMahjongLandscapeView: View {
             .frame(height: 42)
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 4) {
-                    Text(p.name)
+                    Text(MahjongFaces.alias(p.name))
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundColor(seatTone(p.id))
                         .lineLimit(1)
@@ -636,7 +820,7 @@ struct QipaiMahjongLandscapeView: View {
     /// 一家的牌河。横向的排成几行，纵向的排成几列；最后打出那张亮着，其余压暗
     @ViewBuilder
     private func riverBlock(_ tiles: [String], axis: Axis2, view: MahjongView) -> some View {
-        let w: CGFloat = 16
+        let w: CGFloat = 19
         let per = axis == .horizontal ? 9 : 5
         let rows = chunk(tiles, per)
         // 空牌河也占个位，免得中间那圈随出牌一跳一跳。宽高先算成常量再喂 frame——

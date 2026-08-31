@@ -124,33 +124,19 @@ struct MahjongTileFace: View {
 
     // MARK: 牌面内容
 
+    /// ‼️0901 陈霁：牌河/副露里的牌**一律画图**，不许缩小就退化成「二筒」「二条」这种文字。
+    /// 原来 width<26 会走一个 compactArt 画汉字（我当初怕小尺寸看不清），她明确不要，已删。
+    /// 筒的圈、条的棍在小尺寸下会糊成一团点——那也是对的，真麻将远看就是这样，
+    /// 认不出具体几个不影响，认得出是哪一门就够。pipSize 里给了最小值兜底。
+    /// 万和字牌本来就是汉字，wanArt / honorArt 就是它们真正的"画法"，不算退化。
     @ViewBuilder private var art: some View {
-        if width < 26 {
-            compactArt
-        } else if suit == "z" {
+        if suit == "z" {
             honorArt
         } else if suit == "m" {
             wanArt
         } else {
             pipArt
         }
-    }
-
-    /// 小尺寸（牌河/副露）不画点，画字——九个圈缩到 1pt 是一团糊
-    private var compactArt: some View {
-        VStack(spacing: -width * 0.08) {
-            if suit == "z" {
-                Text(MahjongTile.label(id))
-                    .font(.system(size: width * 0.6, weight: .bold, design: .serif))
-            } else {
-                Text(n >= 1 && n <= 9 ? MahjongTile.numerals[n - 1] : "?")
-                    .font(.system(size: width * 0.52, weight: .bold, design: .serif))
-                Text(MahjongTile.suitNames[suit] ?? "")
-                    .font(.system(size: width * 0.42, weight: .semibold, design: .serif))
-            }
-        }
-        .foregroundColor(tint)
-        .minimumScaleFactor(0.5)
     }
 
     /// 万：汉字数字压着一个「万」
@@ -203,34 +189,58 @@ struct MahjongTileFace: View {
         }
     }
 
+    /// 小牌上圈/棍不能小到看不见：给个 2.2pt 的地板（0901 拆掉文字退化之后加的）
     private var pipSize: CGFloat {
         let base = width * 0.64
+        let ratio: CGFloat
         switch n {
-        case 1, 2: return base * 0.44
-        case 3, 4, 5: return base * 0.36
-        case 6, 7, 8: return base * 0.32
-        default: return base * 0.28
+        case 1, 2: ratio = 0.44
+        case 3, 4, 5: ratio = 0.36
+        case 6, 7, 8: ratio = 0.32
+        default: ratio = 0.28
         }
+        return max(base * ratio, 2.2)
     }
 }
 
-/// 扣着的牌（对手手牌 / 暗杠）
+/// 扣着的牌（对手手牌 / 暗杠）。
+/// 0901 陈霁：原来那个灰绿跟粉色桌布糊成一片，换靛蓝＋中间一个菱形小花。
+/// 颜色定死不吃日夜，跟正面象牙一个道理——它是牌，不是纸。
 struct MahjongTileBack: View {
     var width: CGFloat = 24
+
+    private var h: CGFloat { width * 1.34 }
 
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: width * 0.15, style: .continuous)
-                .fill(LinearGradient(colors: [QipaiPalette.qhex(0x8FA48C), QipaiPalette.qhex(0x6F856E)],
+                .fill(LinearGradient(colors: [QipaiPalette.qhex(0x7A8AB8), QipaiPalette.qhex(0x4A5680)],
                                      startPoint: .top, endPoint: .bottom))
+            // 内圈细边，做出"牌背压了一道线"的凹感
             RoundedRectangle(cornerRadius: width * 0.1, style: .continuous)
-                .stroke(.white.opacity(0.4), lineWidth: 1)
+                .stroke(.white.opacity(0.32), lineWidth: max(0.6, width * 0.035))
                 .padding(width * 0.13)
+            // 中间那朵菱形小花（两个叠起来的菱形，小尺寸下退成一个亮点，不会糊）
+            ZStack {
+                Rectangle()
+                    .fill(.white.opacity(0.42))
+                    .frame(width: width * 0.30, height: width * 0.30)
+                    .rotationEffect(.degrees(45))
+                Rectangle()
+                    .stroke(.white.opacity(0.75), lineWidth: max(0.7, width * 0.032))
+                    .frame(width: width * 0.46, height: width * 0.46)
+                    .rotationEffect(.degrees(45))
+            }
+            // 顶上一道玻璃高光
+            RoundedRectangle(cornerRadius: width * 0.15, style: .continuous)
+                .fill(LinearGradient(colors: [.white.opacity(0.34), .clear],
+                                     startPoint: .top, endPoint: .center))
         }
-        .frame(width: width, height: width * 1.34)
+        .frame(width: width, height: h)
+        .clipShape(RoundedRectangle(cornerRadius: width * 0.15, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: width * 0.15, style: .continuous)
-            .stroke(QipaiPalette.qhex(0x5A6B59).opacity(0.8), lineWidth: 1))
-        .shadow(color: QipaiPalette.shadowTint.opacity(0.14), radius: 1.6, y: 1)
+            .stroke(QipaiPalette.qhex(0x394465).opacity(0.85), lineWidth: 1))
+        .shadow(color: QipaiPalette.shadowTint.opacity(0.16), radius: 1.8, y: 1)
     }
 }
 
