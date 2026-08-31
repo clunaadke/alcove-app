@@ -7785,6 +7785,7 @@ private struct NativeForgeView: View {
     @State private var confirmPickedForge = false
     @State private var loading = true
     @State private var forging = false
+    @State private var forceHandoff = false
     @State private var result: String?
     @State private var newSessionId: String?
     @State private var report: [String: Any] = [:]
@@ -7792,6 +7793,9 @@ private struct NativeForgeView: View {
     private var theme: AlcoveTheme { .panelNamed(themeName) }
 
     private var activePreview: [String: Any] { mode == .picker ? pickPreview : preview }
+    private var handoffPreview: [String: Any]? {
+        (activePreview["handoff"] as? [String: Any]) ?? (preview["handoff"] as? [String: Any])
+    }
     private var totalRounds: Int { (preview["total_rounds"] as? Int) ?? 0 }
     @State private var previewSeq = 0   // 拖得快时请求乱序回来，只认最后发出去那一个
     private var retainedRounds: Int { (activePreview["retained_rounds"] as? Int) ?? 0 }
@@ -7829,7 +7833,7 @@ private struct NativeForgeView: View {
                             HStack {
                                 if forging { ProgressView().scaleEffect(0.8).tint(.white) }
                                 Image(systemName: "hammer.fill").font(.system(size: 13))
-                                Text(forging ? "锻造中..." : "一键锻造（带全本窗＋交接包）")
+                                Text(forging ? "锻造中..." : "一键锻造（带全本窗）")
                                     .font(.system(size: 14, weight: .semibold))
                             }
                             .frame(maxWidth: .infinity)
@@ -7839,6 +7843,36 @@ private struct NativeForgeView: View {
                             .foregroundColor(.white)
                         }
                         .disabled(forging)
+
+                        if let handoff = handoffPreview,
+                           (handoff["exists"] as? Bool) == true {
+                            Toggle(isOn: Binding(
+                                get: { (handoff["fresh"] as? Bool) == true || forceHandoff },
+                                set: { forceHandoff = $0 }
+                            )) {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text((handoff["fresh"] as? Bool) == true
+                                         ? "新交接会随这次带入"
+                                         : "再次带上这封交接")
+                                        .font(.system(size: 12, weight: .medium))
+                                    Text((handoff["fresh"] as? Bool) == true
+                                         ? "成功进入新窗口后，这封信会标成已读"
+                                         : "这封已经带过，默认不再重复")
+                                        .font(.system(size: 10))
+                                        .foregroundColor(theme.textDim)
+                                }
+                            }
+                            .tint(theme.fyAccent)
+                            .disabled((handoff["fresh"] as? Bool) == true)
+                            .onChange(of: forceHandoff) { _ in
+                                Task {
+                                    if mode == .picker && !selectedRounds.isEmpty { await previewPickedRounds() }
+                                    else { await loadPreview() }
+                                }
+                            }
+                            .padding(14)
+                            .foyerCard(theme)
+                        }
 
                         if !report.isEmpty {
                             forgeReportCard
@@ -8177,7 +8211,8 @@ private struct NativeForgeView: View {
             pickPreview = try await NativeHouseAPI.object(
                 "/api/forge", method: "POST",
                 body: ["pick": selectedRounds.sorted(), "thoughts": selectedThoughts.sorted(),
-                       "tool_rounds": toolDemoRounds.sorted(), "preview": true])
+                       "tool_rounds": toolDemoRounds.sorted(), "preview": true,
+                       "force_handoff": forceHandoff])
             result = (pickPreview["valid"] as? Bool) == true
                 ? nil : (pickPreview["validation_message"] as? String ?? "所选轮次未通过校验")
         } catch {
@@ -8189,7 +8224,7 @@ private struct NativeForgeView: View {
         let r = Int(retain)
         previewSeq += 1
         let mySeq = previewSeq
-        if let obj = try? await NativeHouseAPI.object("/api/forge?retain=\(r)") {
+        if let obj = try? await NativeHouseAPI.object("/api/forge?retain=\(r)&force_handoff=\(forceHandoff ? 1 : 0)") {
             // 她拖一下滑块会连发十几个请求，慢的那个最后才回来把快的盖掉，数字就倒着跳。只认最新那个
             guard mySeq == previewSeq else { return }
             preview = obj
@@ -8222,8 +8257,10 @@ private struct NativeForgeView: View {
             if let h = report["handoff"] as? [String: Any] {
                 if (h["included"] as? Bool) == true {
                     reportRow("交接包", "1 份，陈璟写于 \((h["written_at"] as? String) ?? "?")")
+                } else if (h["exists"] as? Bool) == true {
+                    reportRow("交接包", "已在上一窗口带过，本次不重复")
                 } else {
-                    reportRow("交接包", "没有（handoff.md 不在，照旧锻）")
+                    reportRow("交接包", "没有手写交接")
                 }
             }
             if let sb = report["source_bytes"] as? Int, let ob = report["output_bytes"] as? Int {
@@ -8257,7 +8294,8 @@ private struct NativeForgeView: View {
         defer { forging = false }
         do {
             let obj = try await NativeHouseAPI.object(
-                "/api/forge", method: "POST", body: ["retain": 9999])
+                "/api/forge", method: "POST",
+                body: ["retain": 9999, "force_handoff": forceHandoff])
             report = obj
             if let sid = obj["new_session_id"] as? String, !sid.isEmpty {
                 newSessionId = sid
@@ -8276,8 +8314,8 @@ private struct NativeForgeView: View {
         do {
             let body: [String: Any] = mode == .picker
                 ? ["pick": selectedRounds.sorted(), "thoughts": selectedThoughts.sorted(),
-                   "tool_rounds": toolDemoRounds.sorted()]
-                : ["retain": Int(retain)]
+                   "tool_rounds": toolDemoRounds.sorted(), "force_handoff": forceHandoff]
+                : ["retain": Int(retain), "force_handoff": forceHandoff]
             let obj = try await NativeHouseAPI.object(
                 "/api/forge", method: "POST", body: body)
             report = obj
