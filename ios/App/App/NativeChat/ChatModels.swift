@@ -57,8 +57,11 @@ struct ChatMessage: Identifiable, Equatable {
     var attachmentFilename: String?
     var attachmentGroup: String?
     var asleepAtSend: Bool
-    var msgType: String?      // "sticker" 等
+    var msgType: String?      // "sticker" / "call_summary" 等
     var stickerId: String?
+    // 0831 任务#1195：通话摘要。打完电话聊天页只留这一条，
+    // 落在**打电话那个人**那一侧（她反复强调的），点开展开这一通的逐句记录
+    var callSummary: CallSummaryInfo?
     var pending: Bool = false // 本地乐观渲染，服务器确认前为 true
 
     var id: UUID { uid }
@@ -218,6 +221,14 @@ struct ChatMessage: Identifiable, Equatable {
         if let steps = json["trace"] as? [String] {
             self.trace = steps.filter { !$0.isEmpty }
         }
+        // 服务端把 extra 摊平进记录，通话摘要在 "call" 这一块
+        if let c = json["call"] as? [String: Any] {
+            self.callSummary = CallSummaryInfo(
+                callID: c["call_id"] as? String ?? "",
+                kind: c["kind"] as? String ?? "out",
+                outcome: c["outcome"] as? String ?? "ended",
+                seconds: c["seconds"] as? Int ?? 0)
+        }
     }
 
     // 本地乐观消息
@@ -230,6 +241,53 @@ struct ChatMessage: Identifiable, Equatable {
         self.asleepAtSend = false
         self.pending = true
     }
+}
+
+// MARK: - 通话（0831 任务#1195）
+
+/// 通话里的一句话。通话页画气泡用它，聊天页那条摘要点开展开也用它。
+/// 服务端在他这句落库的**那一刻**就把配音做好了，audioURL 直接能放——
+/// 不用再"播完一段才去合成下一段"（那是"读完停很久"的病根）。
+struct CallTurn: Identifiable, Equatable {
+    let id: Int
+    let ts: String
+    let role: String          // user=她 / assistant=陈璟
+    let text: String
+    let tone: String          // "[语气] 声音很轻、语速快(4.2字/秒)"，只有她那边有
+    let audioURL: String?
+
+    var isMine: Bool { role == "user" }
+
+    /// 去掉「[语气]」前缀，剩下的直接当小标签画
+    var toneLabel: String? {
+        let t = tone.replacingOccurrences(of: "[语气]", with: "")
+            .trimmingCharacters(in: .whitespaces)
+        return t.isEmpty ? nil : t
+    }
+
+    init?(json: [String: Any]) {
+        guard let id = json["id"] as? Int,
+              let role = json["role"] as? String else { return nil }
+        self.id = id
+        self.ts = json["ts"] as? String ?? ""
+        self.role = role
+        self.text = json["text"] as? String ?? ""
+        self.tone = json["tone"] as? String ?? ""
+        let u = json["audio_url"] as? String
+        self.audioURL = (u?.isEmpty ?? true) ? nil : u
+    }
+}
+
+/// 聊天页那条通话摘要气泡。kind 决定它落在哪一侧：
+/// out=她打的→她那侧（右），in=他打来的→他那侧（左）。拒绝也照这条走，没有例外。
+struct CallSummaryInfo: Equatable {
+    let callID: String
+    let kind: String          // in / out
+    let outcome: String       // ended / declined / missed / asleep / cancelled
+    let seconds: Int
+
+    var connected: Bool { outcome == "ended" }
+    var duration: String { String(format: "%d:%02d", seconds / 60, seconds % 60) }
 }
 
 struct ChoiceQuestionCard: Codable, Equatable {

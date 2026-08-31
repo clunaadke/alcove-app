@@ -260,10 +260,38 @@ enum AlcoveAPI {
         _ = try await postJSON("/api/call/\(action)", body: [:])
     }
 
-    /// 她拨出：asleep=true 是睡眠闸门没放行（没接通）
-    static func callDial() async throws -> (ok: Bool, asleep: Bool) {
+    /// 她拨出：asleep=true 是睡眠闸门没放行（没接通）。
+    /// 0831 任务#1195：顺带把 call_id 带回来——通话页靠它去取这一通的记录
+    static func callDial() async throws -> (ok: Bool, asleep: Bool, callID: String) {
         let obj = try await postJSON("/api/call/dial", body: [:])
-        return (obj["ok"] as? Bool ?? false, obj["asleep"] as? Bool ?? false)
+        let call = obj["call"] as? [String: Any] ?? [:]
+        return (obj["ok"] as? Bool ?? false,
+                obj["asleep"] as? Bool ?? false,
+                call["call_id"] as? String ?? "")
+    }
+
+    /// 现在这通电话是哪一通（接起来电时用：铃是服务器推的，call_id 得回头问）
+    static func callCurrentID() async throws -> String {
+        let obj = try await getJSON("/api/call/status")
+        let call = obj["call"] as? [String: Any] ?? [:]
+        return call["call_id"] as? String ?? ""
+    }
+
+    /// 把 /attachments/xxx.mp3 取回来（通话页提前下他那句的配音用）
+    static func attachmentData(_ raw: String) async throws -> Data {
+        guard let url = URL(string: "/api" + raw, relativeTo: base) else {
+            throw URLError(.badURL)
+        }
+        let (data, _) = try await session.data(from: url)
+        return data
+    }
+
+    /// 一通电话的逐句记录。通话中反复取（只取新的），事后展开也取它
+    static func callHistory(callID: String) async throws -> [CallTurn] {
+        guard !callID.isEmpty else { return [] }
+        let obj = try await getJSON("/api/call/history?call_id=" + callID)
+        let raw = obj["turns"] as? [[String: Any]] ?? []
+        return raw.compactMap(CallTurn.init(json:))
     }
 
     /// 通话里她说的一段：录音 → 听写并注入主聊天，返回转写文本
@@ -276,7 +304,9 @@ enum AlcoveAPI {
         return text
     }
 
-    /// 他的回复 → 他的声音（服务端 minimax 合成，按文本缓存）
+    /// ‼️0831 任务#1195 起没人调这个了，留着只为手工排查用。
+    /// 通话里他那句的配音由**服务端在落库那一刻就做好**，通话页直接取现成的 mp3。
+    /// 别把它接回播放链路——"要放的时候才现合成"就是"读完一段停很久"的病根。
     static func callTTSAudio(text: String) async throws -> Data {
         let obj = try await postJSON("/api/call/tts", body: ["text": text])
         guard let path = obj["url"] as? String,

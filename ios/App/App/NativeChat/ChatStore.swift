@@ -575,19 +575,11 @@ final class ChatStore: ObservableObject {
             if !isViewingHistory && !r.records.isEmpty {
                 appendNew(r.records)
                 notifyIncoming(r.records)
-                // 0829 通话页在听：他的新话拿去合成语音（判重见 notifiedTs 注释）。
-                // 任务#1144：他爱拆气泡，同一批到的合并成一段话一次合成，
-                // 一口气念完，不然电话里一顿一顿像卡带
-                var speakBatch: [String] = []
-                for rec in r.records where rec.role == "assistant" && !rec.text.isEmpty
-                    && !spokenTs.contains(rec.ts) {
-                    spokenTs.insert(rec.ts)
-                    speakBatch.append(rec.text)
-                }
-                if !speakBatch.isEmpty {
-                    NotificationCenter.default.post(name: .alcoveAssistantSpoke,
-                                                    object: speakBatch.joined(separator: "\n"))
-                }
+                // 0831 任务#1195：通话的话不再从聊天页走了。
+                // 电话接着的时候他说的整段会被服务端拐进通话记录（不进这张表），
+                // 通话页自己去取，配音也由服务端提前做好——所以这里原来那段
+                //「捞他的新话去合成语音」已经没有对象，整段撤掉。
+                // 那也是「读完一段停很久」的老病灶：合成排在播放后面。别加回来。
             }
             if let lt = r.lastTs, !lt.isEmpty { lastTs = lt }
             currentTool = r.currentTool
@@ -627,7 +619,6 @@ final class ChatStore: ObservableObject {
     // ‼️必须按 ts 判重（任务#1143 风暴）：released_at 补送的消息在下一条新消息
     // 出现前会被每次轮询重复送回，聊天页有判重，通知这边也得有，否则几秒一轮重弹
     private var notifiedTs = Set<String>()
-    private var spokenTs = Set<String>()
     private func notifyIncoming(_ recs: [ChatMessage]) {
         let fresh = recs.filter {
             $0.role == "assistant" && !deletedMessageTs.contains($0.ts)

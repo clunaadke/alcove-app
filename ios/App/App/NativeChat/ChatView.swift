@@ -2590,6 +2590,11 @@ struct MessageRow: View {
                 } else if let journey = msg.journeyCard {
                     JourneyMessageCard(ref: journey, theme: theme)
                         .frame(maxWidth: .infinity)   // 她要卡片在聊天页正中间
+                } else if let call = msg.callSummary {
+                    // 0831 任务#1195：打完电话聊天页只留这一条，点开展开这一通的记录。
+                    // 左右不用这里判——服务端已经把 role 写成打电话那个人了
+                    //（她打的=user 在右，他打的=assistant 在左），拒绝也照这条走。
+                    CallSummaryBubble(info: call, text: msg.displayText, theme: theme)
                 } else if msg.isSticker {
                     stickerBody
                 } else {
