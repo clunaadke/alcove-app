@@ -78,6 +78,39 @@ enum MahjongTile {
         return m
     }()
 
+    /// 一根竹节：位置（单位坐标）+ 倾角。0901 陈霁：**八条是「WM」那个样子**，
+    /// 上面四根斜成 W、下面四根斜成 M —— 不是竖着排八根。她发了实物照片。
+    /// 所以条不能跟筒共用一张点位表（筒是圆点摆网格，条有自己的传统画法）。
+    struct Stick {
+        let x: CGFloat
+        let y: CGFloat
+        let a: Double      // 度，正数=上端往右偏
+    }
+
+    /// 条的传统排法。‼️改之前先想清楚：这些不是随手摆的，是麻将牌本来的样子。
+    static let sticks: [Int: [Stick]] = {
+        func s(_ x: CGFloat, _ y: CGFloat, _ a: Double = 0) -> Stick { Stick(x: x, y: y, a: a) }
+        var m: [Int: [Stick]] = [:]
+        m[1] = [s(0.5, 0.5)]
+        m[2] = [s(0.5, 0.28), s(0.5, 0.72)]
+        m[3] = [s(0.5, 0.24), s(0.31, 0.72), s(0.69, 0.72)]
+        m[4] = [s(0.30, 0.28), s(0.70, 0.28), s(0.30, 0.72), s(0.70, 0.72)]
+        m[5] = [s(0.26, 0.24), s(0.74, 0.24), s(0.5, 0.5),
+                s(0.26, 0.76), s(0.74, 0.76)]
+        m[6] = [s(0.22, 0.28), s(0.5, 0.28), s(0.78, 0.28),
+                s(0.22, 0.72), s(0.5, 0.72), s(0.78, 0.72)]
+        m[7] = [s(0.5, 0.14),
+                s(0.22, 0.48), s(0.5, 0.48), s(0.78, 0.48),
+                s(0.22, 0.82), s(0.5, 0.82), s(0.78, 0.82)]
+        // 八条：上 W 下 M。斜角一正一反交替，四根连起来眼睛自己会补成 W／M
+        m[8] = [s(0.20, 0.28,  26), s(0.40, 0.28, -26), s(0.60, 0.28,  26), s(0.80, 0.28, -26),
+                s(0.20, 0.72, -26), s(0.40, 0.72,  26), s(0.60, 0.72, -26), s(0.80, 0.72,  26)]
+        m[9] = [s(0.22, 0.18), s(0.5, 0.18), s(0.78, 0.18),
+                s(0.22, 0.5),  s(0.5, 0.5),  s(0.78, 0.5),
+                s(0.22, 0.82), s(0.5, 0.82), s(0.78, 0.82)]
+        return m
+    }()
+
     /// 副露名（碰 三万 / 吃 一万二万三万）
     static func meldLabel(_ m: MahjongMeld) -> String {
         if !m.label.isEmpty { return m.label }
@@ -108,7 +141,7 @@ struct MahjongTileFace: View {
             // 侧面：整块深象牙，只露出底下那一条
             RoundedRectangle(cornerRadius: width * 0.15, style: .continuous)
                 .fill(LinearGradient(colors: [QipaiPalette.qhex(0xD9D0BC), QipaiPalette.qhex(0xB9AF98)],
-                                     startPoint: .top, endPoint: .bottom))
+                                     startPoint: .topLeading, endPoint: .bottomTrailing))
                 .frame(width: width, height: h)
             face
                 .frame(width: width, height: h - thickness)
@@ -116,7 +149,8 @@ struct MahjongTileFace: View {
         .frame(width: width, height: h)
         .opacity(dimmed ? 0.5 : 1)
         // 光从上边来：牌落在桌上，影子往下偏
-        .shadow(color: QipaiPalette.shadowTint.opacity(0.22), radius: width * 0.09, y: width * 0.06)
+        .shadow(color: QipaiPalette.shadowTint.opacity(0.24), radius: width * 0.09,
+                x: width * 0.035, y: width * 0.07)
     }
 
     /// 牌的正面（象牙底 + 凹槽 + 图案）
@@ -125,7 +159,7 @@ struct MahjongTileFace: View {
             // 象牙底（定死，日夜同色——夜里也是牌，不是纸）
             RoundedRectangle(cornerRadius: width * 0.15, style: .continuous)
                 .fill(LinearGradient(colors: [QipaiPalette.qhex(0xFDFBF5), QipaiPalette.qhex(0xEDE7D8)],
-                                     startPoint: .top, endPoint: .bottom))
+                                     startPoint: .topLeading, endPoint: .bottomTrailing))
             // 牌面那道浅凹槽
             RoundedRectangle(cornerRadius: width * 0.1, style: .continuous)
                 .fill(QipaiPalette.qhex(0xFCFAF4))
@@ -137,8 +171,8 @@ struct MahjongTileFace: View {
             .stroke(QipaiPalette.qhex(0xB6AE9A).opacity(0.85), lineWidth: 1))
         // 顶边一道白高光：跟阴影同一个光源，牌才"鼓"得起来
         .overlay(RoundedRectangle(cornerRadius: width * 0.15, style: .continuous)
-            .fill(LinearGradient(colors: [.white.opacity(0.75), .white.opacity(0.05), .clear],
-                                 startPoint: .top, endPoint: .center))
+            .fill(LinearGradient(colors: [.white.opacity(0.8), .white.opacity(0.06), .clear],
+                                 startPoint: .topLeading, endPoint: .center))
             .allowsHitTesting(false))
     }
 
@@ -184,27 +218,52 @@ struct MahjongTileFace: View {
         }
     }
 
-    /// 筒是圈，条是竖棍
-    private var pipArt: some View {
+    /// 筒画圈，条画棍——两套排法，别再共用一张表
+    @ViewBuilder private var pipArt: some View {
+        if suit == "p" { dotArt } else { stickArt }
+    }
+
+    /// 筒：一圈一圈的钱串
+    private var dotArt: some View {
         let pts = MahjongTile.pips[n] ?? []
         let aw = width * 0.64
         let ah = h * 0.68
         let d = pipSize
         return ZStack {
             ForEach(Array(pts.enumerated()), id: \.offset) { item in
-                Group {
-                    if suit == "p" {
-                        ZStack {
-                            Circle().fill(tint.opacity(0.2))
-                            Circle().strokeBorder(tint, lineWidth: max(1, d * 0.24))
-                        }
-                        .frame(width: d, height: d)
-                    } else {
-                        Capsule().fill(tint)
-                            .frame(width: d * 0.42, height: d * 1.18)
-                    }
+                ZStack {
+                    Circle().fill(tint.opacity(0.2))
+                    Circle().strokeBorder(tint, lineWidth: max(1, d * 0.24))
                 }
+                .frame(width: d, height: d)
                 .offset(x: (item.element.x - 0.5) * aw, y: (item.element.y - 0.5) * ah)
+            }
+        }
+    }
+
+    /// 条：竹节。‼️棍长按**最小行距**算出来，不写死——
+    /// 0901 她抓的「八条糊成一团」就是写死尺寸害的（棍子比行距还高，必然叠）。
+    /// 这样以后不管点位表怎么改，都不会再叠。
+    private var stickArt: some View {
+        let arr = MahjongTile.sticks[n] ?? []
+        let aw = width * 0.62
+        let ah = h * 0.70
+        let ys = Array(Set(arr.map { $0.y })).sorted()
+        var gap: CGFloat = 1
+        if ys.count > 1 {
+            var g = CGFloat.greatestFiniteMagnitude
+            for i in 1..<ys.count { g = min(g, ys[i] - ys[i - 1]) }
+            gap = g
+        }
+        let len = min(max(gap * ah * 0.82, 3), ah * 0.5)
+        let thick = max(len * 0.26, 1.5)
+        return ZStack {
+            ForEach(Array(arr.enumerated()), id: \.offset) { item in
+                Capsule()
+                    .fill(tint)
+                    .frame(width: thick, height: len)
+                    .rotationEffect(.degrees(item.element.a))
+                    .offset(x: (item.element.x - 0.5) * aw, y: (item.element.y - 0.5) * ah)
             }
         }
     }
@@ -239,20 +298,21 @@ struct MahjongTileBack: View {
             // 侧面：深靛，露出底下一条
             RoundedRectangle(cornerRadius: width * 0.15, style: .continuous)
                 .fill(LinearGradient(colors: [QipaiPalette.qhex(0x3E4A6E), QipaiPalette.qhex(0x2C3552)],
-                                     startPoint: .top, endPoint: .bottom))
+                                     startPoint: .topLeading, endPoint: .bottomTrailing))
                 .frame(width: width, height: h)
             back
                 .frame(width: width, height: h - thickness)
         }
         .frame(width: width, height: h)
-        .shadow(color: QipaiPalette.shadowTint.opacity(0.2), radius: width * 0.08, y: width * 0.05)
+        .shadow(color: QipaiPalette.shadowTint.opacity(0.22), radius: width * 0.08,
+                x: width * 0.03, y: width * 0.06)
     }
 
     private var back: some View {
         ZStack {
             RoundedRectangle(cornerRadius: width * 0.15, style: .continuous)
                 .fill(LinearGradient(colors: [QipaiPalette.qhex(0x8496C4), QipaiPalette.qhex(0x4F5C88)],
-                                     startPoint: .top, endPoint: .bottom))
+                                     startPoint: .topLeading, endPoint: .bottomTrailing))
             // 内圈细边，做出"牌背压了一道线"的凹感
             RoundedRectangle(cornerRadius: width * 0.1, style: .continuous)
                 .stroke(.white.opacity(0.32), lineWidth: max(0.6, width * 0.035))
@@ -270,8 +330,8 @@ struct MahjongTileBack: View {
             }
             // 顶上一道玻璃高光，跟正面同一个光源
             RoundedRectangle(cornerRadius: width * 0.15, style: .continuous)
-                .fill(LinearGradient(colors: [.white.opacity(0.42), .clear],
-                                     startPoint: .top, endPoint: .center))
+                .fill(LinearGradient(colors: [.white.opacity(0.46), .clear],
+                                     startPoint: .topLeading, endPoint: .center))
         }
         .clipShape(RoundedRectangle(cornerRadius: width * 0.15, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: width * 0.15, style: .continuous)

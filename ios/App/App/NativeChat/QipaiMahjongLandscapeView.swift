@@ -43,6 +43,13 @@ enum MahjongCloth {
     static var rimLo: Color     { pick(0xEADFE2, 0x2E262B) }
     /// 护栏描边 / 布面陷进去那圈内阴影
     static var rimEdge: Color   { pick(0xCFBCC2, 0x4B3F46) }
+
+    // 桌体（0901 她要真透视：桌面底下这一层往下错开，倾斜之后就是**前侧立面**，
+    // 也就是她说的"看得见桌沿厚度"。左右两侧在转角处也会露出一条）
+    /// 立面上沿（挨着桌面，亮一点）
+    static var bodyHi: Color    { pick(0xE3D3D7, 0x2A2328) }
+    /// 立面下沿（背光，暗）
+    static var bodyLo: Color    { pick(0xC7B2B8, 0x1E181C) }
 }
 
 // MARK: - 花边蕾丝桌布
@@ -83,16 +90,28 @@ struct MahjongLaceCloth: View {
         .allowsHitTesting(false)
     }
 
-    /// 一圈台唇（真麻将桌那种护栏）。0901 她定的：**淡**，不要玫瑰金深粉。
-    /// 顶边一道白高光 + 底下一点投影，光源跟牌一致（都从上边来）。
+    /// 桌子本体：投影 → 桌体厚度 → 台唇。
+    /// 0901 她定的：淡，不要玫瑰金深粉。光源左上，影子往右下。
+    ///
+    /// ‼️桌体那一层是**往下错开**画的同一个形状。整张桌子按 28° 倾斜之后，
+    /// 露出来的那一条就是她要的「前侧桌框厚度」，左右转角也会带出一点侧厚。
+    /// 别把它删了当成多余的重复图层。
     private var rim: some View {
         let shape = RoundedRectangle(cornerRadius: 34, style: .continuous)
-        return shape
-            .fill(LinearGradient(colors: [MahjongCloth.rimHi, MahjongCloth.rimLo],
-                                 startPoint: .top, endPoint: .bottom))
-            .overlay(shape.strokeBorder(.white.opacity(0.9), lineWidth: 1.4).padding(0.7))
-            .overlay(shape.stroke(MahjongCloth.rimEdge.opacity(0.7), lineWidth: 1))
-            .shadow(color: QipaiPalette.shadowTint.opacity(0.13), radius: 9, y: 4)
+        return ZStack {
+            // 桌体：前侧立面
+            shape
+                .fill(LinearGradient(colors: [MahjongCloth.bodyHi, MahjongCloth.bodyLo],
+                                     startPoint: .top, endPoint: .bottom))
+                .offset(y: 22)
+            // 台面那一圈护栏
+            shape
+                .fill(LinearGradient(colors: [MahjongCloth.rimHi, MahjongCloth.rimLo],
+                                     startPoint: .topLeading, endPoint: .bottomTrailing))
+                .overlay(shape.strokeBorder(.white.opacity(0.9), lineWidth: 1.4).padding(0.7))
+                .overlay(shape.stroke(MahjongCloth.rimEdge.opacity(0.7), lineWidth: 1))
+        }
+        .shadow(color: QipaiPalette.shadowTint.opacity(0.22), radius: 14, x: 4, y: 10)
     }
 
     private func clothRect(_ size: CGSize, _ r: CGFloat) -> CGRect {
@@ -462,7 +481,13 @@ struct MahjongFaceSettings: View {
     var tone: (String) -> Color
     @Environment(\.dismiss) private var dismiss
     @AppStorage("qipai.facesVersion") private var version = 0
+    /// 控制选图页开关
     @State private var picking: String?
+    /// ‼️「在给谁选」单独存一份。0901 她抓的「换头像换桌布都不行」就死在这儿：
+    /// 系统把选图页关掉 → isPresented 的 setter 把 picking 清成 nil →
+    /// 之后 onChange(pick) 才轮到保存，一看不知道给谁的，直接 return，什么都没存。
+    /// 顺序是反的。target 只由 loadPick 自己清，关窗动不了它。
+    @State private var target: String?
     @State private var pick: PhotosPickerItem?
     @State private var cropping: MahjongPickedImage?
 
@@ -510,6 +535,7 @@ struct MahjongFaceSettings: View {
                 .frame(maxWidth: .infinity)
             HStack(spacing: 10) {
                 Button {
+                    target = Self.clothSlot
                     picking = Self.clothSlot
                 } label: {
                     Label(MahjongFaces.clothImage() == nil ? "选一张图" : "换一张",
@@ -536,6 +562,7 @@ struct MahjongFaceSettings: View {
     private func row(_ n: String) -> some View {
         HStack(spacing: 12) {
             Button {
+                target = n
                 picking = n
             } label: {
                 ZStack(alignment: .bottomTrailing) {
@@ -569,7 +596,7 @@ struct MahjongFaceSettings: View {
     }
 
     private func loadPick() {
-        guard let item = pick, let who = picking else { return }
+        guard let item = pick, let who = target else { return }
         Task {
             let data = try? await item.loadTransferable(type: Data.self)
             await MainActor.run {
@@ -585,6 +612,7 @@ struct MahjongFaceSettings: View {
                 }
                 pick = nil
                 picking = nil
+                target = nil
             }
         }
     }
@@ -737,14 +765,37 @@ struct QipaiMahjongLandscapeView: View {
 
     // MARK: 桌面整体
 
+    /// ‼️0901 她要的真透视：**不是**正上方俯拍，是一张摆在面前的桌子。
+    /// 俯角 28°（她给的区间 25~35 取中），近大远小、左右边往里收、
+    /// 牌的侧面朝着镜头 —— 这些是绕 X 轴旋转 + perspective 之后自然出来的，
+    /// 不用逐张牌自己算透视。
+    ///
+    /// ‼️桌子和牌**一起**转（同一个 ZStack 里），不能只转桌子——
+    /// 只转桌子的话牌会浮在斜面上方，比全平还假。
+    /// SwiftUI 的 rotation3DEffect 会把点击也一起换算，所以牌照样点得准；
+    /// 真要是点偏了跟我说，我把角度收小。
+    private let tiltDegrees: Double = 28
+    private let tiltPerspective: CGFloat = 0.62
+
     private var stage: some View {
         GeometryReader { geo in
             ZStack {
-                MahjongLaceCloth(version: facesVersion)   // 她换了桌布，这块跟着重画
-                    .padding(.horizontal, 18)
-                    .padding(.vertical, 12)
+                // ── 跟着透视一起斜的那层：桌子 + 桌上所有的牌 ──
+                ZStack {
+                    MahjongLaceCloth(version: facesVersion)   // 她换了桌布，这块跟着重画
+                        .padding(.horizontal, 18)
+                        .padding(.vertical, 12)
+                    if let view = store.view {
+                        board(view, size: geo.size)
+                    }
+                }
+                .rotation3DEffect(.degrees(tiltDegrees),
+                                  axis: (x: 1, y: 0, z: 0),
+                                  anchor: .center,
+                                  perspective: tiltPerspective)
+
+                // ── 不跟着斜的那层：界面元件。斜了就难读也难点 ──
                 if let view = store.view {
-                    board(view, size: geo.size)
                     overlays(view)
                 } else {
                     Text("重连中…")
