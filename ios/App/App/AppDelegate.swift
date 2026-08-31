@@ -3,10 +3,38 @@ import SwiftUI
 import Capacitor
 import Intents
 
+/// 横屏锁（0901 任务#1230）。
+///
+/// ‼️她抓的「横屏有时候手机一竖它自己就变回竖屏了」：
+/// requestGeometryUpdate 只是**请求**转一次，Info.plist 里竖屏照样是允许的，
+/// 所以她把手机竖过来，系统就名正言顺地把 app 转回竖屏了——横屏布局被塞进竖窗口，
+/// 就是她那张截图的样子。
+///
+/// 治法：横屏麻将桌开着的时候把竖屏**禁掉**，系统就没得选了。
+/// 用完必须放开（横屏页的 onDisappear 里），否则整个 app 会卡在横屏。
+enum AlcoveOrientation {
+    static var landscapeLocked = false {
+        didSet {
+            guard landscapeLocked != oldValue else { return }
+            DispatchQueue.main.async {
+                UIApplication.shared.connectedScenes
+                    .compactMap { $0 as? UIWindowScene }
+                    .forEach { $0.keyWindow?.rootViewController?
+                        .setNeedsUpdateOfSupportedInterfaceOrientations() }
+            }
+        }
+    }
+}
+
 @UIApplicationMain
 class AppDelegate: UIResponder, UIApplicationDelegate {
 
     var window: UIWindow?
+
+    func application(_ application: UIApplication,
+                     supportedInterfaceOrientationsFor window: UIWindow?) -> UIInterfaceOrientationMask {
+        AlcoveOrientation.landscapeLocked ? .landscape : .allButUpsideDown
+    }
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
         // 0827 一个按钮管全屋：旧的“跟随系统”在这里落定成白天或黑夜，

@@ -513,6 +513,36 @@ struct MahjongClothCropper: View {
     }
 }
 
+/// 一个"点了就选图"的按钮。**每个按钮自带一个选图器**，各管各的。
+///
+/// ‼️0901 她抓的「换桌布点一下就闪退到设置」：原来是全页共用一个
+/// `.photosPicker(isPresented:)`，还跟 `.fullScreenCover` 挂在**同一个视图**上——
+/// SwiftUI 里两个弹出层挂同一个节点会互相顶掉，何况外面还套着一层 sheet，三层叠着。
+/// 换成 PhotosPicker 的**按钮形态**之后：没有 isPresented、没有共享状态、
+/// 也不用记"在给谁选"（谁的按钮就是谁的），那一整类 bug 直接没了。别改回去。
+struct MahjongPickButton<Label: View>: View {
+    var onPicked: (Data) -> Void
+    @ViewBuilder var label: () -> Label
+    @State private var item: PhotosPickerItem?
+
+    var body: some View {
+        PhotosPicker(selection: $item, matching: .images) {
+            label()
+        }
+        .buttonStyle(.plain)
+        .onChange(of: item) { _ in
+            guard let picked = item else { return }
+            Task {
+                let data = try? await picked.loadTransferable(type: Data.self)
+                await MainActor.run {
+                    if let data { onPicked(data) }
+                    item = nil
+                }
+            }
+        }
+    }
+}
+
 // MARK: - 设置面板（横屏「竖屏」按钮下面那个）
 
 struct MahjongFaceSettings: View {
@@ -521,18 +551,8 @@ struct MahjongFaceSettings: View {
     var tone: (String) -> Color
     @Environment(\.dismiss) private var dismiss
     @AppStorage("qipai.facesVersion") private var version = 0
-    /// 控制选图页开关
-    @State private var picking: String?
-    /// ‼️「在给谁选」单独存一份。0901 她抓的「换头像换桌布都不行」就死在这儿：
-    /// 系统把选图页关掉 → isPresented 的 setter 把 picking 清成 nil →
-    /// 之后 onChange(pick) 才轮到保存，一看不知道给谁的，直接 return，什么都没存。
-    /// 顺序是反的。target 只由 loadPick 自己清，关窗动不了它。
-    @State private var target: String?
-    @State private var pick: PhotosPickerItem?
+    /// 裁剪页要显示的图（唯一一个弹出层，见 MahjongPickButton 的注释）
     @State private var cropping: MahjongPickedImage?
-
-    /// picking 存的是"在给谁选图"：座位名，或者这个哨兵表示在选桌布
-    private static let clothSlot = "\u{0}cloth"
 
     var body: some View {
         NavigationStack {
@@ -556,10 +576,6 @@ struct MahjongFaceSettings: View {
                 }
             }
         }
-        .photosPicker(isPresented: Binding(get: { picking != nil },
-                                           set: { if !$0 { picking = nil } }),
-                      selection: $pick, matching: .images)
-        .onChange(of: pick) { _ in loadPick() }
         .fullScreenCover(item: $cropping) { box in
             MahjongClothCropper(image: box.image) { MahjongFaces.setCloth($0) }
         }
@@ -574,15 +590,16 @@ struct MahjongFaceSettings: View {
                 .aspectRatio(MahjongFaces.clothAspect, contentMode: .fit)
                 .frame(maxWidth: .infinity)
             HStack(spacing: 10) {
-                Button {
-                    target = Self.clothSlot
-                    picking = Self.clothSlot
+                MahjongPickButton { data in
+                    // 桌布不直接存：先让她按桌布比例裁一次
+                    if let img = UIImage(data: data) {
+                        cropping = MahjongPickedImage(image: img)
+                    }
                 } label: {
                     Label(MahjongFaces.clothImage() == nil ? "选一张图" : "换一张",
                           systemImage: "photo")
                         .font(.system(size: 14))
                 }
-                .buttonStyle(.plain)
                 .foregroundColor(QipaiPalette.accent)
                 Spacer()
                 if MahjongFaces.clothImage() != nil {
@@ -601,9 +618,8 @@ struct MahjongFaceSettings: View {
 
     private func row(_ n: String) -> some View {
         HStack(spacing: 12) {
-            Button {
-                target = n
-                picking = n
+            MahjongPickButton { data in
+                MahjongFaces.setImage(data, for: n)
             } label: {
                 ZStack(alignment: .bottomTrailing) {
                     MahjongAvatar(name: n, tone: tone(n), size: 46, version: version)
@@ -615,7 +631,6 @@ struct MahjongFaceSettings: View {
                         .offset(x: 3, y: 3)
                 }
             }
-            .buttonStyle(.plain)
 
             VStack(alignment: .leading, spacing: 2) {
                 TextField(n, text: Binding(
@@ -633,28 +648,6 @@ struct MahjongFaceSettings: View {
                 .foregroundColor(QipaiPalette.red)
         }
         .padding(.vertical, 3)
-    }
-
-    private func loadPick() {
-        guard let item = pick, let who = target else { return }
-        Task {
-            let data = try? await item.loadTransferable(type: Data.self)
-            await MainActor.run {
-                if let data {
-                    if who == Self.clothSlot {
-                        // 桌布不直接存：先让她按桌布比例裁一次
-                        if let img = UIImage(data: data) {
-                            cropping = MahjongPickedImage(image: img)
-                        }
-                    } else {
-                        MahjongFaces.setImage(data, for: who)
-                    }
-                }
-                pick = nil
-                picking = nil
-                target = nil
-            }
-        }
     }
 }
 
@@ -761,13 +754,20 @@ struct QipaiMahjongLandscapeView: View {
         // 灵动岛/刘海会压住「竖屏」按钮（她第一次构建的截图里就压着）。
         // 背景自己已经铺满了（ground 内部忽略安全区），内容留在安全区里就对了。
         .onAppear {
+            // ‼️先上锁再转：不锁的话她把手机竖过来，系统会把 app 转回竖屏，
+            // 横屏布局被塞进竖窗口（0901 她截过图）。锁在 onDisappear 里放开。
+            AlcoveOrientation.landscapeLocked = true
             turn(.landscapeRight)
             // 外壳上挂着 .onDisappear { store.stop() }。现在横屏是同树内切换、
             // 外壳没被移出层级，照理不会触发；但 start() 里有 guard sseTask == nil，
             // 补这一刀是空操作，留着当保险——真被掐了这里能自己接回来。
             store.start()
         }
-        .onDisappear { turn(.portrait) }
+        .onDisappear {
+            // 锁一定要放开，不然整个 app 卡在横屏
+            AlcoveOrientation.landscapeLocked = false
+            turn(.portrait)
+        }
         .onChange(of: (store.view?.seq ?? 0)) { _ in syncSelection() }
         .onChange(of: store.feed.count) { _ in catchBubble() }
         .sheet(isPresented: $showFaces) {
@@ -778,6 +778,13 @@ struct QipaiMahjongLandscapeView: View {
                                     return seatTone(pid ?? "")
                                 })
         }
+    }
+
+    /// 回竖屏的唯一出口：**先解锁再转**。锁着的时候请求竖屏会被系统拒掉。
+    private func backToPortrait() {
+        AlcoveOrientation.landscapeLocked = false
+        turn(.portrait)
+        onClose()
     }
 
     private func turn(_ mask: UIInterfaceOrientationMask) {
@@ -855,8 +862,7 @@ struct QipaiMahjongLandscapeView: View {
             // 竖屏 + 设置竖着摞在左上角（她定的：设置放竖屏按钮下面）
             VStack(alignment: .leading, spacing: 6) {
                 Button {
-                    turn(.portrait)
-                    onClose()
+                    backToPortrait()
                 } label: {
                     pill("rectangle.portrait.rotate", "竖屏")
                 }
@@ -1522,8 +1528,7 @@ struct QipaiMahjongLandscapeView: View {
                     .disabled(store.busy)
             }
             Button("回竖屏") {
-                turn(.portrait)
-                onClose()
+                backToPortrait()
             }
             .buttonStyle(QipaiEmbossedButtonStyle())
         }
