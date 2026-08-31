@@ -35,6 +35,14 @@ enum MahjongCloth {
     static var lace: Color      { pick(0xFBF3F4, 0x4A3E44) }
     /// 蕾丝上的走线/眼孔
     static var thread: Color    { pick(0xD8B9C2, 0x5E4E56) }
+
+    // 台唇（0901 她批的：桌子要有一圈护栏，但**淡**——不要玫瑰金深粉）
+    /// 护栏亮面
+    static var rimHi: Color     { pick(0xFAF4F5, 0x3C3238) }
+    /// 护栏暗面
+    static var rimLo: Color     { pick(0xEADFE2, 0x2E262B) }
+    /// 护栏描边 / 布面陷进去那圈内阴影
+    static var rimEdge: Color   { pick(0xCFBCC2, 0x4B3F46) }
 }
 
 // MARK: - 花边蕾丝桌布
@@ -46,43 +54,77 @@ struct MahjongLaceCloth: View {
     /// 只为让 @AppStorage 一变就重画（她换了桌布图）
     var version: Int = 0
 
+    /// 台唇宽度：布陷在这一圈里面
+    private let rimWidth: CGFloat = 11
+
     var body: some View {
         ZStack {
-            // 底层：一圈花瓣（蕾丝牙子），永远画，换不换图都有
-            Canvas { ctx, size in
-                let r = scallop
-                ctx.fill(scallopPath(clothRect(size, r), r), with: .color(MahjongCloth.lace))
+            rim
+            ZStack {
+                // 底层：一圈花瓣（蕾丝牙子），永远画，换不换图都有
+                Canvas { ctx, size in
+                    let r = scallop
+                    ctx.fill(scallopPath(clothRect(size, r), r), with: .color(MahjongCloth.lace))
+                }
+                // 中层：布面 —— 她换过图就铺图，没换就是原来那块藕粉
+                clothFace
+                    .padding(scallop)
+                // 顶层：走线和一圈眼孔压在布面上（图也要有这圈线，不然不像块布）
+                Canvas { ctx, size in
+                    let r = scallop
+                    let rect = clothRect(size, r)
+                    ctx.stroke(eyeletRing(rect), with: .color(MahjongCloth.thread.opacity(0.75)),
+                               lineWidth: 1)
+                    ctx.fill(eyeletHoles(rect), with: .color(MahjongCloth.thread.opacity(0.55)))
+                }
             }
-            // 中层：布面 —— 她换过图就铺图，没换就是原来那块藕粉
-            clothFace
-                .padding(scallop)
-            // 顶层：走线和一圈眼孔压在布面上（图也要有这圈线，不然不像块布）
-            Canvas { ctx, size in
-                let r = scallop
-                let rect = clothRect(size, r)
-                ctx.stroke(eyeletRing(rect), with: .color(MahjongCloth.thread.opacity(0.75)),
-                           lineWidth: 1)
-                ctx.fill(eyeletHoles(rect), with: .color(MahjongCloth.thread.opacity(0.55)))
-            }
+            .padding(rimWidth)
         }
         .allowsHitTesting(false)
+    }
+
+    /// 一圈台唇（真麻将桌那种护栏）。0901 她定的：**淡**，不要玫瑰金深粉。
+    /// 顶边一道白高光 + 底下一点投影，光源跟牌一致（都从上边来）。
+    private var rim: some View {
+        let shape = RoundedRectangle(cornerRadius: 34, style: .continuous)
+        return shape
+            .fill(LinearGradient(colors: [MahjongCloth.rimHi, MahjongCloth.rimLo],
+                                 startPoint: .top, endPoint: .bottom))
+            .overlay(shape.strokeBorder(.white.opacity(0.9), lineWidth: 1.4).padding(0.7))
+            .overlay(shape.stroke(MahjongCloth.rimEdge.opacity(0.7), lineWidth: 1))
+            .shadow(color: QipaiPalette.shadowTint.opacity(0.13), radius: 9, y: 4)
     }
 
     private func clothRect(_ size: CGSize, _ r: CGFloat) -> CGRect {
         CGRect(x: r, y: r, width: max(size.width - r * 2, 1), height: max(size.height - r * 2, 1))
     }
 
-    @ViewBuilder private var clothFace: some View {
-        let shape = RoundedRectangle(cornerRadius: 26, style: .continuous)
-        if let img = MahjongFaces.clothImage() {
-            // 存的时候已经按桌布比例裁好了，这里 fill 一下兜住零头差异
-            Color.clear
-                .overlay(Image(uiImage: img).resizable().scaledToFill())
-                .clipShape(shape)
-        } else {
-            shape.fill(LinearGradient(colors: [MahjongCloth.felt, MahjongCloth.feltDeep],
-                                      startPoint: .top, endPoint: .bottom))
+    private var clothShape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: 26, style: .continuous)
+    }
+
+    private var clothFace: some View {
+        Group {
+            if let img = MahjongFaces.clothImage() {
+                // 存的时候已经按桌布比例裁好了，这里 fill 一下兜住零头差异。
+                // ‼️图是**平铺**的，不做斜视角——她问过这个：斜了照片会变形，
+                // 而且斜着的牌点击判定会不准。要"陷进去"的感觉靠下面那圈内阴影，不靠透视。
+                Color.clear
+                    .overlay(Image(uiImage: img).resizable().scaledToFill())
+                    .clipShape(clothShape)
+            } else {
+                clothShape.fill(LinearGradient(colors: [MahjongCloth.felt, MahjongCloth.feltDeep],
+                                               startPoint: .top, endPoint: .bottom))
+            }
         }
+        // 内阴影：描粗一道再糊开，用自己的形状裁掉外溢——布就像陷在台唇里
+        .overlay(
+            clothShape
+                .stroke(MahjongCloth.rimEdge.opacity(0.55), lineWidth: 5)
+                .blur(radius: 4)
+                .mask(clothShape)
+                .allowsHitTesting(false)
+        )
     }
 
     /// 沿四边排一圈半圆花瓣。拆成独立函数，别塞进 Canvas 闭包里让类型检查器吃不下
@@ -900,13 +942,29 @@ struct QipaiMahjongLandscapeView: View {
                 }
             }
             .frame(height: 40)
-            Text(MahjongFaces.alias(p.name))
-                .font(.system(size: 10.5, weight: .semibold))
-                .foregroundColor(seatTone(p.id))
-                .lineLimit(1)
-            seatSubline(p)
+            // 0901：名字和张数坐在一块白卡上。原来直接写在粉布上，糊得看不清
+            VStack(spacing: 2) {
+                Text(MahjongFaces.alias(p.name))
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .foregroundColor(seatTone(p.id))
+                    .lineLimit(1)
+                seatSubline(p)
+            }
+            .padding(.horizontal, 9)
+            .padding(.vertical, 5)
+            .background(nameCard)
         }
         .frame(minWidth: 56)
+    }
+
+    /// 名牌那块白卡：顶边一道高光、底下一点投影，跟牌一个光源
+    private var nameCard: some View {
+        let shape = RoundedRectangle(cornerRadius: 11, style: .continuous)
+        return shape
+            .fill(QipaiPalette.panel.opacity(0.95))
+            .overlay(shape.strokeBorder(.white.opacity(0.9), lineWidth: 1).padding(0.5))
+            .overlay(shape.stroke(MahjongCloth.rimEdge.opacity(0.5), lineWidth: 0.8))
+            .shadow(color: QipaiPalette.shadowTint.opacity(0.16), radius: 4, y: 2)
     }
 
     @ViewBuilder private func seatSubline(_ p: MahjongPlayerView) -> some View {
@@ -1037,20 +1095,33 @@ struct QipaiMahjongLandscapeView: View {
         .padding(9)
     }
 
-    /// 中央「还剩几张」：一张麻将背面 + 数字（她点名照参考图）
+    /// 中央那个骰盅：立体小方座 + 一个凹进去的圆盘写「剩余 N」。
+    /// 0901 她定的：淡，不要玫瑰金。所以座子用台唇同一套浅色。
     private func wallBadge(_ view: MahjongView) -> some View {
-        HStack(spacing: 6) {
-            MahjongTileBack(width: 20)
-            Text("\(view.wallCount)")
-                .font(.system(size: 21, weight: .bold, design: .monospaced))
-                .foregroundColor(QipaiPalette.ink)
+        let base = RoundedRectangle(cornerRadius: 17, style: .continuous)
+        return ZStack {
+            base
+                .fill(LinearGradient(colors: [MahjongCloth.rimHi, MahjongCloth.rimLo],
+                                     startPoint: .top, endPoint: .bottom))
+                .overlay(base.strokeBorder(.white.opacity(0.9), lineWidth: 1.2).padding(0.6))
+                .overlay(base.stroke(MahjongCloth.rimEdge.opacity(0.75), lineWidth: 1))
+            // 凹进去的盘：内阴影同款做法（描粗→糊开→自己裁）
+            Circle()
+                .fill(QipaiPalette.panelDeep.opacity(0.55))
+                .overlay(Circle().stroke(MahjongCloth.rimEdge.opacity(0.6), lineWidth: 4)
+                    .blur(radius: 3).mask(Circle()))
+                .padding(9)
+            VStack(spacing: -1) {
+                Text("剩余")
+                    .font(.system(size: 8.5))
+                    .foregroundColor(QipaiPalette.inkDim)
+                Text("\(view.wallCount)")
+                    .font(.system(size: 22, weight: .bold, design: .monospaced))
+                    .foregroundColor(QipaiPalette.ink)
+            }
         }
-        .padding(.horizontal, 11).padding(.vertical, 8)
-        .background(RoundedRectangle(cornerRadius: 13, style: .continuous)
-            .fill(QipaiPalette.panel.opacity(0.94)))
-        .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous)
-            .stroke(QipaiPalette.line, lineWidth: 1))
-        .shadow(color: QipaiPalette.shadowTint.opacity(0.14), radius: 4, y: 2)
+        .frame(width: 74, height: 74)
+        .shadow(color: QipaiPalette.shadowTint.opacity(0.17), radius: 6, y: 3)
     }
 
     /// 一家的牌河。横向的排成几行，纵向的排成几列；最后打出那张亮着，其余压暗
