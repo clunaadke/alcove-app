@@ -57,12 +57,12 @@ enum MahjongCloth {
 /// 一整块画在 Canvas 里：边缘一圈半圆花瓣（蕾丝牙子）＋布面＋一圈眼孔走线。
 /// 用 Canvas 不用几十个 Circle 视图——四家牌河已经上百张牌了，别再给布局器加担子。
 struct MahjongLaceCloth: View {
-    var scallop: CGFloat = 11
+    var scallop: CGFloat = 9
     /// 只为让 @AppStorage 一变就重画（她换了桌布图）
     var version: Int = 0
 
-    /// 台唇宽度：布陷在这一圈里面
-    private let rimWidth: CGFloat = 11
+    /// 台唇宽度：布陷在这一圈里面（0901 二稿收窄，多让点面积给布面）
+    private let rimWidth: CGFloat = 8
 
     var body: some View {
         ZStack {
@@ -795,9 +795,13 @@ struct QipaiMahjongLandscapeView: View {
         GeometryReader { geo in
             let chatW = min(320, geo.size.width * 0.34)
             HStack(spacing: 0) {
-                stage
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                chatHandle
+                // 0901 她要桌子再大：拉手不再自己占一列，改成浮在桌子右缘上——
+                // 桌布能一直铺到它底下。聊天拉开时它跟着桌边一起往左缩。
+                ZStack(alignment: .trailing) {
+                    stage
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    chatHandle
+                }
                 if showChat {
                     chatColumn
                         .frame(width: chatW)
@@ -886,10 +890,13 @@ struct QipaiMahjongLandscapeView: View {
                 // ── 跟着透视一起斜的那层：桌子 + 桌上所有的牌 ──
                 ZStack {
                     // 0901 她打回：桌子太小、波点露一大圈、牌都掉在桌外。
-                    // 桌布直接顶满整个台面，波点只在四个角漏一线
+                    // 桌布直接顶满整个台面，波点只在四个角漏一线。
+                    // 二稿她还嫌小：桌布连安全区一起吃掉（刘海边、底部横条底下全铺布），
+                    // 但**牌和按钮不跟**——它们留在安全区里，不会钻到灵动岛底下去。
                     MahjongLaceCloth(version: facesVersion)   // 她换了桌布，这块跟着重画
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 8)
+                        .padding(.horizontal, 2)
+                        .padding(.vertical, 4)
+                        .ignoresSafeArea()
                     if let view = store.view {
                         board(view, size: geo.size)
                     }
@@ -1051,13 +1058,13 @@ struct QipaiMahjongLandscapeView: View {
                     seatHeader(p, slot: slot, view: view)
                     if !p.melds.isEmpty { meldRow(p.melds, width: 17, axis: .vertical) }
                 }
-                backRow(p.handCount, width: 15, axis: .vertical, facing: .right)
+                backRow(p.handCount, width: 15, axis: .vertical)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             .padding(.leading, 34)
         case .right:
             HStack(spacing: 5) {
-                backRow(p.handCount, width: 15, axis: .vertical, facing: .left)
+                backRow(p.handCount, width: 15, axis: .vertical)
                 VStack(spacing: 5) {
                     seatHeader(p, slot: slot, view: view)
                     if !p.melds.isEmpty { meldRow(p.melds, width: 17, axis: .vertical) }
@@ -1191,16 +1198,15 @@ struct QipaiMahjongLandscapeView: View {
     private enum Axis2 { case horizontal, vertical }
 
     @ViewBuilder
-    private func backRow(_ count: Int, width: CGFloat, axis: Axis2,
-                         facing: MahjongTileFacing = .front) -> some View {
+    private func backRow(_ count: Int, width: CGFloat, axis: Axis2) -> some View {
         let n = max(0, min(count, 14))
         if axis == .horizontal {
             HStack(spacing: -width * 0.1) {
-                ForEach(0..<n, id: \.self) { _ in MahjongTileBack(width: width, facing: facing) }
+                ForEach(0..<n, id: \.self) { _ in MahjongTileBack(width: width) }
             }
         } else {
             VStack(spacing: -width * 0.62) {
-                ForEach(0..<n, id: \.self) { _ in MahjongTileBack(width: width, facing: facing) }
+                ForEach(0..<n, id: \.self) { _ in MahjongTileBack(width: width) }
             }
         }
     }
@@ -1345,9 +1351,9 @@ struct QipaiMahjongLandscapeView: View {
             }
             .padding(.horizontal, 30)
         }
-        // 0901 她打回「我的麻将都在外面」：底边留出台唇+蕾丝那一圈（约 26pt），
-        // 手牌整排坐进粉色布面里，不再压在花边和波点上
-        .padding(.bottom, 30)
+        // 0901 她打回「我的麻将都在外面」：手牌要坐进粉色布面里。
+        // 二稿桌布吃掉了底部安全区，布面本身就到屏幕底了，14 就够
+        .padding(.bottom, 14)
     }
 
     @ViewBuilder
