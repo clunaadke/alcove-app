@@ -131,26 +131,32 @@ struct MahjongTileFace: View {
     private var suit: String { MahjongTile.suit(id) }
     private var n: Int { MahjongTile.num(id) }
 
-    /// 牌的厚度（0901 她批的「牌立体、桌子平」）。整体高度不变，
-    /// 正面往上让出这一条，下面露出的深色就是牌的侧面。
+    /// 牌的厚度。整体高度不变，正面往上让出这一条，下面露出的就是牌的侧面。
+    /// 0901 她验收后打回「有厚度但还是平面」——厚度加到 0.16，侧面分上下两段
+    /// （亮棱线+暗底），加一道贴地影，立体感全靠这三笔。
     /// ‼️高度别改——牌河、副露、手牌的排版全按 width*1.34 算的。
-    private var thickness: CGFloat { max(width * 0.10, 1.6) }
+    private var thickness: CGFloat { max(width * 0.16, 2.2) }
 
     var body: some View {
         ZStack(alignment: .top) {
-            // 侧面：整块深象牙，只露出底下那一条
+            // 侧面：上亮下暗——棱上受光、贴桌背光，一条渐变就是一个立面
             RoundedRectangle(cornerRadius: width * 0.15, style: .continuous)
-                .fill(LinearGradient(colors: [QipaiPalette.qhex(0xD9D0BC), QipaiPalette.qhex(0xB9AF98)],
-                                     startPoint: .topLeading, endPoint: .bottomTrailing))
+                .fill(LinearGradient(stops: [
+                    .init(color: QipaiPalette.qhex(0xE8DFCB), location: 0),
+                    .init(color: QipaiPalette.qhex(0xCEC3AA), location: 0.86),
+                    .init(color: QipaiPalette.qhex(0xA79C83), location: 1),
+                ], startPoint: .top, endPoint: .bottom))
                 .frame(width: width, height: h)
             face
                 .frame(width: width, height: h - thickness)
         }
         .frame(width: width, height: h)
         .opacity(dimmed ? 0.5 : 1)
-        // 光从上边来：牌落在桌上，影子往下偏
-        .shadow(color: QipaiPalette.shadowTint.opacity(0.24), radius: width * 0.09,
-                x: width * 0.035, y: width * 0.07)
+        // 贴地那圈接触影（近而深）+ 泛开的软影（远而淡），落桌才有分量
+        .shadow(color: QipaiPalette.shadowTint.opacity(0.3), radius: width * 0.04,
+                x: 0, y: width * 0.05)
+        .shadow(color: QipaiPalette.shadowTint.opacity(0.18), radius: width * 0.14,
+                x: width * 0.04, y: width * 0.1)
     }
 
     /// 牌的正面（象牙底 + 凹槽 + 图案）
@@ -282,60 +288,63 @@ struct MahjongTileFace: View {
     }
 }
 
+/// 扣着的牌背朝哪边露厚度（= 这张牌立着时，牌身冲着观众的那一面在哪边）
+enum MahjongTileFacing {
+    case front   // 对家/牌墙横排：厚度在下
+    case left    // 右家竖排：牌身冲左（屏幕中间）
+    case right   // 左家竖排：牌身冲右（屏幕中间）
+}
+
 /// 扣着的牌（对手手牌 / 暗杠）。
-/// 0901 陈霁：原来那个灰绿跟粉色桌布糊成一片，换靛蓝＋中间一个菱形小花。
-/// 颜色定死不吃日夜，跟正面象牙一个道理——它是牌，不是纸。
+/// 0901 陈霁给了抠好的粉花牌背图，代码手画的靛蓝菱花退休了——
+/// 图铺在**顶面**，厚度那条是米白牌身，立着的牌能看到两个面，这才是她要的"立体"。
+/// 图案素材 `MahjongTileBackArt`（Assets，13KB，已裁边压缩）。
 struct MahjongTileBack: View {
     var width: CGFloat = 24
+    /// 牌身厚度露在哪边。横排（对家、牌墙、暗杠）在下；左右两家的竖排各冲屏幕中间
+    var facing: MahjongTileFacing = .front
 
     private var h: CGFloat { width * 1.34 }
 
-    /// 跟正面同款的厚度，牌墙码起来才像一摞
-    private var thickness: CGFloat { max(width * 0.10, 1.6) }
+    /// 立着的牌能看到的"牌身"那一条，比躺着的牌厚——站着的东西侧面本来就露得多
+    private var thickness: CGFloat { max(width * 0.22, 2.4) }
+
+    private var corner: CGFloat { width * 0.15 }
 
     var body: some View {
-        ZStack(alignment: .top) {
-            // 侧面：深靛，露出底下一条
-            RoundedRectangle(cornerRadius: width * 0.15, style: .continuous)
-                .fill(LinearGradient(colors: [QipaiPalette.qhex(0x3E4A6E), QipaiPalette.qhex(0x2C3552)],
-                                     startPoint: .topLeading, endPoint: .bottomTrailing))
-                .frame(width: width, height: h)
-            back
-                .frame(width: width, height: h - thickness)
+        let shape = RoundedRectangle(cornerRadius: corner, style: .continuous)
+        ZStack {
+            // 牌身：米白象牙（跟正面牌的身子一个材质，图里牌背边缘也是这个色）
+            shape.fill(LinearGradient(colors: [QipaiPalette.qhex(0xF6EFE3), QipaiPalette.qhex(0xD8CEBA)],
+                                      startPoint: .topLeading, endPoint: .bottomTrailing))
+            // 顶面：她给的粉花图，往厚度那边让出一条
+            art
+                .padding(.bottom, facing == .front ? thickness : 0)
+                .padding(.leading, facing == .left ? thickness : 0)
+                .padding(.trailing, facing == .right ? thickness : 0)
         }
         .frame(width: width, height: h)
-        .shadow(color: QipaiPalette.shadowTint.opacity(0.22), radius: width * 0.08,
-                x: width * 0.03, y: width * 0.06)
+        .overlay(shape.stroke(QipaiPalette.qhex(0xB9AE97).opacity(0.8), lineWidth: 0.8))
+        .shadow(color: QipaiPalette.shadowTint.opacity(0.25), radius: width * 0.09,
+                x: shadowDX, y: width * 0.08)
     }
 
-    private var back: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: width * 0.15, style: .continuous)
-                .fill(LinearGradient(colors: [QipaiPalette.qhex(0x8496C4), QipaiPalette.qhex(0x4F5C88)],
-                                     startPoint: .topLeading, endPoint: .bottomTrailing))
-            // 内圈细边，做出"牌背压了一道线"的凹感
-            RoundedRectangle(cornerRadius: width * 0.1, style: .continuous)
-                .stroke(.white.opacity(0.32), lineWidth: max(0.6, width * 0.035))
-                .padding(width * 0.13)
-            // 中间那朵菱形小花（两个叠起来的菱形，小尺寸下退成一个亮点，不会糊）
-            ZStack {
-                Rectangle()
-                    .fill(.white.opacity(0.42))
-                    .frame(width: width * 0.30, height: width * 0.30)
-                    .rotationEffect(.degrees(45))
-                Rectangle()
-                    .stroke(.white.opacity(0.75), lineWidth: max(0.7, width * 0.032))
-                    .frame(width: width * 0.46, height: width * 0.46)
-                    .rotationEffect(.degrees(45))
-            }
-            // 顶上一道玻璃高光，跟正面同一个光源
-            RoundedRectangle(cornerRadius: width * 0.15, style: .continuous)
-                .fill(LinearGradient(colors: [.white.opacity(0.46), .clear],
-                                     startPoint: .topLeading, endPoint: .center))
+    /// 影子往厚度反方向那边甩：牌立着，影子落在身后
+    private var shadowDX: CGFloat {
+        switch facing {
+        case .front: return width * 0.03
+        case .left:  return -width * 0.05
+        case .right: return width * 0.05
         }
-        .clipShape(RoundedRectangle(cornerRadius: width * 0.15, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: width * 0.15, style: .continuous)
-            .stroke(QipaiPalette.qhex(0x394465).opacity(0.85), lineWidth: 1))
+    }
+
+    private var art: some View {
+        let shape = RoundedRectangle(cornerRadius: corner * 0.85, style: .continuous)
+        return Color.clear
+            .overlay(Image("MahjongTileBackArt").resizable().scaledToFill())
+            .clipShape(shape)
+            // 顶面和牌身交界压一道细缝，两个面才分得开
+            .overlay(shape.stroke(QipaiPalette.qhex(0xC4A8AE).opacity(0.55), lineWidth: 0.7))
     }
 }
 

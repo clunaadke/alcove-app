@@ -93,7 +93,7 @@ struct MahjongLaceCloth: View {
     /// 桌子本体：投影 → 桌体厚度 → 台唇。
     /// 0901 她定的：淡，不要玫瑰金深粉。光源左上，影子往右下。
     ///
-    /// ‼️桌体那一层是**往下错开**画的同一个形状。整张桌子按 28° 倾斜之后，
+    /// ‼️桌体那一层是**往下错开**画的同一个形状。整张桌子按 clothTilt 倾斜之后，
     /// 露出来的那一条就是她要的「前侧桌框厚度」，左右转角也会带出一点侧厚。
     /// 别把它删了当成多余的重复图层。
     private var rim: some View {
@@ -103,7 +103,7 @@ struct MahjongLaceCloth: View {
             shape
                 .fill(LinearGradient(colors: [MahjongCloth.bodyHi, MahjongCloth.bodyLo],
                                      startPoint: .top, endPoint: .bottom))
-                .offset(y: 22)
+                .offset(y: 16)
             // 台面那一圈护栏
             shape
                 .fill(LinearGradient(colors: [MahjongCloth.rimHi, MahjongCloth.rimLo],
@@ -272,8 +272,10 @@ enum MahjongFaces {
 
     /// ‼️牌桌的俯角。**桌子和裁剪预览必须共用这一对数**——
     /// 分开写的话，桌子一调角度、预览就开始骗人（0901 她抓过一次）。
-    static let clothTilt: Double = 28
-    static let clothPerspective: CGFloat = 0.62
+    /// 0901 她验收后打回：28° 斜得太狠（"我只要倾斜一点点"），收到 11°，
+    /// 透视强度也跟着从 0.62 降下来，不然浅角度配强透视上边还是缩腰。
+    static let clothTilt: Double = 11
+    static let clothPerspective: CGFloat = 0.24
 
     private static var clothURL: URL {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -364,58 +366,112 @@ struct MahjongClothCropper: View {
 
     private let aspect = MahjongFaces.clothAspect
 
+    /// ‼️0901 她抓的「没有完成、退出按钮，你叫我上哪退出」：按钮一直都有，
+    /// 但这页原来只有竖着摞的一种排法——横屏下"屏幕宽减 32"的裁剪框光自己
+    /// 就有 380pt 高，比整个横屏还高，按钮全被顶出屏幕底了。
+    /// 所以横屏走左右分栏：左边裁剪框按**屏幕高**算大小，右边预览+按钮，谁也挤不掉谁。
     var body: some View {
         GeometryReader { geo in
-            let w = geo.size.width - 32
-            let h = w / aspect
-            VStack(spacing: 16) {
+            if geo.size.width > geo.size.height {
+                landscapeLayout(geo.size)
+            } else {
+                portraitLayout(geo.size)
+            }
+        }
+        .background(Color.black.ignoresSafeArea())
+    }
+
+    private func landscapeLayout(_ size: CGSize) -> some View {
+        // 框的高按屏幕高定（留出上下文案），宽不许超过屏幕的 58%，剩下归右栏
+        let fh = max(min(size.height - 118, (size.width * 0.58) / aspect), 120)
+        let fw = fh * aspect
+        let side = max(size.width - fw - 66, 150)
+        return HStack(spacing: 16) {
+            VStack(spacing: 9) {
                 Text("拖动和捏合，挑桌布上要露出来的那一块")
                     .font(.system(size: 12.5))
                     .foregroundColor(.white.opacity(0.7))
-                    .padding(.top, 22)
-
-                frame(w: w, h: h)
-
-                Text("方框里拖着好挑，下面那张才是贴到桌上的真实样子")
-                    .font(.system(size: 11))
+                frame(w: fw, h: fh)
+                Text("左边拖着好挑，右边那张才是贴到桌上的真实样子")
+                    .font(.system(size: 10.5))
                     .foregroundColor(.white.opacity(0.45))
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 30)
-
-                // ‼️0901：桌子改成 28° 透视之后，上面那个方框就不再是"最终样子"了 ——
-                // 在方框里裁得正正好，贴上去会被压扁、上边还收窄。
-                // 所以这里再放一张**跟牌桌一模一样倾斜**的实时预览：她看到的就是最后的结果。
-                // 倾斜参数必须跟 QipaiMahjongLandscapeView 的 tiltDegrees/tiltPerspective 一致，
-                // 那边改了这里也要改，不然预览又开始骗人。
-                VStack(spacing: 5) {
-                    Text("贴到桌上")
-                        .font(.system(size: 10))
-                        .foregroundColor(.white.opacity(0.4))
-                    livePreview(w: w * 0.62, base: w)
-                }
-
-                Spacer()
-                HStack(spacing: 14) {
-                    Button("取消") { dismiss() }
-                        .foregroundColor(.white.opacity(0.75))
-                    Spacer()
-                    Button("重置") { reset() }
-                        .foregroundColor(.white.opacity(0.75))
-                    Button("用这块") {
-                        onDone(render(w: w, h: h))
-                        dismiss()
-                    }
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundColor(.black)
-                    .padding(.horizontal, 18).padding(.vertical, 9)
-                    .background(Capsule().fill(.white))
-                }
-                .font(.system(size: 15))
-                .padding(.horizontal, 22).padding(.bottom, 26)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            VStack(spacing: 10) {
+                Text("贴到桌上")
+                    .font(.system(size: 10))
+                    .foregroundColor(.white.opacity(0.4))
+                livePreview(w: min(side - 16, 300), base: fw)
+                Spacer(minLength: 4)
+                Button("用这块") {
+                    onDone(render(w: fw, h: fh))
+                    dismiss()
+                }
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundColor(.black)
+                .padding(.horizontal, 26).padding(.vertical, 9)
+                .background(Capsule().fill(.white))
+                HStack(spacing: 22) {
+                    Button("重置") { reset() }
+                    Button("取消") { dismiss() }
+                }
+                .font(.system(size: 13.5))
+                .foregroundColor(.white.opacity(0.75))
+            }
+            .frame(width: side)
+            .padding(.vertical, 12)
         }
-        .background(Color.black.ignoresSafeArea())
+        .padding(.horizontal, 16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func portraitLayout(_ size: CGSize) -> some View {
+        let w = size.width - 32
+        let h = w / aspect
+        return VStack(spacing: 16) {
+            Text("拖动和捏合，挑桌布上要露出来的那一块")
+                .font(.system(size: 12.5))
+                .foregroundColor(.white.opacity(0.7))
+                .padding(.top, 22)
+
+            frame(w: w, h: h)
+
+            Text("方框里拖着好挑，下面那张才是贴到桌上的真实样子")
+                .font(.system(size: 11))
+                .foregroundColor(.white.opacity(0.45))
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 30)
+
+            // ‼️0901：桌子有透视之后，上面那个方框就不再是"最终样子"了 ——
+            // 在方框里裁得正正好，贴上去会被压扁、上边还收窄。
+            // 所以这里再放一张**跟牌桌一模一样倾斜**的实时预览：她看到的就是最后的结果。
+            // 倾斜参数跟牌桌共用 MahjongFaces.clothTilt/clothPerspective，改一处两边同步。
+            VStack(spacing: 5) {
+                Text("贴到桌上")
+                    .font(.system(size: 10))
+                    .foregroundColor(.white.opacity(0.4))
+                livePreview(w: w * 0.62, base: w)
+            }
+
+            Spacer()
+            HStack(spacing: 14) {
+                Button("取消") { dismiss() }
+                    .foregroundColor(.white.opacity(0.75))
+                Spacer()
+                Button("重置") { reset() }
+                    .foregroundColor(.white.opacity(0.75))
+                Button("用这块") {
+                    onDone(render(w: w, h: h))
+                    dismiss()
+                }
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundColor(.black)
+                .padding(.horizontal, 18).padding(.vertical, 9)
+                .background(Capsule().fill(.white))
+            }
+            .font(.system(size: 15))
+            .padding(.horizontal, 22).padding(.bottom, 26)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private func frame(w: CGFloat, h: CGFloat) -> some View {
@@ -813,9 +869,9 @@ struct QipaiMahjongLandscapeView: View {
     // MARK: 桌面整体
 
     /// ‼️0901 她要的真透视：**不是**正上方俯拍，是一张摆在面前的桌子。
-    /// 俯角 28°（她给的区间 25~35 取中），近大远小、左右边往里收、
-    /// 牌的侧面朝着镜头 —— 这些是绕 X 轴旋转 + perspective 之后自然出来的，
-    /// 不用逐张牌自己算透视。
+    /// 俯角用 MahjongFaces.clothTilt（0901 验收后从 28° 收到 11°——她原话
+    /// "我只要倾斜一点点"），近大远小、左右边往里收 —— 这些是绕 X 轴旋转 +
+    /// perspective 之后自然出来的，不用逐张牌自己算透视。
     ///
     /// ‼️桌子和牌**一起**转（同一个 ZStack 里），不能只转桌子——
     /// 只转桌子的话牌会浮在斜面上方，比全平还假。
@@ -829,9 +885,11 @@ struct QipaiMahjongLandscapeView: View {
             ZStack {
                 // ── 跟着透视一起斜的那层：桌子 + 桌上所有的牌 ──
                 ZStack {
+                    // 0901 她打回：桌子太小、波点露一大圈、牌都掉在桌外。
+                    // 桌布直接顶满整个台面，波点只在四个角漏一线
                     MahjongLaceCloth(version: facesVersion)   // 她换了桌布，这块跟着重画
-                        .padding(.horizontal, 18)
-                        .padding(.vertical, 12)
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 8)
                     if let view = store.view {
                         board(view, size: geo.size)
                     }
@@ -986,27 +1044,27 @@ struct QipaiMahjongLandscapeView: View {
                 if !p.melds.isEmpty { meldRow(p.melds, width: 18, axis: .horizontal) }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .padding(.top, 12)
+            .padding(.top, 26)
         case .left:
             HStack(spacing: 5) {
                 VStack(spacing: 5) {
                     seatHeader(p, slot: slot, view: view)
                     if !p.melds.isEmpty { meldRow(p.melds, width: 17, axis: .vertical) }
                 }
-                backRow(p.handCount, width: 15, axis: .vertical)
+                backRow(p.handCount, width: 15, axis: .vertical, facing: .right)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-            .padding(.leading, 26)
+            .padding(.leading, 34)
         case .right:
             HStack(spacing: 5) {
-                backRow(p.handCount, width: 15, axis: .vertical)
+                backRow(p.handCount, width: 15, axis: .vertical, facing: .left)
                 VStack(spacing: 5) {
                     seatHeader(p, slot: slot, view: view)
                     if !p.melds.isEmpty { meldRow(p.melds, width: 17, axis: .vertical) }
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
-            .padding(.trailing, 26)
+            .padding(.trailing, 34)
         }
     }
 
@@ -1133,15 +1191,16 @@ struct QipaiMahjongLandscapeView: View {
     private enum Axis2 { case horizontal, vertical }
 
     @ViewBuilder
-    private func backRow(_ count: Int, width: CGFloat, axis: Axis2) -> some View {
+    private func backRow(_ count: Int, width: CGFloat, axis: Axis2,
+                         facing: MahjongTileFacing = .front) -> some View {
         let n = max(0, min(count, 14))
         if axis == .horizontal {
             HStack(spacing: -width * 0.1) {
-                ForEach(0..<n, id: \.self) { _ in MahjongTileBack(width: width) }
+                ForEach(0..<n, id: \.self) { _ in MahjongTileBack(width: width, facing: facing) }
             }
         } else {
             VStack(spacing: -width * 0.62) {
-                ForEach(0..<n, id: \.self) { _ in MahjongTileBack(width: width) }
+                ForEach(0..<n, id: \.self) { _ in MahjongTileBack(width: width, facing: facing) }
             }
         }
     }
@@ -1284,9 +1343,11 @@ struct QipaiMahjongLandscapeView: View {
                 if let me = view.me { mySeatBadge(me, view: view) }
                 handStrip(view, width: width)
             }
-            .padding(.horizontal, 22)
+            .padding(.horizontal, 30)
         }
-        .padding(.bottom, 12)
+        // 0901 她打回「我的麻将都在外面」：底边留出台唇+蕾丝那一圈（约 26pt），
+        // 手牌整排坐进粉色布面里，不再压在花边和波点上
+        .padding(.bottom, 30)
     }
 
     @ViewBuilder
@@ -1308,6 +1369,13 @@ struct QipaiMahjongLandscapeView: View {
                         tileButton(d, width: w, enabled: canDiscard)
                     }
                 }
+                // 自己的牌反着倾一点：整桌往后倒 11°，手牌抵消掉再多仰 4°，
+                // 就是"立在面前朝着我"的那排牌（参考图里手牌就是这么站的）。
+                // anchor 在底边——牌脚踩在布上转，不会浮起来。点击命中系统会跟着换算。
+                .rotation3DEffect(.degrees(-tiltDegrees - 4),
+                                  axis: (x: 1, y: 0, z: 0),
+                                  anchor: .bottom,
+                                  perspective: 0.2)
                 if !me.melds.isEmpty {
                     // 她点名的：副露跟自己的牌之间留一段，别连着排
                     Spacer().frame(width: 30)
