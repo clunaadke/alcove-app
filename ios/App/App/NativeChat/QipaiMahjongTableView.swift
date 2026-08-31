@@ -296,11 +296,15 @@ struct MahjongTileFace: View {
 /// 立着的牌头顶朝天，从 11° 俯角看下去就该露这一条。别再给它套第二层框。
 struct MahjongTileBack: View {
     var width: CGFloat = 24
+    /// 0901 三稿：立着的牌（对家手牌）。从正面平视，立牌是个矮墩墩的方块——
+    /// 比躺着的 1.34 比例矮一大截，腾讯对家那排就是这个身材。
+    /// 躺着的（副露里的暗杠、竖屏那些）照旧 1.34。
+    var standing: Bool = false
 
-    private var h: CGFloat { width * 1.34 }
+    private var h: CGFloat { width * (standing ? 1.08 : 1.34) }
 
     /// 头顶那条顶面
-    private var thickness: CGFloat { max(width * 0.14, 2) }
+    private var thickness: CGFloat { max(width * (standing ? 0.2 : 0.14), 2) }
 
     private var corner: CGFloat { width * 0.15 }
 
@@ -321,6 +325,36 @@ struct MahjongTileBack: View {
         .overlay(shape.stroke(QipaiPalette.qhex(0xB9AE97).opacity(0.7), lineWidth: 0.7))
         .shadow(color: QipaiPalette.shadowTint.opacity(0.25), radius: width * 0.09,
                 x: width * 0.03, y: width * 0.08)
+    }
+}
+
+/// 侧立牌（0901 三稿，腾讯样式）：左右两家的手牌，从牌的**窄边**看一排站着的牌。
+/// 每张只露一条：头顶一线粉花背 + 象牙白的侧身，一张压一张往下叠就是一排立着的麻将。
+/// 左右对称，不用分朝向。
+struct MahjongTileSide: View {
+    var width: CGFloat = 24
+
+    /// 整条的高：顶面那一线 + 侧身。比例照着腾讯目测的，别较真几何
+    private var h: CGFloat { width * 0.72 }
+    private var topH: CGFloat { width * 0.3 }
+    private var corner: CGFloat { width * 0.12 }
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: corner, style: .continuous)
+        ZStack(alignment: .top) {
+            // 侧身：象牙白，上亮下暗
+            shape.fill(LinearGradient(colors: [QipaiPalette.qhex(0xFBF6EB), QipaiPalette.qhex(0xDCD2BE)],
+                                      startPoint: .top, endPoint: .bottom))
+            // 头顶那一线牌背：图压扁成一条，认得出是粉花就够
+            Color.clear
+                .overlay(Image("MahjongTileBackArt").resizable().scaledToFill())
+                .frame(height: topH)
+                .clipShape(RoundedRectangle(cornerRadius: corner * 0.8, style: .continuous))
+        }
+        .frame(width: width, height: h)
+        .overlay(shape.stroke(QipaiPalette.qhex(0xB9AE97).opacity(0.7), lineWidth: 0.7))
+        .shadow(color: QipaiPalette.shadowTint.opacity(0.22), radius: width * 0.07,
+                x: width * 0.02, y: width * 0.06)
     }
 }
 

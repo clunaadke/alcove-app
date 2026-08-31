@@ -267,8 +267,11 @@ enum MahjongFaces {
 
     // MARK: 桌布（0901 她要的：自己换图，按桌布比例裁）
 
-    /// 桌布是个很扁的长方形。裁剪框、存图、渲染三处都用这一个数，别各写各的。
-    static let clothAspect: CGFloat = 2.2
+    /// 桌布的宽高比。裁剪框、存图、渲染三处都用这一个数，别各写各的。
+    /// 0901 三稿：桌子上下出屏之后，布面比屏幕高一截，比例从 2.2 改成 1.6
+    /// （屏宽 ÷（屏高＋上下各出血 64））。她以前按 2.2 裁的旧图会被左右
+    /// 裁掉一点，重新选一次图就好。
+    static let clothAspect: CGFloat = 1.6
 
     /// ‼️牌桌的俯角。**桌子和裁剪预览必须共用这一对数**——
     /// 分开写的话，桌子一调角度、预览就开始骗人（0901 她抓过一次）。
@@ -810,9 +813,12 @@ struct QipaiMahjongLandscapeView: View {
             }
         }
         .background(ground)
-        // ‼️别在这儿加 .ignoresSafeArea()。整树忽略安全区之后，横屏时左边缘的
-        // 灵动岛/刘海会压住「竖屏」按钮（她第一次构建的截图里就压着）。
-        // 背景自己已经铺满了（ground 内部忽略安全区），内容留在安全区里就对了。
+        // ‼️别在这儿加不带参数的 .ignoresSafeArea()。整树忽略安全区之后，横屏时
+        // 左边缘的灵动岛/刘海会压住「竖屏」按钮（她第一次构建的截图里就压着）。
+        // 但**只放开右边**是她点名要的（0901）：iOS 横屏安全区左右对称，右边没有
+        // 灵动岛却也陪着留 59pt，纯浪费。桌子、拉手、聊天栏一起贴到右屏边。
+        // 左边照旧留着，内容不钻灵动岛。
+        .ignoresSafeArea(.container, edges: .trailing)
         .onAppear {
             // ‼️先上锁再转：不锁的话她把手机竖过来，系统会把 app 转回竖屏，
             // 横屏布局被塞进竖窗口（0901 她截过图）。锁在 onDisappear 里放开。
@@ -890,13 +896,18 @@ struct QipaiMahjongLandscapeView: View {
                 // ── 跟着透视一起斜的那层：桌子 + 桌上所有的牌 ──
                 ZStack {
                     // 0901 她打回：桌子太小、波点露一大圈、牌都掉在桌外。
-                    // 桌布直接顶满整个台面，波点只在四个角漏一线。
-                    // 二稿她还嫌小：桌布连安全区一起吃掉（刘海边、底部横条底下全铺布），
-                    // 但**牌和按钮不跟**——它们留在安全区里，不会钻到灵动岛底下去。
+                    // 三稿（腾讯思路，她拍板的）：**桌子比屏幕大**——上下桌沿和
+                    // 花边整个推出画外，屏幕上下顶格全是布面，只有左右还看得见
+                    // 蕾丝边，像人坐在桌边往桌上看。负 padding 就是把桌布往
+                    // 屏幕外推的那一下；64 要盖过台唇+牙子+圆角再留余量，
+                    // 透视会把远边往回拉一点，别改小。
+                    // 牌和按钮不跟：它们留在安全区里，不钻灵动岛。
+                    // （二稿在这儿挂过 .ignoresSafeArea()，在 fullScreenCover 里
+                    // 灵不灵没验证过还容易把居中拽歪，撤了：上下靠负 padding 出血，
+                    // 右边由最外层的 edges:.trailing 负责，左边她点名要留波点）
                     MahjongLaceCloth(version: facesVersion)   // 她换了桌布，这块跟着重画
                         .padding(.horizontal, 2)
-                        .padding(.vertical, 4)
-                        .ignoresSafeArea()
+                        .padding(.vertical, -64)
                     if let view = store.view {
                         board(view, size: geo.size)
                     }
@@ -1051,27 +1062,27 @@ struct QipaiMahjongLandscapeView: View {
                 if !p.melds.isEmpty { meldRow(p.melds, width: 18, axis: .horizontal) }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .padding(.top, 26)
+            .padding(.top, 10)
         case .left:
             HStack(spacing: 5) {
                 VStack(spacing: 5) {
                     seatHeader(p, slot: slot, view: view)
                     if !p.melds.isEmpty { meldRow(p.melds, width: 17, axis: .vertical) }
                 }
-                backRow(p.handCount, width: 15, axis: .vertical)
+                backRow(p.handCount, width: 24, axis: .vertical)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-            .padding(.leading, 34)
+            .padding(.leading, 26)
         case .right:
             HStack(spacing: 5) {
-                backRow(p.handCount, width: 15, axis: .vertical)
+                backRow(p.handCount, width: 24, axis: .vertical)
                 VStack(spacing: 5) {
                     seatHeader(p, slot: slot, view: view)
                     if !p.melds.isEmpty { meldRow(p.melds, width: 17, axis: .vertical) }
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
-            .padding(.trailing, 34)
+            .padding(.trailing, 26)
         }
     }
 
@@ -1197,16 +1208,19 @@ struct QipaiMahjongLandscapeView: View {
 
     private enum Axis2 { case horizontal, vertical }
 
+    /// 0901 三稿（腾讯样式，她点的）：对家的牌**立起来**（矮墩墩的牌背+头顶一线），
+    /// 左右两家换成**侧立牌**——从牌的窄边看一排站着的牌，一张压一张。
+    /// 立牌比躺着的矮一截，也是对家手牌不再压到自家牌河的一半功劳（另一半在 riverBlock）。
     @ViewBuilder
     private func backRow(_ count: Int, width: CGFloat, axis: Axis2) -> some View {
         let n = max(0, min(count, 14))
         if axis == .horizontal {
-            HStack(spacing: -width * 0.1) {
-                ForEach(0..<n, id: \.self) { _ in MahjongTileBack(width: width) }
+            HStack(spacing: -width * 0.06) {
+                ForEach(0..<n, id: \.self) { _ in MahjongTileBack(width: width, standing: true) }
             }
         } else {
-            VStack(spacing: -width * 0.62) {
-                ForEach(0..<n, id: \.self) { _ in MahjongTileBack(width: width) }
+            VStack(spacing: -width * 0.24) {
+                ForEach(0..<n, id: \.self) { _ in MahjongTileSide(width: width) }
             }
         }
     }
@@ -1286,11 +1300,17 @@ struct QipaiMahjongLandscapeView: View {
         .shadow(color: QipaiPalette.shadowTint.opacity(0.17), radius: 6, y: 3)
     }
 
-    /// 一家的牌河。横向的排成几行，纵向的排成几列；最后打出那张亮着，其余压暗
+    /// 一家的牌河。横向的排成几行，纵向的排成几列；最后打出那张亮着，其余压暗。
+    /// ‼️0901 她抓的「对家手牌压到他自己的牌河」：牌河圈和四家手牌各画各的、
+    /// 互相不知道位置，牌河一长就往手牌底下钻。所以牌河**封顶只留最近的**
+    /// （横 18 张=两行、竖 15 张=三列），再多就把最老的挤出去——真桌上打到
+    /// 后半场也没人数牌河前几张。圈的最大尺寸因此有界，永远撞不到手牌。
     @ViewBuilder
     private func riverBlock(_ tiles: [String], axis: Axis2, view: MahjongView) -> some View {
         let w: CGFloat = 19
         let per = axis == .horizontal ? 9 : 5
+        let cap = axis == .horizontal ? 18 : 15
+        let tiles = Array(tiles.suffix(cap))
         let rows = chunk(tiles, per)
         // 空牌河也占个位，免得中间那圈随出牌一跳一跳。宽高先算成常量再喂 frame——
         // 一句里塞两个三元加字面量正是「expression too complex」的经典形状（这项目栽过三次）
