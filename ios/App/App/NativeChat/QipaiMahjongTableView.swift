@@ -265,7 +265,20 @@ struct QipaiMahjongTableView: View {
                 helpContent
             }
             overlays
+            // ‼️0901 她第一次构建就抓到：横屏**不能**用 fullScreenCover。
+            // 盖板一弹，iOS 去问「最上面那个被弹出的控制器支持什么方向」，
+            // SwiftUI 的盖板宿主不会因为 requestGeometryUpdate 重新评估一次 ——
+            // 结果是布局换成横屏的了、屏幕却还是竖的（她截图为证）。
+            // 共读室 0826 验过的那条路是**在同一棵树里直接换**
+            //（CowatchView 的 `if fullscreen { CowatchFullscreen(...) }`），照抄它。
+            // 白捡的好处：外壳没被移出层级，它那句 .onDisappear { store.stop() }
+            // 不会触发，连接也就不会被掐（原来那两刀补救因此变成空操作，留着当保险）。
+            if landscape {
+                QipaiMahjongLandscapeView(store: store) { landscape = false }
+                    .transition(.opacity)
+            }
         }
+        .animation(.easeInOut(duration: 0.22), value: landscape)
         // 局面翻页：抬起的牌可能已经打掉了，清掉免得打出一张不在手里的
         .onChange(of: (store.view?.seq ?? 0)) { _ in
             let hand = store.view?.me?.hand ?? []
@@ -273,14 +286,6 @@ struct QipaiMahjongTableView: View {
             // 只要这一刻不是「等我表态」，选搭法的那层就收掉——
             // 表完态到下一个窗口打开之间未必回落到 claim==nil，只判 nil 会残留
             if store.view?.claim?.mine != true { chiPicking = false }
-        }
-        .fullScreenCover(isPresented: $landscape) {
-            QipaiMahjongLandscapeView(store: store) {
-                landscape = false
-                // 盖板收掉时外壳的 onAppear 不保证会再触发一次，SSE 可能还停着 —— 补一刀。
-                // start() 里有 guard sseTask == nil，没停的话这就是空操作
-                store.start()
-            }
         }
     }
 

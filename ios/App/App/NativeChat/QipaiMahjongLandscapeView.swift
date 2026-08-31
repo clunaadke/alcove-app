@@ -259,13 +259,14 @@ struct QipaiMahjongLandscapeView: View {
             }
         }
         .background(ground)
-        .ignoresSafeArea()
+        // ‼️别在这儿加 .ignoresSafeArea()。整树忽略安全区之后，横屏时左边缘的
+        // 灵动岛/刘海会压住「竖屏」按钮（她第一次构建的截图里就压着）。
+        // 背景自己已经铺满了（ground 内部忽略安全区），内容留在安全区里就对了。
         .onAppear {
             turn(.landscapeRight)
-            // ‼️QipaiTableShell 上挂着 .onDisappear { store.stop() }。fullScreenCover 一盖上来，
-            // 底下那层可能被判定「消失」→ SSE 当场被掐 → 横屏桌永远停在开局那一帧
-            //（就是 0828 那个「重连中」的同一类病）。start() 里有 guard sseTask == nil，
-            // 重复调是空操作，所以这里无条件补一刀最省事。回竖屏那边也补了一刀。
+            // 外壳上挂着 .onDisappear { store.stop() }。现在横屏是同树内切换、
+            // 外壳没被移出层级，照理不会触发；但 start() 里有 guard sseTask == nil，
+            // 补这一刀是空操作，留着当保险——真被掐了这里能自己接回来。
             store.start()
         }
         .onDisappear { turn(.portrait) }
@@ -423,11 +424,10 @@ struct QipaiMahjongLandscapeView: View {
                            view: MahjongView) -> some View {
         switch slot {
         case .bottom:
-            // 我自己：头像蹲左下角，手牌在 myHandArea 里单独画
-            mySeatBadge(p, view: view)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
-                .padding(.leading, 30)
-                .padding(.bottom, 10)
+            // 我自己整块都在 myHandArea 里画（头像跟手牌同一行）。
+            // ‼️别改回「头像单独钉在 bottomLeading」：手牌那一条也钉在底部、还占满宽，
+            // 两个叠在一起头像会被压在牌底下（0901 她第一次构建的截图）。
+            EmptyView()
         case .top:
             VStack(spacing: 5) {
                 seatHeader(p, view: view)
@@ -692,7 +692,11 @@ struct QipaiMahjongLandscapeView: View {
     private func myHandArea(_ view: MahjongView, width: CGFloat) -> some View {
         VStack(spacing: 7) {
             actionCluster(view)
-            handStrip(view, width: width)
+            HStack(alignment: .bottom, spacing: 12) {
+                if let me = view.me { mySeatBadge(me, view: view) }
+                handStrip(view, width: width)
+            }
+            .padding(.horizontal, 22)
         }
         .padding(.bottom, 12)
     }
@@ -725,7 +729,6 @@ struct QipaiMahjongLandscapeView: View {
                 }
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 26)
         } else {
             Text("观战中 · 谁的手牌都看不见")
                 .font(.system(size: 11)).foregroundColor(QipaiPalette.inkDim)
@@ -733,12 +736,14 @@ struct QipaiMahjongLandscapeView: View {
         }
     }
 
-    /// 手牌一横条，宽度随场地和副露多少缩放——聊天室拉开时桌子变窄，牌跟着变小
+    /// 手牌一横条，宽度随场地和副露多少缩放——聊天室拉开时桌子变窄，牌跟着变小。
+    /// 左边还要给自己那块头像牌让出位置（约 170），别让牌顶到它身上。
     private func handTileWidth(count: Int, stage: CGFloat, melds: Int) -> CGFloat {
         let meldRoom = CGFloat(melds) * 74 + (melds > 0 ? 30 : 0)
-        let usable = max(stage - meldRoom - 60, 120)
+        let badgeRoom: CGFloat = 170
+        let usable = max(stage - meldRoom - badgeRoom - 56, 120)
         let raw = usable / CGFloat(max(count, 1))
-        return min(max(raw, 19), 40)
+        return min(max(raw, 18), 38)
     }
 
     private func tileButton(_ id: String, width: CGFloat, enabled: Bool) -> some View {
