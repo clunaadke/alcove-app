@@ -108,6 +108,17 @@ struct QipaiZjhTableView: View {
 
     // MARK: 场中央
 
+    /// 下家是谁（弃牌和出局的人跳过——他们不会再行动了）
+    private func nextSeatLabel(_ view: ZjhView) -> String? {
+        let anchor = view.you ?? view.current
+        let next = QipaiSeatOrder.next(order: view.turnOrder, from: anchor, isActive: { id in
+            guard let p = view.player(id) else { return false }
+            return !p.folded && !p.out
+        })
+        guard let next, let name = view.player(next)?.name else { return nil }
+        return QipaiSeatOrder.label(name, mine: view.you != nil)
+    }
+
     private func centerBoard(_ view: ZjhView) -> some View {
         VStack(spacing: 7) {
             HStack(spacing: 8) {
@@ -127,6 +138,13 @@ struct QipaiZjhTableView: View {
                 Text("轮到 \(view.player(view.current)?.name ?? "…")\(view.current == view.you ? "（你）" : "")")
                     .font(.system(size: 12.5, weight: .semibold))
                     .foregroundColor(view.current == view.you ? QipaiPalette.red : QipaiPalette.ink)
+            }
+            // 0831 她说的：每张桌都点名下家。弃了牌/出局的人跳过，下一个真会动的才算
+            if view.phase == "betting", let next = nextSeatLabel(view) {
+                Text(next)
+                    .font(.system(size: 10.5, weight: .medium))
+                    .foregroundColor(QipaiPalette.accent)
+                    .lineLimit(1)
             }
         }
         .frame(maxWidth: .infinity, minHeight: 100)

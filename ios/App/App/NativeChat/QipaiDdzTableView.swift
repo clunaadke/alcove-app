@@ -143,6 +143,13 @@ struct QipaiDdzTableView: View {
 
             VStack(spacing: 7) {
                 banner(view)
+                // 0831 她说的：每张桌都要把下家名字点出来，别让她自己数座位
+                if let next = nextSeatLabel(view) {
+                    Text(next)
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundColor(QipaiPalette.accent)
+                        .lineLimit(1)
+                }
                 if let field = view.field {
                     HStack(spacing: -14) {
                         ForEach(field.cards, id: \.self) { id in
@@ -184,6 +191,15 @@ struct QipaiDdzTableView: View {
         default:
             EmptyView()
         }
+    }
+
+    /// 下家是谁。斗地主三个人一圈到底，没有反转
+    private func nextSeatLabel(_ view: DdzView) -> String? {
+        guard view.phase == "bidding" || view.phase == "playing" else { return nil }
+        let anchor = view.you ?? view.current
+        guard let next = QipaiSeatOrder.next(order: view.turnOrder, from: anchor),
+              let n = view.player(next)?.name else { return nil }
+        return QipaiSeatOrder.label(n, mine: view.you != nil)
     }
 
     private func name(_ id: String?, _ view: DdzView) -> String {

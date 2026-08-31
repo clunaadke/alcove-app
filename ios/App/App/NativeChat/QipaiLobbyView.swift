@@ -24,6 +24,7 @@ struct QipaiLobbyView: View {
         "uno": "QipaiIconKitty",
         "daifugo": "QipaiIconPiano",  // 大富豪的钢琴
         "monopoly": "QipaiIconCity",  // 大富翁的城市
+        "mahjong": "QipaiIconTile",   // 麻将的一张牌
     ]
     // 还在建的，先在图标墙占座（0828 大富翁转正后暂时空着）
     private let comingSoon: [(key: String, name: String, icon: String)] = []
@@ -91,6 +92,11 @@ struct QipaiLobbyView: View {
                 }
             case "monopoly":
                 QipaiMonopolyTableView(code: route.code) {
+                    tableRoute = nil
+                    Task { await reload() }
+                }
+            case "mahjong":
+                QipaiMahjongTableView(code: route.code) {
                     tableRoute = nil
                     Task { await reload() }
                 }

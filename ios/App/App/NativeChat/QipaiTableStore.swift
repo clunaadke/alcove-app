@@ -34,13 +34,18 @@ struct QipaiLegalMove: Decodable, Identifiable {
     let count: Int?          // draw 时要摸几张
     // 大富翁
     let cellIdx: Int?        // build / sell_house 的目标格
+    // 麻将：discard/angang/bugang 的 tile；claim 的 tile（被抢那张）+ tiles（自己出的牌）
+    // kind 复用上面炸金花那个字段（麻将里是 hu/peng/gang/chi）
+    let tile: String?
+    let tiles: [String]?
 
     enum CodingKeys: String, CodingKey {
         case type, value, cards, label, amount, kind, blind, stake, target, targetName, card, color, count, cellIdx
+        case tile, tiles
         case asType = "as"
     }
     var id: String {
-        "\(type)-\(value ?? -1)-\(amount ?? -1)-\(stake ?? -1)-\(cellIdx ?? -1)-\(target ?? "")-\(card ?? "")-\(color ?? "")-\(cards?.joined(separator: ",") ?? "")"
+        "\(type)-\(kind ?? "")-\(value ?? -1)-\(amount ?? -1)-\(stake ?? -1)-\(cellIdx ?? -1)-\(target ?? "")-\(card ?? "")-\(color ?? "")-\(tile ?? "")-\(tiles?.joined(separator: ",") ?? "")-\(cards?.joined(separator: ",") ?? "")"
     }
 }
 
@@ -169,6 +174,7 @@ protocol QipaiGameView {
 extension DdzView: QipaiGameView {}
 extension ZjhView: QipaiGameView {}
 extension UnoView: QipaiGameView {}
+extension MahjongView: QipaiGameView {}
 
 /// 牌桌信息流：事件和聊天混排（0828 她要的：像参考图那样一条一条摆在牌桌上）
 enum QipaiFeedItem: Identifiable, Equatable {
@@ -577,6 +583,113 @@ struct UnoView: Decodable {
         return players.first { $0.id == id }
     }
     var me: UnoPlayerView? { player(you) }
+}
+
+// MARK: - 麻将视图模型
+
+/// 副露一组：碰/杠/暗杠/补杠/吃。暗杠对别人 tiles 是 nil（只知道四张）
+struct MahjongMeld: Decodable, Identifiable {
+    let kind: String          // chi / peng / gang / angang / bugang
+    let tiles: [String]?
+    let count: Int
+    let from: String?
+    let tile: String?         // 抢来的那张
+    let label: String
+    var id: String { "\(kind)-\(tile ?? "")-\(tiles?.joined(separator: ",") ?? "x")-\(count)" }
+}
+
+/// 胡牌的细账。tile 是胡的那张（自摸的已经从手里摘走，单独放这儿）
+struct MahjongWon: Decodable {
+    let tile: String
+    let zimo: Bool
+    let from: String?
+    let qidui: Bool
+    let gang: Bool
+    let rob: Bool
+    let fan: Int
+    let gain: Int
+}
+
+struct MahjongPlayerView: Decodable, Identifiable {
+    let id: String
+    let name: String
+    let isAI: Bool
+    let score: Int
+    let handCount: Int
+    let hand: [String]?       // 只有自己看得见
+    let melds: [MahjongMeld]
+    let discards: [String]
+    let out: Bool             // 血战里已经胡了离场
+    let won: MahjongWon?
+    let gain: Int             // 本局增减
+}
+
+/// 抢牌窗口：一张牌摆在那儿，等有权的人一个个表态
+struct MahjongClaim: Decodable {
+    let tile: String
+    let label: String
+    let from: String
+    let kind: String          // discard 普通打牌 / rob 补杠被抢杠
+    let pending: [String]     // 还没表态的
+    let mine: Bool            // 里头有没有我
+}
+
+struct MahjongDiscardRef: Decodable {
+    let tile: String
+    let label: String
+    let from: String
+}
+
+struct MahjongResultRow: Decodable, Identifiable {
+    let playerId: String
+    let name: String
+    let handCount: Int
+    let meldCount: Int
+    let gain: Int
+    let score: Int
+    let hu: MahjongWon?
+    var id: String { playerId }
+}
+
+struct MahjongResults: Decodable {
+    let round: Int
+    let draw: Bool            // 流局
+    let winner: String?
+    let winners: [String]
+    let gain: Int
+    let players: [MahjongResultRow]
+}
+
+struct MahjongView: Decodable {
+    let seq: Int
+    let phase: String         // playing / round_over / game_over
+    let round: Int
+    let turnOrder: [String]
+    let current: String?      // 抢牌窗口开着时是 nil
+    let leader: String?       // 本局庄家
+    let you: String?
+    let players: [MahjongPlayerView]
+    let wallCount: Int
+    let drawn: String?        // 只有轮到自己时看得见自己刚摸的那张
+    let gangFlag: Bool        // 刚摸的是杠后补的
+    let lastDiscard: MahjongDiscardRef?
+    let claim: MahjongClaim?
+    let lastResults: MahjongResults?
+    let winner: String?
+    let rules: [String: Bool]
+    let log: [QipaiLogEntry]
+
+    func player(_ id: String?) -> MahjongPlayerView? {
+        guard let id else { return nil }
+        return players.first { $0.id == id }
+    }
+    var me: MahjongPlayerView? { player(you) }
+    /// 现在欠动作的人（跟引擎 currentActors 一个口径）
+    var owed: [String] {
+        if let claim { return claim.pending }
+        if let current { return [current] }
+        return []
+    }
 }
 
 // MARK: - UNO 牌面工具

@@ -300,6 +300,13 @@ struct QipaiMonopolyTableView: View {
                 .font(.system(size: 12.5, weight: .semibold))
                 .foregroundColor(view.currentPlayer == you ? QipaiPalette.red : QipaiPalette.ink)
                 .multilineTextAlignment(.center)
+            // 0831 她说的：每张桌都点名下家。大富翁没有 turnOrder，座次就是 players 的顺序
+            if let next = nextSeatLabel(view) {
+                Text(next)
+                    .font(.system(size: 10.5, weight: .medium))
+                    .foregroundColor(QipaiPalette.accent)
+                    .lineLimit(1)
+            }
             if view.extraRoll == true {
                 QipaiChip(text: "双数，还能再掷", tone: .live, icon: "dice")
             }
@@ -310,6 +317,19 @@ struct QipaiMonopolyTableView: View {
         }
         .padding(8)
         .qipaiPanel(corner: 16, dotted: true)
+    }
+
+    /// 下家是谁（破产的人跳过）。这张桌的视图不带 turnOrder，players 的顺序就是座次
+    private func nextSeatLabel(_ view: MonopolyView) -> String? {
+        guard view.phase != "game_over" else { return nil }
+        let order = view.players.map { $0.id }
+        let anchor = you ?? view.currentPlayer
+        let next = QipaiSeatOrder.next(order: order, from: anchor, isActive: { id in
+            guard let p = view.player(id) else { return false }
+            return !p.bankrupt
+        })
+        guard let next, let name = view.player(next)?.name else { return nil }
+        return QipaiSeatOrder.label(name, mine: you != nil)
     }
 
     private func turnLine(_ view: MonopolyView) -> String {

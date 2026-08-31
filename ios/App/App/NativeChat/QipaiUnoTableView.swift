@@ -134,6 +134,14 @@ struct QipaiUnoTableView: View {
                         Text("方向 \(dir)")
                             .font(.system(size: 10.5)).foregroundColor(QipaiPalette.inkDim)
                     }
+                    // 0831 她说的：光写顺时针/逆时针分不清谁挨着谁，直接把下家名字点出来。
+                    // 反转牌一出方向就翻，这行跟着翻——+2/跳过砸给谁，看这儿
+                    if let next = nextSeatLabel(view) {
+                        Text(next)
+                            .font(.system(size: 10.5, weight: .medium))
+                            .foregroundColor(QipaiPalette.accent)
+                            .lineLimit(1)
+                    }
                     if view.drawStack > 0 {
                         QipaiChip(text: "叠了 +\(view.drawStack)", tone: .red, icon: "flame")
                     }
@@ -173,6 +181,14 @@ struct QipaiUnoTableView: View {
             }
         }
         .padding(.bottom, 10)
+    }
+
+    /// 下家是谁。反转牌一出方向就翻，这行跟着翻——+2 / 跳过砸在谁头上，看这儿
+    private func nextSeatLabel(_ view: UnoView) -> String? {
+        let anchor = view.you ?? view.current
+        guard let next = QipaiSeatOrder.next(order: view.turnOrder, from: anchor, dir: view.dir),
+              let name = view.player(next)?.name else { return nil }
+        return QipaiSeatOrder.label(name, mine: view.you != nil)
     }
 
     /// 这张牌现在能不能出（合法招里有它就能）

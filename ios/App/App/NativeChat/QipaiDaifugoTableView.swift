@@ -267,12 +267,32 @@ struct QipaiDaifugoTableView: View {
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundColor(QipaiPalette.ink)
         case "playing":
-            Text("轮到 \(view.player(view.current)?.name ?? "…")\(view.current == view.you ? "（你）" : "")")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(view.current == view.you ? QipaiPalette.red : QipaiPalette.ink)
+            VStack(spacing: 3) {
+                Text("轮到 \(view.player(view.current)?.name ?? "…")\(view.current == view.you ? "（你）" : "")")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(view.current == view.you ? QipaiPalette.red : QipaiPalette.ink)
+                // 0831 她说的：每张桌都点名下家。已经出完牌的人跳过
+                if let next = nextSeatLabel(view) {
+                    Text(next)
+                        .font(.system(size: 10.5, weight: .medium))
+                        .foregroundColor(QipaiPalette.accent)
+                        .lineLimit(1)
+                }
+            }
         default:
             EmptyView()
         }
+    }
+
+    /// 下家是谁（这一轮已经出完牌的人跳过，他们不再接牌了）
+    private func nextSeatLabel(_ view: DaifugoView) -> String? {
+        let anchor = view.you ?? view.current
+        let next = QipaiSeatOrder.next(order: view.turnOrder, from: anchor, isActive: { id in
+            guard let p = view.player(id) else { return false }
+            return p.finished == nil
+        })
+        guard let next, let name = view.player(next)?.name else { return nil }
+        return QipaiSeatOrder.label(name, mine: view.you != nil)
     }
 
     /// 换牌阶段的进度板。pending 的 from = 富方（要回赠的人），to = 贫方；

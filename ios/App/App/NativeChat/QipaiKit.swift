@@ -345,6 +345,32 @@ struct QipaiSlideControl: View {
     }
 }
 
+// MARK: 下家是谁（六张牌桌共用）
+
+/// 0831 陈霁：「只说顺时针逆时针我真的分不清」——每张牌桌都要把下家的名字直接点出来。
+/// 从 anchor（有座位就是她自己，观战就锚在当前行动的人身上）沿 dir 走一格，
+/// 跳过这一轮里已经出局／出完／弃牌的人；绕回自己还没找到就返回 nil（场上只剩一个人了）。
+enum QipaiSeatOrder {
+    static func next(order: [String], from anchor: String?, dir: Int = 1,
+                     isActive: (String) -> Bool = { _ in true }) -> String? {
+        guard order.count > 1, let a = anchor,
+              let i = order.firstIndex(of: a) else { return nil }
+        let n = order.count
+        let step = dir < 0 ? -1 : 1
+        for k in 1...n {
+            let id = order[((i + step * k) % n + n) % n]
+            if id == a { break }
+            if isActive(id) { return id }
+        }
+        return nil
+    }
+
+    /// "你的下家 阿黑" / 观战时锚在别人身上，就只写 "下家 阿黑"
+    static func label(_ name: String, mine: Bool) -> String {
+        (mine ? "你的下家 " : "下家 ") + name
+    }
+}
+
 // MARK: 光环（轮到谁，谁头上亮）
 
 struct QipaiHalo: View {

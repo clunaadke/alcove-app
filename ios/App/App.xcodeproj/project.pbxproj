@@ -20,6 +20,8 @@
 		7A1C4E9B02F1487CA3D60B11 /* PondView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A1C4E9B02F1487CA3D60B22 /* PondView.swift */; };
 		9A11C0DE000D4F8CA3D60B11 /* QipaiHistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A11C0DE000D4F8CA3D60B22 /* QipaiHistoryView.swift */; };
 		9A11C0DE000E4F8CA3D60B11 /* QipaiMonopolyTableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A11C0DE000E4F8CA3D60B22 /* QipaiMonopolyTableView.swift */; };
+		9A11C0DE000F4F8CA3D60B11 /* QipaiMahjongTableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A11C0DE000F4F8CA3D60B22 /* QipaiMahjongTableView.swift */; };
+		9A11C0DE00104F8CA3D60B11 /* QipaiMahjongLandscapeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A11C0DE00104F8CA3D60B22 /* QipaiMahjongLandscapeView.swift */; };
 		9A11C0DE000C4F8CA3D60B11 /* QipaiDaifugoTableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A11C0DE000C4F8CA3D60B22 /* QipaiDaifugoTableView.swift */; };
 		9A11C0DE000B4F8CA3D60B11 /* QipaiUnoTableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A11C0DE000B4F8CA3D60B22 /* QipaiUnoTableView.swift */; };
 		9A11C0DE000A4F8CA3D60B11 /* QipaiZjhTableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A11C0DE000A4F8CA3D60B22 /* QipaiZjhTableView.swift */; };
@@ -130,6 +132,8 @@
 		7A1C4E9B02F1487CA3D60B22 /* PondView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PondView.swift; sourceTree = "<group>"; };
 		9A11C0DE000D4F8CA3D60B22 /* QipaiHistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QipaiHistoryView.swift; sourceTree = "<group>"; };
 		9A11C0DE000E4F8CA3D60B22 /* QipaiMonopolyTableView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QipaiMonopolyTableView.swift; sourceTree = "<group>"; };
+		9A11C0DE000F4F8CA3D60B22 /* QipaiMahjongTableView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QipaiMahjongTableView.swift; sourceTree = "<group>"; };
+		9A11C0DE00104F8CA3D60B22 /* QipaiMahjongLandscapeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QipaiMahjongLandscapeView.swift; sourceTree = "<group>"; };
 		9A11C0DE000C4F8CA3D60B22 /* QipaiDaifugoTableView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QipaiDaifugoTableView.swift; sourceTree = "<group>"; };
 		9A11C0DE000B4F8CA3D60B22 /* QipaiUnoTableView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QipaiUnoTableView.swift; sourceTree = "<group>"; };
 		9A11C0DE000A4F8CA3D60B22 /* QipaiZjhTableView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QipaiZjhTableView.swift; sourceTree = "<group>"; };
@@ -258,6 +262,8 @@
 				7A1C4E9B02F1487CA3D60B22 /* PondView.swift */,
 				9A11C0DE000D4F8CA3D60B22 /* QipaiHistoryView.swift */,
 				9A11C0DE000E4F8CA3D60B22 /* QipaiMonopolyTableView.swift */,
+				9A11C0DE000F4F8CA3D60B22 /* QipaiMahjongTableView.swift */,
+				9A11C0DE00104F8CA3D60B22 /* QipaiMahjongLandscapeView.swift */,
 				9A11C0DE000C4F8CA3D60B22 /* QipaiDaifugoTableView.swift */,
 				9A11C0DE000B4F8CA3D60B22 /* QipaiUnoTableView.swift */,
 				9A11C0DE000A4F8CA3D60B22 /* QipaiZjhTableView.swift */,
@@ -471,6 +477,8 @@
 				7A1C4E9B02F1487CA3D60B11 /* PondView.swift in Sources */,
 				9A11C0DE000D4F8CA3D60B11 /* QipaiHistoryView.swift in Sources */,
 				9A11C0DE000E4F8CA3D60B11 /* QipaiMonopolyTableView.swift in Sources */,
+				9A11C0DE000F4F8CA3D60B11 /* QipaiMahjongTableView.swift in Sources */,
+				9A11C0DE00104F8CA3D60B11 /* QipaiMahjongLandscapeView.swift in Sources */,
 				9A11C0DE000C4F8CA3D60B11 /* QipaiDaifugoTableView.swift in Sources */,
 				9A11C0DE000B4F8CA3D60B11 /* QipaiUnoTableView.swift in Sources */,
 				9A11C0DE000A4F8CA3D60B11 /* QipaiZjhTableView.swift in Sources */,
