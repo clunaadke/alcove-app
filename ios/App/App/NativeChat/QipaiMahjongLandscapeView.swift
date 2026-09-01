@@ -1236,10 +1236,9 @@ struct QipaiMahjongLandscapeView: View {
 
     private enum Axis2 { case horizontal, vertical }
 
-    /// 0901 五稿：对家一排立牌背；左右两家是**牌背墙**——整张站着的牌
-    /// 一张压一张往下叠、每张只露上面一截（0.42 张的高度），墙就立起来了。
-    /// 三稿那种「头顶一线的横切片」她打回过「牌真的没有立起来」，别改回去。
-    /// 下面的牌画在上面的牌之上＝近处遮远处，VStack 天然就是这个叠序，别加 zIndex。
+    /// 0901 六稿：对家一排立牌背；左右两家是牌背墙——每张一条横片紧密码放，
+    /// 南端压一张整脸的收口牌（MahjongTileSideCap），影子给整面墙统一投，
+    /// 不给每片单独投（片距太密，各投各的会糊成一团黑）。
     @ViewBuilder
     private func backRow(_ count: Int, width: CGFloat, axis: Axis2) -> some View {
         let n = max(0, min(count, 14))
@@ -1248,9 +1247,12 @@ struct QipaiMahjongLandscapeView: View {
                 ForEach(0..<n, id: \.self) { _ in MahjongTileBack(width: width, standing: true) }
             }
         } else {
-            VStack(spacing: -width * 0.76) {
+            VStack(spacing: 1) {
                 ForEach(0..<n, id: \.self) { _ in MahjongTileSide(width: width) }
+                if n > 0 { MahjongTileSideCap(width: width) }
             }
+            .shadow(color: QipaiPalette.shadowTint.opacity(0.28), radius: width * 0.16,
+                    x: width * 0.08, y: width * 0.12)
         }
     }
 
@@ -1288,8 +1290,10 @@ struct QipaiMahjongLandscapeView: View {
         func tiles(_ slot: MahjongSeatSlot) -> [String] {
             seats.first { $0.slot == slot }?.player.discards ?? []
         }
-        // 0901 四稿：弃牌**面对打牌的人**（对家的倒着、左右家的横着），
-        // 整圈坐进一个内凹的桌心托盘里
+        // 0901 四稿：弃牌**面对打牌的人**（对家的倒着、左右家的横着）。
+        // ‼️桌心不要任何托盘/框/内阴影——五稿的粉色填充版、六稿的纯影子版
+        // 她各打回一次（"半透明粉色边框有啥用""我说了外边那层框撤掉"）。
+        // 牌就直接摆在布上，谁再想给桌心加一层东西，先去翻这两句原话。
         return VStack(spacing: 5) {
             riverBlock(tiles(.top), axis: .horizontal, view: view, orient: .down)
             HStack(spacing: 7) {
@@ -1299,24 +1303,7 @@ struct QipaiMahjongLandscapeView: View {
             }
             riverBlock(tiles(.bottom), axis: .horizontal, view: view, orient: .up)
         }
-        .padding(16)
-        .background(centerTray)
-    }
-
-    /// 桌心内凹的托盘：**只有一圈内阴影，不填色不描边**——
-    /// 0901 五稿她打回过带粉色填充的版本（"半透明粉色边框有啥用"）：
-    /// 桌布是照片，任何平涂压上去都像贴纸。凹陷感只能靠边缘的暗影给，
-    /// 上沿重下沿轻＝坑的上沿背光，跟牌的左上光源一致。别再往里加填充。
-    private var centerTray: some View {
-        let shape = RoundedRectangle(cornerRadius: 24, style: .continuous)
-        return shape
-            .stroke(LinearGradient(colors: [MahjongCloth.rimEdge.opacity(0.9),
-                                            MahjongCloth.rimEdge.opacity(0.25)],
-                                   startPoint: .top, endPoint: .bottom),
-                    lineWidth: 6)
-            .blur(radius: 5)
-            .mask(shape)
-            .allowsHitTesting(false)
+        .padding(9)
     }
 
     /// 中央那个骰盅：立体小方座 + 一个凹进去的圆盘写「剩余 N」。

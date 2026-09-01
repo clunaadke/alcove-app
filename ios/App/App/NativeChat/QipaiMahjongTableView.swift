@@ -369,16 +369,52 @@ struct MahjongTileBack: View {
     }
 }
 
-/// 侧立牌（0901 五稿）：左右两家的手牌。
-/// 三稿画成「头顶一线 + 矮侧身」的横切片，她验收打回「牌真的没有立起来」——
-/// 腾讯参考图里左右两家是**一面立着的牌背墙**：每张都是站直的整张牌背，
-/// 一张压一张往下叠、只露上面一截，墙就出来了。所以现在每张就是一张
-/// 站着的牌背（顶面 + 粉花背 + 贴地暗边），叠多深由 backRow 的负间距管。
+/// 侧立牌墙的一片（0901 六稿，按腾讯参考图逐像素拆的解剖）：
+/// 站成一排的牌从斜上方看过去，每张只露一条**横片**——
+/// 片的上沿一线是受光的象牙顶面，下面大半是牌背。一条条紧密码上去就是墙。
+/// 五稿让每张露整张竖排牌背（叠出来还是一摞躺着的卡片，她打回两次）——别改回去。
+/// 墙最南端还要压一张 MahjongTileSideCap：离你最近那张牌露出的整张侧脸。
 struct MahjongTileSide: View {
     var width: CGFloat = 24
 
+    private var h: CGFloat { width * 0.46 }
+    private var topH: CGFloat { width * 0.15 }
+    private var corner: CGFloat { width * 0.08 }
+
     var body: some View {
-        MahjongTileBack(width: width, standing: true)
+        let shape = RoundedRectangle(cornerRadius: corner, style: .continuous)
+        VStack(spacing: 0) {
+            // 上沿一线：牌的顶面，受光最亮
+            LinearGradient(colors: [QipaiPalette.qhex(0xFDFAF2), QipaiPalette.qhex(0xE8DFCA)],
+                           startPoint: .top, endPoint: .bottom)
+                .frame(height: topH)
+            // 下面大半：牌背，往下略压暗（一张压着一张的阴影感）
+            Color.clear
+                .overlay(Image("MahjongTileBackArt").resizable().scaledToFill())
+                .overlay(LinearGradient(colors: [.clear, QipaiPalette.qhex(0x8F8470).opacity(0.28)],
+                                        startPoint: .top, endPoint: .bottom))
+        }
+        .frame(width: width, height: h)
+        .clipShape(shape)
+        .overlay(shape.stroke(QipaiPalette.qhex(0xB9AE97).opacity(0.55), lineWidth: 0.6))
+    }
+}
+
+/// 侧墙最南端的收口：离你最近那张牌的整张侧脸——一块干净的象牙立面。
+/// 腾讯参考图里那面绿墙脚下的白块就是它，墙有没有「立住」一半靠它压阵。
+struct MahjongTileSideCap: View {
+    var width: CGFloat = 24
+
+    private var h: CGFloat { width * 0.82 }
+    private var corner: CGFloat { width * 0.12 }
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: corner, style: .continuous)
+        shape
+            .fill(LinearGradient(colors: [QipaiPalette.qhex(0xFCF8EF), QipaiPalette.qhex(0xD9CFB9)],
+                                 startPoint: .top, endPoint: .bottom))
+            .overlay(shape.stroke(QipaiPalette.qhex(0xB9AE97).opacity(0.7), lineWidth: 0.7))
+            .frame(width: width, height: h)
     }
 }
 
