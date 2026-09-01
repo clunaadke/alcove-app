@@ -9,6 +9,8 @@ struct RootView: View {
     @State private var showPermissions = false
     @State private var showTerminal = false
     @State private var showRoundtable = false   // 0731 圆桌：她要全屏，所以不走面板那条 sheet
+    @State private var showListenRoom = false   // 任务#1308 一起听房间（盖在聊天页上的浮层）
+    @ObservedObject private var listenMusic = MusicModel.shared
     @State private var roundtableUnread = 0
     @State private var latestRoundtableID = 0
     @State private var thinkingEnabled = false
@@ -65,6 +67,22 @@ struct RootView: View {
                 topBar
                     .blur(radius: showHouseDrawer ? 5.0 : 0)
                     .animation(.easeOut(duration: 0.22), value: showHouseDrawer)
+            }
+            // 任务#1308：一起听的时候顶栏下浮一张小长方形卡，点开进房间
+            if listenMusic.nowPlaying != nil && !showTerminal && !showRoundtable && !showListenRoom && !showHouseDrawer {
+                ListenChatCard(model: listenMusic, dark: theme.isDark) {
+                    withAnimation(.easeOut(duration: 0.2)) { showListenRoom = true }
+                }
+                .padding(.top, theme.isMessages ? 58 : 90)
+                .zIndex(6)
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+            if showListenRoom {
+                ListenRoomView(dark: theme.isDark) {
+                    withAnimation(.easeOut(duration: 0.2)) { showListenRoom = false }
+                }
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
+                .zIndex(22)
             }
             if showTerminal {
                 ZStack {

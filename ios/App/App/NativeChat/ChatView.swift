@@ -663,6 +663,9 @@ struct ChatView: View {
             } else if message.msgType == "divider" && message.source == "dream" {
                 // 0822 她定的：做梦之后聊天页只落这一道线，梦本身在梦面板
                 DreamDivider(text: message.text, date: message.date, color: theme.textDim)
+            } else if message.msgType == "divider" && message.source == "music" {
+                // 任务#1308 她定的：切歌落一条居中小分割线，不是对话气泡
+                MusicChatDivider(text: message.text, date: message.date, color: theme.textDim)
             } else if message.msgType == "divider" {
                 // 0822 她要的：切通道留一道线，跟时间分割一个样子
                 ChannelDivider(text: message.text, color: theme.textDim)
@@ -3910,6 +3913,35 @@ struct PatLine: View {
             .frame(maxWidth: .infinity)
             .padding(.horizontal, 34)
             .padding(.vertical, 7)
+    }
+}
+
+// 任务#1308：一起听切歌的分割线。样子随 DreamDivider 一族：居中、细线、小字
+struct MusicChatDivider: View {
+    let text: String
+    let date: Date
+    var color: Color = Color(red: 0.42, green: 0.40, blue: 0.41)
+    private struct Line: Shape {
+        func path(in r: CGRect) -> Path {
+            var p = Path(); p.move(to: CGPoint(x: r.minX, y: r.midY)); p.addLine(to: CGPoint(x: r.maxX, y: r.midY)); return p
+        }
+    }
+    var body: some View {
+        HStack(spacing: 10) {
+            Rectangle().fill(Color.clear).frame(height: 1)
+                .overlay(Line().stroke(style: StrokeStyle(lineWidth: 0.8, dash: [2, 4])).foregroundColor(color.opacity(0.45)))
+            HStack(spacing: 5) {
+                Image(systemName: "music.note").font(.system(size: 9.5))
+                Text(text).font(.system(size: 11, design: .serif))
+                Text(TimeDivider.hmOnly.string(from: date)).font(.system(size: 9.5, design: .rounded))
+                    .foregroundColor(color.opacity(0.75))
+            }
+            .foregroundColor(color.opacity(0.9))
+            .fixedSize()
+            Rectangle().fill(Color.clear).frame(height: 1)
+                .overlay(Line().stroke(style: StrokeStyle(lineWidth: 0.8, dash: [2, 4])).foregroundColor(color.opacity(0.45)))
+        }
+        .padding(.horizontal, 30).padding(.vertical, 7)
     }
 }
 

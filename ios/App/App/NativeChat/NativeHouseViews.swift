@@ -2674,6 +2674,10 @@ final class MusicModel: ObservableObject {
         playbackPoll = Task { [weak self] in
             while !Task.isCancelled {
                 await self?.consumeRemoteCommand()
+                // 任务#1308：进度也每轮捎带上报，服务器才答得出"现在放到哪一句"
+                if let self, self.nowPlaying != nil {
+                    await self.reportNowPlaying()
+                }
                 try? await Task.sleep(nanoseconds: 3_000_000_000)
             }
         }
@@ -3473,13 +3477,295 @@ private struct ListenTogetherCard: View {
 }
 
 /// 两个头像之间那道下垂的虚线弧
-private struct ListenArc: Shape {
+struct ListenArc: Shape {
     func path(in rect: CGRect) -> Path {
         var p = Path()
         p.move(to: CGPoint(x: rect.minX, y: rect.midY - 8))
         p.addQuadCurve(to: CGPoint(x: rect.maxX, y: rect.midY - 8),
                        control: CGPoint(x: rect.midX, y: rect.maxY + 14))
         return p
+    }
+}
+
+// MARK: - 一起听 · 主聊天页的白瓷波点房间（任务#1308）
+// 棋牌室质感（白瓷、波点、高光、细描边），但日夜跟聊天主题走：
+// 夜里压成中性深灰，不发蓝（她点名的）。
+
+struct ListenPorcelain {
+    let dark: Bool
+    var fog: Color    { pick(0xECEDF2, 0x1F1F23) }
+    var panel: Color  { pick(0xF7F8FB, 0x2A2A2F) }
+    var ink: Color    { pick(0x585F6E, 0xD9D9DE) }
+    var inkDim: Color { pick(0x9AA0AD, 0x8D8D95) }
+    var line: Color   { pick(0xD5D9E2, 0x3A3A41) }
+    var dot: Color    { pick(0xC7CBD6, 0x36363D) }
+    var accent: Color { pick(0x7C8AA6, 0xA9A195) }
+    var gloss: Double { dark ? 0.10 : 0.6 }
+    private func pick(_ day: UInt32, _ night: UInt32) -> Color {
+        QipaiPalette.qhex(dark ? night : day)
+    }
+}
+
+struct ListenPanel: ViewModifier {
+    let p: ListenPorcelain
+    var corner: CGFloat = 18
+    var dotted = false
+    func body(content: Content) -> some View {
+        content
+            .background(
+                ZStack {
+                    RoundedRectangle(cornerRadius: corner, style: .continuous).fill(p.panel)
+                    if dotted {
+                        QipaiDots(color: p.dot, opacity: 0.4)
+                            .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
+                    }
+                    RoundedRectangle(cornerRadius: corner, style: .continuous)
+                        .fill(LinearGradient(colors: [.white.opacity(0.85), .white.opacity(0)],
+                                             startPoint: .top, endPoint: .center))
+                        .padding(1).opacity(p.gloss)
+                }
+            )
+            .overlay(RoundedRectangle(cornerRadius: corner, style: .continuous)
+                .stroke(p.line, lineWidth: 1))
+            .shadow(color: (p.dark ? Color.black : QipaiPalette.qhex(0x585F6E)).opacity(0.10),
+                    radius: 7, y: 3)
+    }
+}
+
+/// 主聊天顶栏下浮着的小长方形：封面、歌名、细进度条。点开进一起听房间。
+struct ListenChatCard: View {
+    @ObservedObject var model: MusicModel
+    let dark: Bool
+    let open: () -> Void
+
+    var body: some View {
+        if let song = model.nowPlaying {
+            let p = ListenPorcelain(dark: dark)
+            VStack(spacing: 6) {
+                HStack(spacing: 8) {
+                    AsyncImage(url: URL(string: song.cover)) { $0.resizable().scaledToFill() }
+                        placeholder: { p.line }
+                        .frame(width: 26, height: 26)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(song.name).font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(p.ink).lineLimit(1)
+                        Text(song.artist).font(.system(size: 9))
+                            .foregroundColor(p.inkDim).lineLimit(1)
+                    }
+                    Spacer(minLength: 6)
+                    Image(systemName: model.isPlaying ? "waveform" : "pause.fill")
+                        .font(.system(size: 10)).foregroundColor(p.accent)
+                }
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(p.line.opacity(0.65))
+                        Capsule().fill(p.accent)
+                            .frame(width: geo.size.width *
+                                   CGFloat(model.duration > 0 ? model.progress / model.duration : 0))
+                    }
+                }.frame(height: 3)
+            }
+            .padding(.horizontal, 10).padding(.top, 7).padding(.bottom, 9)
+            .frame(width: 216)
+            .modifier(ListenPanel(p: p, corner: 13, dotted: true))
+            .contentShape(Rectangle())
+            .onTapGesture(perform: open)
+        }
+    }
+}
+
+/// 一起听房间：盖在主聊天页上的独立浮层，白瓷波点全套。
+struct ListenRoomView: View {
+    let dark: Bool
+    let onDismiss: () -> Void
+    @ObservedObject private var model = MusicModel.shared
+    @State private var showPlayer = false
+    @State private var showInsight = false
+    @AppStorage("userAvatarDataURL") private var userAvatar = ""
+    @AppStorage("assistantAvatarDataURL") private var assistantAvatar = ""
+
+    private var p: ListenPorcelain { ListenPorcelain(dark: dark) }
+
+    var body: some View {
+        ZStack {
+            p.fog.ignoresSafeArea()
+            QipaiDots(color: p.dot, opacity: 0.3).ignoresSafeArea().allowsHitTesting(false)
+            VStack(spacing: 0) {
+                HStack {
+                    Text("一起听").font(.system(size: 17, weight: .semibold)).foregroundColor(p.ink)
+                    Spacer()
+                    Button(action: onDismiss) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(p.inkDim)
+                            .frame(width: 30, height: 30)
+                            .background(p.panel, in: Circle())
+                            .overlay(Circle().stroke(p.line, lineWidth: 1))
+                    }.buttonStyle(.plain)
+                }
+                .padding(.horizontal, 18).padding(.top, 10).padding(.bottom, 6)
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: 14) {
+                        coupleCard
+                        if model.nowPlaying != nil { playerPanel }
+                        else {
+                            VStack(spacing: 6) {
+                                Image(systemName: "music.note.list").font(.system(size: 22)).foregroundColor(p.inkDim)
+                                Text("还没在放歌").font(.system(size: 13, weight: .medium)).foregroundColor(p.ink)
+                                Text("去音乐页点一首，这里就热闹了")
+                                    .font(.system(size: 11)).foregroundColor(p.inkDim)
+                            }
+                            .frame(maxWidth: .infinity).padding(.vertical, 24)
+                            .modifier(ListenPanel(p: p, corner: 18))
+                        }
+                        if model.queue.count > 1 { queuePanel }
+                    }
+                    .padding(.horizontal, 16).padding(.vertical, 10)
+                }
+            }
+        }
+        .qipaiGrain(dark ? 0.22 : 0.4)
+        .sheet(isPresented: $showPlayer) {
+            MusicPlayerSheet(model: model)
+                .presentationDetents([.fraction(0.75)])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(.ultraThinMaterial)
+        }
+        .sheet(isPresented: $showInsight) {
+            if let song = model.nowPlaying {
+                SongInsightSheet(song: song)
+                    .presentationDetents([.large])
+                    .presentationDragIndicator(.visible)
+            }
+        }
+    }
+
+    private var coupleCard: some View {
+        VStack(spacing: 10) {
+            ZStack {
+                ListenArc()
+                    .stroke(p.accent.opacity(0.4),
+                            style: StrokeStyle(lineWidth: 1.5, dash: [3, 4]))
+                    .frame(height: 72).padding(.horizontal, 24)
+                HStack {
+                    avatarView(userAvatar, fallback: "霁")
+                    Spacer()
+                    VStack(spacing: 3) {
+                        Text("霁 · 璟").font(.system(size: 14, weight: .medium)).foregroundColor(p.ink)
+                        Text(model.listenTimeText).font(.system(size: 11)).foregroundColor(p.inkDim)
+                    }
+                    Spacer()
+                    avatarView(assistantAvatar, fallback: "璟")
+                }.padding(.horizontal, 8)
+            }
+        }
+        .padding(14)
+        .modifier(ListenPanel(p: p, corner: 18, dotted: true))
+    }
+
+    private var playerPanel: some View {
+        VStack(spacing: 10) {
+            if let song = model.nowPlaying {
+                Button { showPlayer = true } label: {
+                    HStack(spacing: 11) {
+                        AsyncImage(url: URL(string: song.cover)) { $0.resizable().scaledToFill() }
+                            placeholder: { p.line }
+                            .frame(width: 46, height: 46)
+                            .clipShape(RoundedRectangle(cornerRadius: 9))
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(song.name).font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(p.ink).lineLimit(1)
+                            Text(song.artist).font(.system(size: 11))
+                                .foregroundColor(p.inkDim).lineLimit(1)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.up").font(.system(size: 11)).foregroundColor(p.inkDim)
+                    }.contentShape(Rectangle())
+                }.buttonStyle(.plain)
+                VStack(spacing: 2) {
+                    Slider(value: Binding(get: { model.progress }, set: { model.seek(to: $0) }),
+                           in: 0...max(model.duration, 1)).tint(p.accent)
+                    HStack {
+                        Text(Self.time(model.progress)); Spacer(); Text(Self.time(model.duration))
+                    }.font(.system(size: 9, design: .monospaced)).foregroundColor(p.inkDim)
+                }
+                HStack {
+                    Button { showInsight = true } label: {
+                        Image(systemName: "waveform.badge.magnifyingglass")
+                    }
+                    Spacer()
+                    Button { model.prev() } label: { Image(systemName: "backward.fill") }
+                    Spacer()
+                    Button { model.toggle() } label: {
+                        Image(systemName: model.isPlaying ? "pause.circle.fill" : "play.circle.fill")
+                            .font(.system(size: 34))
+                    }
+                    Spacer()
+                    Button { model.next() } label: { Image(systemName: "forward.fill") }
+                    Spacer()
+                    Button { model.cyclePlayMode() } label: { Image(systemName: model.playMode.icon) }
+                }
+                .font(.system(size: 16)).foregroundColor(p.ink)
+                .buttonStyle(.plain).padding(.horizontal, 4)
+            }
+        }
+        .padding(13)
+        .modifier(ListenPanel(p: p, corner: 18))
+    }
+
+    private var queuePanel: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("接下来").font(.system(size: 13, weight: .semibold)).foregroundColor(p.ink)
+            ForEach(Array(model.queue.enumerated()), id: \.element.id) { index, song in
+                Button {
+                    let source = model.queue
+                    Task { await model.play(song, queue: source) }
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: index == model.queueIndex ? "waveform" : "music.note")
+                            .font(.system(size: 12))
+                            .foregroundColor(index == model.queueIndex ? p.accent : p.inkDim)
+                            .frame(width: 18)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(song.name).font(.system(size: 12, weight: .medium))
+                                .foregroundColor(p.ink).lineLimit(1)
+                            Text(song.artist).font(.system(size: 10))
+                                .foregroundColor(p.inkDim).lineLimit(1)
+                        }
+                        Spacer()
+                    }.contentShape(Rectangle())
+                }.buttonStyle(.plain)
+            }
+        }
+        .padding(13)
+        .modifier(ListenPanel(p: p, corner: 18, dotted: true))
+    }
+
+    private func avatarView(_ dataURL: String, fallback: String) -> some View {
+        Group {
+            if let image = Self.decode(dataURL) {
+                Image(uiImage: image).resizable().scaledToFill()
+            } else {
+                ZStack {
+                    p.panel
+                    Text(fallback).font(.system(size: 19, weight: .medium)).foregroundColor(p.ink)
+                }
+            }
+        }
+        .frame(width: 56, height: 56).clipShape(Circle())
+        .overlay(Circle().stroke(p.accent.opacity(0.45), lineWidth: 1.5))
+    }
+
+    private static func decode(_ dataURL: String) -> UIImage? {
+        let parts = dataURL.split(separator: ",", maxSplits: 1)
+        guard let data = Data(base64Encoded: parts.count == 2 ? String(parts[1]) : dataURL) else { return nil }
+        return UIImage(data: data)
+    }
+
+    private static func time(_ seconds: Double) -> String {
+        guard seconds.isFinite, seconds >= 0 else { return "0:00" }
+        return String(format: "%d:%02d", Int(seconds) / 60, Int(seconds) % 60)
     }
 }
 
