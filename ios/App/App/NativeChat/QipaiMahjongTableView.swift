@@ -139,11 +139,54 @@ enum MahjongTileOrient {
     var sideways: Bool { self == .left || self == .right }
 }
 
+// MARK: - 镜头（0902 七稿：整桌只有一个视角，每张牌自己带着这个视角画）
+//
+// 0902 她拿腾讯图第 N 次打回「牌没立起来」。前六稿的根子：牌是平画的，
+// 立体感全靠把**整桌** rotation3DEffect 斜过去——桌子一斜，牌跟着一起被压扁，
+// 站着的牌和躺着的牌被压的是同一个比例，所以谁也站不起来。
+// 腾讯那张图的做法正相反：桌布是斜的，但每张牌是从**同一个镜头角度**画好的小方块——
+// 躺着的牌脸压扁、脚下露一条前立面；站着的牌脸全露、头顶露一条顶面；
+// 侧墙露一条顶面加一条背面。这些比例全从下面这一组数推出来，别在各处各写各的。
+//
+// 俯角 39°（镜头从桌前斜着往下看）：
+//   flatK = cos39 ≈ 0.78  躺在桌上的面，竖向压成这么多
+//   upK   = sin39 ≈ 0.63  竖直立着的面，能看见这么多高度
+//   thick = 0.30 × 牌宽    牌的厚度（真麻将更厚，画到 0.3 就够立体又不臃肿）
+// ‼️牌不再进 rotation3DEffect 的那层，只有桌布斜。改角度只改这里。
+enum MahjongCamera {
+    static let flatK: CGFloat = 0.78
+    static let upK: CGFloat = 0.63
+    static func thickness(_ width: CGFloat) -> CGFloat { max(width * 0.30, 3) }
+
+    /// 象牙牌身的侧面：受光面亮、贴桌面暗（所有立面共用，牌才像一套的）
+    static var sideGradient: LinearGradient {
+        LinearGradient(colors: [QipaiPalette.qhex(0xE6DCC6), QipaiPalette.qhex(0xC4B79D),
+                                QipaiPalette.qhex(0x9E9277)],
+                       startPoint: .top, endPoint: .bottom)
+    }
+    /// 顶面：受光最亮的象牙
+    static var topGradient: LinearGradient {
+        LinearGradient(colors: [QipaiPalette.qhex(0xFFFDF7), QipaiPalette.qhex(0xEAE1CC)],
+                       startPoint: .top, endPoint: .bottom)
+    }
+}
+
+/// 一张牌摆在桌上的姿势
+enum MahjongTilePose {
+    /// 竖屏那套老画法（正上方看、右下错开一层厚度）。竖屏不动，横屏别用
+    case card
+    /// 正面朝上躺在桌布上（牌河、副露）——脸按俯角压扁，脚下一条前立面
+    case lying
+    /// 立着朝向镜头（自己的手牌）——脸全露，脚下一条底面
+    case standing
+}
+
 struct MahjongTileFace: View {
     let id: String
     var width: CGFloat = 34
     var dimmed: Bool = false
     var orient: MahjongTileOrient = .up
+    var pose: MahjongTilePose = .card
 
     /// 竖放时的牌高。‼️1.34 别改——牌河、副露、手牌的排版全按它算。
     private var faceH: CGFloat { width * 1.34 }
@@ -153,18 +196,26 @@ struct MahjongTileFace: View {
     private var tint: Color { MahjongTile.tint(id) }
     private var suit: String { MahjongTile.suit(id) }
     private var n: Int { MahjongTile.num(id) }
+    private var corner: CGFloat { width * 0.15 }
 
-    /// 挤出量：右侧面窄、前立面宽——3/4 俯视里近边永远露得多。
-    /// 0901 四稿：二三稿只有底边一条厚度，她打回「有厚度但还是平面」；
-    /// 现在牌身整块往右下错开，右+下两个立面一起露出来才立体。
+    /// 挤出量（card 姿势专用）：右侧面窄、前立面宽——3/4 俯视里近边永远露得多。
     private var sideX: CGFloat { max(width * 0.09, 1.4) }
     private var sideY: CGFloat { max(width * 0.16, 2.2) }
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: width * 0.15, style: .continuous)
+        switch pose {
+        case .card: cardBody
+        case .lying: boxBody(faceK: MahjongCamera.flatK,
+                             footH: MahjongCamera.thickness(width) * MahjongCamera.upK)
+        case .standing: boxBody(faceK: 1,
+                                footH: MahjongCamera.thickness(width) * 0.42)
+        }
+    }
+
+    /// 竖屏老画法：牌身＝同形状往右下错开，露出的右条是侧面、下条是前立面
+    private var cardBody: some View {
+        let shape = RoundedRectangle(cornerRadius: corner, style: .continuous)
         return ZStack(alignment: .topLeading) {
-            // 牌身＝同形状往右下错开：露出的右条是侧面、下条是前立面。
-            // 渐变斜着走——右上受光、左下贴桌，两个立面一道渐变全兜住
             shape
                 .fill(LinearGradient(stops: [
                     .init(color: QipaiPalette.qhex(0xE8DFCB), location: 0),
@@ -173,18 +224,46 @@ struct MahjongTileFace: View {
                 ], startPoint: .topLeading, endPoint: .bottomTrailing))
                 .frame(width: bodyW, height: bodyH)
                 .offset(x: sideX, y: sideY)
-            face
-                .frame(width: width, height: faceH)
-                .rotationEffect(.degrees(orient.degrees))
-                .frame(width: bodyW, height: bodyH)
+            orientedFace
         }
         .frame(width: bodyW, height: bodyH)
         .opacity(dimmed ? 0.5 : 1)
-        // 近影贴着挤出方向落（这道影同时是压在右邻牌上的遮挡影），远影泛开
         .shadow(color: QipaiPalette.shadowTint.opacity(0.32), radius: width * 0.05,
                 x: width * 0.05, y: width * 0.07)
         .shadow(color: QipaiPalette.shadowTint.opacity(0.16), radius: width * 0.15,
                 x: width * 0.08, y: width * 0.12)
+    }
+
+    /// 横屏画法：脸（按 faceK 竖向压扁）坐在一块牌身上，牌身比脸高出 footH，
+    /// 多出来的那条就是朝着镜头的立面。躺着 faceK=0.78，站着 faceK=1。
+    private func boxBody(faceK: CGFloat, footH: CGFloat) -> some View {
+        let faceBoxH = bodyH * faceK
+        let totalH = faceBoxH + footH
+        let shape = RoundedRectangle(cornerRadius: corner, style: .continuous)
+        return ZStack(alignment: .top) {
+            shape
+                .fill(MahjongCamera.sideGradient)
+                .overlay(shape.stroke(QipaiPalette.qhex(0x8F8470).opacity(0.5), lineWidth: 0.6))
+            orientedFace
+                .scaleEffect(x: 1, y: faceK, anchor: .top)
+                .frame(width: bodyW, height: faceBoxH, alignment: .top)
+        }
+        .frame(width: bodyW, height: totalH, alignment: .top)
+        .compositingGroup()
+        .opacity(dimmed ? 0.5 : 1)
+        // 贴桌的接触影 + 泛开的软影，方向跟桌布光源一致（左上来光，影往右下）
+        .shadow(color: QipaiPalette.shadowTint.opacity(0.30), radius: width * 0.06,
+                x: width * 0.04, y: width * 0.10)
+        .shadow(color: QipaiPalette.shadowTint.opacity(0.14), radius: width * 0.18,
+                x: width * 0.06, y: width * 0.16)
+    }
+
+    /// 脸转到该朝的方向，占位按 bodyW×bodyH
+    private var orientedFace: some View {
+        face
+            .frame(width: width, height: faceH)
+            .rotationEffect(.degrees(orient.degrees))
+            .frame(width: bodyW, height: bodyH)
     }
 
     /// 牌的正面（象牙底 + 凹槽 + 图案）
@@ -316,105 +395,204 @@ struct MahjongTileFace: View {
     }
 }
 
-/// 扣着的牌（对手手牌 / 暗杠）。
-/// 0901 二稿。一稿的错（她抓的「贴图小、立不起来」）：她的图**自带**米白牌身
-/// 和圆角，我又在外面裹了层身子+描边+让位，图缩成中间一小块贴纸；厚度条还放在
-/// 底下——那是躺着的牌的画法。
-/// 现在：图铺满整张牌（它自带的框就是牌身），**头顶**让出一条受光的窄顶面——
-/// 立着的牌头顶朝天，从 11° 俯角看下去就该露这一条。别再给它套第二层框。
+/// 扣着的牌。三种姿势：
+///   · card     竖屏老画法（躺着，头顶一条细顶面）
+///   · lying    横屏里背面朝上躺在桌上（副露里的暗杠）：背按俯角压扁，脚下一条前立面
+///   · standing 横屏里**背对镜头站着**（对家手牌）：头顶一条受光的顶面，
+///              底下是能看见 63% 高度的整张牌背，脚下压暗——腾讯图里对家那排绿墙就是这个
+/// 0901 二稿起：她的图**自带**米白牌身和圆角，铺满整张牌，别再套第二层框。
 struct MahjongTileBack: View {
     var width: CGFloat = 24
-    /// 立着的牌（对家手牌）。0901 五稿：三稿的 1.08 矮方块她验收打回
-    /// 「牌真的没有立起来」——立牌要**高过宽**才像站着，头顶顶面加厚、
-    /// 脚下压一道贴地暗边，站姿全靠这两笔。
-    /// 躺着的（副露里的暗杠、竖屏那些）照旧 1.34。
-    var standing: Bool = false
-
-    private var h: CGFloat { width * (standing ? 1.18 : 1.34) }
-
-    /// 头顶那条顶面
-    private var thickness: CGFloat { max(width * (standing ? 0.24 : 0.14), 2) }
+    var pose: MahjongTilePose = .card
 
     private var corner: CGFloat { width * 0.15 }
 
     var body: some View {
+        switch pose {
+        case .card: cardBody
+        case .lying: lyingBody
+        case .standing: standingBody
+        }
+    }
+
+    private var cardBody: some View {
+        let h = width * 1.34
+        let thickness = max(width * 0.14, 2)
         let shape = RoundedRectangle(cornerRadius: corner, style: .continuous)
-        ZStack(alignment: .top) {
-            // 牌身兜底 + 头顶那条顶面的颜色：受光，最亮的象牙
+        return ZStack(alignment: .top) {
             shape.fill(LinearGradient(colors: [QipaiPalette.qhex(0xFBF6EB), QipaiPalette.qhex(0xE2D9C5)],
                                       startPoint: .top, endPoint: .bottom))
-            // 背面：她的图铺满，只给顶面让出一条。
-            // 裁形的圆角略小于牌身——就当是图自己那圈框的弧度，别裁出白缝
-            Color.clear
-                .overlay(Image("MahjongTileBackArt").resizable().scaledToFill())
+            artFill
                 .clipShape(RoundedRectangle(cornerRadius: corner * 0.9, style: .continuous))
                 .padding(.top, thickness)
-            // 站着的牌脚下那道暗边：立面贴地背光，没有它就是一张贴纸
-            if standing {
-                VStack {
-                    Spacer()
-                    LinearGradient(colors: [.clear, QipaiPalette.qhex(0x8F8470).opacity(0.55)],
-                                   startPoint: .top, endPoint: .bottom)
-                        .frame(height: h * 0.16)
-                }
-                .clipShape(shape)
-                .allowsHitTesting(false)
-            }
         }
         .frame(width: width, height: h)
         .overlay(shape.stroke(QipaiPalette.qhex(0xB9AE97).opacity(0.7), lineWidth: 0.7))
-        .shadow(color: QipaiPalette.shadowTint.opacity(standing ? 0.32 : 0.25),
-                radius: width * 0.09,
-                x: width * 0.03, y: width * (standing ? 0.12 : 0.08))
+        .shadow(color: QipaiPalette.shadowTint.opacity(0.25), radius: width * 0.09,
+                x: width * 0.03, y: width * 0.08)
     }
-}
 
-/// 侧立牌墙的一片（0901 六稿，按腾讯参考图逐像素拆的解剖）：
-/// 站成一排的牌从斜上方看过去，每张只露一条**横片**——
-/// 片的上沿一线是受光的象牙顶面，下面大半是牌背。一条条紧密码上去就是墙。
-/// 五稿让每张露整张竖排牌背（叠出来还是一摞躺着的卡片，她打回两次）——别改回去。
-/// 墙最南端还要压一张 MahjongTileSideCap：离你最近那张牌露出的整张侧脸。
-struct MahjongTileSide: View {
-    var width: CGFloat = 24
-
-    private var h: CGFloat { width * 0.46 }
-    private var topH: CGFloat { width * 0.15 }
-    private var corner: CGFloat { width * 0.08 }
-
-    var body: some View {
+    /// 背面朝上躺着：背压扁到 0.78，脚下露一条前立面
+    private var lyingBody: some View {
+        let backH = width * 1.34 * MahjongCamera.flatK
+        let footH = MahjongCamera.thickness(width) * MahjongCamera.upK
         let shape = RoundedRectangle(cornerRadius: corner, style: .continuous)
-        VStack(spacing: 0) {
-            // 上沿一线：牌的顶面，受光最亮
-            LinearGradient(colors: [QipaiPalette.qhex(0xFDFAF2), QipaiPalette.qhex(0xE8DFCA)],
-                           startPoint: .top, endPoint: .bottom)
-                .frame(height: topH)
-            // 下面大半：牌背，往下略压暗（一张压着一张的阴影感）
-            Color.clear
-                .overlay(Image("MahjongTileBackArt").resizable().scaledToFill())
-                .overlay(LinearGradient(colors: [.clear, QipaiPalette.qhex(0x8F8470).opacity(0.28)],
-                                        startPoint: .top, endPoint: .bottom))
+        return ZStack(alignment: .top) {
+            shape.fill(MahjongCamera.sideGradient)
+            artFill
+                .frame(width: width, height: backH)
+                .clipShape(RoundedRectangle(cornerRadius: corner * 0.9, style: .continuous))
         }
-        .frame(width: width, height: h)
+        .frame(width: width, height: backH + footH, alignment: .top)
+        .overlay(shape.stroke(QipaiPalette.qhex(0x8F8470).opacity(0.5), lineWidth: 0.6))
+        .shadow(color: QipaiPalette.shadowTint.opacity(0.30), radius: width * 0.06,
+                x: width * 0.04, y: width * 0.10)
+    }
+
+    /// 背对镜头站着：顶面（thick×0.78）在上，牌背（1.34×0.63）在下
+    private var standingBody: some View {
+        let topH = MahjongCamera.thickness(width) * MahjongCamera.flatK
+        let backH = width * 1.34 * MahjongCamera.upK
+        let shape = RoundedRectangle(cornerRadius: corner, style: .continuous)
+        return VStack(spacing: 0) {
+            // 顶面：最亮，跟牌背之间压一条深线，两个面才分得开
+            Rectangle()
+                .fill(MahjongCamera.topGradient)
+                .frame(height: topH)
+                .overlay(Rectangle().fill(QipaiPalette.qhex(0x8F8470).opacity(0.45))
+                    .frame(height: 0.8), alignment: .bottom)
+            // 牌背：越往下越暗（立面背光 + 贴桌），没有这道渐变就是一张贴纸
+            artFill
+                .frame(width: width, height: backH)
+                .overlay(LinearGradient(stops: [
+                    .init(color: .clear, location: 0),
+                    .init(color: QipaiPalette.qhex(0x6B5F52).opacity(0.18), location: 0.55),
+                    .init(color: QipaiPalette.qhex(0x4E4438).opacity(0.5), location: 1),
+                ], startPoint: .top, endPoint: .bottom))
+        }
+        .frame(width: width, height: topH + backH)
         .clipShape(shape)
-        .overlay(shape.stroke(QipaiPalette.qhex(0xB9AE97).opacity(0.55), lineWidth: 0.6))
+        .overlay(shape.stroke(QipaiPalette.qhex(0x7E7361).opacity(0.6), lineWidth: 0.7))
+    }
+
+    private var artFill: some View {
+        Color.clear
+            .overlay(Image("MahjongTileBackArt").resizable().scaledToFill())
+            .clipped()
     }
 }
 
-/// 侧墙最南端的收口：离你最近那张牌的整张侧脸——一块干净的象牙立面。
-/// 腾讯参考图里那面绿墙脚下的白块就是它，墙有没有「立住」一半靠它压阵。
-struct MahjongTileSideCap: View {
+/// 左右两家的手牌墙（0902 七稿，按腾讯图重画）。
+///
+/// 六稿的错：每片都是「顶面在上、牌背在下」竖着叠——那是**背对镜头站一排**的解剖
+/// （对家那种），侧着站的一排牌从斜上方看根本不是这样。她验收说像一串珠子，没错。
+///
+/// 侧着站的一排牌，镜头看到的是两条**并排的竖带**：
+///   · 顶面带：每张牌头顶那条象牙，13 张连成一条长带，靠屏幕外侧
+///   · 背面带：牌背，靠桌心那一侧（牌脸朝着主人，背朝桌心；镜头在桌前正中，
+///     左右两堵墙的内侧面就是靠透视露出来的）
+/// 两条带上每隔一张牌的宽度（沿墙方向透视压到 0.5）压一道细缝，就是一张张牌。
+/// 最近的那一端压一块整脸的象牙（MahjongTileWallCap）：离你最近那张牌的端面。
+struct MahjongTileWall: View {
+    var count: Int
     var width: CGFloat = 24
+    /// 背面带贴哪一边：左家 .trailing（背朝右/桌心），右家 .leading
+    var inner: HorizontalEdge = .trailing
 
-    private var h: CGFloat { width * 0.82 }
-    private var corner: CGFloat { width * 0.12 }
+    /// 每张牌沿着墙的方向只占 0.5 个牌宽：这一排是**朝远处**去的，透视压得比躺着的
+    /// 面还狠（腾讯图里量出来的：一段约 21×11pt，宽是高的两倍）。
+    /// 按 flatK=0.78 画过一版，13 张摞出 260pt 高，右下角直接压到「打出」键上——别改回去。
+    private var segH: CGFloat { width * 0.5 }
+    private var topW: CGFloat { width * 0.42 }
+    private var backW: CGFloat { width * 0.58 }
+    private var totalW: CGFloat { topW + backW }
+    private var wallH: CGFloat { segH * CGFloat(max(count, 0)) }
+    private var capH: CGFloat { width * 0.7 }
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: corner, style: .continuous)
+        VStack(spacing: 0) {
+            ZStack {
+                HStack(spacing: 0) {
+                    if inner == .trailing {
+                        topBand
+                        backBand
+                    } else {
+                        backBand
+                        topBand
+                    }
+                }
+                seams
+            }
+            .frame(width: totalW, height: wallH)
+            if count > 0 { MahjongTileWallCap(width: totalW, height: capH) }
+        }
+        .frame(width: totalW, height: wallH + (count > 0 ? capH : 0))
+        .compositingGroup()
+        // 整堵墙一道影，往桌心那边落
+        .shadow(color: QipaiPalette.shadowTint.opacity(0.3), radius: width * 0.18,
+                x: inner == .trailing ? width * 0.14 : -width * 0.14, y: width * 0.14)
+    }
+
+    private var topBand: some View {
+        Rectangle()
+            .fill(MahjongCamera.topGradient)
+            .frame(width: topW)
+            // 顶面和背面交界压一条深线
+            .overlay(Rectangle().fill(QipaiPalette.qhex(0x8F8470).opacity(0.5)).frame(width: 0.8),
+                     alignment: inner == .trailing ? .trailing : .leading)
+    }
+
+    private var backBand: some View {
+        // 背面带：离顶面近的那一边亮、远的那一边暗（立面转过去背光），先把两头算好再喂渐变
+        let shade = QipaiPalette.qhex(0x5A4F45)
+        let nearTop: Double = inner == .trailing ? 0.05 : 0.4
+        let farTop: Double = inner == .trailing ? 0.4 : 0.05
+        return VStack(spacing: 0) {
+            ForEach(0..<max(count, 0), id: \.self) { _ in
+                Color.clear
+                    .overlay(Image("MahjongTileBackArt").resizable().scaledToFill())
+                    .clipped()
+                    .frame(width: backW, height: segH)
+            }
+        }
+        .frame(width: backW, height: wallH)
+        .overlay(LinearGradient(colors: [shade.opacity(nearTop), shade.opacity(farTop)],
+                                startPoint: .leading, endPoint: .trailing))
+    }
+
+    /// 一张张牌之间的细缝：贯穿顶面带和背面带
+    private var seams: some View {
+        Canvas { ctx, size in
+            var p = Path()
+            var i = 1
+            while i < count {
+                let y = segH * CGFloat(i)
+                p.move(to: CGPoint(x: 0, y: y))
+                p.addLine(to: CGPoint(x: size.width, y: y))
+                i += 1
+            }
+            ctx.stroke(p, with: .color(QipaiPalette.qhex(0x6B5F52).opacity(0.45)), lineWidth: 0.8)
+        }
+        .allowsHitTesting(false)
+    }
+}
+
+/// 侧墙最近那一端的端面：一块干净的象牙立面，底下两个角是圆的。
+/// 腾讯参考图里那面绿墙脚下的白块就是它，墙有没有「立住」一半靠它压阵。
+struct MahjongTileWallCap: View {
+    var width: CGFloat
+    var height: CGFloat
+
+    var body: some View {
+        let r = min(width, height) * 0.16
+        let shape = UnevenRoundedRectangle(topLeadingRadius: 0, bottomLeadingRadius: r,
+                                           bottomTrailingRadius: r, topTrailingRadius: 0,
+                                           style: .continuous)
         shape
-            .fill(LinearGradient(colors: [QipaiPalette.qhex(0xFCF8EF), QipaiPalette.qhex(0xD9CFB9)],
+            .fill(LinearGradient(colors: [QipaiPalette.qhex(0xF6F0E2), QipaiPalette.qhex(0xD3C8B0)],
                                  startPoint: .top, endPoint: .bottom))
-            .overlay(shape.stroke(QipaiPalette.qhex(0xB9AE97).opacity(0.7), lineWidth: 0.7))
-            .frame(width: width, height: h)
+            .overlay(shape.stroke(QipaiPalette.qhex(0x8F8470).opacity(0.55), lineWidth: 0.7))
+            .frame(width: width, height: height)
     }
 }
 

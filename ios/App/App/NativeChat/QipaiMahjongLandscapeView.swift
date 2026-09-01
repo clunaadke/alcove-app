@@ -9,8 +9,11 @@ import PhotosUI
 //   · 四边围坐，座位**按打牌顺序**绕圈（我在下，下家在右，对家在上，上家在左）。
 //     正因为位置本身就是顺序，横屏**不显示「你的下家 XXX」**那行字——竖屏那行保留。
 //   · 背景白瓷波点（不是壁纸照片），桌面一块**花边蕾丝桌布**，整体粉白灰。
-//   · 牌面复用竖屏那套 MahjongTileFace，**平的，正上方看，不做立体/透视**——
-//     斜视角要真三维，工作量翻几倍，斜着的牌点击判定还不准。
+//   · 牌面复用竖屏那套 MahjongTileFace，但横屏一律带 pose（lying / standing）。
+//     ‼️0902 七稿：**只有桌布斜，牌不进 rotation3DEffect**。每张牌自己按
+//     MahjongCamera 那一组俯角比例画成小方块（躺的压扁+前立面、站的全脸+底面、
+//     侧墙顶面带+背面带）。前六稿把牌塞进斜层跟桌子一起压扁，站着躺着一个样，
+//     她拿腾讯图打回了三天。别再把牌塞回斜层。
 //   · 副露跟自己的手牌之间**留一段间距**分开（她点名的）。
 //   · 中央留「还剩几张」：一张麻将背面 + 数字，照参考图。
 //   · 四周照参考图铺各家的牌河，围成一圈。
@@ -269,18 +272,21 @@ enum MahjongFaces {
 
     /// 桌布的宽高比。裁剪框、存图、渲染三处都用这一个数，别各写各的。
     /// 0901 三稿：桌子上下出屏之后，布面比屏幕高一截，比例从 2.2 改成 1.6
-    /// （屏宽 ÷（屏高＋上下各出血 64））。她以前按 2.2 裁的旧图会被左右
-    /// 裁掉一点，重新选一次图就好。
-    static let clothAspect: CGFloat = 1.6
+    /// （屏宽 ÷（屏高＋上下各出血 64））。
+    /// 0902 七稿：出血加到上 150 / 下 110，比例再收到 1.25
+    /// （(852−72) ÷ (393＋260)）。旧图铺上去是 fill，只会左右被啃一点，不会变形；
+    /// 想让裁剪框跟桌子对上就重新选一次图。
+    static let clothAspect: CGFloat = 1.25
 
     /// ‼️牌桌的俯角。**桌子和裁剪预览必须共用这一对数**——
     /// 分开写的话，桌子一调角度、预览就开始骗人（0901 她抓过一次）。
     /// 调参史：28°（一稿，纯平贴图斜了字全歪，她打回"我只要倾斜一点点"）
     /// → 11°（三稿，她又对着腾讯图问"是不是还要再倾斜一点"——太平了）
-    /// → 17°（四稿现值）。四稿起每张牌自带三面挤出，中等俯角吃得动了；
-    /// 再嫌平先加 perspective 再加角度，角度上 20 之前先看牌面字歪不歪。
-    static let clothTilt: Double = 17
-    static let clothPerspective: CGFloat = 0.32
+    /// → 17°（四稿）→ 26°（0902 七稿）。七稿起牌**不在斜层里**，斜的只有桌布，
+    /// 所以角度再大也不会压歪牌面字；这个数只管桌布看起来有多"躺"，
+    /// 跟 MahjongCamera 那组牌的比例（按 39° 俯角算的）大致对得上就行。
+    static let clothTilt: Double = 26
+    static let clothPerspective: CGFloat = 0.38
 
     private static var clothURL: URL {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -888,10 +894,10 @@ struct QipaiMahjongLandscapeView: View {
     /// "我只要倾斜一点点"），近大远小、左右边往里收 —— 这些是绕 X 轴旋转 +
     /// perspective 之后自然出来的，不用逐张牌自己算透视。
     ///
-    /// ‼️桌子和牌**一起**转（同一个 ZStack 里），不能只转桌子——
-    /// 只转桌子的话牌会浮在斜面上方，比全平还假。
-    /// SwiftUI 的 rotation3DEffect 会把点击也一起换算，所以牌照样点得准；
-    /// 真要是点偏了跟我说，我把角度收小。
+    /// ‼️0902 七稿：**只有桌布转，牌不转**。四稿到六稿写的是「桌子和牌一起转，
+    /// 只转桌子牌会浮在斜面上」——那是牌还是平贴图时的道理。现在每张牌自己带着
+    /// 俯角画成方块（见 MahjongCamera），放在不转的那层反而才像腾讯图：
+    /// 布是斜的，牌是立的。牌不进斜层还有个好处：点击判定是纯二维的，点哪张是哪张。
     private var tiltDegrees: Double { MahjongFaces.clothTilt }
     private var tiltPerspective: CGFloat { MahjongFaces.clothPerspective }
 
@@ -915,12 +921,12 @@ struct QipaiMahjongLandscapeView: View {
                     // 灵不灵没验证过还容易把居中拽歪，撤了：上下靠负 padding 出血，
                     // 右边由最外层的 edges:.trailing 负责；左右留多宽由外面那对
                     // padLead/sideMargin 管——0901 四稿她定的「左右留空对等」）
+                    // 0902 七稿：俯角 17→26，远边缩得更厉害，出血跟着加大
+                    // （上 150 / 下 110，上边多是因为透视把远边往画面里拉）。
                     MahjongLaceCloth(version: facesVersion)   // 她换了桌布，这块跟着重画
                         .padding(.horizontal, 2)
-                        .padding(.vertical, -64)
-                    if let view = store.view {
-                        board(view, size: CGSize(width: boardW, height: geo.size.height))
-                    }
+                        .padding(.top, -150)
+                        .padding(.bottom, -110)
                 }
                 .padding(.leading, padLead)
                 .padding(.trailing, sideMargin)
@@ -929,8 +935,11 @@ struct QipaiMahjongLandscapeView: View {
                                   anchor: .center,
                                   perspective: tiltPerspective)
 
-                // ── 不跟着斜的那层：界面元件。斜了就难读也难点 ──
+                // ── 不跟着斜的那层：所有的牌（自带俯角画法）+ 界面元件 ──
                 if let view = store.view {
+                    board(view, size: CGSize(width: boardW, height: geo.size.height))
+                        .padding(.leading, padLead)
+                        .padding(.trailing, sideMargin)
                     overlays(view)
                 } else {
                     Text("重连中…")
@@ -1080,7 +1089,7 @@ struct QipaiMahjongLandscapeView: View {
             // 牌顶着屏幕上沿摆，省出一整条头像的高度
             ZStack(alignment: .top) {
                 VStack(spacing: 5) {
-                    backRow(p.handCount, width: 21, axis: .horizontal)
+                    backRow(p.handCount, width: 22, slot: .top)
                     if !p.melds.isEmpty { meldRow(p.melds, width: 20, axis: .horizontal) }
                 }
                 .frame(maxWidth: .infinity, alignment: .center)
@@ -1096,13 +1105,13 @@ struct QipaiMahjongLandscapeView: View {
                     seatHeader(p, slot: slot, view: view)
                     if !p.melds.isEmpty { meldRow(p.melds, width: 19, axis: .vertical) }
                 }
-                backRow(p.handCount, width: 28, axis: .vertical)
+                backRow(p.handCount, width: 24, slot: .left)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             .padding(.leading, 26)
         case .right:
             HStack(spacing: 5) {
-                backRow(p.handCount, width: 28, axis: .vertical)
+                backRow(p.handCount, width: 24, slot: .right)
                 VStack(spacing: 5) {
                     seatHeader(p, slot: slot, view: view)
                     if !p.melds.isEmpty { meldRow(p.melds, width: 19, axis: .vertical) }
@@ -1236,24 +1245,35 @@ struct QipaiMahjongLandscapeView: View {
 
     private enum Axis2 { case horizontal, vertical }
 
-    /// 0901 六稿：对家一排立牌背；左右两家是牌背墙——每张一条横片紧密码放，
-    /// 南端压一张整脸的收口牌（MahjongTileSideCap），影子给整面墙统一投，
-    /// 不给每片单独投（片距太密，各投各的会糊成一团黑）。
+    /// 0902 七稿：对家一排**背对镜头站着**的牌（MahjongTileBack .standing），
+    /// 牌挨牌只留一条细缝，整排底下压一道贴桌的软影，才像一堵墙立在布上；
+    /// 左右两家是 MahjongTileWall——顶面带 + 背面带并排的一整堵，背面朝桌心。
     @ViewBuilder
-    private func backRow(_ count: Int, width: CGFloat, axis: Axis2) -> some View {
+    private func backRow(_ count: Int, width: CGFloat, slot: MahjongSeatSlot) -> some View {
         let n = max(0, min(count, 14))
-        if axis == .horizontal {
-            HStack(spacing: -width * 0.06) {
-                ForEach(0..<n, id: \.self) { _ in MahjongTileBack(width: width, standing: true) }
+        switch slot {
+        case .top:
+            HStack(spacing: 1) {
+                ForEach(0..<n, id: \.self) { _ in MahjongTileBack(width: width, pose: .standing) }
             }
-        } else {
-            VStack(spacing: 1) {
-                ForEach(0..<n, id: \.self) { _ in MahjongTileSide(width: width) }
-                if n > 0 { MahjongTileSideCap(width: width) }
-            }
-            .shadow(color: QipaiPalette.shadowTint.opacity(0.28), radius: width * 0.16,
-                    x: width * 0.08, y: width * 0.12)
+            .background(wallFloorShadow(width: width))
+        case .left:
+            MahjongTileWall(count: n, width: width, inner: .trailing)
+        case .right:
+            MahjongTileWall(count: n, width: width, inner: .leading)
+        case .bottom:
+            EmptyView()
         }
+    }
+
+    /// 一排站着的牌脚下那道影：糊开的一条深色，往下错一点，落在桌布上
+    private func wallFloorShadow(width: CGFloat) -> some View {
+        RoundedRectangle(cornerRadius: width * 0.3, style: .continuous)
+            .fill(QipaiPalette.shadowTint.opacity(0.28))
+            .blur(radius: width * 0.22)
+            .padding(.horizontal, -width * 0.1)
+            .offset(y: width * 0.22)
+            .allowsHitTesting(false)
     }
 
     @ViewBuilder
@@ -1269,16 +1289,16 @@ struct QipaiMahjongLandscapeView: View {
         }
     }
 
-    /// 一组副露。暗杠对别人是四张背面
+    /// 一组副露，躺在桌上（lying）。暗杠对别人是四张背面
     private func meldGroup(_ m: MahjongMeld, width: CGFloat, axis: Axis2) -> some View {
-        HStack(spacing: -width * 0.16) {
+        HStack(spacing: 1) {
             if let tiles = m.tiles {
                 ForEach(Array(tiles.enumerated()), id: \.offset) { item in
-                    MahjongTileFace(id: item.element, width: width)
+                    MahjongTileFace(id: item.element, width: width, pose: .lying)
                 }
             } else {
                 ForEach(0..<max(m.count, 1), id: \.self) { _ in
-                    MahjongTileBack(width: width)
+                    MahjongTileBack(width: width, pose: .lying)
                 }
             }
         }
@@ -1388,7 +1408,7 @@ struct QipaiMahjongLandscapeView: View {
         let angle = Double((seed % 7) - 3) * 0.8
         let dx = CGFloat(((seed >> 3) % 3) - 1) * 0.8
         let dy = CGFloat(((seed >> 5) % 3) - 1) * 0.8
-        return MahjongTileFace(id: id, width: w, dimmed: dimmed, orient: orient)
+        return MahjongTileFace(id: id, width: w, dimmed: dimmed, orient: orient, pose: .lying)
             .rotationEffect(.degrees(angle))
             .offset(x: dx, y: dy)
     }
@@ -1445,13 +1465,14 @@ struct QipaiMahjongLandscapeView: View {
                         tileButton(d, width: w, enabled: canDiscard)
                     }
                 }
-                // 自己的牌反着倾一点：整桌往后倒 11°，手牌抵消掉再多仰 4°，
-                // 就是"立在面前朝着我"的那排牌（参考图里手牌就是这么站的）。
+                // 自己的牌：standing 姿势（全脸 + 脚下一条底面），整排再往后仰 12°——
+                // 就是"立在面前朝着我"的那排牌（腾讯图里手牌就是这么站的）。
+                // 0902 七稿：牌不在斜层里了，这里不用再抵消桌子的角度，只管仰。
                 // anchor 在底边——牌脚踩在布上转，不会浮起来。点击命中系统会跟着换算。
-                .rotation3DEffect(.degrees(-tiltDegrees - 4),
+                .rotation3DEffect(.degrees(-12),
                                   axis: (x: 1, y: 0, z: 0),
                                   anchor: .bottom,
-                                  perspective: 0.2)
+                                  perspective: 0.4)
                 if !me.melds.isEmpty {
                     // 她点名的：副露跟自己的牌之间留一段，别连着排
                     Spacer().frame(width: 30)
@@ -1479,7 +1500,7 @@ struct QipaiMahjongLandscapeView: View {
     }
 
     private func tileButton(_ id: String, width: CGFloat, enabled: Bool) -> some View {
-        MahjongTileFace(id: id, width: width)
+        MahjongTileFace(id: id, width: width, pose: .standing)
             .offset(y: selected == id ? -14 : 0)
             .onTapGesture {
                 guard enabled else { return }
@@ -1547,7 +1568,7 @@ struct QipaiMahjongLandscapeView: View {
                 Button { send(mv) } label: {
                     HStack(spacing: 1.5) {
                         ForEach(chiRun(mv, claim: claim), id: \.self) { t in
-                            MahjongTileFace(id: t, width: 24)
+                            MahjongTileFace(id: t, width: 24, pose: .standing)
                         }
                     }
                     .padding(5)
