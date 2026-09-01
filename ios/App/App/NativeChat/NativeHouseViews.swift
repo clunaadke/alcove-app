@@ -3849,11 +3849,11 @@ struct SongInsightSheet: View {
                 }
                 if let insight {
                     readyBody(insight)
-                } else if let failedError {
+                } else if let failure = failedError {
                     VStack(spacing: 12) {
                         Image(systemName: "waveform.slash").font(.system(size: 30)).foregroundColor(.secondary)
                         Text("这首没分析成").font(.system(size: 14, weight: .medium))
-                        Text(failedError).font(.system(size: 11)).foregroundColor(.secondary)
+                        Text(failure).font(.system(size: 11)).foregroundColor(.secondary)
                             .multilineTextAlignment(.center)
                         Button {
                             failedError = nil
