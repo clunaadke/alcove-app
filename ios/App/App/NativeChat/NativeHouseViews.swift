@@ -2852,7 +2852,7 @@ private struct NativeMusicView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if listenPage, model.nowPlaying != nil {
+            if listenPage {
                 listenTogetherPage
             } else {
                 FoyerPanelTitle(title: selectedPlaylist?.name ?? "音乐", theme: theme)
@@ -2933,6 +2933,16 @@ private struct NativeMusicView: View {
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 16) {
                     ListenTogetherCard(model: model, theme: theme) { showPlayer = true }
+                    if model.nowPlaying == nil {
+                        VStack(spacing: 6) {
+                            Image(systemName: "music.note.list").font(.system(size: 22))
+                                .foregroundColor(theme.textDim)
+                            Text("还没在放歌").font(.system(size: 13, weight: .medium))
+                            Text("回上一页点一首，这里就热闹了")
+                                .font(.system(size: 11)).foregroundColor(theme.textDim)
+                        }
+                        .frame(maxWidth: .infinity).padding(.vertical, 26)
+                    }
                     if model.queue.count > 1 {
                         VStack(alignment: .leading, spacing: 10) {
                             Text("接下来").font(.system(size: 14, weight: .semibold))
@@ -2975,6 +2985,25 @@ private struct NativeMusicView: View {
                     }
                     Spacer()
                 }.padding(14).foyerCard(theme)
+
+                Button { withAnimation(.easeOut(duration: 0.25)) { listenPage = true } } label: {
+                    HStack(spacing: 13) {
+                        ZStack {
+                            theme.fyAccent.opacity(0.16)
+                            Image(systemName: "person.2.wave.2.fill")
+                                .font(.system(size: 20)).foregroundColor(theme.fyAccent)
+                        }
+                        .frame(width: 58, height: 58).clipShape(RoundedRectangle(cornerRadius: 12))
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text("一起听").font(.system(size: 17, weight: .semibold))
+                            Text(model.listenTimeText)
+                                .font(.system(size: 11)).foregroundColor(theme.textDim)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right").font(.system(size: 13))
+                            .foregroundColor(theme.textDim)
+                    }.padding(12).foyerCard(theme)
+                }.buttonStyle(.plain)
 
                 if let liked = model.playlists.first {
                     Button { open(liked) } label: {
