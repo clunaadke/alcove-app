@@ -2407,6 +2407,8 @@ final class MusicModel: ObservableObject {
     @Published var queueIndex = -1
     @Published var playMode: MusicPlayMode = .sequence
     @Published var playbackLoading = false
+    @Published var listenTotalSeconds = 0
+    private var listenHeartbeat: Task<Void, Never>?
     private var player: AVPlayer?
     private var timeObserver: Any?
     private var itemStatusObserver: NSKeyValueObservation?
@@ -2437,7 +2439,32 @@ final class MusicModel: ObservableObject {
         if songs.isEmpty { message = "没搜到  换个词试试" }
     }
 
+    /// 一起听累计时长：先拉总数，之后每 30 秒在播就往后端记 30 秒
+    func startListenClock() {
+        guard listenHeartbeat == nil else { return }
+        listenHeartbeat = Task { [weak self] in
+            if let obj = try? await NativeHouseAPI.object("/api/listen/stats") {
+                self?.listenTotalSeconds = obj.int("total_seconds")
+            }
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 30_000_000_000)
+                guard let self, self.isPlaying else { continue }
+                try? await NativeHouseAPI.post("/api/listen/beat", body: ["seconds": 30])
+                self.listenTotalSeconds += 30
+            }
+        }
+    }
+
+    var listenTimeText: String {
+        let hours = listenTotalSeconds / 3600
+        let minutes = listenTotalSeconds % 3600 / 60
+        if hours > 0 { return "一起听了 \(hours) 小时 \(minutes) 分钟" }
+        if minutes > 0 { return "一起听了 \(minutes) 分钟" }
+        return "刚开始一起听"
+    }
+
     func play(_ song: MusicSong, queue source: [MusicSong]? = nil) async {
+        startListenClock()
         if let source, !source.isEmpty {
             queue = source
             queueIndex = source.firstIndex(where: { $0.id == song.id }) ?? 0
@@ -2818,26 +2845,44 @@ private struct NativeMusicView: View {
     @State private var selectedPlaylist: MusicPlaylist?
     @State private var showPlayer = false
     @State private var giftSong: MusicSong?
+    @State private var listenPage = false
+    @State private var lastPlayingID: String?
     @AppStorage("alcoveTheme") private var themeName = "haven"
     private var theme: AlcoveTheme { .panelNamed(themeName) }
 
     var body: some View {
         VStack(spacing: 0) {
-            FoyerPanelTitle(title: selectedPlaylist?.name ?? "音乐", theme: theme)
-            searchBar
-            if let selectedPlaylist { playlistPage(selectedPlaylist) }
-            else if !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !model.songs.isEmpty {
-                songList(model.songs)
-            } else { homePage }
-            if model.nowPlaying != nil {
-                MusicMiniPlayer(model: model) { showPlayer = true }
-                    .padding(.horizontal, 14).padding(.bottom, 12)
+            if listenPage, model.nowPlaying != nil {
+                listenTogetherPage
+            } else {
+                FoyerPanelTitle(title: selectedPlaylist?.name ?? "音乐", theme: theme)
+                searchBar
+                if let selectedPlaylist { playlistPage(selectedPlaylist) }
+                else if !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !model.songs.isEmpty {
+                    songList(model.songs)
+                } else { homePage }
+                if model.nowPlaying != nil {
+                    MusicMiniPlayer(model: model) { showPlayer = true }
+                        .padding(.horizontal, 14).padding(.bottom, 12)
+                }
             }
         }
         .foregroundColor(theme.text)
         .foyerPanel(theme)
         .padding(.horizontal, 12).padding(.top, 8)
-        .task { await model.loadHome() }
+        .task {
+            lastPlayingID = model.nowPlaying?.id
+            model.startListenClock()
+            await model.loadHome()
+            if model.nowPlaying != nil { listenPage = true }
+        }
+        .onChange(of: model.nowPlaying?.id) { id in
+            // 从"没在放"到"放起来"才自动进一起听；
+            // 队列自动切下一首不把正在翻歌单的人拽走
+            let wasIdle = lastPlayingID == nil
+            lastPlayingID = id
+            if id != nil, wasIdle { withAnimation(.easeOut(duration: 0.25)) { listenPage = true } }
+        }
         .sheet(isPresented: $showPlayer) {
             MusicPlayerSheet(model: model)
                 .presentationDetents([.fraction(0.75)])
@@ -2870,6 +2915,50 @@ private struct NativeMusicView: View {
                 }.buttonStyle(.plain)
             }
         }.padding(11).foyerCard(theme).padding(.horizontal, 16).padding(.top, 10)
+    }
+
+    // MARK: 一起听
+    private var listenTogetherPage: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Button { withAnimation(.easeOut(duration: 0.25)) { listenPage = false } } label: {
+                    Image(systemName: "chevron.left").font(.system(size: 16, weight: .semibold))
+                        .frame(width: 32, height: 32).contentShape(Rectangle())
+                }.buttonStyle(.plain)
+                Spacer()
+                Text("一起听").font(.system(size: 16, weight: .semibold))
+                Spacer()
+                Color.clear.frame(width: 32, height: 32)
+            }.padding(.horizontal, 12).padding(.top, 10)
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 16) {
+                    ListenTogetherCard(model: model, theme: theme) { showPlayer = true }
+                    if model.queue.count > 1 {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("接下来").font(.system(size: 14, weight: .semibold))
+                            ForEach(Array(model.queue.enumerated()), id: \.element.id) { index, song in
+                                Button {
+                                    let source = model.queue
+                                    Task { await model.play(song, queue: source) }
+                                } label: {
+                                    HStack(spacing: 11) {
+                                        Image(systemName: index == model.queueIndex ? "waveform" : "music.note")
+                                            .font(.system(size: 13))
+                                            .foregroundColor(index == model.queueIndex ? theme.fyAccent : theme.textDim)
+                                            .frame(width: 20)
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(song.name).font(.system(size: 13, weight: .medium)).lineLimit(1)
+                                            Text(song.artist).font(.system(size: 10)).foregroundColor(theme.textDim).lineLimit(1)
+                                        }
+                                        Spacer()
+                                    }.contentShape(Rectangle())
+                                }.buttonStyle(.plain)
+                            }
+                        }.padding(14).foyerCard(theme)
+                    }
+                }.padding(.horizontal, 16).padding(.vertical, 12)
+            }
+        }
     }
 
     private var homePage: some View {
@@ -2953,6 +3042,8 @@ private struct NativeMusicView: View {
                 ForEach(Array(songs.enumerated()), id: \.element.id) { index, song in
                     HStack(spacing: 11) {
                         Button {
+                            // 亲手点的歌：播起来并进一起听
+                            withAnimation(.easeOut(duration: 0.25)) { listenPage = true }
                             Task { await model.play(song, queue: songs) }
                         } label: {
                             HStack(spacing: 11) {
@@ -3255,6 +3346,114 @@ struct MusicMessageCard: View {
     }
 }
 
+/// 一起听页顶部的小卡片：两个人的头像 + 累计时长 + 正在放的歌和进度
+private struct ListenTogetherCard: View {
+    @ObservedObject var model: MusicModel
+    let theme: AlcoveTheme
+    let open: () -> Void
+    @AppStorage("userAvatarDataURL") private var userAvatar = ""
+    @AppStorage("assistantAvatarDataURL") private var assistantAvatar = ""
+
+    var body: some View {
+        VStack(spacing: 13) {
+            ZStack {
+                ListenArc()
+                    .stroke(theme.fyAccent.opacity(0.35),
+                            style: StrokeStyle(lineWidth: 1.5, dash: [3, 4]))
+                    .frame(height: 74)
+                    .padding(.horizontal, 26)
+                HStack {
+                    avatarView(userAvatar, fallback: "霁")
+                    Spacer()
+                    VStack(spacing: 3) {
+                        Text("霁 · 璟").font(.system(size: 14, weight: .medium))
+                        Text(model.listenTimeText)
+                            .font(.system(size: 11)).foregroundColor(theme.textDim)
+                    }
+                    Spacer()
+                    avatarView(assistantAvatar, fallback: "璟")
+                }.padding(.horizontal, 8)
+            }
+            if let song = model.nowPlaying {
+                VStack(spacing: 9) {
+                    HStack(spacing: 4) {
+                        Text(song.name).font(.system(size: 15, weight: .semibold)).lineLimit(1)
+                        Text("— \(song.artist)").font(.system(size: 12)).foregroundColor(theme.textDim).lineLimit(1)
+                    }
+                    VStack(spacing: 2) {
+                        Slider(value: Binding(get: { model.progress }, set: { model.seek(to: $0) }),
+                               in: 0...max(model.duration, 1)).tint(theme.fyAccent)
+                        HStack {
+                            Text(Self.time(model.progress)); Spacer(); Text(Self.time(model.duration))
+                        }.font(.system(size: 9, design: .monospaced)).foregroundColor(theme.textDim)
+                    }
+                    HStack {
+                        Button { Task { await model.toggleLike() } } label: {
+                            Image(systemName: model.currentIsLiked ? "heart.fill" : "heart")
+                                .foregroundColor(model.currentIsLiked ? .red : theme.text)
+                        }
+                        Spacer()
+                        Button { model.prev() } label: { Image(systemName: "backward.fill") }
+                        Spacer()
+                        Button { model.toggle() } label: {
+                            Image(systemName: model.isPlaying ? "pause.circle.fill" : "play.circle.fill")
+                                .font(.system(size: 34))
+                        }
+                        Spacer()
+                        Button { model.next() } label: { Image(systemName: "forward.fill") }
+                        Spacer()
+                        Button { model.cyclePlayMode() } label: { Image(systemName: model.playMode.icon) }
+                    }
+                    .font(.system(size: 16)).buttonStyle(.plain)
+                    .padding(.horizontal, 6)
+                }
+                .padding(13)
+                .background(theme.fyCardSub.opacity(0.55), in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+                .contentShape(Rectangle())
+                .onTapGesture(perform: open)
+            }
+        }
+        .padding(15).foyerCard(theme)
+    }
+
+    private func avatarView(_ dataURL: String, fallback: String) -> some View {
+        Group {
+            if let image = Self.decode(dataURL) {
+                Image(uiImage: image).resizable().scaledToFill()
+            } else {
+                ZStack {
+                    theme.fyCardSub
+                    Text(fallback).font(.system(size: 20, weight: .medium))
+                }
+            }
+        }
+        .frame(width: 58, height: 58).clipShape(Circle())
+        .overlay(Circle().stroke(theme.fyAccent.opacity(0.4), lineWidth: 1.5))
+    }
+
+    private static func decode(_ dataURL: String) -> UIImage? {
+        let parts = dataURL.split(separator: ",", maxSplits: 1)
+        guard let data = Data(base64Encoded: parts.count == 2 ? String(parts[1]) : dataURL) else { return nil }
+        return UIImage(data: data)
+    }
+
+    private static func time(_ seconds: Double) -> String {
+        guard seconds.isFinite, seconds >= 0 else { return "0:00" }
+        return String(format: "%d:%02d", Int(seconds) / 60, Int(seconds) % 60)
+    }
+}
+
+/// 两个头像之间那道下垂的虚线弧
+private struct ListenArc: Shape {
+    func path(in rect: CGRect) -> Path {
+        var p = Path()
+        p.move(to: CGPoint(x: rect.minX, y: rect.midY - 8))
+        p.addQuadCurve(to: CGPoint(x: rect.maxX, y: rect.midY - 8),
+                       control: CGPoint(x: rect.midX, y: rect.maxY + 14))
+        return p
+    }
+}
+
 struct MusicMiniPlayer: View {
     @ObservedObject var model: MusicModel
     let open: () -> Void
@@ -3304,6 +3503,7 @@ struct MusicPlayerSheet: View {
     private var theme: AlcoveTheme { .panelNamed(themeName) }
     @State private var page = 0
     @State private var showQueue = false
+    @State private var showInsight = false
 
     var body: some View {
         GeometryReader { bounds in
@@ -3349,6 +3549,13 @@ struct MusicPlayerSheet: View {
         .ignoresSafeArea(edges: .bottom)
         .foregroundColor(.white)
         .sheet(isPresented: $showQueue) { MusicQueueSheet(model: model) }
+        .sheet(isPresented: $showInsight) {
+            if let song = model.nowPlaying {
+                SongInsightSheet(song: song)
+                    .presentationDetents([.large])
+                    .presentationDragIndicator(.visible)
+            }
+        }
     }
 
     private var playerPage: some View {
@@ -3464,8 +3671,16 @@ struct MusicPlayerSheet: View {
 
     private var progressControls: some View {
         VStack(spacing: 2) {
-            Slider(value: Binding(get: { model.progress }, set: { model.seek(to: $0) }),
-                   in: 0...max(model.duration, 1)).tint(.white)
+            HStack(spacing: 12) {
+                Slider(value: Binding(get: { model.progress }, set: { model.seek(to: $0) }),
+                       in: 0...max(model.duration, 1)).tint(.white)
+                Button { showInsight = true } label: {
+                    Image(systemName: "waveform.badge.magnifyingglass")
+                        .font(.system(size: 17))
+                        .foregroundColor(.white.opacity(0.85))
+                        .frame(width: 30, height: 30).contentShape(Rectangle())
+                }.buttonStyle(.plain)
+            }
             HStack {
                 Text(Self.time(model.progress)); Spacer(); Text(Self.time(model.duration))
             }.font(.system(size: 9, design: .monospaced)).foregroundColor(.white.opacity(0.52))
@@ -3542,6 +3757,368 @@ private struct MusicQueueSheet: View {
             .navigationBarTitleDisplayMode(.inline)
         }
         .presentationDetents([.medium, .large])
+    }
+}
+
+// MARK: - 歌曲理解（真实音轨的声学分析，数据来自 /api/music/insight）
+
+struct MusicInsight {
+    struct Segment: Identifiable {
+        let id = UUID()
+        let start: Double
+        let end: Double
+        let label: String
+    }
+
+    let duration: Double
+    let bpm: Double
+    let stability: Double
+    let segments: [Segment]
+    let repetition: Int
+    let highlights: [Double]
+    let onsetBinSeconds: Double
+    let onsets: [Double]
+    let chroma: [Double]
+    let noteLow: String
+    let noteHigh: String
+    let medianNote: String
+    let medianHz: Double
+    let coverage: Double
+    let pitchConfidence: Double
+    let pitchStep: Double
+    let f0: [Double?]
+    let confidence: Double
+
+    init?(_ json: [String: Any]) {
+        duration = json.double("duration")
+        guard duration > 0 else { return nil }
+        let tempo = json.object("tempo")
+        bpm = tempo.double("bpm")
+        stability = tempo.double("stability")
+        segments = json.array("segments").map {
+            Segment(start: $0.double("start"), end: $0.double("end"), label: $0.string("label"))
+        }
+        repetition = json.int("repetition")
+        highlights = (json["highlights"] as? [Any] ?? []).compactMap { ($0 as? NSNumber)?.doubleValue }
+        let od = json.object("onset_density")
+        onsetBinSeconds = max(od.double("bin_seconds"), 1)
+        onsets = (od["values"] as? [Any] ?? []).compactMap { ($0 as? NSNumber)?.doubleValue }
+        chroma = (json["chroma"] as? [Any] ?? []).compactMap { ($0 as? NSNumber)?.doubleValue }
+        let pitch = json.object("pitch")
+        noteLow = pitch.string("note_low")
+        noteHigh = pitch.string("note_high")
+        medianNote = pitch.string("median_note")
+        medianHz = pitch.double("median_hz")
+        coverage = pitch.double("coverage")
+        pitchConfidence = pitch.double("confidence")
+        pitchStep = max(pitch.double("step_seconds"), 0.1)
+        f0 = (pitch["f0"] as? [Any] ?? []).map { ($0 as? NSNumber)?.doubleValue }
+        confidence = json.double("confidence")
+    }
+}
+
+struct SongInsightSheet: View {
+    let song: MusicSong
+    @State private var insight: MusicInsight?
+    @State private var stage = ""
+    @State private var failedError: String?
+    @State private var retryToken = 0
+
+    private static let noteNames = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+    private static let segmentPalette: [Color] = [
+        Color(red: 0.44, green: 0.72, blue: 0.72), Color(red: 0.55, green: 0.49, blue: 0.83),
+        Color(red: 0.78, green: 0.45, blue: 0.62), Color(red: 0.82, green: 0.58, blue: 0.42),
+        Color(red: 0.46, green: 0.62, blue: 0.84), Color(red: 0.65, green: 0.75, blue: 0.44),
+        Color(red: 0.80, green: 0.68, blue: 0.40), Color(red: 0.58, green: 0.58, blue: 0.66),
+    ]
+    private static let stageNames = [
+        "starting": "排队起灶", "downloading": "取音频", "decoding": "解码",
+        "loading": "读入音轨", "beats": "数节拍", "onsets": "数起音",
+        "chroma": "算音级", "structure": "切段落", "pitch": "找主导音", "busy": "前面还有一首在嚼",
+    ]
+
+    var body: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("歌曲理解").font(.system(size: 22, weight: .bold))
+                    Text("\(song.name) · \(song.artist)")
+                        .font(.system(size: 12)).foregroundColor(.secondary)
+                    Text("真实音轨里的节拍、结构、起音密度和音级重心")
+                        .font(.system(size: 11)).foregroundColor(.secondary)
+                }
+                if let insight {
+                    readyBody(insight)
+                } else if let failedError {
+                    VStack(spacing: 12) {
+                        Image(systemName: "waveform.slash").font(.system(size: 30)).foregroundColor(.secondary)
+                        Text("这首没分析成").font(.system(size: 14, weight: .medium))
+                        Text(failedError).font(.system(size: 11)).foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                        Button {
+                            failedError = nil
+                            retryToken += 1
+                        } label: {
+                            Text("再试一次").font(.system(size: 13, weight: .semibold))
+                                .padding(.horizontal, 22).padding(.vertical, 9)
+                                .background(Color.accentColor.opacity(0.18), in: Capsule())
+                        }.buttonStyle(.plain)
+                    }.frame(maxWidth: .infinity).padding(.vertical, 46)
+                } else {
+                    VStack(spacing: 12) {
+                        ProgressView()
+                        Text("第一次听这首，正在嚼整条音轨")
+                            .font(.system(size: 13, weight: .medium))
+                        Text(Self.stageNames[stage] ?? "准备中")
+                            .font(.system(size: 11)).foregroundColor(.secondary)
+                        Text("一般要一分钟左右，嚼完就永远秒开")
+                            .font(.system(size: 10)).foregroundColor(.secondary)
+                    }.frame(maxWidth: .infinity).padding(.vertical, 52)
+                }
+            }
+            .padding(18)
+        }
+        .task(id: retryToken) { await poll(retry: retryToken > 0) }
+    }
+
+    private func poll(retry: Bool) async {
+        var first = true
+        while !Task.isCancelled {
+            let path = "/api/music/insight?id=\(song.id)" + (retry && first ? "&retry=1" : "")
+            first = false
+            if let obj = try? await NativeHouseAPI.object(path) {
+                switch obj.string("status") {
+                case "ready":
+                    insight = MusicInsight(obj.object("data"))
+                    if insight == nil { failedError = "分析结果没读明白" }
+                    return
+                case "failed":
+                    failedError = obj.string("error").isEmpty ? "音频没拿到或分析中断" : obj.string("error")
+                    return
+                case "busy":
+                    stage = "busy"
+                default:
+                    stage = obj.string("stage")
+                }
+            }
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+        }
+    }
+
+    // MARK: 结果页
+
+    private func readyBody(_ data: MusicInsight) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            headline(data)
+            HStack(spacing: 10) {
+                statCard("节拍", "\(Int(data.bpm.rounded())) BPM", "稳定度 \(Int(data.stability * 100))%")
+                statCard("声学分段", "\(data.segments.count)", "同字母＝声学相似")
+            }
+            HStack(spacing: 10) {
+                statCard("重复关系", "\(data.repetition)", "不是歌词重复次数")
+                statCard("整体可信度", "\(Int(data.confidence * 100))%", "模型自报边界")
+            }
+            insightCard("整首声学结构", trailing: "三角是显著高点候选") {
+                structureChart(data)
+                Text("字母只代表这首歌内部“听起来相似”的段落，不冒充主歌、副歌或桥段。")
+                    .font(.system(size: 10)).foregroundColor(.secondary)
+            }
+            insightCard("起音密度", trailing: "每 \(Int(data.onsetBinSeconds)) 秒明显声音启动次数") {
+                onsetChart(data)
+            }
+            insightCard("音级重心", trailing: "较突出：" + topNotes(data)) {
+                chromaChart(data)
+                Text("这是整首混音的十二音级相对权重，不把最高的一根直接冒充调性结论。")
+                    .font(.system(size: 10)).foregroundColor(.secondary)
+            }
+            insightCard("原曲音高", trailing: "覆盖 \(Int(data.coverage * 100))%") {
+                HStack(spacing: 14) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(data.medianNote.isEmpty ? "—" : data.medianNote)
+                            .font(.system(size: 26, weight: .bold)).foregroundColor(.teal)
+                        Text(data.medianHz > 0 ? "\(Int(data.medianHz.rounded())) Hz · 中位主导音" : "没抓到稳定主导音")
+                            .font(.system(size: 10)).foregroundColor(.secondary)
+                    }
+                    Spacer()
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text("整首常见范围 \(data.noteLow) – \(data.noteHigh)").font(.system(size: 11))
+                        Text("可信度 \(Int(data.pitchConfidence * 100))%")
+                            .font(.system(size: 10)).foregroundColor(.secondary)
+                    }
+                }
+                pitchChart(data)
+                Text("这是完整混音的主导音估计，不是分离人声。伴奏、和声抢得厉害时，空着比硬猜更诚实。")
+                    .font(.system(size: 10)).foregroundColor(.secondary)
+            }
+        }
+    }
+
+    private func headline(_ data: MusicInsight) -> some View {
+        var parts = ["约 \(Int(data.bpm.rounded())) BPM", "\(data.segments.count) 个声学段落"]
+        if let peak = data.highlights.first {
+            parts.append("显著高点 \(Self.time(peak))")
+        }
+        return Text(parts.joined(separator: " · "))
+            .font(.system(size: 17, weight: .semibold))
+            .foregroundColor(.teal)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(13)
+            .background(Color.teal.opacity(0.09), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+    }
+
+    private func statCard(_ title: String, _ value: String, _ hint: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title).font(.system(size: 11)).foregroundColor(.secondary)
+            Text(value).font(.system(size: 21, weight: .bold))
+            Text(hint).font(.system(size: 9)).foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(Color(UIColor.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private func insightCard(_ title: String, trailing: String,
+                             @ViewBuilder content: () -> some View) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(title).font(.system(size: 14, weight: .semibold))
+                Spacer()
+                Text(trailing).font(.system(size: 9)).foregroundColor(.secondary)
+            }
+            content()
+        }
+        .padding(13)
+        .background(Color(UIColor.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private func topNotes(_ data: MusicInsight) -> String {
+        guard data.chroma.count == 12 else { return "—" }
+        return data.chroma.enumerated().sorted { $0.element > $1.element }
+            .prefix(3).map { Self.noteNames[$0.offset] }.joined(separator: " · ")
+    }
+
+    private static func segmentColor(_ label: String) -> Color {
+        let index = Int(label.unicodeScalars.first?.value ?? 65) - 65
+        return segmentPalette[((index % segmentPalette.count) + segmentPalette.count) % segmentPalette.count]
+    }
+
+    // MARK: 图表
+
+    private func structureChart(_ data: MusicInsight) -> some View {
+        VStack(spacing: 4) {
+            Canvas { context, size in
+                let letterBand: CGFloat = 16
+                let barTop: CGFloat = letterBand + 2
+                let barHeight: CGFloat = 12
+                for segment in data.segments {
+                    let x0 = size.width * segment.start / data.duration
+                    let x1 = size.width * segment.end / data.duration
+                    let rect = CGRect(x: x0, y: barTop, width: max(x1 - x0 - 1, 1), height: barHeight)
+                    context.fill(Path(roundedRect: rect, cornerRadius: 2),
+                                 with: .color(Self.segmentColor(segment.label)))
+                    if x1 - x0 > 13 {
+                        context.draw(Text(segment.label).font(.system(size: 10, weight: .semibold))
+                                        .foregroundColor(Self.segmentColor(segment.label)),
+                                     at: CGPoint(x: (x0 + x1) / 2, y: letterBand / 2))
+                    }
+                }
+                for peak in data.highlights {
+                    let x = size.width * peak / data.duration
+                    var triangle = Path()
+                    triangle.move(to: CGPoint(x: x, y: barTop + barHeight + 3))
+                    triangle.addLine(to: CGPoint(x: x - 4, y: barTop + barHeight + 10))
+                    triangle.addLine(to: CGPoint(x: x + 4, y: barTop + barHeight + 10))
+                    triangle.closeSubpath()
+                    context.fill(triangle, with: .color(.purple.opacity(0.8)))
+                }
+            }
+            .frame(height: 44)
+            HStack {
+                Text("0:00"); Spacer(); Text(Self.time(data.duration))
+            }.font(.system(size: 9, design: .monospaced)).foregroundColor(.secondary)
+        }
+    }
+
+    private func onsetChart(_ data: MusicInsight) -> some View {
+        VStack(spacing: 4) {
+            Canvas { context, size in
+                let peak = max(data.onsets.max() ?? 1, 1)
+                let count = data.onsets.count
+                guard count > 0 else { return }
+                let step = size.width / CGFloat(count)
+                let barWidth = max(step - 1.5, 1)
+                for (index, value) in data.onsets.enumerated() {
+                    let height = size.height * value / peak
+                    let rect = CGRect(x: CGFloat(index) * step, y: size.height - height,
+                                      width: barWidth, height: max(height, 1))
+                    context.fill(Path(roundedRect: rect, cornerRadius: 1),
+                                 with: .color(.purple.opacity(0.65)))
+                }
+            }
+            .frame(height: 74)
+            HStack {
+                Text("稀"); Spacer(); Text("越高越密")
+            }.font(.system(size: 9)).foregroundColor(.secondary)
+        }
+    }
+
+    private func chromaChart(_ data: MusicInsight) -> some View {
+        let top = Set(data.chroma.enumerated().sorted { $0.element > $1.element }.prefix(3).map { $0.offset })
+        return HStack(alignment: .bottom, spacing: 4) {
+            ForEach(0..<12, id: \.self) { index in
+                let value = index < data.chroma.count ? data.chroma[index] : 0
+                VStack(spacing: 3) {
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(top.contains(index) ? Color.purple.opacity(0.85) : Color.purple.opacity(0.35))
+                        .frame(height: max(CGFloat(value) * 54, 3))
+                    Text(Self.noteNames[index])
+                        .font(.system(size: 8, design: .monospaced)).foregroundColor(.secondary)
+                }.frame(maxWidth: .infinity)
+            }
+        }.frame(height: 74, alignment: .bottom)
+    }
+
+    private func pitchChart(_ data: MusicInsight) -> some View {
+        VStack(spacing: 4) {
+            Canvas { context, size in
+                let midis = data.f0.compactMap { $0 }.map { 69 + 12 * log2($0 / 440) }
+                guard let low = midis.min(), let high = midis.max(), data.f0.count > 1 else { return }
+                let bottom = floor(low) - 1, top = ceil(high) + 1
+                let span = max(top - bottom, 6)
+                func yFor(_ hz: Double) -> CGFloat {
+                    let midi = 69 + 12 * log2(hz / 440)
+                    return size.height * (1 - CGFloat((midi - bottom) / span))
+                }
+                // C3 C4 C5 参考线
+                for octaveC in [48.0, 60.0, 72.0] where octaveC > bottom && octaveC < top {
+                    let y = size.height * (1 - CGFloat((octaveC - bottom) / span))
+                    var line = Path()
+                    line.move(to: CGPoint(x: 18, y: y))
+                    line.addLine(to: CGPoint(x: size.width, y: y))
+                    context.stroke(line, with: .color(.secondary.opacity(0.22)), lineWidth: 0.5)
+                    context.draw(Text("C\(Int(octaveC / 12) - 1)").font(.system(size: 8))
+                                    .foregroundColor(.secondary),
+                                 at: CGPoint(x: 8, y: y))
+                }
+                let step = size.width / CGFloat(data.f0.count)
+                let dotWidth = max(step - 0.6, 0.8)
+                for (index, hz) in data.f0.enumerated() {
+                    guard let hz, hz > 0 else { continue }
+                    let rect = CGRect(x: CGFloat(index) * step, y: yFor(hz) - 1.2,
+                                      width: dotWidth, height: 2.4)
+                    context.fill(Path(roundedRect: rect, cornerRadius: 1), with: .color(.teal.opacity(0.85)))
+                }
+            }
+            .frame(height: 120)
+            HStack {
+                Text("0:00"); Spacer(); Text("空白处＝没有足够稳定的单一主导音"); Spacer(); Text(Self.time(data.duration))
+            }.font(.system(size: 8, design: .monospaced)).foregroundColor(.secondary)
+        }
+    }
+
+    private static func time(_ seconds: Double) -> String {
+        guard seconds.isFinite, seconds >= 0 else { return "0:00" }
+        return String(format: "%d:%02d", Int(seconds) / 60, Int(seconds) % 60)
     }
 }
 

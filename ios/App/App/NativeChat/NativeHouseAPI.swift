@@ -85,6 +85,15 @@ extension Dictionary where Key == String, Value == Any {
         return ""
     }
 
+    func double(_ keys: String...) -> Double {
+        for key in keys {
+            if let value = self[key] as? Double { return value }
+            if let value = self[key] as? NSNumber { return value.doubleValue }
+            if let value = self[key] as? String, let parsed = Double(value) { return parsed }
+        }
+        return 0
+    }
+
     func int(_ keys: String...) -> Int {
         for key in keys {
             if let value = self[key] as? Int { return value }
