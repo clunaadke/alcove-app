@@ -1236,9 +1236,10 @@ struct QipaiMahjongLandscapeView: View {
 
     private enum Axis2 { case horizontal, vertical }
 
-    /// 0901 三稿（腾讯样式，她点的）：对家的牌**立起来**（矮墩墩的牌背+头顶一线），
-    /// 左右两家换成**侧立牌**——从牌的窄边看一排站着的牌，一张压一张。
-    /// 立牌比躺着的矮一截，也是对家手牌不再压到自家牌河的一半功劳（另一半在 riverBlock）。
+    /// 0901 五稿：对家一排立牌背；左右两家是**牌背墙**——整张站着的牌
+    /// 一张压一张往下叠、每张只露上面一截（0.42 张的高度），墙就立起来了。
+    /// 三稿那种「头顶一线的横切片」她打回过「牌真的没有立起来」，别改回去。
+    /// 下面的牌画在上面的牌之上＝近处遮远处，VStack 天然就是这个叠序，别加 zIndex。
     @ViewBuilder
     private func backRow(_ count: Int, width: CGFloat, axis: Axis2) -> some View {
         let n = max(0, min(count, 14))
@@ -1247,7 +1248,7 @@ struct QipaiMahjongLandscapeView: View {
                 ForEach(0..<n, id: \.self) { _ in MahjongTileBack(width: width, standing: true) }
             }
         } else {
-            VStack(spacing: -width * 0.24) {
+            VStack(spacing: -width * 0.76) {
                 ForEach(0..<n, id: \.self) { _ in MahjongTileSide(width: width) }
             }
         }
@@ -1302,19 +1303,20 @@ struct QipaiMahjongLandscapeView: View {
         .background(centerTray)
     }
 
-    /// 桌心内凹的托盘：深一号的布色，内阴影上重下轻——坑的上沿背光、
-    /// 下沿受光，跟牌的左上光源一致，凹陷感就是这么来的
+    /// 桌心内凹的托盘：**只有一圈内阴影，不填色不描边**——
+    /// 0901 五稿她打回过带粉色填充的版本（"半透明粉色边框有啥用"）：
+    /// 桌布是照片，任何平涂压上去都像贴纸。凹陷感只能靠边缘的暗影给，
+    /// 上沿重下沿轻＝坑的上沿背光，跟牌的左上光源一致。别再往里加填充。
     private var centerTray: some View {
         let shape = RoundedRectangle(cornerRadius: 24, style: .continuous)
         return shape
-            .fill(MahjongCloth.feltDeep.opacity(0.5))
-            .overlay(shape.stroke(LinearGradient(colors: [MahjongCloth.rimEdge.opacity(0.95),
-                                                          MahjongCloth.rimEdge.opacity(0.3)],
-                                                 startPoint: .top, endPoint: .bottom),
-                                  lineWidth: 5)
-                .blur(radius: 4)
-                .mask(shape))
-            .overlay(shape.strokeBorder(.white.opacity(0.35), lineWidth: 1))
+            .stroke(LinearGradient(colors: [MahjongCloth.rimEdge.opacity(0.9),
+                                            MahjongCloth.rimEdge.opacity(0.25)],
+                                   startPoint: .top, endPoint: .bottom),
+                    lineWidth: 6)
+            .blur(radius: 5)
+            .mask(shape)
+            .allowsHitTesting(false)
     }
 
     /// 中央那个骰盅：立体小方座 + 一个凹进去的圆盘写「剩余 N」。
