@@ -317,93 +317,169 @@ struct MahjongTileFace: View {
 }
 
 /// 扣着的牌（对手手牌 / 暗杠）。
-/// 0901 二稿。一稿的错（她抓的「贴图小、立不起来」）：她的图**自带**米白牌身
-/// 和圆角，我又在外面裹了层身子+描边+让位，图缩成中间一小块贴纸；厚度条还放在
-/// 底下——那是躺着的牌的画法。
-/// 现在：图铺满整张牌（它自带的框就是牌身），**头顶**让出一条受光的窄顶面——
-/// 立着的牌头顶朝天，从 11° 俯角看下去就该露这一条。别再给它套第二层框。
+/// 普通状态是躺在桌上的完整牌背；standing 专供横屏对家，不能拿同一个圆角矩形
+/// 加一条亮边冒充立牌。立牌明确拆成正面、顶面和右侧面，关掉投影也看得出厚度。
 struct MahjongTileBack: View {
     var width: CGFloat = 24
-    /// 立着的牌（对家手牌）。0901 五稿：三稿的 1.08 矮方块她验收打回
-    /// 「牌真的没有立起来」——立牌要**高过宽**才像站着，头顶顶面加厚、
-    /// 脚下压一道贴地暗边，站姿全靠这两笔。
-    /// 躺着的（副露里的暗杠、竖屏那些）照旧 1.34。
     var standing: Bool = false
-
-    private var h: CGFloat { width * (standing ? 1.18 : 1.34) }
-
-    /// 头顶那条顶面
-    private var thickness: CGFloat { max(width * (standing ? 0.24 : 0.14), 2) }
 
     private var corner: CGFloat { width * 0.15 }
 
+    @ViewBuilder
     var body: some View {
+        if standing { standingBody } else { flatBody }
+    }
+
+    /// 竖着的牌。frontW 给右侧面让位；三个 Path 共用同一组边，不能再拆成互不相干
+    /// 的圆角矩形。牌背图只铺正面，顶面和侧面永远是牌身材质。
+    private var standingBody: some View {
+        let side = max(width * 0.12, 2.4)
+        let top = max(width * 0.20, 3.5)
+        let frontW = width - side
+        let frontH = width * 1.24
+        let totalH = top + frontH
+        let faceShape = RoundedRectangle(cornerRadius: width * 0.10, style: .continuous)
+
+        return ZStack(alignment: .topLeading) {
+            // 顶面：向右上方退，和正面上沿共边。
+            Path { p in
+                p.move(to: CGPoint(x: 0, y: top))
+                p.addLine(to: CGPoint(x: frontW, y: top))
+                p.addLine(to: CGPoint(x: width, y: 0))
+                p.addLine(to: CGPoint(x: side, y: 0))
+                p.closeSubpath()
+            }
+            .fill(LinearGradient(colors: [QipaiPalette.qhex(0xFFFCF6),
+                                          QipaiPalette.qhex(0xDDD2BE)],
+                                 startPoint: .topLeading, endPoint: .bottomTrailing))
+
+            // 正面：新的牌背素材包含完整奶白牌壳，按立牌比例铺满这一面。
+            Image("MahjongTileBackArt")
+                .resizable()
+                .scaledToFill()
+                .frame(width: frontW, height: frontH)
+                .clipShape(faceShape)
+                .overlay(
+                    LinearGradient(colors: [.clear,
+                                            QipaiPalette.qhex(0x7A685F).opacity(0.24)],
+                                   startPoint: .center, endPoint: .bottom)
+                        .clipShape(faceShape)
+                )
+                .overlay(faceShape.stroke(QipaiPalette.qhex(0xB7AA96).opacity(0.65),
+                                          lineWidth: 0.65))
+                .offset(y: top)
+
+            // 右侧面：背光，比顶面深；下端与正面底边共点。
+            Path { p in
+                p.move(to: CGPoint(x: frontW, y: top))
+                p.addLine(to: CGPoint(x: width, y: 0))
+                p.addLine(to: CGPoint(x: width, y: frontH))
+                p.addLine(to: CGPoint(x: frontW, y: totalH))
+                p.closeSubpath()
+            }
+            .fill(LinearGradient(colors: [QipaiPalette.qhex(0xE9DFCC),
+                                          QipaiPalette.qhex(0xB7AA92)],
+                                 startPoint: .top, endPoint: .bottom))
+            .overlay(
+                Path { p in
+                    p.move(to: CGPoint(x: frontW, y: top))
+                    p.addLine(to: CGPoint(x: frontW, y: totalH))
+                }
+                .stroke(.white.opacity(0.32), lineWidth: 0.55)
+            )
+
+            // 接地暗线只贴在底边，不再围着整张牌发光。
+            Capsule()
+                .fill(QipaiPalette.qhex(0x675B50).opacity(0.48))
+                .frame(width: frontW * 0.88, height: max(width * 0.045, 0.8))
+                .offset(x: frontW * 0.06, y: totalH - max(width * 0.045, 0.8))
+        }
+        .frame(width: width, height: totalH)
+        .shadow(color: QipaiPalette.shadowTint.opacity(0.28),
+                radius: width * 0.10, x: width * 0.10, y: width * 0.14)
+    }
+
+    private var flatBody: some View {
+        let h = width * 1.34
+        let thickness = max(width * 0.14, 2)
         let shape = RoundedRectangle(cornerRadius: corner, style: .continuous)
-        ZStack(alignment: .top) {
-            // 牌身兜底 + 头顶那条顶面的颜色：受光，最亮的象牙
+        return ZStack(alignment: .top) {
             shape.fill(LinearGradient(colors: [QipaiPalette.qhex(0xFBF6EB), QipaiPalette.qhex(0xE2D9C5)],
                                       startPoint: .top, endPoint: .bottom))
-            // 背面：她的图铺满，只给顶面让出一条。
-            // 裁形的圆角略小于牌身——就当是图自己那圈框的弧度，别裁出白缝
             Color.clear
                 .overlay(Image("MahjongTileBackArt").resizable().scaledToFill())
                 .clipShape(RoundedRectangle(cornerRadius: corner * 0.9, style: .continuous))
                 .padding(.top, thickness)
-            // 站着的牌脚下那道暗边：立面贴地背光，没有它就是一张贴纸
-            if standing {
-                VStack {
-                    Spacer()
-                    LinearGradient(colors: [.clear, QipaiPalette.qhex(0x8F8470).opacity(0.55)],
-                                   startPoint: .top, endPoint: .bottom)
-                        .frame(height: h * 0.16)
-                }
-                .clipShape(shape)
-                .allowsHitTesting(false)
-            }
         }
         .frame(width: width, height: h)
         .overlay(shape.stroke(QipaiPalette.qhex(0xB9AE97).opacity(0.7), lineWidth: 0.7))
-        .shadow(color: QipaiPalette.shadowTint.opacity(standing ? 0.32 : 0.25),
-                radius: width * 0.09,
-                x: width * 0.03, y: width * (standing ? 0.12 : 0.08))
+        .shadow(color: QipaiPalette.shadowTint.opacity(0.25),
+                radius: width * 0.09, x: width * 0.03, y: width * 0.08)
     }
 }
 
-/// 侧立牌墙的一片（0901 六稿，按腾讯参考图逐像素拆的解剖）：
-/// 站成一排的牌从斜上方看过去，每张只露一条**横片**——
-/// 片的上沿一线是受光的象牙顶面，下面大半是牌背。一条条紧密码上去就是墙。
-/// 五稿让每张露整张竖排牌背（叠出来还是一摞躺着的卡片，她打回两次）——别改回去。
-/// 墙最南端还要压一张 MahjongTileSideCap：离你最近那张牌露出的整张侧脸。
+/// 左右牌墙的一片。完整牌背图不能 scaledToFill 进这种横片：那会把中央花章裁出来，
+/// 每张重复一次，整排就成了「粉色梯子」。侧墙只显示连续的粉色背面立面和奶白厚度。
 struct MahjongTileSide: View {
     var width: CGFloat = 24
+    var mirrored = false
 
-    private var h: CGFloat { width * 0.46 }
-    private var topH: CGFloat { width * 0.15 }
-    private var corner: CGFloat { width * 0.08 }
+    private var h: CGFloat { width * 0.43 }
+    private var edgeW: CGFloat { width * 0.28 }
 
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: corner, style: .continuous)
-        VStack(spacing: 0) {
-            // 上沿一线：牌的顶面，受光最亮
-            LinearGradient(colors: [QipaiPalette.qhex(0xFDFAF2), QipaiPalette.qhex(0xE8DFCA)],
-                           startPoint: .top, endPoint: .bottom)
-                .frame(height: topH)
-            // 下面大半：牌背，往下略压暗（一张压着一张的阴影感）
-            Color.clear
-                .overlay(Image("MahjongTileBackArt").resizable().scaledToFill())
-                .overlay(LinearGradient(colors: [.clear, QipaiPalette.qhex(0x8F8470).opacity(0.28)],
-                                        startPoint: .top, endPoint: .bottom))
+        ZStack {
+            // 外侧奶白厚度面。左右牌墙必须镜像，不能把同一排直接旋转。
+            Path { p in
+                if mirrored {
+                    p.move(to: CGPoint(x: width - edgeW, y: 1))
+                    p.addLine(to: CGPoint(x: width, y: 0))
+                    p.addLine(to: CGPoint(x: width, y: h))
+                    p.addLine(to: CGPoint(x: width - edgeW, y: h - 1))
+                } else {
+                    p.move(to: CGPoint(x: 0, y: 0))
+                    p.addLine(to: CGPoint(x: edgeW, y: 1))
+                    p.addLine(to: CGPoint(x: edgeW, y: h - 1))
+                    p.addLine(to: CGPoint(x: 0, y: h))
+                }
+                p.closeSubpath()
+            }
+            .fill(LinearGradient(colors: [QipaiPalette.qhex(0xFFFDF7),
+                                          QipaiPalette.qhex(0xD8CEBA)],
+                                 startPoint: .top, endPoint: .bottom))
+
+            // 朝桌心的粉色背面立面；这里故意不用图片，避免花章被重复裁切。
+            Path { p in
+                if mirrored {
+                    p.move(to: CGPoint(x: 0, y: 0))
+                    p.addLine(to: CGPoint(x: width - edgeW, y: 1))
+                    p.addLine(to: CGPoint(x: width - edgeW, y: h - 1))
+                    p.addLine(to: CGPoint(x: 0, y: h))
+                } else {
+                    p.move(to: CGPoint(x: edgeW, y: 1))
+                    p.addLine(to: CGPoint(x: width, y: 0))
+                    p.addLine(to: CGPoint(x: width, y: h))
+                    p.addLine(to: CGPoint(x: edgeW, y: h - 1))
+                }
+                p.closeSubpath()
+            }
+            .fill(LinearGradient(colors: [QipaiPalette.qhex(0xF3CBD5),
+                                          QipaiPalette.qhex(0xD98FA4)],
+                                 startPoint: .topLeading, endPoint: .bottomTrailing))
+
+            Rectangle()
+                .fill(QipaiPalette.qhex(0xA96E7F).opacity(0.46))
+                .frame(height: 0.65)
+                .frame(maxHeight: .infinity, alignment: .bottom)
         }
         .frame(width: width, height: h)
-        .clipShape(shape)
-        .overlay(shape.stroke(QipaiPalette.qhex(0xB9AE97).opacity(0.55), lineWidth: 0.6))
     }
 }
 
-/// 侧墙最南端的收口：离你最近那张牌的整张侧脸——一块干净的象牙立面。
-/// 腾讯参考图里那面绿墙脚下的白块就是它，墙有没有「立住」一半靠它压阵。
+/// 侧墙最南端的收口：最后一张牌的端面。左右镜像时光线仍从左上来，不能镜像阴影。
 struct MahjongTileSideCap: View {
     var width: CGFloat = 24
+    var mirrored = false
 
     private var h: CGFloat { width * 0.82 }
     private var corner: CGFloat { width * 0.12 }
@@ -412,7 +488,8 @@ struct MahjongTileSideCap: View {
         let shape = RoundedRectangle(cornerRadius: corner, style: .continuous)
         shape
             .fill(LinearGradient(colors: [QipaiPalette.qhex(0xFCF8EF), QipaiPalette.qhex(0xD9CFB9)],
-                                 startPoint: .top, endPoint: .bottom))
+                                 startPoint: mirrored ? .topTrailing : .topLeading,
+                                 endPoint: mirrored ? .bottomLeading : .bottomTrailing))
             .overlay(shape.stroke(QipaiPalette.qhex(0xB9AE97).opacity(0.7), lineWidth: 0.7))
             .frame(width: width, height: h)
     }
