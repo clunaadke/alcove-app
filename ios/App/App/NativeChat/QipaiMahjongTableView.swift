@@ -316,94 +316,18 @@ struct MahjongTileFace: View {
     }
 }
 
-/// 扣着的牌（对手手牌 / 暗杠）。
-/// 普通状态是躺在桌上的完整牌背；standing 专供横屏对家，不能拿同一个圆角矩形
-/// 加一条亮边冒充立牌。立牌明确拆成正面、顶面和右侧面，关掉投影也看得出厚度。
+/// 扣着的牌（竖屏对手手牌 / 暗杠）。横屏三家牌墙不用这个组件：整排牌必须共享
+/// 一个顶面和侧面，否则每张牌之间会夹一条奶白侧面，看起来像钢琴键。
 struct MahjongTileBack: View {
     var width: CGFloat = 24
-    var standing: Bool = false
 
     private var corner: CGFloat { width * 0.15 }
 
-    @ViewBuilder
     var body: some View {
-        if standing { standingBody } else { flatBody }
-    }
-
-    /// 竖着的牌。frontW 给右侧面让位；三个 Path 共用同一组边，不能再拆成互不相干
-    /// 的圆角矩形。牌背图只铺正面，顶面和侧面永远是牌身材质。
-    private var standingBody: some View {
-        let side = max(width * 0.12, 2.4)
-        let top = max(width * 0.20, 3.5)
-        let frontW = width - side
-        let frontH = width * 1.24
-        let totalH = top + frontH
-        let faceShape = RoundedRectangle(cornerRadius: width * 0.10, style: .continuous)
-
-        return ZStack(alignment: .topLeading) {
-            // 顶面：向右上方退，和正面上沿共边。
-            Path { p in
-                p.move(to: CGPoint(x: 0, y: top))
-                p.addLine(to: CGPoint(x: frontW, y: top))
-                p.addLine(to: CGPoint(x: width, y: 0))
-                p.addLine(to: CGPoint(x: side, y: 0))
-                p.closeSubpath()
-            }
-            .fill(LinearGradient(colors: [QipaiPalette.qhex(0xFFFCF6),
-                                          QipaiPalette.qhex(0xDDD2BE)],
-                                 startPoint: .topLeading, endPoint: .bottomTrailing))
-
-            // 正面：新的牌背素材包含完整奶白牌壳，按立牌比例铺满这一面。
-            Image("MahjongTileBackArt")
-                .resizable()
-                .scaledToFill()
-                .frame(width: frontW, height: frontH)
-                .clipShape(faceShape)
-                .overlay(
-                    LinearGradient(colors: [.clear,
-                                            QipaiPalette.qhex(0x7A685F).opacity(0.24)],
-                                   startPoint: .center, endPoint: .bottom)
-                        .clipShape(faceShape)
-                )
-                .overlay(faceShape.stroke(QipaiPalette.qhex(0xB7AA96).opacity(0.65),
-                                          lineWidth: 0.65))
-                .offset(y: top)
-
-            // 右侧面：背光，比顶面深；下端与正面底边共点。
-            Path { p in
-                p.move(to: CGPoint(x: frontW, y: top))
-                p.addLine(to: CGPoint(x: width, y: 0))
-                p.addLine(to: CGPoint(x: width, y: frontH))
-                p.addLine(to: CGPoint(x: frontW, y: totalH))
-                p.closeSubpath()
-            }
-            .fill(LinearGradient(colors: [QipaiPalette.qhex(0xE9DFCC),
-                                          QipaiPalette.qhex(0xB7AA92)],
-                                 startPoint: .top, endPoint: .bottom))
-            .overlay(
-                Path { p in
-                    p.move(to: CGPoint(x: frontW, y: top))
-                    p.addLine(to: CGPoint(x: frontW, y: totalH))
-                }
-                .stroke(.white.opacity(0.32), lineWidth: 0.55)
-            )
-
-            // 接地暗线只贴在底边，不再围着整张牌发光。
-            Capsule()
-                .fill(QipaiPalette.qhex(0x675B50).opacity(0.48))
-                .frame(width: frontW * 0.88, height: max(width * 0.045, 0.8))
-                .offset(x: frontW * 0.06, y: totalH - max(width * 0.045, 0.8))
-        }
-        .frame(width: width, height: totalH)
-        .shadow(color: QipaiPalette.shadowTint.opacity(0.28),
-                radius: width * 0.10, x: width * 0.10, y: width * 0.14)
-    }
-
-    private var flatBody: some View {
         let h = width * 1.34
         let thickness = max(width * 0.14, 2)
         let shape = RoundedRectangle(cornerRadius: corner, style: .continuous)
-        return ZStack(alignment: .top) {
+        ZStack(alignment: .top) {
             shape.fill(LinearGradient(colors: [QipaiPalette.qhex(0xFBF6EB), QipaiPalette.qhex(0xE2D9C5)],
                                       startPoint: .top, endPoint: .bottom))
             Color.clear
@@ -418,80 +342,162 @@ struct MahjongTileBack: View {
     }
 }
 
-/// 左右牌墙的一片。完整牌背图不能 scaledToFill 进这种横片：那会把中央花章裁出来，
-/// 每张重复一次，整排就成了「粉色梯子」。侧墙只显示连续的粉色背面立面和奶白厚度。
-struct MahjongTileSide: View {
+/// 对家整排立牌。整排只画一个长顶面和一个右端侧面；每张牌只负责正面。
+/// 这样既保留牌背花纹，又不会在每两张之间塞出一条白色厚度。
+struct MahjongTopWall: View {
+    let count: Int
     var width: CGFloat = 24
-    var mirrored = false
-
-    private var h: CGFloat { width * 0.43 }
-    private var edgeW: CGFloat { width * 0.28 }
 
     var body: some View {
-        ZStack {
-            // 外侧奶白厚度面。左右牌墙必须镜像，不能把同一排直接旋转。
-            Path { p in
-                if mirrored {
-                    p.move(to: CGPoint(x: width - edgeW, y: 1))
-                    p.addLine(to: CGPoint(x: width, y: 0))
-                    p.addLine(to: CGPoint(x: width, y: h))
-                    p.addLine(to: CGPoint(x: width - edgeW, y: h - 1))
-                } else {
-                    p.move(to: CGPoint(x: 0, y: 0))
-                    p.addLine(to: CGPoint(x: edgeW, y: 1))
-                    p.addLine(to: CGPoint(x: edgeW, y: h - 1))
-                    p.addLine(to: CGPoint(x: 0, y: h))
-                }
-                p.closeSubpath()
-            }
-            .fill(LinearGradient(colors: [QipaiPalette.qhex(0xFFFDF7),
-                                          QipaiPalette.qhex(0xD8CEBA)],
-                                 startPoint: .top, endPoint: .bottom))
+        let n = max(0, count)
+        let overlap = width * 0.08
+        let totalW = max(CGFloat(n) * width - CGFloat(max(n - 1, 0)) * overlap, 0)
+        let top = max(width * 0.11, 2)
+        let side = max(width * 0.07, 1.2)
+        let faceH = width * 1.16
+        let totalH = top + faceH
+        let corner = width * 0.09
 
-            // 朝桌心的粉色背面立面；这里故意不用图片，避免花章被重复裁切。
+        return ZStack(alignment: .topLeading) {
+            // 整排共享的顶面。
             Path { p in
-                if mirrored {
-                    p.move(to: CGPoint(x: 0, y: 0))
-                    p.addLine(to: CGPoint(x: width - edgeW, y: 1))
-                    p.addLine(to: CGPoint(x: width - edgeW, y: h - 1))
-                    p.addLine(to: CGPoint(x: 0, y: h))
-                } else {
-                    p.move(to: CGPoint(x: edgeW, y: 1))
-                    p.addLine(to: CGPoint(x: width, y: 0))
-                    p.addLine(to: CGPoint(x: width, y: h))
-                    p.addLine(to: CGPoint(x: edgeW, y: h - 1))
-                }
+                p.move(to: CGPoint(x: 0, y: top))
+                p.addLine(to: CGPoint(x: totalW - side, y: top))
+                p.addLine(to: CGPoint(x: totalW, y: 0))
+                p.addLine(to: CGPoint(x: side, y: 0))
                 p.closeSubpath()
             }
-            .fill(LinearGradient(colors: [QipaiPalette.qhex(0xF3CBD5),
-                                          QipaiPalette.qhex(0xD98FA4)],
+            .fill(LinearGradient(colors: [QipaiPalette.qhex(0xFFFDF8),
+                                          QipaiPalette.qhex(0xD8CDBA)],
                                  startPoint: .topLeading, endPoint: .bottomTrailing))
 
-            Rectangle()
-                .fill(QipaiPalette.qhex(0xA96E7F).opacity(0.46))
-                .frame(height: 0.65)
-                .frame(maxHeight: .infinity, alignment: .bottom)
+            HStack(spacing: -overlap) {
+                ForEach(0..<n, id: \.self) { _ in
+                    Image("MahjongTileBackArt")
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: width, height: faceH)
+                        .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
+                }
+            }
+            .offset(y: top)
+
+            // 只有整排最右端露厚度。
+            Path { p in
+                p.move(to: CGPoint(x: totalW - side, y: top))
+                p.addLine(to: CGPoint(x: totalW, y: 0))
+                p.addLine(to: CGPoint(x: totalW, y: faceH))
+                p.addLine(to: CGPoint(x: totalW - side, y: totalH))
+                p.closeSubpath()
+            }
+            .fill(LinearGradient(colors: [QipaiPalette.qhex(0xE9DFCC),
+                                          QipaiPalette.qhex(0xB9AB91)],
+                                 startPoint: .top, endPoint: .bottom))
+
+            Capsule()
+                .fill(QipaiPalette.qhex(0x62564D).opacity(0.34))
+                .frame(width: totalW * 0.92, height: 0.9)
+                .offset(x: totalW * 0.03, y: totalH - 0.9)
         }
-        .frame(width: width, height: h)
+        .frame(width: totalW, height: totalH)
+        .shadow(color: QipaiPalette.shadowTint.opacity(0.25),
+                radius: width * 0.11, x: width * 0.08, y: width * 0.13)
     }
 }
 
-/// 侧墙最南端的收口：最后一张牌的端面。左右镜像时光线仍从左上来，不能镜像阴影。
-struct MahjongTileSideCap: View {
-    var width: CGFloat = 24
+/// 左右整面牌墙。粉色背面和奶白厚度都是连续长面，分牌缝最后轻轻刻上去；
+/// 不能再把十三个双色小矩形逐个堆叠，那就是上一版两根塑料尺的来源。
+struct MahjongSideWall: View {
+    let count: Int
+    var width: CGFloat = 28
     var mirrored = false
 
-    private var h: CGFloat { width * 0.82 }
-    private var corner: CGFloat { width * 0.12 }
-
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: corner, style: .continuous)
-        shape
-            .fill(LinearGradient(colors: [QipaiPalette.qhex(0xFCF8EF), QipaiPalette.qhex(0xD9CFB9)],
-                                 startPoint: mirrored ? .topTrailing : .topLeading,
-                                 endPoint: mirrored ? .bottomLeading : .bottomTrailing))
-            .overlay(shape.stroke(QipaiPalette.qhex(0xB9AE97).opacity(0.7), lineWidth: 0.7))
-            .frame(width: width, height: h)
+        let n = max(0, count)
+        let segmentH = width * 0.43
+        let bodyH = CGFloat(n) * segmentH
+        let capH = width * 1.12
+        let totalH = bodyH + capH
+        let edge = width * 0.29
+        let splitTop = mirrored ? width - edge : edge
+        let splitBottom = splitTop + (mirrored ? -1 : 1)
+        let outer = RoundedRectangle(cornerRadius: width * 0.11, style: .continuous)
+
+        return ZStack(alignment: .topLeading) {
+            // 一整面奶白厚度。
+            Path { p in
+                if mirrored {
+                    p.move(to: CGPoint(x: splitTop, y: 1))
+                    p.addLine(to: CGPoint(x: width, y: 0))
+                    p.addLine(to: CGPoint(x: width, y: bodyH))
+                    p.addLine(to: CGPoint(x: splitBottom, y: bodyH - 1))
+                } else {
+                    p.move(to: CGPoint(x: 0, y: 0))
+                    p.addLine(to: CGPoint(x: splitTop, y: 1))
+                    p.addLine(to: CGPoint(x: splitBottom, y: bodyH - 1))
+                    p.addLine(to: CGPoint(x: 0, y: bodyH))
+                }
+                p.closeSubpath()
+            }
+            .fill(LinearGradient(colors: [QipaiPalette.qhex(0xFFFDF8),
+                                          QipaiPalette.qhex(0xD7CCB7)],
+                                 startPoint: .topLeading, endPoint: .bottomTrailing))
+
+            // 一整面粉色牌背立面。
+            Path { p in
+                if mirrored {
+                    p.move(to: CGPoint(x: 0, y: 0))
+                    p.addLine(to: CGPoint(x: splitTop, y: 1))
+                    p.addLine(to: CGPoint(x: splitBottom, y: bodyH - 1))
+                    p.addLine(to: CGPoint(x: 0, y: bodyH))
+                } else {
+                    p.move(to: CGPoint(x: splitTop, y: 1))
+                    p.addLine(to: CGPoint(x: width, y: 0))
+                    p.addLine(to: CGPoint(x: width, y: bodyH))
+                    p.addLine(to: CGPoint(x: splitBottom, y: bodyH - 1))
+                }
+                p.closeSubpath()
+            }
+            .fill(LinearGradient(colors: [QipaiPalette.qhex(0xF6D4DC),
+                                          QipaiPalette.qhex(0xD98FA4)],
+                                 startPoint: .topLeading, endPoint: .bottomTrailing))
+            .overlay(
+                LinearGradient(colors: [.white.opacity(0.28), .clear, .black.opacity(0.08)],
+                               startPoint: mirrored ? .leading : .trailing,
+                               endPoint: mirrored ? .trailing : .leading)
+                    .mask(
+                        Rectangle().frame(width: width - edge, height: bodyH)
+                            .frame(maxWidth: .infinity,
+                                   alignment: mirrored ? .leading : .trailing)
+                    )
+            )
+
+            // 很淡的牌缝，只刻线，不把整面切成双色积木。
+            ForEach(1..<max(n, 1), id: \.self) { i in
+                Rectangle()
+                    .fill(QipaiPalette.qhex(0xA86B7D).opacity(0.24))
+                    .frame(width: width, height: 0.45)
+                    .offset(y: CGFloat(i) * segmentH)
+            }
+
+            // 最近一张牌的象牙端面，连在长墙底下。
+            RoundedRectangle(cornerRadius: width * 0.10, style: .continuous)
+                .fill(LinearGradient(colors: [QipaiPalette.qhex(0xFFFDF7),
+                                              QipaiPalette.qhex(0xD4C7B0)],
+                                     startPoint: mirrored ? .topTrailing : .topLeading,
+                                     endPoint: mirrored ? .bottomLeading : .bottomTrailing))
+                .overlay(
+                    RoundedRectangle(cornerRadius: width * 0.10, style: .continuous)
+                        .stroke(QipaiPalette.qhex(0xB8AA94).opacity(0.62), lineWidth: 0.65)
+                )
+                .frame(width: width, height: capH)
+                .offset(y: bodyH - 0.5)
+        }
+        .frame(width: width, height: totalH)
+        .clipShape(outer)
+        .overlay(outer.stroke(QipaiPalette.qhex(0xB9AB96).opacity(0.42), lineWidth: 0.55))
+        .shadow(color: QipaiPalette.shadowTint.opacity(0.24),
+                radius: width * 0.15, x: width * 0.08, y: width * 0.12)
     }
 }
 

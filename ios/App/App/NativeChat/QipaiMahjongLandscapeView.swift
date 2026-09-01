@@ -1244,19 +1244,10 @@ struct QipaiMahjongLandscapeView: View {
                          wallSide: WallSide = .left) -> some View {
         let n = max(0, min(count, 14))
         if axis == .horizontal {
-            HStack(spacing: -width * 0.03) {
-                ForEach(0..<n, id: \.self) { _ in MahjongTileBack(width: width, standing: true) }
-            }
+            if n > 0 { MahjongTopWall(count: n, width: width) }
         } else {
             let mirrored = wallSide == .right
-            VStack(spacing: 0) {
-                ForEach(0..<n, id: \.self) { _ in
-                    MahjongTileSide(width: width, mirrored: mirrored)
-                }
-                if n > 0 { MahjongTileSideCap(width: width, mirrored: mirrored) }
-            }
-            .shadow(color: QipaiPalette.shadowTint.opacity(0.28), radius: width * 0.16,
-                    x: width * 0.08, y: width * 0.12)
+            if n > 0 { MahjongSideWall(count: n, width: width, mirrored: mirrored) }
         }
     }
 
