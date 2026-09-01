@@ -3575,79 +3575,26 @@ struct ListenChatCard: View {
     }
 }
 
-/// 一起听房间：盖在主聊天页上的独立浮层，白瓷波点全套。
-struct ListenRoomView: View {
+/// 展开态大卡（参考图那种）：头像弧线+累计时长在上，播放器在下，
+/// 钉在聊天页顶部，聊天在卡下面照聊。右上角收起变回小卡。
+struct ListenBoardCard: View {
+    @ObservedObject var model: MusicModel
     let dark: Bool
-    let onDismiss: () -> Void
-    @ObservedObject private var model = MusicModel.shared
-    @State private var showPlayer = false
-    @State private var showInsight = false
+    let collapse: () -> Void
+    let openPlayer: () -> Void
+    let openInsight: () -> Void
     @AppStorage("userAvatarDataURL") private var userAvatar = ""
     @AppStorage("assistantAvatarDataURL") private var assistantAvatar = ""
 
     private var p: ListenPorcelain { ListenPorcelain(dark: dark) }
 
     var body: some View {
-        ZStack {
-            p.fog.ignoresSafeArea()
-            QipaiDots(color: p.dot, opacity: 0.3).ignoresSafeArea().allowsHitTesting(false)
-            VStack(spacing: 0) {
-                HStack {
-                    Text("一起听").font(.system(size: 17, weight: .semibold)).foregroundColor(p.ink)
-                    Spacer()
-                    Button(action: onDismiss) {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundColor(p.inkDim)
-                            .frame(width: 30, height: 30)
-                            .background(p.panel, in: Circle())
-                            .overlay(Circle().stroke(p.line, lineWidth: 1))
-                    }.buttonStyle(.plain)
-                }
-                .padding(.horizontal, 18).padding(.top, 10).padding(.bottom, 6)
-                ScrollView(showsIndicators: false) {
-                    VStack(spacing: 14) {
-                        coupleCard
-                        if model.nowPlaying != nil { playerPanel }
-                        else {
-                            VStack(spacing: 6) {
-                                Image(systemName: "music.note.list").font(.system(size: 22)).foregroundColor(p.inkDim)
-                                Text("还没在放歌").font(.system(size: 13, weight: .medium)).foregroundColor(p.ink)
-                                Text("去音乐页点一首，这里就热闹了")
-                                    .font(.system(size: 11)).foregroundColor(p.inkDim)
-                            }
-                            .frame(maxWidth: .infinity).padding(.vertical, 24)
-                            .modifier(ListenPanel(p: p, corner: 18))
-                        }
-                        if model.queue.count > 1 { queuePanel }
-                    }
-                    .padding(.horizontal, 16).padding(.vertical, 10)
-                }
-            }
-        }
-        .qipaiGrain(dark ? 0.22 : 0.4)
-        .sheet(isPresented: $showPlayer) {
-            MusicPlayerSheet(model: model)
-                .presentationDetents([.fraction(0.75)])
-                .presentationDragIndicator(.visible)
-                .presentationBackground(.ultraThinMaterial)
-        }
-        .sheet(isPresented: $showInsight) {
-            if let song = model.nowPlaying {
-                SongInsightSheet(song: song)
-                    .presentationDetents([.large])
-                    .presentationDragIndicator(.visible)
-            }
-        }
-    }
-
-    private var coupleCard: some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 12) {
             ZStack {
                 ListenArc()
                     .stroke(p.accent.opacity(0.4),
                             style: StrokeStyle(lineWidth: 1.5, dash: [3, 4]))
-                    .frame(height: 72).padding(.horizontal, 24)
+                    .frame(height: 70).padding(.horizontal, 28)
                 HStack {
                     avatarView(userAvatar, fallback: "霁")
                     Spacer()
@@ -3657,89 +3604,63 @@ struct ListenRoomView: View {
                     }
                     Spacer()
                     avatarView(assistantAvatar, fallback: "璟")
-                }.padding(.horizontal, 8)
+                }.padding(.horizontal, 6)
+            }
+            if let song = model.nowPlaying {
+                VStack(spacing: 8) {
+                    Button(action: openPlayer) {
+                        HStack(spacing: 5) {
+                            Text(song.name).font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(p.ink).lineLimit(1)
+                            Text("— \(song.artist)").font(.system(size: 12))
+                                .foregroundColor(p.inkDim).lineLimit(1)
+                        }.contentShape(Rectangle())
+                    }.buttonStyle(.plain)
+                    VStack(spacing: 2) {
+                        Slider(value: Binding(get: { model.progress }, set: { model.seek(to: $0) }),
+                               in: 0...max(model.duration, 1)).tint(p.accent)
+                        HStack {
+                            Text(Self.time(model.progress)); Spacer(); Text(Self.time(model.duration))
+                        }.font(.system(size: 9, design: .monospaced)).foregroundColor(p.inkDim)
+                    }
+                    HStack {
+                        Button { Task { await model.toggleLike() } } label: {
+                            Image(systemName: model.currentIsLiked ? "heart.fill" : "heart")
+                                .foregroundColor(model.currentIsLiked ? .red : p.ink)
+                        }
+                        Spacer()
+                        Button { model.prev() } label: { Image(systemName: "backward.fill") }
+                        Spacer()
+                        Button { model.toggle() } label: {
+                            Image(systemName: model.isPlaying ? "pause.fill" : "play.fill")
+                                .font(.system(size: 22))
+                        }
+                        Spacer()
+                        Button { model.next() } label: { Image(systemName: "forward.fill") }
+                        Spacer()
+                        Button { model.cyclePlayMode() } label: { Image(systemName: model.playMode.icon) }
+                        Spacer()
+                        Button(action: openInsight) { Image(systemName: "waveform.badge.magnifyingglass") }
+                    }
+                    .font(.system(size: 16)).foregroundColor(p.ink)
+                    .buttonStyle(.plain).padding(.horizontal, 2)
+                }
+                .padding(.horizontal, 14).padding(.vertical, 12)
+                .background(p.panel, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous)
+                    .stroke(p.line, lineWidth: 1))
             }
         }
         .padding(14)
-        .modifier(ListenPanel(p: p, corner: 18, dotted: true))
-    }
-
-    private var playerPanel: some View {
-        VStack(spacing: 10) {
-            if let song = model.nowPlaying {
-                Button { showPlayer = true } label: {
-                    HStack(spacing: 11) {
-                        AsyncImage(url: URL(string: song.cover)) { $0.resizable().scaledToFill() }
-                            placeholder: { p.line }
-                            .frame(width: 46, height: 46)
-                            .clipShape(RoundedRectangle(cornerRadius: 9))
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(song.name).font(.system(size: 14, weight: .semibold))
-                                .foregroundColor(p.ink).lineLimit(1)
-                            Text(song.artist).font(.system(size: 11))
-                                .foregroundColor(p.inkDim).lineLimit(1)
-                        }
-                        Spacer()
-                        Image(systemName: "chevron.up").font(.system(size: 11)).foregroundColor(p.inkDim)
-                    }.contentShape(Rectangle())
-                }.buttonStyle(.plain)
-                VStack(spacing: 2) {
-                    Slider(value: Binding(get: { model.progress }, set: { model.seek(to: $0) }),
-                           in: 0...max(model.duration, 1)).tint(p.accent)
-                    HStack {
-                        Text(Self.time(model.progress)); Spacer(); Text(Self.time(model.duration))
-                    }.font(.system(size: 9, design: .monospaced)).foregroundColor(p.inkDim)
-                }
-                HStack {
-                    Button { showInsight = true } label: {
-                        Image(systemName: "waveform.badge.magnifyingglass")
-                    }
-                    Spacer()
-                    Button { model.prev() } label: { Image(systemName: "backward.fill") }
-                    Spacer()
-                    Button { model.toggle() } label: {
-                        Image(systemName: model.isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                            .font(.system(size: 34))
-                    }
-                    Spacer()
-                    Button { model.next() } label: { Image(systemName: "forward.fill") }
-                    Spacer()
-                    Button { model.cyclePlayMode() } label: { Image(systemName: model.playMode.icon) }
-                }
-                .font(.system(size: 16)).foregroundColor(p.ink)
-                .buttonStyle(.plain).padding(.horizontal, 4)
-            }
+        .modifier(ListenPanel(p: p, corner: 20, dotted: true))
+        .overlay(alignment: .topTrailing) {
+            Button(action: collapse) {
+                Image(systemName: "chevron.up")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(p.inkDim)
+                    .frame(width: 28, height: 28).contentShape(Rectangle())
+            }.buttonStyle(.plain).padding(4)
         }
-        .padding(13)
-        .modifier(ListenPanel(p: p, corner: 18))
-    }
-
-    private var queuePanel: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("接下来").font(.system(size: 13, weight: .semibold)).foregroundColor(p.ink)
-            ForEach(Array(model.queue.enumerated()), id: \.element.id) { index, song in
-                Button {
-                    let source = model.queue
-                    Task { await model.play(song, queue: source) }
-                } label: {
-                    HStack(spacing: 10) {
-                        Image(systemName: index == model.queueIndex ? "waveform" : "music.note")
-                            .font(.system(size: 12))
-                            .foregroundColor(index == model.queueIndex ? p.accent : p.inkDim)
-                            .frame(width: 18)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(song.name).font(.system(size: 12, weight: .medium))
-                                .foregroundColor(p.ink).lineLimit(1)
-                            Text(song.artist).font(.system(size: 10))
-                                .foregroundColor(p.inkDim).lineLimit(1)
-                        }
-                        Spacer()
-                    }.contentShape(Rectangle())
-                }.buttonStyle(.plain)
-            }
-        }
-        .padding(13)
-        .modifier(ListenPanel(p: p, corner: 18, dotted: true))
     }
 
     private func avatarView(_ dataURL: String, fallback: String) -> some View {
