@@ -448,10 +448,10 @@ private struct LetterComposeView: View {
                     }.pickerStyle(.menu) }
                     .font(.system(size: 12)).padding(12).paperCard(pal)
                 }
-                // 任务#1356：定时信不给这个勾。勾了它会当场把信封卡拍到他聊天页，
-                // 卡上还写着"这封信现在就能读"—— 可读信那道门认送达时间，
-                // 没到点一律挡回去。那张卡既说谎又提前泄底。
-                if editing == nil && mode != "scheduled" {
+                // 任务#1359：这个勾只有"上锁"时才拿得出手。
+                // 立刻寄的信通知和信封卡一起飞，没什么好选；定时信勾了会把卡
+                // 提前拍到他聊天页、还写着"现在就能读"，可读信那道门没到点是拒的。
+                if editing == nil && mode == "locked" {
                     Toggle(isOn: $announce) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("寄完先让他看见这个信封")
@@ -512,8 +512,8 @@ private struct LetterComposeView: View {
             path = "/letters/send"
             if mode == "scheduled" { payload["deliver_at"] = iso(deliverAt) }
             if mode == "locked" { payload["lock_days"] = lockDays }
-            // 切到定时模式之前可能已经勾上了，这里再拦一道
-            if announce && mode != "scheduled" { payload["announce"] = true }
+            // 切模式之前可能已经勾上了，这里再拦一道
+            if announce && mode == "locked" { payload["announce"] = true }
         }
         Task { @MainActor in
             do {
