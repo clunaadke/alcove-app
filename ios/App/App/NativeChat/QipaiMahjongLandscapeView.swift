@@ -275,10 +275,12 @@ enum MahjongFaces {
 
     /// ‼️牌桌的俯角。**桌子和裁剪预览必须共用这一对数**——
     /// 分开写的话，桌子一调角度、预览就开始骗人（0901 她抓过一次）。
-    /// 0901 她验收后打回：28° 斜得太狠（"我只要倾斜一点点"），收到 11°，
-    /// 透视强度也跟着从 0.62 降下来，不然浅角度配强透视上边还是缩腰。
-    static let clothTilt: Double = 11
-    static let clothPerspective: CGFloat = 0.24
+    /// 调参史：28°（一稿，纯平贴图斜了字全歪，她打回"我只要倾斜一点点"）
+    /// → 11°（三稿，她又对着腾讯图问"是不是还要再倾斜一点"——太平了）
+    /// → 17°（四稿现值）。四稿起每张牌自带三面挤出，中等俯角吃得动了；
+    /// 再嫌平先加 perspective 再加角度，角度上 20 之前先看牌面字歪不歪。
+    static let clothTilt: Double = 17
+    static let clothPerspective: CGFloat = 0.32
 
     private static var clothURL: URL {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -797,11 +799,14 @@ struct QipaiMahjongLandscapeView: View {
     var body: some View {
         GeometryReader { geo in
             let chatW = min(320, geo.size.width * 0.34)
+            // 0901 四稿她定的：桌子整体往左挪、左右留空**对等**——不是保住左安全区，
+            // 是拿「左安全区」和「右空白」取齐（右边至少 34，拉手 24 宽才不压花边）
+            let tableMargin = max(geo.safeAreaInsets.leading, 34)
             HStack(spacing: 0) {
                 // 0901 她要桌子再大：拉手不再自己占一列，改成浮在桌子右缘上——
                 // 桌布能一直铺到它底下。聊天拉开时它跟着桌边一起往左缩。
                 ZStack(alignment: .trailing) {
-                    stage
+                    stage(sideMargin: tableMargin, safeLeading: geo.safeAreaInsets.leading)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                     chatHandle
                 }
@@ -890,8 +895,12 @@ struct QipaiMahjongLandscapeView: View {
     private var tiltDegrees: Double { MahjongFaces.clothTilt }
     private var tiltPerspective: CGFloat { MahjongFaces.clothPerspective }
 
-    private var stage: some View {
+    private func stage(sideMargin: CGFloat, safeLeading: CGFloat) -> some View {
         GeometryReader { geo in
+            // 舞台内容从左安全区之后起算，所以左边补的是差额、右边补整个边距，
+            // 量到屏幕两边正好相等（拉手浮在右边距里，不再压到桌布花边上）
+            let padLead = max(sideMargin - safeLeading, 0)
+            let boardW = geo.size.width - padLead - sideMargin
             ZStack {
                 // ── 跟着透视一起斜的那层：桌子 + 桌上所有的牌 ──
                 ZStack {
@@ -904,14 +913,17 @@ struct QipaiMahjongLandscapeView: View {
                     // 牌和按钮不跟：它们留在安全区里，不钻灵动岛。
                     // （二稿在这儿挂过 .ignoresSafeArea()，在 fullScreenCover 里
                     // 灵不灵没验证过还容易把居中拽歪，撤了：上下靠负 padding 出血，
-                    // 右边由最外层的 edges:.trailing 负责，左边她点名要留波点）
+                    // 右边由最外层的 edges:.trailing 负责；左右留多宽由外面那对
+                    // padLead/sideMargin 管——0901 四稿她定的「左右留空对等」）
                     MahjongLaceCloth(version: facesVersion)   // 她换了桌布，这块跟着重画
                         .padding(.horizontal, 2)
                         .padding(.vertical, -64)
                     if let view = store.view {
-                        board(view, size: geo.size)
+                        board(view, size: CGSize(width: boardW, height: geo.size.height))
                     }
                 }
+                .padding(.leading, padLead)
+                .padding(.trailing, sideMargin)
                 .rotation3DEffect(.degrees(tiltDegrees),
                                   axis: (x: 1, y: 0, z: 0),
                                   anchor: .center,
@@ -950,31 +962,37 @@ struct QipaiMahjongLandscapeView: View {
             }
 
             if let r = store.view?.round, r > 0 {
-                QipaiChip(text: "第 \(r) 局", tone: .neutral)
+                pillText("第 \(r) 局")
             }
             if let line = statusText {
-                Text(line)
-                    .font(.system(size: 11.5, weight: .semibold))
-                    .foregroundColor(statusIsMine ? QipaiPalette.red : QipaiPalette.ink)
-                    .padding(.horizontal, 10).padding(.vertical, 5)
-                    .background(Capsule().fill(QipaiPalette.panel.opacity(0.92)))
-                    .overlay(Capsule().stroke(QipaiPalette.line, lineWidth: 1))
+                pillText(line, color: statusIsMine ? QipaiPalette.red : QipaiPalette.ink)
             }
         }
         .padding(.leading, 26)
         .padding(.top, 14)
     }
 
-    /// 左上角那两个小胶囊按钮，一个样子
+    /// 左上角所有胶囊**一个身材**：同字号、同内边距、同描边。
+    /// 0901 四稿她点名的「大小参差不齐」——原来局数走 QipaiChip、状态条自成一套，
+    /// 三种高度排一排像地摊。带图标的用 pill，纯文字的用 pillText，别再引第三种。
     private func pill(_ icon: String, _ text: String) -> some View {
         HStack(spacing: 4) {
             Image(systemName: icon).font(.system(size: 11, weight: .semibold))
-            Text(text).font(.system(size: 11.5, weight: .medium))
+            Text(text).font(.system(size: 11.5, weight: .semibold))
         }
         .foregroundColor(QipaiPalette.ink)
         .padding(.horizontal, 10).padding(.vertical, 6)
         .background(Capsule().fill(QipaiPalette.panel.opacity(0.92)))
         .overlay(Capsule().stroke(QipaiPalette.line, lineWidth: 1))
+    }
+
+    private func pillText(_ text: String, color: Color = QipaiPalette.ink) -> some View {
+        Text(text)
+            .font(.system(size: 11.5, weight: .semibold))
+            .foregroundColor(color)
+            .padding(.horizontal, 10).padding(.vertical, 6)
+            .background(Capsule().fill(QipaiPalette.panel.opacity(0.92)))
+            .overlay(Capsule().stroke(QipaiPalette.line, lineWidth: 1))
     }
 
     /// 「等 XX 表态…」这种一行字，拆出来算，别在插值里套三元（类型检查器吃不消）
@@ -1056,29 +1074,38 @@ struct QipaiMahjongLandscapeView: View {
             // 两个叠在一起头像会被压在牌底下（0901 她第一次构建的截图）。
             EmptyView()
         case .top:
-            VStack(spacing: 5) {
+            // 0901 四稿她抓的「你们的牌太小」：对家/左右家全档加大一号，
+            // 跟自家手牌（18~38）的反差收小——腾讯参考图里各家牌的尺度是接近的。
+            // 头像名牌**不再压在牌上面**，挪到右上角（腾讯参考图的摆法，她点名的）：
+            // 牌顶着屏幕上沿摆，省出一整条头像的高度
+            ZStack(alignment: .top) {
+                VStack(spacing: 5) {
+                    backRow(p.handCount, width: 21, axis: .horizontal)
+                    if !p.melds.isEmpty { meldRow(p.melds, width: 20, axis: .horizontal) }
+                }
+                .frame(maxWidth: .infinity, alignment: .center)
                 seatHeader(p, slot: slot, view: view)
-                backRow(p.handCount, width: 17, axis: .horizontal)
-                if !p.melds.isEmpty { meldRow(p.melds, width: 18, axis: .horizontal) }
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .padding(.trailing, 44)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .padding(.top, 10)
+            .padding(.top, 8)
         case .left:
             HStack(spacing: 5) {
                 VStack(spacing: 5) {
                     seatHeader(p, slot: slot, view: view)
-                    if !p.melds.isEmpty { meldRow(p.melds, width: 17, axis: .vertical) }
+                    if !p.melds.isEmpty { meldRow(p.melds, width: 19, axis: .vertical) }
                 }
-                backRow(p.handCount, width: 24, axis: .vertical)
+                backRow(p.handCount, width: 28, axis: .vertical)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             .padding(.leading, 26)
         case .right:
             HStack(spacing: 5) {
-                backRow(p.handCount, width: 24, axis: .vertical)
+                backRow(p.handCount, width: 28, axis: .vertical)
                 VStack(spacing: 5) {
                     seatHeader(p, slot: slot, view: view)
-                    if !p.melds.isEmpty { meldRow(p.melds, width: 17, axis: .vertical) }
+                    if !p.melds.isEmpty { meldRow(p.melds, width: 19, axis: .vertical) }
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
@@ -1087,9 +1114,10 @@ struct QipaiMahjongLandscapeView: View {
     }
 
     /// 气泡往哪边冒。0901 她抓的：原来冒在头顶，对家那个直接被屏幕顶切没了。
-    /// 一律朝**屏幕中间**冒——右边那家得往左，不然照样出屏。
+    /// 一律朝**屏幕中间**冒。对家的头像四稿挪到了右上角，跟右家一样得往左冒，
+    /// 只有左家往右——别按上下家分，按头像贴哪边屏边分。
     private func bubbleDX(_ slot: MahjongSeatSlot) -> CGFloat {
-        slot == .right ? -92 : 92
+        slot == .left ? 92 : -92
     }
 
     /// 头像 + 名字 + 张数。轮到他就把头像圈亮，说话就在头像旁边冒气泡
@@ -1259,16 +1287,34 @@ struct QipaiMahjongLandscapeView: View {
         func tiles(_ slot: MahjongSeatSlot) -> [String] {
             seats.first { $0.slot == slot }?.player.discards ?? []
         }
+        // 0901 四稿：弃牌**面对打牌的人**（对家的倒着、左右家的横着），
+        // 整圈坐进一个内凹的桌心托盘里
         return VStack(spacing: 5) {
-            riverBlock(tiles(.top), axis: .horizontal, view: view)
+            riverBlock(tiles(.top), axis: .horizontal, view: view, orient: .down)
             HStack(spacing: 7) {
-                riverBlock(tiles(.left), axis: .vertical, view: view)
+                riverBlock(tiles(.left), axis: .vertical, view: view, orient: .left)
                 wallBadge(view)
-                riverBlock(tiles(.right), axis: .vertical, view: view)
+                riverBlock(tiles(.right), axis: .vertical, view: view, orient: .right)
             }
-            riverBlock(tiles(.bottom), axis: .horizontal, view: view)
+            riverBlock(tiles(.bottom), axis: .horizontal, view: view, orient: .up)
         }
-        .padding(9)
+        .padding(16)
+        .background(centerTray)
+    }
+
+    /// 桌心内凹的托盘：深一号的布色，内阴影上重下轻——坑的上沿背光、
+    /// 下沿受光，跟牌的左上光源一致，凹陷感就是这么来的
+    private var centerTray: some View {
+        let shape = RoundedRectangle(cornerRadius: 24, style: .continuous)
+        return shape
+            .fill(MahjongCloth.feltDeep.opacity(0.5))
+            .overlay(shape.stroke(LinearGradient(colors: [MahjongCloth.rimEdge.opacity(0.95),
+                                                          MahjongCloth.rimEdge.opacity(0.3)],
+                                                 startPoint: .top, endPoint: .bottom),
+                                  lineWidth: 5)
+                .blur(radius: 4)
+                .mask(shape))
+            .overlay(shape.strokeBorder(.white.opacity(0.35), lineWidth: 1))
     }
 
     /// 中央那个骰盅：立体小方座 + 一个凹进去的圆盘写「剩余 N」。
@@ -1306,8 +1352,9 @@ struct QipaiMahjongLandscapeView: View {
     /// （横 18 张=两行、竖 15 张=三列），再多就把最老的挤出去——真桌上打到
     /// 后半场也没人数牌河前几张。圈的最大尺寸因此有界，永远撞不到手牌。
     @ViewBuilder
-    private func riverBlock(_ tiles: [String], axis: Axis2, view: MahjongView) -> some View {
-        let w: CGFloat = 19
+    private func riverBlock(_ tiles: [String], axis: Axis2, view: MahjongView,
+                            orient: MahjongTileOrient = .up) -> some View {
+        let w: CGFloat = 20
         let per = axis == .horizontal ? 9 : 5
         let cap = axis == .horizontal ? 18 : 15
         let tiles = Array(tiles.suffix(cap))
@@ -1319,28 +1366,42 @@ struct QipaiMahjongLandscapeView: View {
         if tiles.isEmpty {
             Color.clear.frame(width: padW, height: padH)
         } else if axis == .horizontal {
-            VStack(spacing: 1.5) {
+            VStack(spacing: 2) {
                 ForEach(Array(rows.enumerated()), id: \.offset) { row in
-                    HStack(spacing: 1.5) {
+                    HStack(spacing: 2) {
                         ForEach(Array(row.element.enumerated()), id: \.offset) { item in
-                            MahjongTileFace(id: item.element, width: w,
-                                            dimmed: !isFresh(item.element, tiles: tiles, view: view))
+                            riverTile(item.element, w: w, orient: orient,
+                                      dimmed: !isFresh(item.element, tiles: tiles, view: view))
                         }
                     }
                 }
             }
         } else {
-            HStack(spacing: 1.5) {
+            HStack(spacing: 2) {
                 ForEach(Array(rows.enumerated()), id: \.offset) { col in
-                    VStack(spacing: 1.5) {
+                    VStack(spacing: 2) {
                         ForEach(Array(col.element.enumerated()), id: \.offset) { item in
-                            MahjongTileFace(id: item.element, width: w,
-                                            dimmed: !isFresh(item.element, tiles: tiles, view: view))
+                            riverTile(item.element, w: w, orient: orient,
+                                      dimmed: !isFresh(item.element, tiles: tiles, view: view))
                         }
                     }
                 }
             }
         }
+    }
+
+    /// 一张弃牌：允许轻微旋转和错位（0901 她点名的「随手摆」）。
+    /// 抖动按牌 id 播种——同一张牌每次重画歪同一个角度，不会一刷新就跳舞。
+    /// ‼️别换成 String.hashValue 当种子：它每次启动都换盐，牌会换个姿势躺。
+    private func riverTile(_ id: String, w: CGFloat, orient: MahjongTileOrient,
+                           dimmed: Bool) -> some View {
+        let seed = id.unicodeScalars.reduce(0) { ($0 &* 31 &+ Int($1.value)) & 0x7fff }
+        let angle = Double((seed % 7) - 3) * 0.8
+        let dx = CGFloat(((seed >> 3) % 3) - 1) * 0.8
+        let dy = CGFloat(((seed >> 5) % 3) - 1) * 0.8
+        return MahjongTileFace(id: id, width: w, dimmed: dimmed, orient: orient)
+            .rotationEffect(.degrees(angle))
+            .offset(x: dx, y: dy)
     }
 
     /// 是不是场上最后打出的那张（牌 id 每张唯一，直接比就行）

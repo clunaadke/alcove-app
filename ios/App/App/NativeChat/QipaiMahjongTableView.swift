@@ -121,42 +121,70 @@ enum MahjongTile {
 
 // MARK: - 一张牌
 
+/// 牌面朝向：弃牌要**面对打牌的人**（0901 她对着腾讯参考图点名的）。
+/// 对家的弃牌在我看来是倒的（.down），左右两家的横过来（.left/.right）。
+/// ‼️只转牌面和牌形，**不转挤出方向**——厚度永远朝屏幕右下，
+/// 全桌一个透视方向，这是「统一 3/4 空间」的根。
+enum MahjongTileOrient {
+    case up, down, left, right
+
+    var degrees: Double {
+        switch self {
+        case .up: return 0
+        case .down: return 180
+        case .left: return -90
+        case .right: return 90
+        }
+    }
+    var sideways: Bool { self == .left || self == .right }
+}
+
 struct MahjongTileFace: View {
     let id: String
     var width: CGFloat = 34
     var dimmed: Bool = false
+    var orient: MahjongTileOrient = .up
 
-    private var h: CGFloat { width * 1.34 }
+    /// 竖放时的牌高。‼️1.34 别改——牌河、副露、手牌的排版全按它算。
+    private var faceH: CGFloat { width * 1.34 }
+    /// 横过来的牌占位跟着转（宽高互换），排版才不会叠
+    private var bodyW: CGFloat { orient.sideways ? faceH : width }
+    private var bodyH: CGFloat { orient.sideways ? width : faceH }
     private var tint: Color { MahjongTile.tint(id) }
     private var suit: String { MahjongTile.suit(id) }
     private var n: Int { MahjongTile.num(id) }
 
-    /// 牌的厚度。整体高度不变，正面往上让出这一条，下面露出的就是牌的侧面。
-    /// 0901 她验收后打回「有厚度但还是平面」——厚度加到 0.16，侧面分上下两段
-    /// （亮棱线+暗底），加一道贴地影，立体感全靠这三笔。
-    /// ‼️高度别改——牌河、副露、手牌的排版全按 width*1.34 算的。
-    private var thickness: CGFloat { max(width * 0.16, 2.2) }
+    /// 挤出量：右侧面窄、前立面宽——3/4 俯视里近边永远露得多。
+    /// 0901 四稿：二三稿只有底边一条厚度，她打回「有厚度但还是平面」；
+    /// 现在牌身整块往右下错开，右+下两个立面一起露出来才立体。
+    private var sideX: CGFloat { max(width * 0.09, 1.4) }
+    private var sideY: CGFloat { max(width * 0.16, 2.2) }
 
     var body: some View {
-        ZStack(alignment: .top) {
-            // 侧面：上亮下暗——棱上受光、贴桌背光，一条渐变就是一个立面
-            RoundedRectangle(cornerRadius: width * 0.15, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: width * 0.15, style: .continuous)
+        return ZStack(alignment: .topLeading) {
+            // 牌身＝同形状往右下错开：露出的右条是侧面、下条是前立面。
+            // 渐变斜着走——右上受光、左下贴桌，两个立面一道渐变全兜住
+            shape
                 .fill(LinearGradient(stops: [
                     .init(color: QipaiPalette.qhex(0xE8DFCB), location: 0),
-                    .init(color: QipaiPalette.qhex(0xCEC3AA), location: 0.86),
-                    .init(color: QipaiPalette.qhex(0xA79C83), location: 1),
-                ], startPoint: .top, endPoint: .bottom))
-                .frame(width: width, height: h)
+                    .init(color: QipaiPalette.qhex(0xCBBFA6), location: 0.72),
+                    .init(color: QipaiPalette.qhex(0xA2967C), location: 1),
+                ], startPoint: .topLeading, endPoint: .bottomTrailing))
+                .frame(width: bodyW, height: bodyH)
+                .offset(x: sideX, y: sideY)
             face
-                .frame(width: width, height: h - thickness)
+                .frame(width: width, height: faceH)
+                .rotationEffect(.degrees(orient.degrees))
+                .frame(width: bodyW, height: bodyH)
         }
-        .frame(width: width, height: h)
+        .frame(width: bodyW, height: bodyH)
         .opacity(dimmed ? 0.5 : 1)
-        // 贴地那圈接触影（近而深）+ 泛开的软影（远而淡），落桌才有分量
-        .shadow(color: QipaiPalette.shadowTint.opacity(0.3), radius: width * 0.04,
-                x: 0, y: width * 0.05)
-        .shadow(color: QipaiPalette.shadowTint.opacity(0.18), radius: width * 0.14,
-                x: width * 0.04, y: width * 0.1)
+        // 近影贴着挤出方向落（这道影同时是压在右邻牌上的遮挡影），远影泛开
+        .shadow(color: QipaiPalette.shadowTint.opacity(0.32), radius: width * 0.05,
+                x: width * 0.05, y: width * 0.07)
+        .shadow(color: QipaiPalette.shadowTint.opacity(0.16), radius: width * 0.15,
+                x: width * 0.08, y: width * 0.12)
     }
 
     /// 牌的正面（象牙底 + 凹槽 + 图案）
@@ -233,7 +261,7 @@ struct MahjongTileFace: View {
     private var dotArt: some View {
         let pts = MahjongTile.pips[n] ?? []
         let aw = width * 0.64
-        let ah = h * 0.68
+        let ah = faceH * 0.68
         let d = pipSize
         return ZStack {
             ForEach(Array(pts.enumerated()), id: \.offset) { item in
@@ -253,7 +281,7 @@ struct MahjongTileFace: View {
     private var stickArt: some View {
         let arr = MahjongTile.sticks[n] ?? []
         let aw = width * 0.62
-        let ah = h * 0.70
+        let ah = faceH * 0.70
         let ys = Array(Set(arr.map { $0.y })).sorted()
         var gap: CGFloat = 1
         if ys.count > 1 {
