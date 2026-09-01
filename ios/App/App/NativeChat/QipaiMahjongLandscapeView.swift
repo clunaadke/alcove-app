@@ -9,8 +9,8 @@ import PhotosUI
 //   · 四边围坐，座位**按打牌顺序**绕圈（我在下，下家在右，对家在上，上家在左）。
 //     正因为位置本身就是顺序，横屏**不显示「你的下家 XXX」**那行字——竖屏那行保留。
 //   · 背景白瓷波点（不是壁纸照片），桌面一块**花边蕾丝桌布**，整体粉白灰。
-//   · 明牌复用竖屏 MahjongTileFace；扣着的对手牌墙单独画三面假 3D，不能把
-//     完整牌背图塞进横片里反复裁中央花章，也不能只靠阴影冒充站立。
+//   · 牌面复用竖屏那套 MahjongTileFace，**平的，正上方看，不做立体/透视**——
+//     斜视角要真三维，工作量翻几倍，斜着的牌点击判定还不准。
 //   · 副露跟自己的手牌之间**留一段间距**分开（她点名的）。
 //   · 中央留「还剩几张」：一张麻将背面 + 数字，照参考图。
 //   · 四周照参考图铺各家的牌河，围成一圈。
@@ -1096,13 +1096,13 @@ struct QipaiMahjongLandscapeView: View {
                     seatHeader(p, slot: slot, view: view)
                     if !p.melds.isEmpty { meldRow(p.melds, width: 19, axis: .vertical) }
                 }
-                backRow(p.handCount, width: 28, axis: .vertical, wallSide: .left)
+                backRow(p.handCount, width: 28, axis: .vertical)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             .padding(.leading, 26)
         case .right:
             HStack(spacing: 5) {
-                backRow(p.handCount, width: 28, axis: .vertical, wallSide: .right)
+                backRow(p.handCount, width: 28, axis: .vertical)
                 VStack(spacing: 5) {
                     seatHeader(p, slot: slot, view: view)
                     if !p.melds.isEmpty { meldRow(p.melds, width: 19, axis: .vertical) }
@@ -1235,19 +1235,24 @@ struct QipaiMahjongLandscapeView: View {
     // MARK: 扣着的手牌 / 副露
 
     private enum Axis2 { case horizontal, vertical }
-    private enum WallSide { case left, right }
 
-    /// 对家是一排有正面/顶面/右侧面的立牌；左右两家是连续牌墙。
-    /// wallSide 决定奶白厚度朝屏幕外侧，左右必须镜像，不能旋转同一个完成视图。
+    /// 0901 六稿：对家一排立牌背；左右两家是牌背墙——每张一条横片紧密码放，
+    /// 南端压一张整脸的收口牌（MahjongTileSideCap），影子给整面墙统一投，
+    /// 不给每片单独投（片距太密，各投各的会糊成一团黑）。
     @ViewBuilder
-    private func backRow(_ count: Int, width: CGFloat, axis: Axis2,
-                         wallSide: WallSide = .left) -> some View {
+    private func backRow(_ count: Int, width: CGFloat, axis: Axis2) -> some View {
         let n = max(0, min(count, 14))
         if axis == .horizontal {
-            if n > 0 { MahjongTopWall(count: n, width: width) }
+            HStack(spacing: -width * 0.06) {
+                ForEach(0..<n, id: \.self) { _ in MahjongTileBack(width: width, standing: true) }
+            }
         } else {
-            let mirrored = wallSide == .right
-            if n > 0 { MahjongSideWall(count: n, width: width, mirrored: mirrored) }
+            VStack(spacing: 1) {
+                ForEach(0..<n, id: \.self) { _ in MahjongTileSide(width: width) }
+                if n > 0 { MahjongTileSideCap(width: width) }
+            }
+            .shadow(color: QipaiPalette.shadowTint.opacity(0.28), radius: width * 0.16,
+                    x: width * 0.08, y: width * 0.12)
         }
     }
 
