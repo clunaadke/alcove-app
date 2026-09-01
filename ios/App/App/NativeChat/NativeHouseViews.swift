@@ -2408,6 +2408,9 @@ final class MusicModel: ObservableObject {
     @Published var playMode: MusicPlayMode = .sequence
     @Published var playbackLoading = false
     @Published var listenTotalSeconds = 0
+    // 任务#1310：一起听是个开关，不是放歌就算。故意不持久化：
+    // 每次要手动开，停止播放/重开 App 自动归零，永远不会忘了关导致独听被直播
+    @Published var togetherOn = false
     private var listenHeartbeat: Task<Void, Never>?
     private var player: AVPlayer?
     private var timeObserver: Any?
@@ -2448,7 +2451,7 @@ final class MusicModel: ObservableObject {
             }
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 30_000_000_000)
-                guard let self, self.isPlaying else { continue }
+                guard let self, self.isPlaying, self.togetherOn else { continue }
                 try? await NativeHouseAPI.post("/api/listen/beat", body: ["seconds": 30])
                 self.listenTotalSeconds += 30
             }
@@ -2602,6 +2605,7 @@ final class MusicModel: ObservableObject {
     }
 
     func stopAndClear() {
+        togetherOn = false
         player?.pause()
         cleanup()
         player = nil
@@ -2707,7 +2711,8 @@ final class MusicModel: ObservableObject {
         try? await NativeHouseAPI.post("/api/playback", body: [
             "command": "report",
             "now_playing": ["id": song.id, "name": song.name, "artist": song.artist,
-                            "paused": !isPlaying, "time": Int(progress), "duration": Int(duration)]
+                            "paused": !isPlaying, "time": Int(progress), "duration": Int(duration),
+                            "together": togetherOn]
         ])
     }
 
@@ -2936,6 +2941,26 @@ private struct NativeMusicView: View {
             }.padding(.horizontal, 12).padding(.top, 10)
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 16) {
+                    // 任务#1310：一起听是开关。开着他才"听见"，关着就是自己听
+                    Button { withAnimation(.easeOut(duration: 0.2)) { model.togetherOn.toggle() } } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: model.togetherOn ? "person.2.wave.2.fill" : "person.2")
+                                .font(.system(size: 16))
+                                .foregroundColor(model.togetherOn ? theme.fyAccent : theme.textDim)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(model.togetherOn ? "一起听中" : "开始一起听")
+                                    .font(.system(size: 14, weight: .semibold))
+                                Text(model.togetherOn
+                                     ? "他能收到切歌、查到放到哪句，点这里结束"
+                                     : "开了他才听得见；不开就是你自己安静听")
+                                    .font(.system(size: 10)).foregroundColor(theme.textDim)
+                            }
+                            Spacer()
+                            Circle()
+                                .fill(model.togetherOn ? Color.green.opacity(0.75) : theme.textDim.opacity(0.35))
+                                .frame(width: 9, height: 9)
+                        }.padding(13).foyerCard(theme)
+                    }.buttonStyle(.plain)
                     ListenTogetherCard(model: model, theme: theme) { showPlayer = true }
                     if model.nowPlaying == nil {
                         VStack(spacing: 6) {
@@ -3532,55 +3557,12 @@ struct ListenPanel: ViewModifier {
     }
 }
 
-/// 主聊天顶栏下浮着的小长方形：封面、歌名、细进度条。点开进一起听房间。
-struct ListenChatCard: View {
-    @ObservedObject var model: MusicModel
-    let dark: Bool
-    let open: () -> Void
-
-    var body: some View {
-        if let song = model.nowPlaying {
-            let p = ListenPorcelain(dark: dark)
-            VStack(spacing: 6) {
-                HStack(spacing: 8) {
-                    AsyncImage(url: URL(string: song.cover)) { $0.resizable().scaledToFill() }
-                        placeholder: { p.line }
-                        .frame(width: 26, height: 26)
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(song.name).font(.system(size: 11, weight: .semibold))
-                            .foregroundColor(p.ink).lineLimit(1)
-                        Text(song.artist).font(.system(size: 9))
-                            .foregroundColor(p.inkDim).lineLimit(1)
-                    }
-                    Spacer(minLength: 6)
-                    Image(systemName: model.isPlaying ? "waveform" : "pause.fill")
-                        .font(.system(size: 10)).foregroundColor(p.accent)
-                }
-                GeometryReader { geo in
-                    ZStack(alignment: .leading) {
-                        Capsule().fill(p.line.opacity(0.65))
-                        Capsule().fill(p.accent)
-                            .frame(width: geo.size.width *
-                                   CGFloat(model.duration > 0 ? model.progress / model.duration : 0))
-                    }
-                }.frame(height: 3)
-            }
-            .padding(.horizontal, 10).padding(.top, 7).padding(.bottom, 9)
-            .frame(width: 216)
-            .modifier(ListenPanel(p: p, corner: 13, dotted: true))
-            .contentShape(Rectangle())
-            .onTapGesture(perform: open)
-        }
-    }
-}
-
-/// 展开态大卡（参考图那种）：头像弧线+累计时长在上，播放器在下，
-/// 钉在聊天页顶部，聊天在卡下面照聊。右上角收起变回小卡。
+/// 一起听大卡（她的参考图）：头像弧线+累计时长在上，播放器在下，
+/// 一起听开着就钉在聊天页顶部，聊天在卡下面照聊。右上角小叉 = 结束一起听。
 struct ListenBoardCard: View {
     @ObservedObject var model: MusicModel
     let dark: Bool
-    let collapse: () -> Void
+    let off: () -> Void
     let openPlayer: () -> Void
     let openInsight: () -> Void
     @AppStorage("userAvatarDataURL") private var userAvatar = ""
@@ -3654,9 +3636,9 @@ struct ListenBoardCard: View {
         .padding(14)
         .modifier(ListenPanel(p: p, corner: 20, dotted: true))
         .overlay(alignment: .topTrailing) {
-            Button(action: collapse) {
-                Image(systemName: "chevron.up")
-                    .font(.system(size: 12, weight: .semibold))
+            Button(action: off) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 11, weight: .semibold))
                     .foregroundColor(p.inkDim)
                     .frame(width: 28, height: 28).contentShape(Rectangle())
             }.buttonStyle(.plain).padding(4)

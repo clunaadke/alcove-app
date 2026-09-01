@@ -9,9 +9,8 @@ struct RootView: View {
     @State private var showPermissions = false
     @State private var showTerminal = false
     @State private var showRoundtable = false   // 0731 圆桌：她要全屏，所以不走面板那条 sheet
-    // 任务#1308+返工：一起听不是独立页面，是钉在聊天页顶部的卡。
-    // 小卡 ⇄ 大卡原地展开收起，聊天永远在下面照聊。
-    @State private var listenExpanded = false
+    // 任务#1309/#1310：一起听开着且在放歌，大卡就钉在聊天页顶部，一直在；
+    // 聊天在卡下面照聊。卡右上角小叉 = 结束一起听。
     @State private var showChatPlayer = false
     @State private var showChatInsight = false
     @ObservedObject private var listenMusic = MusicModel.shared
@@ -72,26 +71,18 @@ struct RootView: View {
                     .blur(radius: showHouseDrawer ? 5.0 : 0)
                     .animation(.easeOut(duration: 0.22), value: showHouseDrawer)
             }
-            // 任务#1308：一起听的时候顶栏下浮卡。小卡点开原地展开成大卡（参考图那种），
-            // 聊天在下面照聊；大卡右上角收起变回小卡。
-            if listenMusic.nowPlaying != nil && !showTerminal && !showRoundtable && !showHouseDrawer {
-                Group {
-                    if listenExpanded {
-                        ListenBoardCard(
-                            model: listenMusic, dark: theme.isDark,
-                            collapse: { withAnimation(.easeOut(duration: 0.22)) { listenExpanded = false } },
-                            openPlayer: { showChatPlayer = true },
-                            openInsight: { showChatInsight = true })
-                            .padding(.horizontal, 12)
-                    } else {
-                        ListenChatCard(model: listenMusic, dark: theme.isDark) {
-                            withAnimation(.easeOut(duration: 0.22)) { listenExpanded = true }
-                        }
-                    }
-                }
-                .padding(.top, theme.isMessages ? 58 : 90)
-                .zIndex(6)
-                .transition(.move(edge: .top).combined(with: .opacity))
+            // 任务#1309/#1310：一起听开着且在放歌 → 大卡常驻聊天页顶部（她的参考图）
+            if listenMusic.nowPlaying != nil && listenMusic.togetherOn
+                && !showTerminal && !showRoundtable && !showHouseDrawer {
+                ListenBoardCard(
+                    model: listenMusic, dark: theme.isDark,
+                    off: { withAnimation(.easeOut(duration: 0.22)) { listenMusic.togetherOn = false } },
+                    openPlayer: { showChatPlayer = true },
+                    openInsight: { showChatInsight = true })
+                    .padding(.horizontal, 12)
+                    .padding(.top, theme.isMessages ? 58 : 90)
+                    .zIndex(6)
+                    .transition(.move(edge: .top).combined(with: .opacity))
             }
             if showTerminal {
                 ZStack {
