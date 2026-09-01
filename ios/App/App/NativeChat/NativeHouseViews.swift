@@ -2398,6 +2398,11 @@ final class MusicModel: ObservableObject {
     @Published var duration: Double = 0
     @Published var lyrics: [MusicLyric] = []
     @Published var lyricsLoading = false
+    // 任务#1345：她在一起听大卡上手滑挑中的那一行。nil = 跟着歌自己走。
+    @Published var pickedLyric: Int?
+    @Published var lineSending = false
+    @Published var lineSentFlash = false
+    private var pickResetTask: Task<Void, Never>?
     @Published var playlists: [MusicPlaylist] = []
     @Published var recommended: [MusicPlaylist] = []
     @Published var playlistSongs: [MusicSong] = []
@@ -2714,6 +2719,49 @@ final class MusicModel: ObservableObject {
                             "paused": !isPlaying, "time": Int(progress), "duration": Int(duration),
                             "together": togetherOn]
         ])
+    }
+
+    /// 大卡上高亮的那一行：她手滑挑了就是她挑的，没挑就是正在唱的那句。
+    var boardLyricIndex: Int {
+        if let picked = pickedLyric, lyrics.indices.contains(picked) { return picked }
+        return lyrics.lastIndex(where: { $0.time <= progress }) ?? -1
+    }
+
+    /// 手滑挑中一行。5 秒不碰就放开，让歌词滑回正在唱的那句——
+    /// 不然她滑一下就再也跟不上歌了。
+    func pickLyric(_ index: Int) {
+        pickedLyric = index
+        pickResetTask?.cancel()
+        pickResetTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            guard !Task.isCancelled else { return }
+            self?.pickedLyric = nil
+        }
+    }
+
+    /// 把大卡上高亮那句发给他。
+    /// 发的是**她屏幕上那句原文**，直接打包送走；服务端一个字都不许自己算，
+    /// 两边各算各的必然差半句，她明确要求所见即所发。
+    func sendPickedLyric() async {
+        let index = boardLyricIndex
+        guard lyrics.indices.contains(index), let song = nowPlaying, !lineSending else { return }
+        let line = lyrics[index]
+        let end = index + 1 < lyrics.count ? lyrics[index + 1].time : line.time + 4
+        lineSending = true
+        defer { lineSending = false }
+        let obj = try? await NativeHouseAPI.object("/api/music/line", method: "POST", body: [
+            "song_id": song.id, "name": song.name, "artist": song.artist,
+            "text": line.text, "start": line.time, "end": end])
+        guard obj?.bool("ok") == true else {
+            message = "这句没发出去"
+            return
+        }
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        lineSentFlash = true
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 1_400_000_000)
+            self?.lineSentFlash = false
+        }
     }
 
     func loadLyrics(_ songID: String) async {
@@ -3559,6 +3607,14 @@ struct ListenPanel: ViewModifier {
 
 /// 一起听大卡（她的参考图）：头像弧线+累计时长在上，播放器在下，
 /// 一起听开着就钉在聊天页顶部，聊天在卡下面照聊。右上角小叉 = 结束一起听。
+/// 任务#1345：量一下展开态排完有多高，折叠态照这个高度来。
+private struct ListenBoardHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
 struct ListenBoardCard: View {
     @ObservedObject var model: MusicModel
     let dark: Bool
@@ -3567,82 +3623,237 @@ struct ListenBoardCard: View {
     let openInsight: () -> Void
     @AppStorage("userAvatarDataURL") private var userAvatar = ""
     @AppStorage("assistantAvatarDataURL") private var assistantAvatar = ""
+    // 任务#1345：左滑收起。故意不持久化 —— 每次新开一起听都是展开的。
+    @State private var collapsed = false
+    @State private var boardHeight: CGFloat = 0
 
     private var p: ListenPorcelain { ListenPorcelain(dark: dark) }
 
+    // 任务#1345：展开态和折叠态高度必须一样 —— 她要的是横着收起来，卡不许上下窜。
+    // 不写死数字：写死了万一算少了，展开态底下那排按钮会被裁掉。
+    // 改成量展开态排完的真实高度，折叠态照抄它。
+    private static let collapsedWidth: CGFloat = 196
+
+    private var activeLine: Int { model.boardLyricIndex }
+
     var body: some View {
-        VStack(spacing: 12) {
-            ZStack {
-                ListenArc()
-                    .stroke(p.accent.opacity(0.4),
-                            style: StrokeStyle(lineWidth: 1.5, dash: [3, 4]))
-                    .frame(height: 70).padding(.horizontal, 28)
-                HStack {
-                    avatarView(userAvatar, fallback: "霁")
-                    Spacer()
-                    VStack(spacing: 3) {
-                        Text("霁 · 璟").font(.system(size: 14, weight: .medium)).foregroundColor(p.ink)
-                        Text(model.listenTimeText).font(.system(size: 11)).foregroundColor(p.inkDim)
-                    }
-                    Spacer()
-                    avatarView(assistantAvatar, fallback: "璟")
-                }.padding(.horizontal, 6)
-            }
+        HStack(spacing: 0) {
+            (collapsed ? AnyView(collapsedCard) : AnyView(expandedCard))
+                .frame(width: collapsed ? Self.collapsedWidth : nil)
+                .frame(height: collapsed && boardHeight > 0 ? boardHeight : nil)
+                .modifier(ListenPanel(p: p, corner: 20, dotted: true))
+                .overlay(alignment: .topTrailing) {
+                    Button(action: off) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(p.inkDim)
+                            .frame(width: 28, height: 28).contentShape(Rectangle())
+                    }.buttonStyle(.plain).padding(2)
+                }
+            if collapsed { Spacer(minLength: 0) }
+        }
+    }
+
+    // MARK: 展开态
+
+    private var expandedCard: some View {
+        VStack(spacing: 8) {
+            avatarArc
             if let song = model.nowPlaying {
-                VStack(spacing: 8) {
+                VStack(spacing: 6) {
                     Button(action: openPlayer) {
                         HStack(spacing: 5) {
-                            Text(song.name).font(.system(size: 16, weight: .semibold))
+                            Text(song.name).font(.system(size: 14, weight: .semibold))
                                 .foregroundColor(p.ink).lineLimit(1)
-                            Text("— \(song.artist)").font(.system(size: 12))
+                            Text("— \(song.artist)").font(.system(size: 11))
                                 .foregroundColor(p.inkDim).lineLimit(1)
                         }.contentShape(Rectangle())
                     }.buttonStyle(.plain)
-                    VStack(spacing: 2) {
-                        Slider(value: Binding(get: { model.progress }, set: { model.seek(to: $0) }),
-                               in: 0...max(model.duration, 1)).tint(p.accent)
-                        HStack {
-                            Text(Self.time(model.progress)); Spacer(); Text(Self.time(model.duration))
-                        }.font(.system(size: 9, design: .monospaced)).foregroundColor(p.inkDim)
-                    }
-                    HStack {
-                        Button { Task { await model.toggleLike() } } label: {
-                            Image(systemName: model.currentIsLiked ? "heart.fill" : "heart")
-                                .foregroundColor(model.currentIsLiked ? .red : p.ink)
-                        }
-                        Spacer()
-                        Button { model.prev() } label: { Image(systemName: "backward.fill") }
-                        Spacer()
-                        Button { model.toggle() } label: {
-                            Image(systemName: model.isPlaying ? "pause.fill" : "play.fill")
-                                .font(.system(size: 22))
-                        }
-                        Spacer()
-                        Button { model.next() } label: { Image(systemName: "forward.fill") }
-                        Spacer()
-                        Button { model.cyclePlayMode() } label: { Image(systemName: model.playMode.icon) }
-                        Spacer()
-                        Button(action: openInsight) { Image(systemName: "waveform.badge.magnifyingglass") }
-                    }
-                    .font(.system(size: 16)).foregroundColor(p.ink)
-                    .buttonStyle(.plain).padding(.horizontal, 2)
+                    lyricStrip
+                    progressRow
+                    controlRow
                 }
-                .padding(.horizontal, 14).padding(.vertical, 12)
-                .background(p.panel, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous)
+                .padding(.horizontal, 12).padding(.vertical, 9)
+                .background(p.panel, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .stroke(p.line, lineWidth: 1))
             }
         }
-        .padding(14)
-        .modifier(ListenPanel(p: p, corner: 20, dotted: true))
-        .overlay(alignment: .topTrailing) {
-            Button(action: off) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(p.inkDim)
-                    .frame(width: 28, height: 28).contentShape(Rectangle())
-            }.buttonStyle(.plain).padding(4)
+        .padding(12)
+        .background(GeometryReader { geo in
+            Color.clear.preference(key: ListenBoardHeightKey.self, value: geo.size.height)
+        })
+        .onPreferenceChange(ListenBoardHeightKey.self) { height in
+            if height > 0 { boardHeight = height }
         }
+    }
+
+    /// 上半部分：头像弧。左滑收起就只认这一块 ——
+    /// 下半部分有进度条，横着拖是拖进度，跟左滑抢手指。
+    private var avatarArc: some View {
+        ZStack {
+            ListenArc()
+                .stroke(p.accent.opacity(0.4),
+                        style: StrokeStyle(lineWidth: 1.5, dash: [3, 4]))
+                .frame(height: 52).padding(.horizontal, 28)
+            HStack {
+                avatarView(userAvatar, fallback: "霁")
+                Spacer()
+                VStack(spacing: 2) {
+                    Text("霁 · 璟").font(.system(size: 13, weight: .medium)).foregroundColor(p.ink)
+                    Text(model.listenTimeText).font(.system(size: 10)).foregroundColor(p.inkDim)
+                }
+                Spacer()
+                avatarView(assistantAvatar, fallback: "璟")
+            }.padding(.horizontal, 6)
+        }
+        .frame(height: 56)
+        .contentShape(Rectangle())
+        .gesture(swipeGesture)
+    }
+
+    /// 三行滚动歌词 + 纸飞机。高亮那句就是点纸飞机会发出去的那句。
+    private var lyricStrip: some View {
+        HStack(spacing: 8) {
+            ScrollViewReader { proxy in
+                ScrollView(.vertical, showsIndicators: false) {
+                    VStack(spacing: 3) {
+                        if model.lyrics.isEmpty {
+                            Text(model.lyricsLoading ? "歌词加载中" : "这首没有歌词")
+                                .font(.system(size: 11)).foregroundColor(p.inkDim)
+                                .frame(maxWidth: .infinity, minHeight: 52)
+                        } else {
+                            ForEach(Array(model.lyrics.enumerated()), id: \.element.id) { index, line in
+                                Button { model.pickLyric(index) } label: {
+                                    Text(line.text)
+                                        .font(.system(size: index == activeLine ? 12.5 : 11,
+                                                      weight: index == activeLine ? .semibold : .regular))
+                                        .foregroundColor(index == activeLine
+                                                         ? p.ink : p.inkDim.opacity(0.7))
+                                        .lineLimit(1).truncationMode(.tail)
+                                        .multilineTextAlignment(.center)
+                                        .frame(maxWidth: .infinity, minHeight: 15)
+                                        .contentShape(Rectangle())
+                                }.buttonStyle(.plain).id(index)
+                            }
+                        }
+                    }.padding(.vertical, 1)
+                }
+                .frame(height: 52)
+                .onChange(of: activeLine) { index in
+                    guard index >= 0 else { return }
+                    withAnimation(.easeOut(duration: 0.28)) { proxy.scrollTo(index, anchor: .center) }
+                }
+                .onAppear {
+                    let index = activeLine
+                    if index >= 0 { proxy.scrollTo(index, anchor: .center) }
+                }
+            }
+            sendButton
+        }
+    }
+
+    private var sendButton: some View {
+        Button { Task { await model.sendPickedLyric() } } label: {
+            ZStack {
+                Circle()
+                    .fill(model.lineSentFlash ? p.accent.opacity(0.9) : p.accent.opacity(0.16))
+                    .frame(width: 30, height: 30)
+                if model.lineSending {
+                    ProgressView().controlSize(.mini).tint(p.ink)
+                } else {
+                    Image(systemName: model.lineSentFlash ? "checkmark" : "paperplane.fill")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(model.lineSentFlash ? .white : p.ink)
+                }
+            }.contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(model.lyrics.isEmpty || model.lineSending)
+        .opacity(model.lyrics.isEmpty ? 0.3 : 1)
+        .accessibilityLabel("把这句发给他")
+    }
+
+    private var progressRow: some View {
+        VStack(spacing: 1) {
+            Slider(value: Binding(get: { model.progress }, set: { model.seek(to: $0) }),
+                   in: 0...max(model.duration, 1)).tint(p.accent)
+            HStack {
+                Text(Self.time(model.progress)); Spacer(); Text(Self.time(model.duration))
+            }.font(.system(size: 9, design: .monospaced)).foregroundColor(p.inkDim)
+        }
+    }
+
+    private var controlRow: some View {
+        HStack {
+            Button { Task { await model.toggleLike() } } label: {
+                Image(systemName: model.currentIsLiked ? "heart.fill" : "heart")
+                    .foregroundColor(model.currentIsLiked ? .red : p.ink)
+            }
+            Spacer()
+            Button { model.prev() } label: { Image(systemName: "backward.fill") }
+            Spacer()
+            Button { model.toggle() } label: {
+                Image(systemName: model.isPlaying ? "pause.fill" : "play.fill")
+                    .font(.system(size: 20))
+            }
+            Spacer()
+            Button { model.next() } label: { Image(systemName: "forward.fill") }
+            Spacer()
+            Button { model.cyclePlayMode() } label: { Image(systemName: model.playMode.icon) }
+            Spacer()
+            Button(action: openInsight) { Image(systemName: "waveform.badge.magnifyingglass") }
+        }
+        .font(.system(size: 15)).foregroundColor(p.ink)
+        .buttonStyle(.plain).padding(.horizontal, 2)
+    }
+
+    // MARK: 折叠态（左滑收起）
+    // 只盖住左边头像那一块，右边那排按钮露出来能点。
+    // 里面只剩：两个头像叠一起、歌名、歌手、一条进度条。没有名字、没有纸飞机、没有按钮排。
+
+    private var collapsedCard: some View {
+        VStack(spacing: 8) {
+            stackedAvatars
+            Spacer(minLength: 0)
+            if let song = model.nowPlaying {
+                VStack(spacing: 2) {
+                    Text(song.name).font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(p.ink).lineLimit(1)
+                    Text(song.artist).font(.system(size: 10))
+                        .foregroundColor(p.inkDim).lineLimit(1)
+                }
+                Slider(value: Binding(get: { model.progress }, set: { model.seek(to: $0) }),
+                       in: 0...max(model.duration, 1))
+                    .tint(p.accent).scaleEffect(y: 0.8)
+            }
+        }
+        .padding(.horizontal, 14).padding(.top, 14).padding(.bottom, 10)
+    }
+
+    /// 两个头像叠在一起，她压在他前面，重合一点点。
+    private var stackedAvatars: some View {
+        ZStack {
+            avatarView(assistantAvatar, fallback: "璟").offset(x: 19)
+            avatarView(userAvatar, fallback: "霁").offset(x: -19)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 56)
+        .contentShape(Rectangle())
+        .gesture(swipeGesture)
+    }
+
+    /// 左滑收起、右滑展开。只在上半部分（头像那块）挂着。
+    private var swipeGesture: some Gesture {
+        DragGesture(minimumDistance: 22)
+            .onEnded { value in
+                guard abs(value.translation.width) > abs(value.translation.height) else { return }
+                if value.translation.width < -36 {
+                    withAnimation(.easeOut(duration: 0.24)) { collapsed = true }
+                } else if value.translation.width > 36 {
+                    withAnimation(.easeOut(duration: 0.24)) { collapsed = false }
+                }
+            }
     }
 
     private func avatarView(_ dataURL: String, fallback: String) -> some View {

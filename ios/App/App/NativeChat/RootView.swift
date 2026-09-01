@@ -80,7 +80,9 @@ struct RootView: View {
                     openPlayer: { showChatPlayer = true },
                     openInsight: { showChatInsight = true })
                     .padding(.horizontal, 12)
-                    .padding(.top, theme.isMessages ? 58 : 90)
+                    // 任务#1345：她要卡顶到灵动岛正下方、把整条顶栏盖住。
+                    // 左滑收起后卡只占左半边，右边那排按钮就露出来能点了。
+                    .padding(.top, 2)
                     .zIndex(6)
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
