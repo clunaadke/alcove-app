@@ -395,6 +395,8 @@ struct FloatingDock<Content: View>: View {
     let id: String
     /// 离屏幕边留多少
     var margin: CGFloat = 10
+    /// 第一次出现时（还没记过位置）停在多高。几个悬浮件同时在的时候各给一个，别叠在一起
+    var defaultY: CGFloat? = nil
     @ViewBuilder let content: () -> Content
 
     @State private var size: CGSize = .zero
@@ -444,7 +446,7 @@ struct FloatingDock<Content: View>: View {
     private func restingPoint(bounds: CGSize, safe: EdgeInsets) -> CGPoint {
         let side = UserDefaults.standard.string(forKey: sideKey) ?? "right"
         let savedY = UserDefaults.standard.double(forKey: yKey)
-        let y = savedY > 0 ? CGFloat(savedY) : safe.top + 120
+        let y = savedY > 0 ? CGFloat(savedY) : (defaultY ?? safe.top + 120)
         return snapped(CGPoint(x: side == "left" ? 0 : bounds.width, y: y), bounds: bounds, safe: safe)
     }
 

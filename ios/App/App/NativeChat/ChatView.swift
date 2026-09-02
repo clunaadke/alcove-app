@@ -101,7 +101,8 @@ struct ChatView: View {
     }
     // 底部所有悬浮层只认这一份高度。输入框会随长文字／图片预览
     // 实测变化；音乐条固定 62pt，再留 10pt 呼吸缝。
-    private var musicBarClearance: CGFloat { music.nowPlaying == nil ? 0 : 72 }
+    /// 0902：打字框上方的迷你播放条退休了（小唱片浮在屏幕边上替它），不再占地方
+    private var musicBarClearance: CGFloat { 0 }
     private var bottomChromeHeight: CGFloat { inputBarHeight + musicBarClearance }
 
     var body: some View {
@@ -316,11 +317,7 @@ struct ChatView: View {
                         // 之前它浮在 ZStack 里，那一层的底既不是屏幕底也不是打字框上沿，
                         // 垫多了空一条，垫少了直接把打字框盖住（0826 两回都踩了）
                         VStack(spacing: 8) {
-                            if music.nowPlaying != nil {
-                                MusicMiniPlayer(model: music) { showMusicPlayer = true }
-                                    .padding(.horizontal, 12)
-                                    .transition(.move(edge: .bottom).combined(with: .opacity))
-                            }
+                            // 0902：迷你播放条退休，歌在放的时候是屏幕边上的小唱片（RootView 管）
                             floatingInput
                         }
                     }
@@ -342,13 +339,7 @@ struct ChatView: View {
                     floatingInput
                 }
 
-                // 信息主题的那条挂在上面的 safeAreaBar 里，跟打字框同一栏
-                if music.nowPlaying != nil && !paragraphSelectionMode && !theme.isMessages {
-                    MusicMiniPlayer(model: music) { showMusicPlayer = true }
-                        .padding(.horizontal, 12)
-                        .padding(.bottom, inputBarHeight + 10)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
-                }
+                // 0902：迷你播放条退休，歌在放的时候是屏幕边上的小唱片（RootView 管）
 
                 // 0902：语音卡片出来时这颗「回到底部」会压在卡片右上角的垃圾桶上，先让开
                 if !atBottom && store.pendingVoice == nil {

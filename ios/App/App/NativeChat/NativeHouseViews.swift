@@ -3621,37 +3621,35 @@ struct ListenBoardCard: View {
     let off: () -> Void
     let openPlayer: () -> Void
     let openInsight: () -> Void
+    /// 0902 她定的：左上角缩小键（跟右上角的叉对称）→ 大卡收走，小唱片浮到屏幕边上
+    var minimize: () -> Void = {}
     @AppStorage("userAvatarDataURL") private var userAvatar = ""
     @AppStorage("assistantAvatarDataURL") private var assistantAvatar = ""
-    // 任务#1345：左滑收起。故意不持久化 —— 每次新开一起听都是展开的。
-    @State private var collapsed = false
-    @State private var boardHeight: CGFloat = 0
 
     private var p: ListenPorcelain { ListenPorcelain(dark: dark) }
 
-    // 任务#1345：展开态和折叠态高度必须一样 —— 她要的是横着收起来，卡不许上下窜。
-    // 不写死数字：写死了万一算少了，展开态底下那排按钮会被裁掉。
-    // 改成量展开态排完的真实高度，折叠态照抄它。
-    private static let collapsedWidth: CGFloat = 196
-
     private var activeLine: Int { model.boardLyricIndex }
 
+    // 0902：任务#1345 的「左滑收成半张」拆了——缩小键替代它，少一种手势少一种误触。
     var body: some View {
-        HStack(spacing: 0) {
-            (collapsed ? AnyView(collapsedCard) : AnyView(expandedCard))
-                .frame(width: collapsed ? Self.collapsedWidth : nil)
-                .frame(height: collapsed && boardHeight > 0 ? boardHeight : nil)
-                .modifier(ListenPanel(p: p, corner: 20, dotted: true))
-                .overlay(alignment: .topTrailing) {
-                    Button(action: off) {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundColor(p.inkDim)
-                            .frame(width: 28, height: 28).contentShape(Rectangle())
-                    }.buttonStyle(.plain).padding(2)
-                }
-            if collapsed { Spacer(minLength: 0) }
-        }
+        expandedCard
+            .modifier(ListenPanel(p: p, corner: 20, dotted: true))
+            .overlay(alignment: .topTrailing) {
+                Button(action: off) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(p.inkDim)
+                        .frame(width: 28, height: 28).contentShape(Rectangle())
+                }.buttonStyle(.plain).padding(2)
+            }
+            .overlay(alignment: .topLeading) {
+                Button(action: minimize) {
+                    Image(systemName: "arrow.down.right.and.arrow.up.left")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(p.inkDim)
+                        .frame(width: 28, height: 28).contentShape(Rectangle())
+                }.buttonStyle(.plain).padding(2)
+            }
     }
 
     // MARK: 展开态
@@ -3680,16 +3678,9 @@ struct ListenBoardCard: View {
             }
         }
         .padding(12)
-        .background(GeometryReader { geo in
-            Color.clear.preference(key: ListenBoardHeightKey.self, value: geo.size.height)
-        })
-        .onPreferenceChange(ListenBoardHeightKey.self) { height in
-            if height > 0 { boardHeight = height }
-        }
     }
 
-    /// 上半部分：头像弧。左滑收起就只认这一块 ——
-    /// 下半部分有进度条，横着拖是拖进度，跟左滑抢手指。
+    /// 上半部分：头像弧。
     private var avatarArc: some View {
         ZStack {
             ListenArc()
@@ -3709,7 +3700,6 @@ struct ListenBoardCard: View {
         }
         .frame(height: 56)
         .contentShape(Rectangle())
-        .gesture(swipeGesture)
     }
 
     /// 三行滚动歌词 + 纸飞机。高亮那句就是点纸飞机会发出去的那句。
@@ -3808,54 +3798,6 @@ struct ListenBoardCard: View {
         .buttonStyle(.plain).padding(.horizontal, 2)
     }
 
-    // MARK: 折叠态（左滑收起）
-    // 只盖住左边头像那一块，右边那排按钮露出来能点。
-    // 里面只剩：两个头像叠一起、歌名、歌手、一条进度条。没有名字、没有纸飞机、没有按钮排。
-
-    private var collapsedCard: some View {
-        VStack(spacing: 8) {
-            stackedAvatars
-            Spacer(minLength: 0)
-            if let song = model.nowPlaying {
-                VStack(spacing: 2) {
-                    Text(song.name).font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(p.ink).lineLimit(1)
-                    Text(song.artist).font(.system(size: 10))
-                        .foregroundColor(p.inkDim).lineLimit(1)
-                }
-                Slider(value: Binding(get: { model.progress }, set: { model.seek(to: $0) }),
-                       in: 0...max(model.duration, 1))
-                    .tint(p.accent).scaleEffect(y: 0.8)
-            }
-        }
-        .padding(.horizontal, 14).padding(.top, 14).padding(.bottom, 10)
-    }
-
-    /// 两个头像叠在一起，她压在他前面，重合一点点。
-    private var stackedAvatars: some View {
-        ZStack {
-            avatarView(assistantAvatar, fallback: "璟").offset(x: 19)
-            avatarView(userAvatar, fallback: "霁").offset(x: -19)
-        }
-        .frame(maxWidth: .infinity)
-        .frame(height: 56)
-        .contentShape(Rectangle())
-        .gesture(swipeGesture)
-    }
-
-    /// 左滑收起、右滑展开。只在上半部分（头像那块）挂着。
-    private var swipeGesture: some Gesture {
-        DragGesture(minimumDistance: 22)
-            .onEnded { value in
-                guard abs(value.translation.width) > abs(value.translation.height) else { return }
-                if value.translation.width < -36 {
-                    withAnimation(.easeOut(duration: 0.24)) { collapsed = true }
-                } else if value.translation.width > 36 {
-                    withAnimation(.easeOut(duration: 0.24)) { collapsed = false }
-                }
-            }
-    }
-
     private func avatarView(_ dataURL: String, fallback: String) -> some View {
         Group {
             if let image = Self.decode(dataURL) {
@@ -3880,6 +3822,77 @@ struct ListenBoardCard: View {
     private static func time(_ seconds: Double) -> String {
         guard seconds.isFinite, seconds >= 0 else { return "0:00" }
         return String(format: "%d:%02d", Int(seconds) / 60, Int(seconds) % 60)
+    }
+}
+
+/// 0902 她要的小唱片：整个 app 唯一一种「歌在放」的收起态。
+/// 圆封面像唱片一样转（放歌时 8 秒一圈，暂停停住），外圈一圈进度环，中心一个小孔；
+/// 右下角一颗小播放/暂停键；一起听开着时左上角一个小「俩」标。
+/// 点唱片：一起听开着 → 大卡回来；没开 → 直接进播放器（打字框上方那条迷你条从此退休）。
+struct ListenRecordPill: View {
+    @ObservedObject var model: MusicModel
+    let onTap: () -> Void
+    @State private var angle: Double = 0
+    private let size: CGFloat = 62
+    private let ticker = Timer.publish(every: 1.0 / 30.0, on: .main, in: .common).autoconnect()
+
+    var body: some View {
+        ZStack {
+            // 进度环
+            Circle().stroke(Color.white.opacity(0.35), lineWidth: 2.5)
+            Circle()
+                .trim(from: 0, to: CGFloat(model.duration > 0 ? min(1, model.progress / model.duration) : 0))
+                .stroke(Color.white, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+            // 唱片：封面 + 中心小孔
+            ZStack {
+                if let cover = model.nowPlaying?.cover, let url = MusicModel.artworkURL(cover) {
+                    AsyncImage(url: url) { image in
+                        image.resizable().scaledToFill()
+                    } placeholder: { Color.black.opacity(0.35) }
+                } else {
+                    Color.black.opacity(0.35)
+                }
+                Circle().fill(Color.black.opacity(0.55)).frame(width: 10, height: 10)
+                Circle().stroke(Color.white.opacity(0.6), lineWidth: 1).frame(width: 10, height: 10)
+            }
+            .frame(width: size - 10, height: size - 10)
+            .clipShape(Circle())
+            .rotationEffect(.degrees(angle))
+        }
+        .frame(width: size, height: size)
+        .background(Circle().fill(Color.black.opacity(0.28)))
+        .shadow(color: .black.opacity(0.3), radius: 6, y: 3)
+        .contentShape(Circle())
+        .onTapGesture(perform: onTap)
+        .overlay(alignment: .bottomTrailing) {
+            Button { model.toggle() } label: {
+                Image(systemName: model.isPlaying ? "pause.fill" : "play.fill")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundColor(.white)
+                    .frame(width: 22, height: 22)
+                    .background(Circle().fill(Color.black.opacity(0.6)))
+                    .overlay(Circle().stroke(Color.white.opacity(0.7), lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+            .offset(x: 3, y: 3)
+        }
+        .overlay(alignment: .topLeading) {
+            if model.togetherOn {
+                Text("俩")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundColor(.white)
+                    .frame(width: 18, height: 18)
+                    .background(Circle().fill(Color(red: 0.69, green: 0.54, blue: 0.58)))
+                    .overlay(Circle().stroke(Color.white.opacity(0.8), lineWidth: 1))
+                    .offset(x: -3, y: -3)
+            }
+        }
+        .onReceive(ticker) { _ in
+            guard model.isPlaying else { return }
+            angle += 360.0 / (8.0 * 30.0)
+            if angle >= 360 { angle -= 360 }
+        }
     }
 }
 

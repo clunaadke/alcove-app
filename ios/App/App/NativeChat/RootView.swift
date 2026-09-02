@@ -4,6 +4,8 @@ import SwiftUI
 struct RootView: View {
     @State private var housePage: HouseDestination?
     @State private var activeCall: CallKind?
+    /// 0902 一起听大卡缩成小唱片。故意不持久化：每次新开一起听都是展开的
+    @State private var listenMinimized = false
     @State private var showHouseDrawer = false
     @State private var showSplash = true
     @State private var showPermissions = false
@@ -72,13 +74,14 @@ struct RootView: View {
                     .animation(.easeOut(duration: 0.22), value: showHouseDrawer)
             }
             // 任务#1309/#1310：一起听开着且在放歌 → 大卡常驻聊天页顶部（她的参考图）
-            if listenMusic.nowPlaying != nil && listenMusic.togetherOn
+            if listenMusic.nowPlaying != nil && listenMusic.togetherOn && !listenMinimized
                 && !showTerminal && !showRoundtable && !showHouseDrawer {
                 ListenBoardCard(
                     model: listenMusic, dark: theme.isDark,
                     off: { withAnimation(.easeOut(duration: 0.22)) { listenMusic.togetherOn = false } },
                     openPlayer: { showChatPlayer = true },
-                    openInsight: { showChatInsight = true })
+                    openInsight: { showChatInsight = true },
+                    minimize: { withAnimation(.easeOut(duration: 0.22)) { listenMinimized = true } })
                     .padding(.horizontal, 12)
                     // 任务#1345：她要卡顶到灵动岛正下方、把整条顶栏盖住。
                     // 左滑收起后卡只占左半边，右边那排按钮就露出来能点了。
@@ -213,6 +216,14 @@ struct RootView: View {
             CallView(kind: kind, onMinimize: { activeCall = nil },
                      session: CallHub.shared.session(for: kind))
         }
+        // 0902 小唱片：只要歌在放、而且大卡没展开着，就浮着；歌停了就收
+        .onAppear { syncListenPill() }
+        .onChange(of: listenMusic.nowPlaying?.id) { _ in syncListenPill() }
+        .onChange(of: listenMusic.togetherOn) { on in
+            if on { listenMinimized = false }   // 新开一起听：大卡展开
+            syncListenPill()
+        }
+        .onChange(of: listenMinimized) { _ in syncListenPill() }
         .onReceive(NotificationCenter.default.publisher(for: .alcoveCallRestore)) { _ in
             guard CallHub.shared.session != nil, activeCall == nil else { return }
             activeCall = CallHub.shared.kind
@@ -444,6 +455,26 @@ struct RootView: View {
         if screen.contains("thinking:on") { return true }
         if screen.contains("thinking:off") { return false }
         return nil
+    }
+
+    /// 0902 小唱片的显示规则：歌在放 && （没开一起听 || 大卡缩小了）
+    private func syncListenPill() {
+        let show = listenMusic.nowPlaying != nil && (!listenMusic.togetherOn || listenMinimized)
+        if show {
+            FloatingOverlay.shared.show(id: "listen") {
+                FloatingDock(id: "listen", defaultY: 230) {
+                    ListenRecordPill(model: listenMusic) {
+                        if listenMusic.togetherOn {
+                            withAnimation(.easeOut(duration: 0.22)) { listenMinimized = false }
+                        } else {
+                            showChatPlayer = true
+                        }
+                    }
+                }
+            }
+        } else {
+            FloatingOverlay.shared.hide(id: "listen")
+        }
     }
 
     private func toggleThinking() {
