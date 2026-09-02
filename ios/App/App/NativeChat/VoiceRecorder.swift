@@ -10,6 +10,8 @@ final class VoiceRecorder: NSObject, ObservableObject {
     private var recorder: AVAudioRecorder?
     private var timer: Timer?
     private var fileURL: URL?
+    /// 0902：按下录音那一刻歌在不在放。录完把通道还给音乐，刚才在放就接着放
+    private var musicWasPlaying = false
 
     func start() {
         AVAudioSession.sharedInstance().requestRecordPermission { [weak self] granted in
@@ -19,6 +21,7 @@ final class VoiceRecorder: NSObject, ObservableObject {
     }
 
     private func beginRecording() {
+        musicWasPlaying = MusicModel.shared.isPlaying
         let session = AVAudioSession.sharedInstance()
         try? session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
         try? session.setActive(true)
@@ -48,11 +51,23 @@ final class VoiceRecorder: NSObject, ObservableObject {
         recorder?.stop()
         recorder = nil
         isRecording = false
-        // 0902：通话缩小着的时候她在聊天页录语音条，录完别把整个音频会话关了——那是通话的命
-        if !AlcoveNotify.shared.inCall { try? AVAudioSession.sharedInstance().setActive(false) }
+        releaseSession()
         guard let url = fileURL else { return nil }
         fileURL = nil
         return try? Data(contentsOf: url)
+    }
+
+    /// 录完把音频通道还回去：
+    ///   · 通话缩小着 → 一个字不动，那是通话的命（0902 上午）
+    ///   · 歌在放/放着一半 → 通道切回播放模式，刚才在放就接着放（0902 晚她报的「唱片点不动」）
+    ///   · 都没有 → 照旧关掉
+    private func releaseSession() {
+        if AlcoveNotify.shared.inCall { return }
+        if MusicModel.shared.nowPlaying != nil {
+            MusicModel.shared.reclaimAudioSession(resume: musicWasPlaying)
+            return
+        }
+        try? AVAudioSession.sharedInstance().setActive(false)
     }
 
     func cancel() {
@@ -61,7 +76,7 @@ final class VoiceRecorder: NSObject, ObservableObject {
         recorder?.stop()
         recorder = nil
         isRecording = false
-        if !AlcoveNotify.shared.inCall { try? AVAudioSession.sharedInstance().setActive(false) }
+        releaseSession()
         if let url = fileURL { try? FileManager.default.removeItem(at: url) }
         fileURL = nil
     }

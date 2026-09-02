@@ -2691,9 +2691,28 @@ final class MusicModel: ObservableObject {
 
     func toggle() {
         guard let player else { return }
-        if isPlaying { player.pause() } else { player.play() }
+        if isPlaying {
+            player.pause()
+        } else {
+            // 0902 她报的「录完语音唱片点不动」：录音把音频通道切成录音模式还关掉了会话，
+            // 这时候直接 play() 是哑的。每次从暂停起播都先把通道要回来。
+            reclaimAudioSession(resume: false)
+            player.play()
+        }
         isPlaying.toggle()
         publishNowPlaying()
+    }
+
+    /// 把音频通道要回播放模式（录语音、打电话之类借走之后）。resume=true 顺手接着放
+    func reclaimAudioSession(resume: Bool) {
+        let session = AVAudioSession.sharedInstance()
+        try? session.setCategory(.playback, mode: .default, options: [])
+        try? session.setActive(true)
+        if resume, let player, !isPlaying {
+            player.play()
+            isPlaying = true
+            publishNowPlaying()
+        }
     }
 
     func stopAndClear() {
