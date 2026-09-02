@@ -350,7 +350,8 @@ struct ChatView: View {
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
 
-                if !atBottom {
+                // 0902：语音卡片出来时这颗「回到底部」会压在卡片右上角的垃圾桶上，先让开
+                if !atBottom && store.pendingVoice == nil {
                     Button {
                         followLiveOutput = true
                         if store.isViewingHistory {
