@@ -3806,6 +3806,8 @@ private struct TarotMessageCard: View {
             if !card.question.isEmpty {
                 Text("「\(card.question)」")
                     .font(.system(size: 14, weight: .medium, design: .serif)).lineSpacing(3)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
                     .fixedSize(horizontal: false, vertical: true)
             }
             TarotChatBits.facesBlock(cards: card.cards, theme: theme)
@@ -3901,9 +3903,10 @@ private enum TarotChatBits {
     static func facesBlock(cards: [TarotAskCard.Card], theme: AlcoveTheme) -> some View {
         let n = cards.count
         let w = faceWidth(n)
-        VStack(alignment: .leading, spacing: 10) {
+        // 0903 她要的：牌和字这一块在卡里居中，不贴左边
+        VStack(alignment: .center, spacing: 10) {
             ForEach(cards) { c in
-                HStack(alignment: .center, spacing: 12) {
+                HStack(alignment: .center, spacing: 14) {
                     TarotCardFace(cardID: c.id, reversed: c.reversed, width: w)
                     VStack(alignment: .leading, spacing: 6) {
                         HStack(spacing: 6) {
@@ -3926,10 +3929,11 @@ private enum TarotChatBits {
                             }
                         }
                     }
-                    Spacer(minLength: 0)
                 }
+                .frame(maxWidth: .infinity)
             }
         }
+        .frame(maxWidth: .infinity)
         .padding(.vertical, 2)
     }
 }
