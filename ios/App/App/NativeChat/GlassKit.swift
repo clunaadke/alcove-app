@@ -308,167 +308,194 @@ struct FlowLayout: Layout {
     }
 }
 
-// MARK: - 0902 悬浮小卡（微信通话那种）：一层透明窗 + 可拖拽吸边的零件
+// MARK: - 0902 悬浮小卡（微信通话那种）：每个悬浮件一扇刚好一样大的小窗
 //
-// 陈霁 0902 定的：通话页能缩小成一个胶囊吸在屏幕边上，拖着走，点一下展开，通话不断。
-// 她还有好几样想做成这种（一起听的卡先不做）。所以拆成两件通用零件：
-//   · FloatingOverlay —— 单独一层 UIWindow，永远在最上面（fullScreenCover 也盖不住它），
-//     只有悬浮件自己那块区域接触摸，其余全部穿透给底下的页面。
-//   · FloatingDock   —— 拖拽 + 松手吸到最近的屏幕边 + 记住停在哪边哪高。
-// 用法：FloatingOverlay.shared.show(id: "call") { FloatingDock(id: "call") { 你的内容 } }
+// 陈霁 0902 定的：通话页能缩小成胶囊、一起听能缩成小唱片，吸在屏幕边上，拖着走，点一下展开。
+//
+// ‼️第一版是一层全屏透明窗 + 悬浮件自己上报"我在哪块"、窗只在那块接触摸。
+// 当天晚上就出事：她录了条语音之后整颗唱片对触摸失灵，重启才好——上报那条链路
+// 只要漏掉一次，悬浮件就变成一张看得见摸不着的贴纸。她说"不想以后再遇到"。
+// 现在改成**每个悬浮件自己一扇窗，窗的大小就是内容的大小**：手指落在窗里就是落在
+// 悬浮件上，窗外面自然归底下的页面，没有任何"猜哪块该接"的环节。拖的时候是整扇窗
+// 在挪（UIKit 的 pan，按屏幕坐标算，不受窗自己移动的影响），松手窗吸到最近的边。
+// 内容变大变小（唱片长按展开成长条）→ 窗跟着改尺寸，贴着原来那条边。
+//
+// 用法：FloatingOverlay.shared.show(id: "call", defaultY: 120) { 你的内容 }
 //       FloatingOverlay.shared.hide(id: "call")
-//
-// ‼️为什么不直接 overlay 在 RootView 上：通话缩小后她可能在共读室/棋牌室，那些页是
-// fullScreenCover，压在 RootView 上面，RootView 的 overlay 会被盖住。单独一层窗才永远可见。
-// ‼️触摸穿透的做法：SwiftUI 的 hosting view 对整块区域都算命中，不能靠 super.hitTest 分辨；
-// 所以每个悬浮件把自己在屏幕上的矩形报给窗，窗只在这些矩形里接触摸，其余返回 nil。
-
-final class FloatingOverlayWindow: UIWindow {
-    /// 悬浮件报上来的命中区域（屏幕坐标），窗只在这里面接触摸
-    static var hitRects: [String: CGRect] = [:]
-    /// 悬浮件从自己这层弹了 sheet（比如小唱片弹播放器）：整屏都得接触摸，不然 sheet 点不动
-    static var passAll = false
-
-    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
-        if Self.passAll { return super.hitTest(point, with: event) }
-        let hit = Self.hitRects.values.contains { $0.insetBy(dx: -6, dy: -6).contains(point) }
-        guard hit else { return nil }
-        return super.hitTest(point, with: event)
-    }
-}
-
-struct FloatingItem: Identifiable {
-    let id: String
-    let view: AnyView
-}
+//       FloatingOverlay.shared.present { 任何 SwiftUI 页 }   // 从 app 最上面那页弹 sheet，
+//                                                            // 盖在共读室/工作室之上也不顶掉谁
 
 @MainActor
-final class FloatingOverlay: ObservableObject {
+final class FloatingOverlay {
     static let shared = FloatingOverlay()
-    @Published var items: [FloatingItem] = []
-    private var window: FloatingOverlayWindow?
+    private var windows: [String: FloatingItemWindow] = [:]
 
-    func show<V: View>(id: String, @ViewBuilder content: () -> V) {
-        let item = FloatingItem(id: id, view: AnyView(content()))
-        if let i = items.firstIndex(where: { $0.id == id }) { items[i] = item } else { items.append(item) }
-        ensureWindow()
-        window?.isHidden = false
+    func show<V: View>(id: String, defaultY: CGFloat = 120, @ViewBuilder content: () -> V) {
+        let body = AnyView(content())
+        if let w = windows[id] {
+            w.update(content: body)
+            w.isHidden = false
+            return
+        }
+        let w = FloatingItemWindow(itemID: id, defaultY: defaultY, content: body)
+        windows[id] = w
+        w.isHidden = false
     }
 
     func hide(id: String) {
-        items.removeAll { $0.id == id }
-        FloatingOverlayWindow.hitRects[id] = nil
-        if items.isEmpty { window?.isHidden = true }
+        guard let w = windows.removeValue(forKey: id) else { return }
+        w.isHidden = true
+        w.rootViewController = nil
     }
 
-    func isShowing(_ id: String) -> Bool { items.contains { $0.id == id } }
+    func isShowing(_ id: String) -> Bool { windows[id] != nil }
 
-    private func ensureWindow() {
-        guard window == nil else { return }
-        // 跟 AppDelegate 一个起法：这个 app 没有 SceneDelegate，UIWindow(frame:) 会自己挂到主场景
-        let w = FloatingOverlayWindow(frame: UIScreen.main.bounds)
+    /// app 的主窗（不是我们这些小窗）
+    static func appWindow() -> UIWindow? {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap { $0.windows }
+            .first { !($0 is FloatingItemWindow) && $0.isKeyWindow }
+        ?? UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap { $0.windows }
+            .first { !($0 is FloatingItemWindow) }
+    }
+
+    /// 从主窗最上面那个正在展示的页面弹一个 sheet。共读室/工作室是 fullScreenCover，
+    /// 从它们的头上弹，才不会把它们顶掉（0902 她抓的「点唱片工作室就退出」）。
+    func present<V: View>(fraction: CGFloat = 0.75, @ViewBuilder content: () -> V) {
+        guard let win = Self.appWindow(), var top = win.rootViewController else { return }
+        while let next = top.presentedViewController { top = next }
+        let host = UIHostingController(rootView: content())
+        host.modalPresentationStyle = .pageSheet
+        host.view.backgroundColor = .clear
+        if let sheet = host.sheetPresentationController {
+            sheet.detents = [.custom { ctx in ctx.maximumDetentValue * fraction }]
+            sheet.prefersGrabberVisible = true
+        }
+        top.present(host, animated: true)
+    }
+}
+
+/// 一扇刚好包住内容的小窗。永远在最上面（alert 之上），拖、吸边、记位置都是它自己的事。
+final class FloatingItemWindow: UIWindow {
+    let itemID: String
+    private let defaultY: CGFloat
+    private var host: UIHostingController<FloatingItemRoot>!
+    private var contentSize = CGSize(width: 62, height: 62)
+    private var grabOffset: CGPoint = .zero
+    private let margin: CGFloat = 10
+
+    private var sideKey: String { "float.\(itemID).side" }
+    private var yKey: String { "float.\(itemID).y" }
+
+    init(itemID: String, defaultY: CGFloat, content: AnyView) {
+        self.itemID = itemID
+        self.defaultY = defaultY
+        // 跟 AppDelegate 一个起法：这个 app 没有 SceneDelegate，UIWindow(frame:) 自己挂到主场景
+        super.init(frame: CGRect(x: 0, y: defaultY, width: 62, height: 62))
         if let scene = UIApplication.shared.connectedScenes
             .compactMap({ $0 as? UIWindowScene })
             .first(where: { $0.activationState == .foregroundActive })
             ?? UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first {
-            w.windowScene = scene
+            windowScene = scene
         }
-        w.windowLevel = .alert + 1
-        w.backgroundColor = .clear
-        let host = UIHostingController(rootView: FloatingOverlayRoot(overlay: self))
+        windowLevel = .alert + 1
+        backgroundColor = .clear
+        let root = FloatingItemRoot(content: content) { [weak self] size in self?.resize(to: size) }
+        host = UIHostingController(rootView: root)
         host.view.backgroundColor = .clear
-        w.rootViewController = host
-        window = w
-    }
-}
-
-struct FloatingOverlayRoot: View {
-    @ObservedObject var overlay: FloatingOverlay
-
-    var body: some View {
-        ZStack {
-            ForEach(overlay.items) { item in item.view }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-}
-
-/// 可拖拽、松手吸边、记位置的壳。内容随便放（胶囊、小卡都行）。
-struct FloatingDock<Content: View>: View {
-    let id: String
-    /// 离屏幕边留多少
-    var margin: CGFloat = 10
-    /// 第一次出现时（还没记过位置）停在多高。几个悬浮件同时在的时候各给一个，别叠在一起
-    var defaultY: CGFloat? = nil
-    @ViewBuilder let content: () -> Content
-
-    @State private var size: CGSize = .zero
-    @State private var center: CGPoint? = nil
-    @State private var dragOrigin: CGPoint? = nil
-
-    private var sideKey: String { "float.\(id).side" }
-    private var yKey: String { "float.\(id).y" }
-
-    var body: some View {
-        GeometryReader { geo in
-            let bounds = geo.size
-            let safe = geo.safeAreaInsets
-            content()
-                .background(GeometryReader { g in
-                    Color.clear
-                        .onAppear { size = g.size; report(g.frame(in: .global)) }
-                        .onChange(of: g.size) { newSize in
-                            // 内容变大变小（小唱片长按展开成长条）：按新尺寸重新贴边，别伸到屏幕外
-                            size = newSize
-                            if let c = center {
-                                withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
-                                    center = snapped(c, bounds: bounds, safe: safe)
-                                }
-                            }
-                        }
-                        .onChange(of: g.frame(in: .global)) { report($0) }
-                })
-                .position(center ?? restingPoint(bounds: bounds, safe: safe))
-                .gesture(
-                    DragGesture(minimumDistance: 6, coordinateSpace: .global)
-                        .onChanged { v in
-                            if dragOrigin == nil { dragOrigin = center ?? restingPoint(bounds: bounds, safe: safe) }
-                            guard let o = dragOrigin else { return }
-                            center = CGPoint(x: o.x + v.translation.width, y: o.y + v.translation.height)
-                        }
-                        .onEnded { _ in
-                            dragOrigin = nil
-                            let target = snapped(center ?? restingPoint(bounds: bounds, safe: safe),
-                                                 bounds: bounds, safe: safe)
-                            withAnimation(.spring(response: 0.36, dampingFraction: 0.82)) { center = target }
-                            UserDefaults.standard.set(target.x < bounds.width / 2 ? "left" : "right", forKey: sideKey)
-                            UserDefaults.standard.set(Double(target.y), forKey: yKey)
-                        }
-                )
-        }
-        .ignoresSafeArea()
+        rootViewController = host
+        let pan = UIPanGestureRecognizer(target: self, action: #selector(onPan(_:)))
+        pan.cancelsTouchesInView = false
+        host.view.addGestureRecognizer(pan)
+        place(animated: false)
     }
 
-    private func report(_ frame: CGRect) {
-        FloatingOverlayWindow.hitRects[id] = frame
+    required init?(coder: NSCoder) { fatalError() }
+
+    func update(content: AnyView) {
+        host.rootView = FloatingItemRoot(content: content) { [weak self] size in self?.resize(to: size) }
     }
 
-    /// 记住的位置；第一次默认贴右边、偏上（微信也是这个位置）
-    private func restingPoint(bounds: CGSize, safe: EdgeInsets) -> CGPoint {
+    // MARK: 尺寸 / 位置
+
+    private var screen: CGRect { UIScreen.main.bounds }
+    private var safe: UIEdgeInsets { FloatingOverlay.appWindow()?.safeAreaInsets ?? .zero }
+
+    /// 内容变了尺寸：窗跟着变，贴着原来那条边
+    private func resize(to size: CGSize) {
+        guard size.width > 1, size.height > 1, size != contentSize else { return }
+        contentSize = size
+        place(animated: true)
+    }
+
+    /// 按记住的边和高度摆好
+    private func place(animated: Bool) {
         let side = UserDefaults.standard.string(forKey: sideKey) ?? "right"
         let savedY = UserDefaults.standard.double(forKey: yKey)
-        let y = savedY > 0 ? CGFloat(savedY) : (defaultY ?? safe.top + 120)
-        return snapped(CGPoint(x: side == "left" ? 0 : bounds.width, y: y), bounds: bounds, safe: safe)
+        let y = savedY > 0 ? CGFloat(savedY) : defaultY
+        let target = snapped(CGPoint(x: side == "left" ? 0 : screen.width, y: y + contentSize.height / 2))
+        setCenter(target, animated: animated)
     }
 
-    /// 吸到最近的左/右边，上下别出安全区
-    private func snapped(_ p: CGPoint, bounds: CGSize, safe: EdgeInsets) -> CGPoint {
-        let halfW = size.width / 2, halfH = size.height / 2
-        let x = p.x < bounds.width / 2 ? margin + halfW : bounds.width - margin - halfW
+    /// 吸到最近的左/右边，上下别出安全区。传入和返回的都是**中心点**（屏幕坐标）
+    private func snapped(_ c: CGPoint) -> CGPoint {
+        let halfW = contentSize.width / 2, halfH = contentSize.height / 2
+        let x = c.x < screen.width / 2 ? margin + halfW : screen.width - margin - halfW
         let minY = safe.top + margin + halfH
-        let maxY = bounds.height - safe.bottom - margin - halfH
-        let y = min(max(p.y, minY), max(minY, maxY))
-        return CGPoint(x: x, y: y)
+        let maxY = screen.height - safe.bottom - margin - halfH
+        return CGPoint(x: x, y: min(max(c.y, minY), max(minY, maxY)))
+    }
+
+    private func setCenter(_ c: CGPoint, animated: Bool) {
+        let f = CGRect(x: c.x - contentSize.width / 2, y: c.y - contentSize.height / 2,
+                       width: contentSize.width, height: contentSize.height)
+        if animated {
+            UIView.animate(withDuration: 0.32, delay: 0, usingSpringWithDamping: 0.82,
+                           initialSpringVelocity: 0.4) { self.frame = f }
+        } else {
+            frame = f
+        }
+    }
+
+    // MARK: 拖
+
+    @objc private func onPan(_ g: UIPanGestureRecognizer) {
+        // 手指的屏幕坐标：窗自己在动，所以不能用窗坐标
+        let inWindow = g.location(in: nil)
+        let p = coordinateSpace.convert(inWindow, to: UIScreen.main.coordinateSpace)
+        switch g.state {
+        case .began:
+            grabOffset = CGPoint(x: p.x - frame.midX, y: p.y - frame.midY)
+        case .changed:
+            let c = CGPoint(x: p.x - grabOffset.x, y: p.y - grabOffset.y)
+            setCenter(c, animated: false)
+        case .ended, .cancelled:
+            let c = snapped(CGPoint(x: frame.midX, y: frame.midY))
+            setCenter(c, animated: true)
+            UserDefaults.standard.set(c.x < screen.width / 2 ? "left" : "right", forKey: sideKey)
+            UserDefaults.standard.set(Double(c.y - contentSize.height / 2), forKey: yKey)
+        default: break
+        }
     }
 }
 
+/// 小窗里的根视图：内容按它自己的天然尺寸摆，量出来告诉窗
+struct FloatingItemRoot: View {
+    let content: AnyView
+    let onSize: (CGSize) -> Void
+
+    var body: some View {
+        content
+            .fixedSize()
+            .background(GeometryReader { g in
+                Color.clear
+                    .onAppear { onSize(g.size) }
+                    .onChange(of: g.size) { onSize($0) }
+            })
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .ignoresSafeArea()
+    }
+}

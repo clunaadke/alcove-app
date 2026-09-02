@@ -3939,13 +3939,11 @@ struct ListenBoardCard: View {
 /// 长按：展开成小长条（进度条 + 上一首/暂停/下一首），三秒没碰自己缩回唱片。
 struct ListenRecordPill: View {
     @ObservedObject var model: MusicModel
-    /// 一起听开着时点唱片能不能把大卡叫回来（只有主聊天页露着的时候能）
-    var canRestoreCard: () -> Bool = { false }
-    var restoreCard: () -> Void = {}
+    /// 一起听开着时点唱片能不能把大卡叫回来（只有主聊天页露着的时候能）。RootView 算好传进来
+    var canRestoreCard: Bool = false
 
     @State private var angle: Double = 0
     @State private var expanded = false
-    @State private var showPlayer = false
     @State private var collapseTask: Task<Void, Never>?
     private let size: CGFloat = 62
     private let ticker = Timer.publish(every: 1.0 / 30.0, on: .main, in: .common).autoconnect()
@@ -3958,14 +3956,6 @@ struct ListenRecordPill: View {
             guard model.isPlaying else { return }
             angle += 360.0 / (8.0 * 30.0)
             if angle >= 360 { angle -= 360 }
-        }
-        .sheet(isPresented: $showPlayer) {
-            MusicPlayerSheet(model: model)
-                .presentationDetents([.fraction(0.75)])
-                .presentationDragIndicator(.visible)
-                .presentationBackground(.ultraThinMaterial)
-                .onAppear { FloatingOverlayWindow.passAll = true }
-                .onDisappear { FloatingOverlayWindow.passAll = false }
         }
     }
 
@@ -4077,10 +4067,11 @@ struct ListenRecordPill: View {
     // MARK: 行为
 
     private func tapped() {
-        if model.togetherOn && canRestoreCard() {
-            restoreCard()
+        if model.togetherOn && canRestoreCard {
+            NotificationCenter.default.post(name: .alcoveListenRestore, object: nil)
         } else {
-            showPlayer = true
+            // 从 app 最上面那页弹播放器：在工作室/共读室里点也不会把那页顶掉
+            FloatingOverlay.shared.present { MusicPlayerSheet(model: model) }
         }
     }
 

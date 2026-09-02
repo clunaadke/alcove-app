@@ -37,6 +37,8 @@ extension Notification.Name {
     static let alcoveCallRestore = Notification.Name("alcoveCallRestore")
     /// 0902 通话结束（挂断/对方挂断）→ RootView 收掉通话页
     static let alcoveCallEnded = Notification.Name("alcoveCallEnded")
+    /// 0902 点了小唱片（一起听开着、主聊天露着）→ RootView 把大卡叫回来
+    static let alcoveListenRestore = Notification.Name("alcoveListenRestore")
 }
 
 // MARK: - 0902 通话总机：通话的命不再绑在通话页上
@@ -70,9 +72,7 @@ final class CallHub: ObservableObject {
     func pageHidden() {
         pageVisible = false
         guard let s = session else { return }
-        FloatingOverlay.shared.show(id: "call") {
-            FloatingDock(id: "call") { CallPill(session: s) }
-        }
+        FloatingOverlay.shared.show(id: "call", defaultY: 120) { CallPill(session: s) }
     }
 
     private func ended() {

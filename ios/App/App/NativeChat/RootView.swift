@@ -461,6 +461,12 @@ struct RootView: View {
                 syncListenPill()
             }
             .onChange(of: listenMinimized) { _ in syncListenPill() }
+            .onChange(of: housePage) { _ in syncListenPill() }
+            .onChange(of: showTerminal) { _ in syncListenPill() }
+            .onChange(of: showRoundtable) { _ in syncListenPill() }
+            .onReceive(NotificationCenter.default.publisher(for: .alcoveListenRestore)) { _ in
+                withAnimation(.easeOut(duration: 0.22)) { listenMinimized = false }
+            }
             .onReceive(NotificationCenter.default.publisher(for: .alcoveCallRestore)) { _ in
                 guard CallHub.shared.session != nil, activeCall == nil else { return }
                 activeCall = CallHub.shared.kind
@@ -474,16 +480,11 @@ struct RootView: View {
     private func syncListenPill() {
         let show = listenMusic.nowPlaying != nil && (!listenMusic.togetherOn || listenMinimized)
         if show {
-            FloatingOverlay.shared.show(id: "listen") {
-                FloatingDock(id: "listen", defaultY: 230) {
-                    // 只有主聊天页露着（没盖工作室/共读室那些整页）时，点唱片才把大卡叫回来；
-                    // 否则播放器由唱片自己那层浮窗弹，不顶掉正在看的页
-                    ListenRecordPill(model: listenMusic,
-                                     canRestoreCard: { housePage == nil && !showTerminal && !showRoundtable },
-                                     restoreCard: {
-                                         withAnimation(.easeOut(duration: 0.22)) { listenMinimized = false }
-                                     })
-                }
+            // 只有主聊天页露着（没盖工作室/共读室那些整页）时，点唱片才把大卡叫回来；
+            // 否则播放器从最上面那页弹，不顶掉正在看的页
+            let canRestore = housePage == nil && !showTerminal && !showRoundtable
+            FloatingOverlay.shared.show(id: "listen", defaultY: 230) {
+                ListenRecordPill(model: listenMusic, canRestoreCard: canRestore)
             }
         } else {
             FloatingOverlay.shared.hide(id: "listen")
