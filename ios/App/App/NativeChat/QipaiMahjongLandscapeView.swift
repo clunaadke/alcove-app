@@ -1089,29 +1089,30 @@ struct QipaiMahjongLandscapeView: View {
             // 牌顶着屏幕上沿摆，省出一整条头像的高度
             ZStack(alignment: .top) {
                 VStack(spacing: 5) {
-                    backRow(p.handCount, width: 22, slot: .top)
-                    if !p.melds.isEmpty { meldRow(p.melds, width: 20, axis: .horizontal) }
+                    backRow(p.handCount, width: 26, slot: .top)
+                    if !p.melds.isEmpty { meldRow(p.melds, width: 22, axis: .horizontal) }
                 }
                 .frame(maxWidth: .infinity, alignment: .center)
+                // 0902 八稿她要的：头像往中间靠一点点（44→96），牌往下挪一点（8→28）
                 seatHeader(p, slot: slot, view: view)
                     .frame(maxWidth: .infinity, alignment: .trailing)
-                    .padding(.trailing, 44)
+                    .padding(.trailing, 96)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .padding(.top, 8)
+            .padding(.top, 28)
         case .left:
             HStack(spacing: 5) {
                 VStack(spacing: 5) {
                     seatHeader(p, slot: slot, view: view)
                     if !p.melds.isEmpty { meldRow(p.melds, width: 19, axis: .vertical) }
                 }
-                backRow(p.handCount, width: 24, slot: .left)
+                backRow(p.handCount, width: 20, slot: .left)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             .padding(.leading, 26)
         case .right:
             HStack(spacing: 5) {
-                backRow(p.handCount, width: 24, slot: .right)
+                backRow(p.handCount, width: 20, slot: .right)
                 VStack(spacing: 5) {
                     seatHeader(p, slot: slot, view: view)
                     if !p.melds.isEmpty { meldRow(p.melds, width: 19, axis: .vertical) }
@@ -1246,8 +1247,10 @@ struct QipaiMahjongLandscapeView: View {
     private enum Axis2 { case horizontal, vertical }
 
     /// 0902 七稿：对家一排**背对镜头站着**的牌（MahjongTileBack .standing），
-    /// 牌挨牌只留一条细缝，整排底下压一道贴桌的软影，才像一堵墙立在布上；
-    /// 左右两家是 MahjongTileWall——顶面带 + 背面带并排的一整堵，背面朝桌心。
+    /// 牌挨牌只留一条细缝，整排底下压一道贴桌的软影，才像一堵墙立在布上。
+    /// 0902 八稿她打回七稿的两条带子墙（"一片方块"）：左右两家改成**跟对家一模一样
+    /// 的一张张立牌背**，只是整张转 90° 竖着摞——顶面那条朝屏幕外侧，脚朝桌心。
+    /// 每张都是独立的牌，有顶面有厚度有脚影。别再画成带子。
     @ViewBuilder
     private func backRow(_ count: Int, width: CGFloat, slot: MahjongSeatSlot) -> some View {
         let n = max(0, min(count, 14))
@@ -1258,12 +1261,37 @@ struct QipaiMahjongLandscapeView: View {
             }
             .background(wallFloorShadow(width: width))
         case .left:
-            MahjongTileWall(count: n, width: width, inner: .trailing)
+            sideWall(n, width: width, turn: -90)
         case .right:
-            MahjongTileWall(count: n, width: width, inner: .leading)
+            sideWall(n, width: width, turn: 90)
         case .bottom:
             EmptyView()
         }
+    }
+
+    /// 左右家：一列横过来的立牌背。turn=-90 顶面朝左（左家），+90 顶面朝右（右家）。
+    /// 每张先按竖放尺寸占位、转完再按横放尺寸占位，跟 MahjongTileFace 转脸一个套路。
+    /// 整列往上提一点（offset），下端别压到自己的手牌和头像。
+    private func sideWall(_ n: Int, width: CGFloat, turn: Double) -> some View {
+        let tileH = MahjongTileBack.standingHeight(width)
+        return VStack(spacing: 1) {
+            ForEach(0..<n, id: \.self) { _ in
+                MahjongTileBack(width: width, pose: .standing)
+                    .frame(width: width, height: tileH)
+                    .rotationEffect(.degrees(turn))
+                    .frame(width: tileH, height: width)
+            }
+        }
+        // 脚影：这列牌的脚朝桌心，影子往桌心那边错一点
+        .background(
+            RoundedRectangle(cornerRadius: width * 0.3, style: .continuous)
+                .fill(QipaiPalette.shadowTint.opacity(0.26))
+                .blur(radius: width * 0.22)
+                .padding(.vertical, -width * 0.1)
+                .offset(x: turn < 0 ? width * 0.22 : -width * 0.22, y: width * 0.12)
+                .allowsHitTesting(false)
+        )
+        .offset(y: -14)
     }
 
     /// 一排站着的牌脚下那道影：糊开的一条深色，往下错一点，落在桌布上
@@ -1433,7 +1461,7 @@ struct QipaiMahjongLandscapeView: View {
     // MARK: 我这一横条：手牌 —— 间距 —— 副露
 
     private func myHandArea(_ view: MahjongView, width: CGFloat) -> some View {
-        VStack(spacing: 7) {
+        VStack(spacing: 4) {
             actionCluster(view)
             HStack(alignment: .bottom, spacing: 12) {
                 if let me = view.me { mySeatBadge(me, view: view) }
@@ -1442,8 +1470,8 @@ struct QipaiMahjongLandscapeView: View {
             .padding(.horizontal, 30)
         }
         // 0901 她打回「我的麻将都在外面」：手牌要坐进粉色布面里。
-        // 二稿桌布吃掉了底部安全区，布面本身就到屏幕底了，14 就够
-        .padding(.bottom, 14)
+        // 0902 八稿她嫌手牌离桌底太远：底边留白收到负值，牌脚压进 home 条那 21pt 里一点
+        .padding(.bottom, -8)
     }
 
     @ViewBuilder
@@ -1555,7 +1583,8 @@ struct QipaiMahjongLandscapeView: View {
             }
             .disabled(store.busy)
         }
-        .padding(.trailing, 40)
+        // 0902 八稿：右家牌墙变高了，操作条往左让开（40→150），别压到墙脚
+        .padding(.trailing, 150)
     }
 
     /// 吃的第二段：把每种搭法连同被吃那张摆成一组，点哪组吃哪组（防手滑，同竖屏）
@@ -1583,7 +1612,8 @@ struct QipaiMahjongLandscapeView: View {
             Button("算了") { chiPicking = false }
                 .buttonStyle(QipaiEmbossedButtonStyle())
         }
-        .padding(.trailing, 40)
+        // 0902 八稿：右家牌墙变高了，操作条往左让开（40→150），别压到墙脚
+        .padding(.trailing, 150)
     }
 
     private func chiRun(_ mv: QipaiLegalMove, claim: MahjongClaim) -> [String] {
@@ -1619,7 +1649,8 @@ struct QipaiMahjongLandscapeView: View {
             .buttonStyle(QipaiEmbossedButtonStyle(prominent: true))
             .disabled(selected == nil || store.busy)
         }
-        .padding(.trailing, 40)
+        // 0902 八稿：右家牌墙变高了，操作条往左让开（40→150），别压到墙脚
+        .padding(.trailing, 150)
     }
 
     private func send(_ mv: QipaiLegalMove) {

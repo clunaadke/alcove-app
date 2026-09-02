@@ -407,6 +407,11 @@ struct MahjongTileBack: View {
 
     private var corner: CGFloat { width * 0.15 }
 
+    /// standing 姿势的总高（顶面 + 牌背），横屏侧墙转 90° 时要拿它换算占位
+    static func standingHeight(_ width: CGFloat) -> CGFloat {
+        MahjongCamera.thickness(width) * MahjongCamera.flatK + width * 1.34 * MahjongCamera.upK
+    }
+
     var body: some View {
         switch pose {
         case .card: cardBody
