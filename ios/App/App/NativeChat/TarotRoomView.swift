@@ -867,6 +867,9 @@ struct TarotRoomView: View {
             if !toast.isEmpty { toastView }
         }
         }
+        // 0903 她抓的「日夜搞反」：占星室设成夜、全屋是白天时，磨砂玻璃（Material）跟的是全屋的
+        // colorScheme，白卡配夜里的浅字。这里把子树的 colorScheme 钉成占星室自己的，玻璃就跟着它走
+        .environment(\.colorScheme, TarotInk.dark ? .dark : .light)
         .task {
             await store.loadDeck()
             await store.loadReadings()
