@@ -58,6 +58,7 @@ struct RootView: View {
 
     var body: some View {
         ZStack(alignment: .top) {
+            floatingHooks
             ChatView(
                 thinkingEnabled: $thinkingEnabled,
                 thinkingKnown: thinkingKnown,
@@ -211,26 +212,10 @@ struct RootView: View {
             housePage = nil
             if activeCall == nil { activeCall = .outgoing }
         }
-        // 0902 通话可缩小：页收起（activeCall=nil）通话不断，CallHub 浮出胶囊；点胶囊再展开
-        .fullScreenCover(item: $activeCall, onDismiss: { CallHub.shared.pageHidden() }) { kind in
-            CallView(kind: kind, onMinimize: { activeCall = nil },
-                     session: CallHub.shared.session(for: kind))
-        }
-        // 0902 小唱片：只要歌在放、而且大卡没展开着，就浮着；歌停了就收
-        .onAppear { syncListenPill() }
-        .onChange(of: listenMusic.nowPlaying?.id) { _ in syncListenPill() }
-        .onChange(of: listenMusic.togetherOn) { on in
-            if on { listenMinimized = false }   // 新开一起听：大卡展开
-            syncListenPill()
-        }
-        .onChange(of: listenMinimized) { _ in syncListenPill() }
-        .onReceive(NotificationCenter.default.publisher(for: .alcoveCallRestore)) { _ in
-            guard CallHub.shared.session != nil, activeCall == nil else { return }
-            activeCall = CallHub.shared.kind
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .alcoveCallEnded)) { _ in
-            activeCall = nil
-        }
+        // 0902 通话可缩小：页收起（activeCall=nil）通话不断，CallHub 浮出胶囊；点胶囊再展开。
+        // 其余的 onChange/onReceive 挂在 floatingHooks 那个零尺寸视图上——这条链已经长到
+        // 编译器算不动了（0902 第一次构建就报「无法在合理时间内进行类型校验」）。
+        .fullScreenCover(item: $activeCall, onDismiss: { CallHub.shared.pageHidden() }, content: callPage)
         .onReceive(NotificationCenter.default.publisher(for: .alcoveShowPermissions)) { _ in
             housePage = nil
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { showPermissions = true }
@@ -455,6 +440,33 @@ struct RootView: View {
         if screen.contains("thinking:on") { return true }
         if screen.contains("thinking:off") { return false }
         return nil
+    }
+
+    private func callPage(_ kind: CallKind) -> some View {
+        CallView(kind: kind, onMinimize: { activeCall = nil },
+                 session: CallHub.shared.session(for: kind))
+    }
+
+    /// 0902 通话胶囊 + 小唱片的联动都挂在这个看不见的零尺寸视图上，
+    /// 不往 body 那条主链上再加修饰符（加一条编译器就多算一倍）。
+    private var floatingHooks: some View {
+        Color.clear
+            .frame(width: 0, height: 0)
+            .allowsHitTesting(false)
+            .onAppear { syncListenPill() }
+            .onChange(of: listenMusic.nowPlaying?.id) { _ in syncListenPill() }
+            .onChange(of: listenMusic.togetherOn) { on in
+                if on { listenMinimized = false }   // 新开一起听：大卡展开
+                syncListenPill()
+            }
+            .onChange(of: listenMinimized) { _ in syncListenPill() }
+            .onReceive(NotificationCenter.default.publisher(for: .alcoveCallRestore)) { _ in
+                guard CallHub.shared.session != nil, activeCall == nil else { return }
+                activeCall = CallHub.shared.kind
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .alcoveCallEnded)) { _ in
+                activeCall = nil
+            }
     }
 
     /// 0902 小唱片的显示规则：歌在放 && （没开一起听 || 大卡缩小了）
