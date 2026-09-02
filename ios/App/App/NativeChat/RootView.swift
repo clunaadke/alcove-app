@@ -30,7 +30,8 @@ struct RootView: View {
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("assistantAvatarDataURL") private var avatarDataURL = ""
     @AppStorage("alcoveTheme") private var themeName = "haven"
-    private var theme: AlcoveTheme { .named(themeName) }
+    @AppStorage(MessagesPalette.stampKey) private var paletteStamp = 0.0
+    private var theme: AlcoveTheme { _ = paletteStamp; return .named(themeName) }
 
     private var avatarImage: UIImage? {
         guard !avatarDataURL.isEmpty else { return nil }

@@ -7,12 +7,12 @@ struct AlcoveTheme {
     let isPaper: Bool
     let usesWallImage: Bool      // haven 铺 chat-bg.png；midnight 用深色渐变
     let wallGradient: [Color]
-    let bubbleUser: Color
-    let bubbleAI: Color
+    var bubbleUser: Color        // 0902 信息主题可由她自己调色（MessagesPalette），所以是 var
+    var bubbleAI: Color
     let text: Color
     let textDim: Color
     let textLight: Color
-    let timestamp: Color
+    var timestamp: Color
     let glassTint: Color
     let glassBorder: Color
     let capsuleTint: Color
@@ -40,6 +40,12 @@ struct AlcoveTheme {
     let panelTextureAsset: String
     // 0822 她要的 iMessage 同款：纯色底、实心蓝/灰气泡带尾巴、过程线藏成一个点
     var isMessages: Bool = false
+    // 0902 她要的两个可调色位：思绪/过程线、各种截断线（时间戳截断、做了一场梦、切歌那一行）。
+    // 没调过就是 nil，回落到 textDim——别的主题一个像素不变。
+    var thought: Color? = nil
+    var divider: Color? = nil
+    var thoughtColor: Color { thought ?? textDim }
+    var dividerColor: Color { divider ?? textDim }
 
     static let haven = AlcoveTheme(
         isDark: false,
@@ -128,8 +134,8 @@ struct AlcoveTheme {
         case "paper": return .paper
         case "paper-dark": return .paperDark
         case "midnight": return .midnight
-        case "imessage": return .messages
-        case "imessage-dark": return .messagesDark
+        case "imessage": return MessagesPalette.apply(to: .messages, dark: false)
+        case "imessage-dark": return MessagesPalette.apply(to: .messagesDark, dark: true)
         default: return .haven
         }
     }
@@ -388,3 +394,111 @@ enum AlcoveAppearance {
         apply(dark: dark)
     }
 }
+
+// MARK: - 0902 信息主题调色板（她自己调：时间戳 / 思绪 / 截断线 / 两边气泡）
+//
+// 只对 imessage / imessage-dark 生效，别的主题不读。每一项各自存一个十六进制色，
+// 没存就用主题原来的颜色（就是"默认"）；点某一项的「默认」只清那一项。
+// 改了任何一项就把 msgPaletteStamp 拨一下，聊天页 / RootView / 设置页都盯着这个数重画。
+
+enum MessagesPalette {
+    enum Item: String, CaseIterable, Identifiable {
+        case timestamp, thought, divider, bubbleUser, bubbleAI
+        var id: String { rawValue }
+        var title: String {
+            switch self {
+            case .timestamp: return "时间戳"
+            case .thought: return "思绪与过程线"
+            case .divider: return "截断线"
+            case .bubbleUser: return "我的气泡"
+            case .bubbleAI: return "他的气泡"
+            }
+        }
+        var key: String { "msgColor." + rawValue }
+    }
+
+    static let stampKey = "msgPaletteStamp"
+
+    /// 预设色块：一点就换。跟着壁纸走的常用色，白、米白、两档灰、藕粉、iMessage 蓝、近黑
+    static let presets: [Color] = [
+        .white,
+        Color(hexString: "#F2EDE4")!,
+        Color(hexString: "#C7C7CC")!,
+        Color(hexString: "#8E8E93")!,
+        Color(hexString: "#F2DCE0")!,
+        Color(hexString: "#57A1F3")!,
+        Color(hexString: "#1C1C1E")!,
+    ]
+
+    /// 主题原本的颜色 = 这一项的默认值
+    static func defaultColor(_ item: Item, dark: Bool) -> Color {
+        let base: AlcoveTheme = dark ? .messagesDark : .messages
+        switch item {
+        case .timestamp: return base.timestamp
+        case .thought: return base.textDim
+        case .divider: return base.textDim
+        case .bubbleUser: return base.bubbleUser
+        case .bubbleAI: return base.bubbleAI
+        }
+    }
+
+    static func stored(_ item: Item) -> Color? {
+        guard let hex = UserDefaults.standard.string(forKey: item.key), !hex.isEmpty else { return nil }
+        return Color(hexString: hex)
+    }
+
+    static func current(_ item: Item, dark: Bool) -> Color {
+        stored(item) ?? defaultColor(item, dark: dark)
+    }
+
+    static func isDefault(_ item: Item) -> Bool { stored(item) == nil }
+
+    static func set(_ item: Item, _ color: Color?) {
+        if let color, let hex = color.hexString {
+            UserDefaults.standard.set(hex, forKey: item.key)
+        } else {
+            UserDefaults.standard.removeObject(forKey: item.key)
+        }
+        bump()
+    }
+
+    static func bump() {
+        UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: stampKey)
+    }
+
+    static func apply(to theme: AlcoveTheme, dark: Bool) -> AlcoveTheme {
+        var t = theme
+        if let c = stored(.timestamp) { t.timestamp = c }
+        if let c = stored(.thought) { t.thought = c }
+        if let c = stored(.divider) { t.divider = c }
+        if let c = stored(.bubbleUser) { t.bubbleUser = c }
+        if let c = stored(.bubbleAI) { t.bubbleAI = c }
+        return t
+    }
+}
+
+extension Color {
+    /// "#RRGGBB" 或 "#RRGGBBAA"
+    init?(hexString: String) {
+        var h = hexString.trimmingCharacters(in: .whitespaces)
+        if h.hasPrefix("#") { h.removeFirst() }
+        guard h.count == 6 || h.count == 8, let v = UInt64(h, radix: 16) else { return nil }
+        let r, g, b, a: Double
+        if h.count == 8 {
+            r = Double((v >> 24) & 0xFF) / 255; g = Double((v >> 16) & 0xFF) / 255
+            b = Double((v >> 8) & 0xFF) / 255;  a = Double(v & 0xFF) / 255
+        } else {
+            r = Double((v >> 16) & 0xFF) / 255; g = Double((v >> 8) & 0xFF) / 255
+            b = Double(v & 0xFF) / 255;         a = 1
+        }
+        self.init(red: r, green: g, blue: b, opacity: a)
+    }
+
+    var hexString: String? {
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        guard UIColor(self).getRed(&r, green: &g, blue: &b, alpha: &a) else { return nil }
+        return String(format: "#%02X%02X%02X%02X", Int(round(r * 255)), Int(round(g * 255)),
+                      Int(round(b * 255)), Int(round(a * 255)))
+    }
+}
+

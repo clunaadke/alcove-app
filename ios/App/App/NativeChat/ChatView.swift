@@ -80,7 +80,9 @@ struct ChatView: View {
     @AppStorage("bubbleGlassMagnify") private var bubbleGlassMagnify = 0.0
     @AppStorage("bubbleGlassBlur") private var bubbleGlassBlur = 0.10
     @AppStorage("bubbleGlassSize") private var bubbleGlassSize = 174.33
-    private var theme: AlcoveTheme { .named(themeName) }
+    /// 0902 信息主题调色板：她在设置页改一项，msgPaletteStamp 一变这里就重算
+    @AppStorage(MessagesPalette.stampKey) private var paletteStamp = 0.0
+    private var theme: AlcoveTheme { _ = paletteStamp; return .named(themeName) }
     private var bubbleGlassStyle: BubbleGlassStyle {
         BubbleGlassStyle(
             strength: CGFloat(bubbleGlassStrength),
@@ -631,9 +633,9 @@ struct ChatView: View {
             let divided = needsDivider(prev: previous, cur: message)
             if divided {
                 if theme.isMessages {
-                    MessagesTimeDivider(date: message.date, color: theme.textDim)
+                    MessagesTimeDivider(date: message.date, color: theme.dividerColor)
                 } else {
-                    TimeDivider(date: message.date, color: theme.textDim)
+                    TimeDivider(date: message.date, color: theme.dividerColor)
                 }
             }
             let hoist = hoistFor(index: index)
@@ -654,13 +656,13 @@ struct ChatView: View {
                         isDark: theme.isDark)
             } else if message.msgType == "divider" && message.source == "dream" {
                 // 0822 她定的：做梦之后聊天页只落这一道线，梦本身在梦面板
-                DreamDivider(text: message.text, date: message.date, color: theme.textDim)
+                DreamDivider(text: message.text, date: message.date, color: theme.dividerColor)
             } else if message.msgType == "divider" && message.source == "music" {
                 // 任务#1308 她定的：切歌落一条居中小分割线，不是对话气泡
-                MusicChatDivider(text: message.text, date: message.date, color: theme.textDim)
+                MusicChatDivider(text: message.text, date: message.date, color: theme.dividerColor)
             } else if message.msgType == "divider" {
                 // 0822 她要的：切通道留一道线，跟时间分割一个样子
-                ChannelDivider(text: message.text, color: theme.textDim)
+                ChannelDivider(text: message.text, color: theme.dividerColor)
             } else {
                 let renderedRow = MessageRow(
                     msg: message,
@@ -3150,7 +3152,7 @@ struct MessageRow: View {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { onContentChange?() }
                 } label: {
                     Circle()
-                        .fill(theme.textDim.opacity(processOpen ? 0.95 : 0.5))
+                        .fill(theme.thoughtColor.opacity(processOpen ? 0.95 : 0.5))
                         .frame(width: 7, height: 7)
                         .frame(width: 22, height: 14)
                         .contentShape(Rectangle())
@@ -3176,7 +3178,7 @@ struct MessageRow: View {
                     }
                     .padding(.leading, 10)
                     .overlay(alignment: .leading) {
-                        Capsule().fill(theme.textDim.opacity(0.28)).frame(width: 1.5)
+                        Capsule().fill(theme.thoughtColor.opacity(0.28)).frame(width: 1.5)
                     }
                     .transition(.opacity)
                 }
@@ -3192,7 +3194,7 @@ struct MessageRow: View {
         Text(text)
             .font(.system(size: 12.5))
             .italic()
-            .foregroundColor(theme.textDim)
+            .foregroundColor(theme.thoughtColor)
             .lineSpacing(3)
             .textSelection(.enabled)
     }
@@ -3382,7 +3384,7 @@ struct MessageRow: View {
             Text("✦ ··· 记起")
                 .font(.system(size: 11, design: .serif))
                 .italic()
-                .foregroundColor(theme.textDim)
+                .foregroundColor(theme.thoughtColor)
         }
         .sheet(isPresented: $showRecall) {
             if let recall { RecallPop(item: recall) }

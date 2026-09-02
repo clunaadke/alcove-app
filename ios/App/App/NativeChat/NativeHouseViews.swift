@@ -1937,9 +1937,11 @@ private struct BubbleAppearanceSettingsView: View {
     @AppStorage("bubbleGlassMagnify") private var bubbleGlassMagnify = 0.0
     @AppStorage("bubbleGlassBlur") private var bubbleGlassBlur = 0.10
     @AppStorage("bubbleGlassSize") private var bubbleGlassSize = 174.33
+    /// 0902 信息主题调色板：改一项这个数就变，预览跟着重画
+    @AppStorage(MessagesPalette.stampKey) private var paletteStamp = 0.0
 
     private var panelTheme: AlcoveTheme { .panelNamed(themeName) }
-    private var chatTheme: AlcoveTheme { .named(themeName) }
+    private var chatTheme: AlcoveTheme { _ = paletteStamp; return .named(themeName) }
     private var bubbleStyle: BubbleGlassStyle {
         BubbleGlassStyle(
             strength: CGFloat(bubbleGlassStrength),
@@ -1959,6 +1961,19 @@ private struct BubbleAppearanceSettingsView: View {
                     .padding(.top, 11)
 
                 livePreview
+
+                // 0902 她要的：信息主题下自己调颜色。每项预设色块 + 自定义取色器 + 各自的「默认」
+                if chatTheme.isMessages {
+                    section("颜色 · 信息主题") {
+                        VStack(spacing: 12) {
+                            ForEach(MessagesPalette.Item.allCases) { item in colorRow(item) }
+                        }
+                        Text("预设一点就换；「自定义」里有色轮和吸管，可以直接从壁纸上吸颜色；每项的「默认」只回这一项")
+                            .font(.system(size: 10))
+                            .foregroundColor(panelTheme.textLight)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
 
                 section("文字") {
                     fontSizeSlider
@@ -1998,17 +2013,21 @@ private struct BubbleAppearanceSettingsView: View {
             ZStack {
                 ChatWallpaperRenderer(descriptor: wallpaperStore.descriptor)
 
-                VStack(spacing: 14) {
-                    previewBubble(
-                        "\(assistantName)，气泡再透一点\n字也松一点",
-                        isUser: true
-                    )
-                    previewBubble(
-                        "好，就在这里慢慢调\n我陪你看每一下变化",
-                        isUser: false
-                    )
+                if chatTheme.isMessages {
+                    messagesPreview.padding(14)
+                } else {
+                    VStack(spacing: 14) {
+                        previewBubble(
+                            "\(assistantName)，气泡再透一点\n字也松一点",
+                            isUser: true
+                        )
+                        previewBubble(
+                            "好，就在这里慢慢调\n我陪你看每一下变化",
+                            isUser: false
+                        )
+                    }
+                    .padding(16)
                 }
-                .padding(16)
             }
             .coordinateSpace(name: "alcoveChatRoot")
             .environment(\.chatWallpaperDescriptor, wallpaperStore.descriptor)
@@ -2022,6 +2041,74 @@ private struct BubbleAppearanceSettingsView: View {
                 .stroke(panelTheme.fyBorder, lineWidth: 1)
         )
         .shadow(color: panelTheme.fyShadow, radius: 8, y: 3)
+    }
+
+    // MARK: 0902 信息主题的预览：实心气泡 + 气泡下的时间戳 + 一行思绪 + 一道截断线，
+    // 她调的五个颜色全在这一小块里看得见，壁纸就是她当前那张
+
+    private var messagesPreview: some View {
+        let t = chatTheme
+        return VStack(spacing: 10) {
+            MessagesTimeDivider(date: Date(), color: t.dividerColor)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 8) {
+                    Circle().fill(t.thoughtColor.opacity(0.6)).frame(width: 7, height: 7)
+                    Text("她在挑颜色，我等着看她挑到哪一格")
+                        .font(.system(size: 12)).italic().foregroundColor(t.thoughtColor).lineLimit(1)
+                }
+                messagesPreviewBubble("这里慢慢调，我陪你看", isUser: false, theme: t, stamp: "19:09 · ♥ 78 bpm")
+            }
+            messagesPreviewBubble("\(assistantName)，时间戳换个颜色", isUser: true, theme: t, stamp: "19:14")
+            MusicChatDivider(text: "切到了一首歌", date: Date(), color: t.dividerColor)
+        }
+    }
+
+    private func messagesPreviewBubble(_ text: String, isUser: Bool, theme t: AlcoveTheme,
+                                       stamp: String) -> some View {
+        VStack(alignment: isUser ? .trailing : .leading, spacing: 3) {
+            Text(text)
+                .font(.system(size: CGFloat(fontSize)))
+                .foregroundColor(isUser ? .white : t.text)
+                .padding(.horizontal, 13).padding(.vertical, 8)
+                .background(RoundedRectangle(cornerRadius: 17, style: .continuous)
+                    .fill(isUser ? t.bubbleUser : t.bubbleAI))
+            Text(stamp)
+                .font(.system(size: 10, design: .serif))
+                .foregroundColor(t.timestamp)
+                .padding(.horizontal, 6)
+        }
+        .frame(maxWidth: .infinity, alignment: isUser ? .trailing : .leading)
+    }
+
+    private func colorRow(_ item: MessagesPalette.Item) -> some View {
+        let dark = chatTheme.isDark
+        let binding = Binding<Color>(
+            get: { MessagesPalette.current(item, dark: dark) },
+            set: { MessagesPalette.set(item, $0) })
+        return HStack(spacing: 8) {
+            Text(item.title)
+                .font(.system(size: 12))
+                .frame(width: 84, alignment: .leading)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 7) {
+                    ForEach(Array(MessagesPalette.presets.enumerated()), id: \.offset) { _, c in
+                        Button { MessagesPalette.set(item, c) } label: {
+                            Circle().fill(c)
+                                .frame(width: 22, height: 22)
+                                .overlay(Circle().stroke(panelTheme.fyBorder, lineWidth: 1))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            ColorPicker("", selection: binding, supportsOpacity: true)
+                .labelsHidden()
+                .frame(width: 30)
+            Button("默认") { MessagesPalette.set(item, nil) }
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(MessagesPalette.isDefault(item) ? panelTheme.textLight : panelTheme.fyAccent)
+                .disabled(MessagesPalette.isDefault(item))
+        }
     }
 
     private func previewBubble(_ text: String, isUser: Bool) -> some View {
