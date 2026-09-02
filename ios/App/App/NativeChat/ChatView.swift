@@ -2693,9 +2693,10 @@ struct MessageRow: View {
                     }
                     if msg.isAudio, let raw = msg.attachmentUrl {
                         // 0822 她要的：一开始只有语音条，长按才「转文字」或「收藏」
-                        // 0902 她定的：她自己的语音条默认露转文字（不露情绪）；他的照旧长按才展开
+                        // 0902 她给的参考图：转文字收在同一条气泡里，点右边的小箭头展开
                         AudioBubble(url: AlcoveAPI.attachmentURL(raw), isUser: isUser, theme: theme,
-                                    hasTranscript: !msg.displayText.isEmpty && !isUser,
+                                    hasTranscript: !msg.displayText.isEmpty,
+                                    transcript: msg.displayText,
                                     transcriptShown: showTranscript,
                                     onToggleTranscript: {
                                         withAnimation(.easeInOut(duration: 0.18)) { showTranscript.toggle() }
@@ -2713,7 +2714,7 @@ struct MessageRow: View {
                     if let song = msg.musicCard {
                         MusicMessageCard(song: song, theme: theme, isUser: isUser) { onPlayMusic?(song) }
                     } else if !msg.displayText.isEmpty && !(msg.isSticker) && !msg.isBareLink
-                                && (!msg.isAudio || showTranscript || isUser) {
+                                && !msg.isAudio {   // 语音的转文字画在语音条里面，不另起气泡
                         if paragraphSelectionMode && !isUser {
                             HStack(alignment: .top, spacing: 9) {
                                 Button { onToggleParagraphSelection?() } label: {
@@ -4289,65 +4290,154 @@ struct TypingIndicator: View {
 }
 
 // 语音条：点击播放/暂停
+/// 语音条（0902 她给的参考图重画）：一条气泡里是「播放键 · 波纹 · 时长 · 小箭头」，
+/// 点右边的小箭头，转文字在**同一条气泡里**往下展开，不再另起一个文字气泡。
+/// 波纹条数跟时长走（越长越长），高低按链接算出来、每次一样；播放时从左到右点亮。
 struct AudioBubble: View {
     let url: URL
     let isUser: Bool
     var theme: AlcoveTheme = .haven
     var hasTranscript: Bool = false
+    var transcript: String = ""
     var transcriptShown: Bool = false
     var onToggleTranscript: (() -> Void)? = nil
     var onFavorite: (() -> Void)? = nil
+
     @State private var player: AVPlayer?
     @State private var playing = false
     @State private var endObserver: NSObjectProtocol?
+    @State private var timeObserver: Any?
+    @State private var duration: Double = 0
+    @State private var progress: Double = 0
+
+    private var ink: Color { (theme.isMessages && isUser) ? .white : theme.text }
+
+    /// 10 条起步，每秒多一条，封顶 30——一条 4.5pt，最长约 135pt 的波纹，气泡不会撑爆
+    private var barCount: Int { max(10, min(30, Int(10 + duration * 1.0))) }
+
+    /// 波纹高低：按链接算一串固定的伪随机数，同一条语音每次画出来一样，不会一刷新就跳
+    private var bars: [CGFloat] {
+        var seed: UInt32 = 2166136261
+        for b in url.absoluteString.utf8 { seed = (seed ^ UInt32(b)) &* 16777619 }
+        var out: [CGFloat] = []
+        for _ in 0..<40 {
+            seed = seed &* 1664525 &+ 1013904223
+            let v = CGFloat((seed >> 16) & 0xFF) / 255
+            out.append(5 + v * 15)
+        }
+        return out
+    }
+
+    private var timeText: String {
+        let secs = Int(duration.rounded())
+        return duration > 0 ? String(format: "%d:%02d", secs / 60, secs % 60) : "语音"
+    }
 
     var body: some View {
-        Button {
-            if playing {
-                player?.pause()
-                playing = false
-            } else {
-                // 0822 她说「点语音没有声音」：之前没开 playback 会话，静音键一拨就哑。
-                // 旅行卡那边早就这么做了，这里补上。
-                try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
-                try? AVAudioSession.sharedInstance().setActive(true)
-                if player == nil { player = AVPlayer(url: url) }
-                player?.seek(to: .zero)
-                player?.play()
-                playing = true
-                if let old = endObserver { NotificationCenter.default.removeObserver(old) }
-                endObserver = NotificationCenter.default.addObserver(
-                    forName: .AVPlayerItemDidPlayToEndTime,
-                    object: player?.currentItem, queue: .main) { _ in
-                    playing = false
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 10) {
+                Button(action: togglePlay) {
+                    Image(systemName: playing ? "pause.fill" : "play.fill")
+                        .font(.system(size: 13))
+                        .frame(width: 18, height: 22)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                waveform
+                    .contentShape(Rectangle())
+                    .onTapGesture { togglePlay() }
+                Text(timeText)
+                    .font(.system(size: 13, design: .monospaced))
+                    .opacity(0.85)
+                if hasTranscript {
+                    Button { onToggleTranscript?() } label: {
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 12, weight: .semibold))
+                            .rotationEffect(.degrees(transcriptShown ? 180 : 0))
+                            .frame(width: 22, height: 22)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .opacity(0.8)
                 }
             }
-        } label: {
-            HStack(spacing: 8) {
-                Image(systemName: playing ? "pause.fill" : "play.fill")
-                    .font(.system(size: 13))
-                Image(systemName: "waveform")
-                    .font(.system(size: 15))
-                Text("语音")
-                    .font(.system(size: 14))
-            }
-            .foregroundColor((theme.isMessages && isUser) ? .white : theme.text)
             .padding(.horizontal, 14)
-            .padding(.vertical, 9)
-            .background {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(isUser ? theme.bubbleUser : theme.bubbleAI)
+            .padding(.vertical, 10)
+            if hasTranscript && transcriptShown {
+                Rectangle()
+                    .fill(ink.opacity(0.16))
+                    .frame(height: 1)
+                    .padding(.horizontal, 12)
+                Text(transcript)
+                    .font(.system(size: 15.5))
+                    .lineSpacing(3)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
+        .foregroundColor(ink)
+        .background {
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(isUser ? theme.bubbleUser : theme.bubbleAI)
+        }
+        .animation(.easeInOut(duration: 0.18), value: transcriptShown)
         .contextMenu {
-            if hasTranscript {
-                Button { onToggleTranscript?() } label: {
-                    Label(transcriptShown ? "收起文字" : "转文字", systemImage: "text.bubble")
-                }
-            }
             if let onFavorite {
                 Button { onFavorite() } label: { Label("收藏", systemImage: "heart") }
             }
+        }
+        .task(id: url) { await loadDuration() }
+    }
+
+    private var waveform: some View {
+        let heights = bars
+        return HStack(alignment: .center, spacing: 2) {
+            ForEach(0..<barCount, id: \.self) { i in
+                let lit = Double(i) / Double(barCount) < progress
+                Capsule()
+                    .fill(ink.opacity(lit ? 0.95 : 0.42))
+                    .frame(width: 2.5, height: heights[i % heights.count])
+            }
+        }
+        .frame(height: 22)
+    }
+
+    private func loadDuration() async {
+        let asset = AVURLAsset(url: url)
+        if let d = try? await asset.load(.duration) {
+            let secs = CMTimeGetSeconds(d)
+            if secs.isFinite && secs > 0 { duration = secs }
+        }
+    }
+
+    private func togglePlay() {
+        if playing {
+            player?.pause()
+            playing = false
+            return
+        }
+        // 0822 她说「点语音没有声音」：之前没开 playback 会话，静音键一拨就哑。
+        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
+        try? AVAudioSession.sharedInstance().setActive(true)
+        if player == nil { player = AVPlayer(url: url) }
+        guard let p = player else { return }
+        if progress >= 0.999 || progress == 0 { p.seek(to: .zero) }
+        p.play()
+        playing = true
+        if let old = endObserver { NotificationCenter.default.removeObserver(old) }
+        endObserver = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime,
+            object: p.currentItem, queue: .main) { _ in
+            playing = false
+            progress = 0
+        }
+        if let old = timeObserver { p.removeTimeObserver(old) }
+        timeObserver = p.addPeriodicTimeObserver(
+            forInterval: CMTime(seconds: 0.1, preferredTimescale: 600), queue: .main) { t in
+            let total = duration > 0 ? duration : CMTimeGetSeconds(p.currentItem?.duration ?? .zero)
+            guard total.isFinite, total > 0 else { return }
+            progress = min(1, max(0, CMTimeGetSeconds(t) / total))
         }
     }
 }
