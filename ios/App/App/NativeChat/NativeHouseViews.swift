@@ -2075,7 +2075,7 @@ private struct BubbleAppearanceSettingsView: View {
         VStack(alignment: isUser ? .trailing : .leading, spacing: 3) {
             Text(text)
                 .font(.system(size: CGFloat(fontSize)))
-                .foregroundColor(isUser ? .white : t.text)
+                .foregroundColor(isUser ? (t.textUser ?? .white) : (t.textAI ?? t.text))   // 0903 正文颜色也进预览
                 .padding(.horizontal, 13).padding(.vertical, 8)
                 .background(RoundedRectangle(cornerRadius: 17, style: .continuous)
                     .fill(isUser ? t.bubbleUser : t.bubbleAI))

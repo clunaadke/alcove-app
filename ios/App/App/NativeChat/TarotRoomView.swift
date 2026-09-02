@@ -277,7 +277,16 @@ final class TarotStore: ObservableObject {
 // 跟着全屋的日夜开关走（houseInterfaceAppearance），进屋那一刻读一次。
 
 enum TarotInk {
-    static var dark: Bool { UserDefaults.standard.string(forKey: AlcoveAppearance.key) != "light" }
+    /// 0903 她要的：占星室自己的日夜开关（装修抽屉里），不跟全屋走。
+    /// tarotAppearance = "house"（默认，跟全屋）/ "dark" / "light"
+    static let appearanceKey = "tarotAppearance"
+    static var dark: Bool {
+        switch UserDefaults.standard.string(forKey: appearanceKey) ?? "house" {
+        case "dark": return true
+        case "light": return false
+        default: return UserDefaults.standard.string(forKey: AlcoveAppearance.key) != "light"
+        }
+    }
 
     private static func pick(_ night: Color, _ day: Color) -> Color { dark ? night : day }
     private static func pick(_ night: Double, _ day: Double) -> Double { dark ? night : day }
@@ -376,6 +385,10 @@ final class TarotDecor: ObservableObject {
     @Published var starsOnWallpaper: Bool {
         didSet { UserDefaults.standard.set(starsOnWallpaper, forKey: "tarotSky.stars") }
     }
+    /// 占星室自己的日夜：house / dark / light（TarotInk.dark 读同一个键）
+    @Published var appearance: String {
+        didSet { UserDefaults.standard.set(appearance, forKey: TarotInk.appearanceKey) }
+    }
 
     private init() {
         night = Self.loadTint("night")
@@ -386,6 +399,7 @@ final class TarotDecor: ObservableObject {
         wallpaperDay = UIImage(contentsOfFile: Self.wallpaperURL("day").path)
         starsOnWallpaper = UserDefaults.standard.object(forKey: "tarotSky.stars") == nil
             ? true : UserDefaults.standard.bool(forKey: "tarotSky.stars")
+        appearance = UserDefaults.standard.string(forKey: TarotInk.appearanceKey) ?? "house"
     }
 
     private static var mode: String { TarotInk.dark ? "night" : "day" }
@@ -1877,6 +1891,11 @@ struct TarotDecorSheet: View {
     /// 样牌：星星。画面亮、颜色多，最看得出染没染
     private let sampleID = "major_17"
 
+    struct Appearance: Identifiable { let id: String; let name: String }
+    static let appearances: [Appearance] = [
+        Appearance(id: "house", name: "跟全屋"), Appearance(id: "dark", name: "夜"), Appearance(id: "light", name: "日"),
+    ]
+
     private struct Preset: Identifiable {
         let name: String
         let color: Color
@@ -1920,6 +1939,28 @@ struct TarotDecorSheet: View {
                     Spacer()
                 }
                 .padding(.top, 22)
+
+                // —— 日夜：占星室自己的，不跟全屋走（0903 她要的）——
+                VStack(alignment: .leading, spacing: 8) {
+                    label("日夜")
+                    HStack(spacing: 8) {
+                        ForEach(TarotDecorSheet.appearances) { opt in
+                            let on = decor.appearance == opt.id
+                            Button { decor.appearance = opt.id } label: {
+                                Text(opt.name).font(.tarotHand(12))
+                                    .foregroundColor(on ? TarotInk.ink : TarotInk.dim)
+                                    .padding(.horizontal, 14).padding(.vertical, 6)
+                                    .background(Capsule().fill(on ? TarotInk.pill : Color.clear))
+                                    .background(Capsule().fill(TarotInk.glassMaterial))
+                                    .overlay(Capsule().stroke(on ? TarotInk.gold.opacity(0.7) : TarotInk.glassLine, lineWidth: 1))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        Spacer()
+                    }
+                    Text("只管占星室这一间。选了夜或日，全屋开关怎么拨它都不动。")
+                        .font(.system(size: 11)).foregroundColor(TarotInk.dim)
+                }
 
                 // —— 壁纸 ——
                 VStack(alignment: .leading, spacing: 10) {
