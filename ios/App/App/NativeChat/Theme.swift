@@ -43,6 +43,9 @@ struct AlcoveTheme {
     // 0902 她要的两个可调色位：思绪/过程线、各种截断线（时间戳截断、做了一场梦、切歌那一行）。
     // 没调过就是 nil，回落到 textDim——别的主题一个像素不变。
     var thought: Color? = nil
+    /// 0903 她要的：气泡里的正文颜色也能调（MessagesPalette），nil = 主题原样
+    var textUser: Color? = nil
+    var textAI: Color? = nil
     var divider: Color? = nil
     var thoughtColor: Color { thought ?? textDim }
     var dividerColor: Color { divider ?? textDim }
@@ -401,9 +404,11 @@ enum AlcoveAppearance {
 // 没存就用主题原来的颜色（就是"默认"）；点某一项的「默认」只清那一项。
 // 改了任何一项就把 msgPaletteStamp 拨一下，聊天页 / RootView / 设置页都盯着这个数重画。
 
+// 0903 她要的：(1) 多两项「我的正文」「他的正文」；(2) 七项全部夜里一套、白天一套，跟全屋日夜开关走
+//（以前只存一套，她夜里调的白天还顶着）。老键 msgColor.<item> 第一次读到就搬进夜里那套。
 enum MessagesPalette {
     enum Item: String, CaseIterable, Identifiable {
-        case timestamp, thought, divider, bubbleUser, bubbleAI
+        case timestamp, thought, divider, bubbleUser, bubbleAI, textUser, textAI
         var id: String { rawValue }
         var title: String {
             switch self {
@@ -412,12 +417,33 @@ enum MessagesPalette {
             case .divider: return "截断线"
             case .bubbleUser: return "我的气泡"
             case .bubbleAI: return "他的气泡"
+            case .textUser: return "我的正文"
+            case .textAI: return "他的正文"
             }
         }
-        var key: String { "msgColor." + rawValue }
+        /// 旧键（0902 只有一套的时候）
+        var legacyKey: String { "msgColor." + rawValue }
+        func key(dark: Bool) -> String { "msgColor.\(dark ? "night" : "day")." + rawValue }
     }
 
     static let stampKey = "msgPaletteStamp"
+    private static let migratedKey = "msgColor.migratedToDayNight"
+
+    /// 全屋现在是夜里还是白天（跟 AlcoveAppearance 那个开关走）
+    static var isDark: Bool { UserDefaults.standard.string(forKey: AlcoveAppearance.key) != "light" }
+
+    /// 老的单套值搬进夜里那套（她 0902 是夜里调的），只搬一次
+    private static func migrateIfNeeded() {
+        let d = UserDefaults.standard
+        guard !d.bool(forKey: migratedKey) else { return }
+        for item in Item.allCases {
+            if let hex = d.string(forKey: item.legacyKey), !hex.isEmpty {
+                if d.string(forKey: item.key(dark: true)) == nil { d.set(hex, forKey: item.key(dark: true)) }
+                d.removeObject(forKey: item.legacyKey)
+            }
+        }
+        d.set(true, forKey: migratedKey)
+    }
 
     /// 预设色块：一点就换。跟着壁纸走的常用色，白、米白、两档灰、藕粉、iMessage 蓝、近黑
     static let presets: [Color] = [
@@ -439,25 +465,29 @@ enum MessagesPalette {
         case .divider: return base.textDim
         case .bubbleUser: return base.bubbleUser
         case .bubbleAI: return base.bubbleAI
+        case .textUser: return .white          // 信息主题里她的气泡上的字本来就是白的
+        case .textAI: return base.text
         }
     }
 
-    static func stored(_ item: Item) -> Color? {
-        guard let hex = UserDefaults.standard.string(forKey: item.key), !hex.isEmpty else { return nil }
+    static func stored(_ item: Item, dark: Bool) -> Color? {
+        migrateIfNeeded()
+        guard let hex = UserDefaults.standard.string(forKey: item.key(dark: dark)), !hex.isEmpty else { return nil }
         return Color(hexString: hex)
     }
 
     static func current(_ item: Item, dark: Bool) -> Color {
-        stored(item) ?? defaultColor(item, dark: dark)
+        stored(item, dark: dark) ?? defaultColor(item, dark: dark)
     }
 
-    static func isDefault(_ item: Item) -> Bool { stored(item) == nil }
+    static func isDefault(_ item: Item, dark: Bool) -> Bool { stored(item, dark: dark) == nil }
 
-    static func set(_ item: Item, _ color: Color?) {
+    static func set(_ item: Item, _ color: Color?, dark: Bool) {
+        migrateIfNeeded()
         if let color, let hex = color.hexString {
-            UserDefaults.standard.set(hex, forKey: item.key)
+            UserDefaults.standard.set(hex, forKey: item.key(dark: dark))
         } else {
-            UserDefaults.standard.removeObject(forKey: item.key)
+            UserDefaults.standard.removeObject(forKey: item.key(dark: dark))
         }
         bump()
     }
@@ -468,11 +498,13 @@ enum MessagesPalette {
 
     static func apply(to theme: AlcoveTheme, dark: Bool) -> AlcoveTheme {
         var t = theme
-        if let c = stored(.timestamp) { t.timestamp = c }
-        if let c = stored(.thought) { t.thought = c }
-        if let c = stored(.divider) { t.divider = c }
-        if let c = stored(.bubbleUser) { t.bubbleUser = c }
-        if let c = stored(.bubbleAI) { t.bubbleAI = c }
+        if let c = stored(.timestamp, dark: dark) { t.timestamp = c }
+        if let c = stored(.thought, dark: dark) { t.thought = c }
+        if let c = stored(.divider, dark: dark) { t.divider = c }
+        if let c = stored(.bubbleUser, dark: dark) { t.bubbleUser = c }
+        if let c = stored(.bubbleAI, dark: dark) { t.bubbleAI = c }
+        if let c = stored(.textUser, dark: dark) { t.textUser = c }
+        if let c = stored(.textAI, dark: dark) { t.textAI = c }
         return t
     }
 }

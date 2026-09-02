@@ -1975,7 +1975,7 @@ private struct BubbleAppearanceSettingsView: View {
                         VStack(spacing: 12) {
                             ForEach(MessagesPalette.Item.allCases) { item in colorRow(item) }
                         }
-                        Text("预设一点就换；「自定义」里有色轮和吸管，可以直接从壁纸上吸颜色；每项的「默认」只回这一项")
+                        Text("预设一点就换；「自定义」里有色轮和吸管，可以直接从壁纸上吸颜色；每项的「默认」只回这一项。夜里、白天各存一套，跟全屋的日夜开关走，现在调的是\(chatTheme.isDark ? "夜里" : "白天")这套")
                             .font(.system(size: 10))
                             .foregroundColor(panelTheme.textLight)
                             .fixedSize(horizontal: false, vertical: true)
@@ -2091,7 +2091,7 @@ private struct BubbleAppearanceSettingsView: View {
         let dark = chatTheme.isDark
         let binding = Binding<Color>(
             get: { MessagesPalette.current(item, dark: dark) },
-            set: { MessagesPalette.set(item, $0) })
+            set: { MessagesPalette.set(item, $0, dark: dark) })
         return HStack(spacing: 8) {
             Text(item.title)
                 .font(.system(size: 12))
@@ -2099,7 +2099,7 @@ private struct BubbleAppearanceSettingsView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 7) {
                     ForEach(Array(MessagesPalette.presets.enumerated()), id: \.offset) { _, c in
-                        Button { MessagesPalette.set(item, c) } label: {
+                        Button { MessagesPalette.set(item, c, dark: dark) } label: {
                             Circle().fill(c)
                                 .frame(width: 22, height: 22)
                                 .overlay(Circle().stroke(panelTheme.fyBorder, lineWidth: 1))
@@ -2111,10 +2111,10 @@ private struct BubbleAppearanceSettingsView: View {
             ColorPicker("", selection: binding, supportsOpacity: true)
                 .labelsHidden()
                 .frame(width: 30)
-            Button("默认") { MessagesPalette.set(item, nil) }
+            Button("默认") { MessagesPalette.set(item, nil, dark: dark) }
                 .font(.system(size: 11, weight: .medium))
-                .foregroundColor(MessagesPalette.isDefault(item) ? panelTheme.textLight : panelTheme.fyAccent)
-                .disabled(MessagesPalette.isDefault(item))
+                .foregroundColor(MessagesPalette.isDefault(item, dark: dark) ? panelTheme.textLight : panelTheme.fyAccent)
+                .disabled(MessagesPalette.isDefault(item, dark: dark))
         }
     }
 
@@ -2125,7 +2125,7 @@ private struct BubbleAppearanceSettingsView: View {
             Text(text)
                 .font(.system(size: CGFloat(fontSize)))
                 .lineSpacing(5)
-                .foregroundColor(chatTheme.text)
+                .foregroundColor(isUser ? (chatTheme.textUser ?? (chatTheme.isMessages ? .white : chatTheme.text)) : (chatTheme.textAI ?? chatTheme.text))
                 .multilineTextAlignment(.leading)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
@@ -3949,12 +3949,11 @@ struct ListenRecordPill: View {
     /// 一起听开着时点唱片能不能把大卡叫回来（只有主聊天页露着的时候能）。RootView 算好传进来
     var canRestoreCard: Bool = false
 
-    // 0902 深夜她抓的：封面「一秒一卡」。原来是 30Hz Timer 一格格拨 angle，
-    // 而 progress 每秒 publish 一次 → 父视图重建这个 struct → Timer publisher 跟着重建、重订阅，
-    // 每秒断一下。改成按时间算角度：记住上次停在哪 + 这次从哪一刻开始转，
-    // TimelineView(.animation) 跟着屏幕刷新率驱动，不靠 state 一格格拨，暂停就停在原地。
-    @State private var angleBase: Double = 0
-    @State private var spinSince: Date?
+    // 0902 深夜她抓的「一秒一卡」→ 0903 又抓到「半秒一卡」。第一版是 30Hz Timer 拨 angle；
+    // 第二版 TimelineView 按时间算角度，还是卡：progress 每半秒 publish 一次，这个 struct 整个重画，
+    // 转动在 SwiftUI 那层就被打断一下。第三版彻底不让 SwiftUI 转它：封面是一个 UIView，
+    // 用 Core Animation 转（SpinningCover），动画跑在渲染服务器上，界面重画多少次都不管它；
+    // 暂停就把图层时间停住，继续从停的地方接着转。
     @State private var expanded = false
     @State private var collapseTask: Task<Void, Never>?
     private let size: CGFloat = 62
@@ -3964,20 +3963,6 @@ struct ListenRecordPill: View {
         Group {
             if expanded { strip } else { disc }
         }
-        .onAppear { if model.isPlaying, spinSince == nil { spinSince = Date() } }
-        .onChange(of: model.isPlaying) { _, playing in
-            if playing {
-                if spinSince == nil { spinSince = Date() }
-            } else {
-                angleBase = angle(at: Date())
-                spinSince = nil
-            }
-        }
-    }
-
-    private func angle(at date: Date) -> Double {
-        let spun = spinSince.map { date.timeIntervalSince($0) } ?? 0
-        return (angleBase + spun / secondsPerTurn * 360).truncatingRemainder(dividingBy: 360)
     }
 
     // MARK: 唱片
@@ -4022,25 +4007,16 @@ struct ListenRecordPill: View {
         }
     }
 
-    /// 转着的封面 + 中心小孔。放歌时 TimelineView 每帧算一次角度；暂停时 paused，停在原地不耗电
+    /// 转着的封面 + 中心小孔。封面由 Core Animation 转（见 SpinningCover），小孔是圆的，不用跟着转
     private func record(diameter: CGFloat) -> some View {
-        TimelineView(.animation(paused: !model.isPlaying)) { tl in
-            ZStack {
-                if let cover = model.nowPlaying?.cover, let url = MusicModel.artworkURL(cover) {
-                    AsyncImage(url: url) { image in
-                        image.resizable().scaledToFill()
-                    } placeholder: { Color.black.opacity(0.35) }
-                } else {
-                    Color.black.opacity(0.35)
-                }
-                Circle().fill(Color.black.opacity(0.55)).frame(width: diameter * 0.19, height: diameter * 0.19)
-                Circle().stroke(Color.white.opacity(0.6), lineWidth: 1).frame(width: diameter * 0.19, height: diameter * 0.19)
-            }
-            .frame(width: diameter, height: diameter)
-            .clipShape(Circle())
-            .rotationEffect(.degrees(angle(at: tl.date)))
+        ZStack {
+            SpinningCover(url: model.nowPlaying.flatMap { MusicModel.artworkURL($0.cover) },
+                          playing: model.isPlaying, secondsPerTurn: secondsPerTurn)
+            Circle().fill(Color.black.opacity(0.55)).frame(width: diameter * 0.19, height: diameter * 0.19)
+            Circle().stroke(Color.white.opacity(0.6), lineWidth: 1).frame(width: diameter * 0.19, height: diameter * 0.19)
         }
         .frame(width: diameter, height: diameter)
+        .clipShape(Circle())
     }
 
     private var progressFraction: CGFloat {
@@ -4055,21 +4031,22 @@ struct ListenRecordPill: View {
                 .onTapGesture(perform: tapped)
             VStack(spacing: 6) {
                 if let song = model.nowPlaying {
-                    // 0902 她要的：歌名后面带歌手；放不下就跑马灯来回滚，不截断
-                    MarqueeText {
-                        HStack(spacing: 5) {
-                            Text(song.name)
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundColor(.white)
-                            if !song.artist.isEmpty {
-                                Text("— " + song.artist)
-                                    .font(.system(size: 11))
-                                    .foregroundColor(.white.opacity(0.7))
-                            }
+                    // 0902 她要的：歌名后面带歌手。0903 她说跑马灯算了（那版在她机器上压根没显示出来）：
+                    // 固定不滚，放不下就省略号
+                    HStack(spacing: 5) {
+                        Text(song.name)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(.white)
+                            .layoutPriority(1)
+                        if !song.artist.isEmpty {
+                            Text("— " + song.artist)
+                                .font(.system(size: 11))
+                                .foregroundColor(.white.opacity(0.7))
                         }
-                        .lineLimit(1)
-                        .fixedSize()
                     }
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .frame(height: 16)
                 }
                 Slider(value: Binding(get: { model.progress }, set: { model.seek(to: $0); bump() }),
@@ -4129,6 +4106,97 @@ struct ListenRecordPill: View {
 
 /// 跑马灯：内容比容器窄就原地不动；宽了就慢慢往左滚到头、停一下、再滚回来，循环。
 /// 0902 她要的，给小唱片长条上的歌名用（歌名加歌手一行放不下时）。
+/// 0903：小唱片的封面。UIImageView 装封面，图层用 CABasicAnimation 一直转，
+/// 暂停 = 图层时间停住（speed 0 + timeOffset），继续 = 从停的地方接着走。
+/// 进过后台系统会把图层动画扔掉，所以每次 update 发现动画没了就重新挂一遍。
+final class SpinningCoverUIView: UIView {
+    private let imageView = UIImageView()
+    private var url: URL?
+    private var spinning = false
+    private var turn: Double = 8
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        backgroundColor = UIColor.black.withAlphaComponent(0.35)
+        clipsToBounds = true
+        imageView.contentMode = .scaleAspectFill
+        imageView.clipsToBounds = true
+        addSubview(imageView)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        imageView.frame = bounds
+        layer.cornerRadius = bounds.width / 2
+    }
+
+    func load(_ u: URL?) {
+        guard u != url else { return }
+        url = u
+        imageView.image = nil
+        guard let u else { return }
+        URLSession.shared.dataTask(with: u) { [weak self] data, _, _ in
+            guard let data, let img = UIImage(data: data) else { return }
+            DispatchQueue.main.async {
+                guard let self, self.url == u else { return }
+                self.imageView.image = img
+            }
+        }.resume()
+    }
+
+    func setSpinning(_ on: Bool, secondsPerTurn: Double) {
+        turn = secondsPerTurn
+        if layer.animation(forKey: "spin") == nil {
+            let a = CABasicAnimation(keyPath: "transform.rotation.z")
+            a.fromValue = 0
+            a.toValue = Double.pi * 2
+            a.duration = turn
+            a.repeatCount = .infinity
+            a.isRemovedOnCompletion = false
+            layer.add(a, forKey: "spin")
+            // 先挂着不动，下面按 on 决定走不走
+            layer.speed = 0
+            layer.timeOffset = 0
+            layer.beginTime = 0
+            spinning = false
+        }
+        guard on != spinning else { return }
+        spinning = on
+        if on {
+            let paused = layer.timeOffset
+            layer.speed = 1
+            layer.timeOffset = 0
+            layer.beginTime = 0
+            let sincePause = layer.convertTime(CACurrentMediaTime(), from: nil) - paused
+            layer.beginTime = sincePause
+        } else {
+            let now = layer.convertTime(CACurrentMediaTime(), from: nil)
+            layer.speed = 0
+            layer.timeOffset = now
+        }
+    }
+}
+
+struct SpinningCover: UIViewRepresentable {
+    let url: URL?
+    let playing: Bool
+    let secondsPerTurn: Double
+
+    func makeUIView(context: Context) -> SpinningCoverUIView {
+        let v = SpinningCoverUIView()
+        v.load(url)
+        v.setSpinning(playing, secondsPerTurn: secondsPerTurn)
+        return v
+    }
+
+    func updateUIView(_ v: SpinningCoverUIView, context: Context) {
+        v.load(url)
+        v.setSpinning(playing, secondsPerTurn: secondsPerTurn)
+    }
+}
+
 struct MarqueeText<Content: View>: View {
     @ViewBuilder let content: () -> Content
     @State private var contentW: CGFloat = 0

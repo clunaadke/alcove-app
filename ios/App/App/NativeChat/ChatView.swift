@@ -2984,7 +2984,8 @@ struct MessageRow: View {
                 text: msg.textWithoutLink,
                 fontSize: CGFloat(fontSize),
                 lineSpacing: theme.isPaper ? 7 : 5,
-                color: UIColor((theme.isMessages && isUser) ? .white : (msg.asleepAtSend ? theme.textDim : theme.text)),
+                color: UIColor(isUser ? (theme.textUser ?? (theme.isMessages ? .white : theme.text))
+                                      : (msg.asleepAtSend ? theme.textDim : (theme.textAI ?? theme.text))),
                 maximumNumberOfLines: 0,
                 onTruncationChange: { _ in },
                 onAsk: { onQuote?($0) },
@@ -3781,6 +3782,14 @@ private struct WorkDeliveryMessageCard: View {
 /// 0902 深夜她要的：塔罗卡。顶上「抽了牌 · 牌阵 · 时间」，问题用「」括起来，
 /// 下面一排牌面（复用占星室的 TarotCardFace，颜色跟她在占星室调的染色走），每张底下位置 · 牌名 · 正逆位，
 /// 底下一块关键词。牌默认亮着——翻面版等「陈璟让她抽牌」那一单再做。死解不进卡，占星室记录里有。
+/// 塔罗卡的字色：卡底是她那张淡紫底纹的边框，不跟聊天主题走，固定深紫
+private enum TarotCardInk {
+    static let ink = Color(red: 0.20, green: 0.16, blue: 0.30)
+    static let dim = Color(red: 0.20, green: 0.16, blue: 0.30).opacity(0.62)
+    static let accent = Color(red: 0.44, green: 0.30, blue: 0.66)
+    static let sub = Color.white.opacity(0.32)
+}
+
 private struct TarotMessageCard: View {
     let card: TarotAskCard
     let theme: AlcoveTheme
@@ -3788,11 +3797,11 @@ private struct TarotMessageCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
-                Image(systemName: "sparkles").font(.system(size: 15)).foregroundColor(theme.fyAccent)
+                Image(systemName: "sparkles").font(.system(size: 15)).foregroundColor(TarotCardInk.accent)
                 Text(card.byHim ? "陈璟抽了牌" : "抽了牌").font(.system(size: 15, weight: .semibold, design: .serif))
-                Text("· \(card.spreadName)").font(.system(size: 11)).foregroundColor(theme.textDim)
+                Text("· \(card.spreadName)").font(.system(size: 11)).foregroundColor(TarotCardInk.dim)
                 Spacer()
-                Text(TarotChatBits.timeText(card.ts)).font(.system(size: 8.5, design: .monospaced)).foregroundColor(theme.textDim.opacity(0.8))
+                Text(TarotChatBits.timeText(card.ts)).font(.system(size: 8.5, design: .monospaced)).foregroundColor(TarotCardInk.dim)
             }
             if !card.question.isEmpty {
                 Text("「\(card.question)」")
@@ -3813,9 +3822,10 @@ private struct TarotMessageCard: View {
 private struct TarotFramed: ViewModifier {
     func body(content: Content) -> some View {
         content
-            .padding(.horizontal, 40)
-            .padding(.top, 46)
-            .padding(.bottom, 40)
+            .foregroundColor(TarotCardInk.ink)
+            .padding(.horizontal, 44)
+            .padding(.top, 64)                           // 角饰 82pt 高，标头从它们下面开始
+            .padding(.bottom, 56)
             .frame(width: 372, alignment: .leading)      // 横着的长方形，跟边框原本的比例走；整行居中
             .background(
                 Image("TarotFrame")
@@ -3836,10 +3846,10 @@ private struct TarotInterpBlock: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text("客观解读 · 按\(interp.categoryName)").font(.system(size: 9.5, weight: .semibold)).tracking(0.5)
-                    .foregroundColor(theme.fyAccent)
+                    .foregroundColor(TarotCardInk.accent)
                 Spacer()
                 Button(expanded ? "收起" : "逐牌") { withAnimation(.easeInOut(duration: 0.2)) { expanded.toggle() } }
-                    .font(.system(size: 9.5, weight: .semibold)).foregroundColor(theme.fyAccent)
+                    .font(.system(size: 9.5, weight: .semibold)).foregroundColor(TarotCardInk.accent)
             }
             Text(interp.overall).font(.system(size: 11.5, design: .serif)).lineSpacing(3)
                 .fixedSize(horizontal: false, vertical: true)
@@ -3855,7 +3865,7 @@ private struct TarotInterpBlock: View {
                 }
                 if !interp.relations.isEmpty {
                     Text("牌面关系：" + interp.relations.joined(separator: " "))
-                        .font(.system(size: 11, design: .serif)).lineSpacing(3).foregroundColor(theme.textDim)
+                        .font(.system(size: 11, design: .serif)).lineSpacing(3).foregroundColor(TarotCardInk.dim)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 if !interp.advice.isEmpty {
@@ -3865,11 +3875,11 @@ private struct TarotInterpBlock: View {
                 }
             }
             Text(interp.oneline).font(.system(size: 11, weight: .medium, design: .serif))
-                .foregroundColor(theme.fyAccent)
+                .foregroundColor(TarotCardInk.accent)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(10).frame(maxWidth: .infinity, alignment: .leading)
-        .background(theme.fyCardSub.opacity(0.4), in: RoundedRectangle(cornerRadius: 12))
+        .background(TarotCardInk.sub, in: RoundedRectangle(cornerRadius: 12))
     }
 }
 
@@ -3884,37 +3894,43 @@ private enum TarotChatBits {
         return f.string(from: date)
     }
 
-    static func faceWidth(_ n: Int) -> CGFloat { n == 1 ? 84 : (n <= 3 ? 64 : 46) }
+    static func faceWidth(_ n: Int) -> CGFloat { n == 1 ? 84 : (n <= 3 ? 64 : 52) }
 
+    /// 0903 她要的：牌在左、字在右——每张一行：牌面 | 位置 · 牌名 · 正逆 / 关键词小胶囊两个一排
     @ViewBuilder
     static func facesBlock(cards: [TarotAskCard.Card], theme: AlcoveTheme) -> some View {
         let n = cards.count
         let w = faceWidth(n)
-        HStack(alignment: .top, spacing: n <= 3 ? 10 : 5) {
+        VStack(alignment: .leading, spacing: 10) {
             ForEach(cards) { c in
-                VStack(spacing: 5) {
+                HStack(alignment: .center, spacing: 12) {
                     TarotCardFace(cardID: c.id, reversed: c.reversed, width: w)
-                    if n > 1 {
-                        Text(c.positionName).font(.system(size: 9.5, weight: .semibold)).foregroundColor(theme.fyAccent)
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(spacing: 6) {
+                            if n > 1 {
+                                Text(c.positionName).font(.system(size: 9.5, weight: .semibold)).foregroundColor(TarotCardInk.accent)
+                            }
+                            Text(c.name).font(.system(size: 13.5, weight: .medium, design: .serif))
+                            Text(c.reversed ? "逆位" : "正位").font(.system(size: 9)).foregroundColor(TarotCardInk.dim)
+                        }
+                        let rows = stride(from: 0, to: c.keywords.count, by: 2).map { Array(c.keywords[$0..<min($0 + 2, c.keywords.count)]) }
+                        ForEach(Array(rows.enumerated()), id: \.offset) { row in
+                            HStack(spacing: 5) {
+                                ForEach(row.element, id: \.self) { k in
+                                    Text(k).font(.system(size: 10, weight: .medium))
+                                        .foregroundColor(TarotCardInk.ink)
+                                        .padding(.horizontal, 8).padding(.vertical, 3)
+                                        .background(Capsule().fill(TarotCardInk.sub))
+                                        .overlay(Capsule().stroke(TarotCardInk.accent.opacity(0.35), lineWidth: 0.8))
+                                }
+                            }
+                        }
                     }
-                    Text(c.name)
-                        .font(.system(size: n > 3 ? 9.5 : 11.5, weight: .medium, design: .serif))
-                        .lineLimit(1).minimumScaleFactor(0.7)
-                    Text(c.reversed ? "逆位" : "正位").font(.system(size: 8.5)).foregroundColor(theme.textDim)
+                    Spacer(minLength: 0)
                 }
-                .frame(maxWidth: .infinity)
             }
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 4)
-        VStack(alignment: .leading, spacing: 4) {
-            ForEach(cards) { c in
-                Text((n > 1 ? c.positionName + "：" : "") + c.keywords.joined(separator: " · "))
-                    .font(.system(size: 10.5)).foregroundColor(theme.textDim).lineLimit(2)
-            }
-        }
-        .padding(10).frame(maxWidth: .infinity, alignment: .leading)
-        .background(theme.fyCardSub.opacity(0.4), in: RoundedRectangle(cornerRadius: 12))
+        .padding(.vertical, 2)
     }
 }
 
@@ -3951,10 +3967,10 @@ private struct TarotOfferMessageCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
-                Image(systemName: "sparkles").font(.system(size: 15)).foregroundColor(theme.fyAccent)
+                Image(systemName: "sparkles").font(.system(size: 15)).foregroundColor(TarotCardInk.accent)
                 Text(done ? "陈璟出的题，抽好了" : "陈璟出了题，你来抽").font(.system(size: 15, weight: .semibold, design: .serif))
                 Spacer()
-                Text("· \(card.spreadName)").font(.system(size: 11)).foregroundColor(theme.textDim)
+                Text("· \(card.spreadName)").font(.system(size: 11)).foregroundColor(TarotCardInk.dim)
             }
             if !card.question.isEmpty {
                 Text("「\(card.question)」")
@@ -3996,14 +4012,14 @@ private struct TarotOfferMessageCard: View {
                             ZStack {
                                 TarotCardBack(width: slotW).opacity(pos.key == nextPosition?.key ? 0.4 : 0.16)
                                 RoundedRectangle(cornerRadius: slotW * 0.07, style: .continuous)
-                                    .stroke(theme.fyAccent.opacity(pos.key == nextPosition?.key ? 0.8 : 0.3),
+                                    .stroke(TarotCardInk.accent.opacity(pos.key == nextPosition?.key ? 0.8 : 0.3),
                                             style: StrokeStyle(lineWidth: 1, dash: [3, 4]))
                             }
                             .frame(width: slotW, height: slotW * 1.72)
                         }
                         if card.positions.count > 1 {
                             Text(pos.name).font(.system(size: 9, weight: .medium))
-                                .foregroundColor(pos.key == nextPosition?.key ? theme.fyAccent : theme.textDim)
+                                .foregroundColor(pos.key == nextPosition?.key ? TarotCardInk.accent : TarotCardInk.dim)
                         }
                     }
                 }
@@ -4020,7 +4036,7 @@ private struct TarotOfferMessageCard: View {
                         Text(card.positions.count > 1 ? "为「\(pos.name)」抽一张" : "抽一张")
                             .font(.system(size: 12, weight: .medium, design: .serif))
                         Text(busy ? "记着…" : "左右滑整副牌，中间那张再点一下")
-                            .font(.system(size: 10)).foregroundColor(theme.textDim)
+                            .font(.system(size: 10)).foregroundColor(TarotCardInk.dim)
                     }
                     if deck.isEmpty {
                         ProgressView().controlSize(.small).frame(height: 130)
