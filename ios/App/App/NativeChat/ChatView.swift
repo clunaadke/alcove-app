@@ -3248,7 +3248,7 @@ struct MessageRow: View {
                     .lineLimit(1)
                 Image(systemName: "chevron.right").font(.system(size: 8))
             }
-            .foregroundColor(.secondary)
+            .foregroundColor(theme.thoughtColor)   // 0903 她要的：脚印跟「思绪与过程线」一个颜色
         }
         .buttonStyle(.plain)
     }
