@@ -1035,7 +1035,7 @@ struct TarotRoomView: View {
 
                         VStack(alignment: .leading, spacing: 10) {
                             sectionLabel("所問")
-                            TextField("", text: $question, prompt: Text("想问什么，不写也行").foregroundColor(TarotInk.faint),
+                            TextField("", text: $question, prompt: Text("想问什么，或在心中默念").foregroundColor(TarotInk.faint),
                                       axis: .vertical)
                                 .lineLimit(1...4)
                                 .font(.system(size: 15))
