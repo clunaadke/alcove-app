@@ -3810,7 +3810,7 @@ private struct TarotMessageCard: View {
                     .frame(maxWidth: .infinity)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            TarotChatBits.facesBlock(cards: card.cards, theme: theme)
+            TarotChatBits.facesBlock(cards: card.cards, theme: theme, spread: card.spread)
             if let interp = card.interp {
                 TarotInterpBlock(interp: interp, theme: theme)
             }
@@ -3896,45 +3896,114 @@ private enum TarotChatBits {
         return f.string(from: date)
     }
 
-    static func faceWidth(_ n: Int) -> CGFloat { n == 1 ? 84 : (n <= 3 ? 64 : 52) }
-
-    /// 0903 她要的：牌在左、字在右——每张一行：牌面 | 位置 · 牌名 · 正逆 / 关键词小胶囊两个一排
     @ViewBuilder
-    static func facesBlock(cards: [TarotAskCard.Card], theme: AlcoveTheme) -> some View {
-        let n = cards.count
-        let w = faceWidth(n)
-        // 0903 她要的：牌和字这一块在卡里居中，不贴左边
-        VStack(alignment: .center, spacing: 10) {
-            ForEach(cards) { c in
-                HStack(alignment: .center, spacing: 14) {
-                    TarotCardFace(cardID: c.id, reversed: c.reversed, width: w)
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack(spacing: 6) {
-                            if n > 1 {
-                                Text(c.positionName).font(.system(size: 9.5, weight: .semibold)).foregroundColor(TarotCardInk.accent)
-                            }
-                            Text(c.name).font(.system(size: 13.5, weight: .medium, design: .serif))
-                            Text(c.reversed ? "逆位" : "正位").font(.system(size: 9)).foregroundColor(TarotCardInk.dim)
-                        }
-                        let rows = stride(from: 0, to: c.keywords.count, by: 2).map { Array(c.keywords[$0..<min($0 + 2, c.keywords.count)]) }
-                        ForEach(Array(rows.enumerated()), id: \.offset) { row in
-                            HStack(spacing: 5) {
-                                ForEach(row.element, id: \.self) { k in
-                                    Text(k).font(.system(size: 10, weight: .medium))
-                                        .foregroundColor(TarotCardInk.ink)
-                                        .padding(.horizontal, 8).padding(.vertical, 3)
-                                        .background(Capsule().fill(TarotCardInk.sub))
-                                        .overlay(Capsule().stroke(TarotCardInk.accent.opacity(0.35), lineWidth: 0.8))
-                                }
-                            }
+    static func facesBlock(cards: [TarotAskCard.Card], theme: AlcoveTheme, spread: String) -> some View {
+        TarotSpreadView(cards: cards, spread: spread)
+    }
+}
+
+/// 0903 她定的多牌排法（方案二）：单张还是牌左字右；三张一排；关系五张按牌阵本来的形状摆——
+/// 「我」「他」左右对望在上，「我们之间」居中，「阻碍」「走向」在下，两行的高度塞下五张。
+/// 多牌时关键词只显示选中那张的（默认第一张），点哪张看哪张，选中的牌浮起来描金边。
+private struct TarotSpreadView: View {
+    let cards: [TarotAskCard.Card]
+    let spread: String
+    @State private var selected = 0
+
+    private var n: Int { cards.count }
+    private var faceW: CGFloat { n <= 3 ? 56 : 44 }
+    private var cellH: CGFloat { faceW * 1.72 + 30 }
+
+    var body: some View {
+        if n <= 1, let c = cards.first {
+            single(c)
+        } else {
+            VStack(spacing: 8) {
+                if spread == "relation" && n == 5 {
+                    GeometryReader { geo in
+                        let w = geo.size.width
+                        let h = geo.size.height
+                        ZStack {
+                            cell(0).position(x: w * 0.22, y: cellH / 2)
+                            cell(1).position(x: w * 0.78, y: cellH / 2)
+                            cell(2).position(x: w * 0.5, y: h / 2)
+                            cell(3).position(x: w * 0.22, y: h - cellH / 2)
+                            cell(4).position(x: w * 0.78, y: h - cellH / 2)
                         }
                     }
+                    .frame(height: cellH * 2 + 6)
+                } else {
+                    HStack(alignment: .top, spacing: n > 3 ? 6 : 12) {
+                        ForEach(cards.indices, id: \.self) { i in cell(i) }
+                    }
+                    .frame(maxWidth: .infinity)
                 }
-                .frame(maxWidth: .infinity)
+                if cards.indices.contains(selected) {
+                    keywordsRow(cards[selected])
+                }
+            }
+        }
+    }
+
+    /// 单张：牌左字右
+    private func single(_ c: TarotAskCard.Card) -> some View {
+        HStack(alignment: .center, spacing: 14) {
+            TarotCardFace(cardID: c.id, reversed: c.reversed, width: 84)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    Text(c.name).font(.system(size: 13.5, weight: .medium, design: .serif))
+                    Text(c.reversed ? "逆位" : "正位").font(.system(size: 9)).foregroundColor(TarotCardInk.dim)
+                }
+                let rows = stride(from: 0, to: c.keywords.count, by: 2).map { Array(c.keywords[$0..<min($0 + 2, c.keywords.count)]) }
+                ForEach(Array(rows.enumerated()), id: \.offset) { row in
+                    HStack(spacing: 5) {
+                        ForEach(row.element, id: \.self) { k in pill(k) }
+                    }
+                }
             }
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 2)
+    }
+
+    private func cell(_ i: Int) -> some View {
+        let c = cards[i]
+        let on = i == selected
+        return VStack(spacing: 3) {
+            TarotCardFace(cardID: c.id, reversed: c.reversed, width: faceW)
+                .overlay(RoundedRectangle(cornerRadius: faceW * 0.07, style: .continuous)
+                    .stroke(TarotCardInk.accent.opacity(on ? 0.95 : 0), lineWidth: 1.5))
+                .shadow(color: TarotCardInk.accent.opacity(on ? 0.35 : 0), radius: 8)
+                .offset(y: on ? -4 : 0)
+            Text(c.positionName).font(.system(size: 8.5, weight: .semibold))
+                .foregroundColor(on ? TarotCardInk.accent : TarotCardInk.dim)
+            Text(c.name).font(.system(size: 10, weight: .medium, design: .serif))
+                .lineLimit(1).minimumScaleFactor(0.7)
+        }
+        .frame(width: faceW + 16)
+        .contentShape(Rectangle())
+        .onTapGesture { withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { selected = i } }
+    }
+
+    private func keywordsRow(_ c: TarotAskCard.Card) -> some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                Text(c.name + (c.reversed ? " · 逆位" : " · 正位"))
+                    .font(.system(size: 10.5, weight: .medium, design: .serif))
+                    .foregroundColor(TarotCardInk.accent)
+                ForEach(c.keywords, id: \.self) { k in pill(k) }
+            }
+            .padding(.horizontal, 2)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func pill(_ k: String) -> some View {
+        Text(k).font(.system(size: 10, weight: .medium))
+            .foregroundColor(TarotCardInk.ink)
+            .padding(.horizontal, 8).padding(.vertical, 3)
+            .background(Capsule().fill(TarotCardInk.sub))
+            .overlay(Capsule().stroke(TarotCardInk.accent.opacity(0.35), lineWidth: 0.8))
     }
 }
 
@@ -3982,7 +4051,7 @@ private struct TarotOfferMessageCard: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             if done {
-                TarotChatBits.facesBlock(cards: cards, theme: theme)
+                TarotChatBits.facesBlock(cards: cards, theme: theme, spread: card.spread)
                 if let interp = card.interp ?? interpLocal {
                     TarotInterpBlock(interp: interp, theme: theme)
                 }
