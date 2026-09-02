@@ -1089,7 +1089,7 @@ struct ChatView: View {
                             Text(String(format: "%d:%02d", recorder.seconds / 60, recorder.seconds % 60))
                                 .font(.system(size: 15).monospacedDigit())
                                 .foregroundColor(theme.text)
-                            Text("录音中…")
+                            Text("录音中… 按■停下，先看字再发")
                                 .font(.system(size: 14))
                                 .foregroundColor(theme.textDim)
                             Spacer()
@@ -1162,8 +1162,10 @@ struct ChatView: View {
                             ZStack(alignment: .topTrailing) {
                                 // 0822 她要的「打断回复」：他在回的时候这颗变成官方那种停止键（圆里一个小方块），
                                 // 平时照旧：没字是语音、有字是发送。
+                                // 0902：录音中显示停止键——按下去是停下来去听写、出卡片，不是发送
                                 Image(systemName: isGenerating ? "stop.fill"
-                                      : (canSend || recorder.isRecording || store.heldCount > 0 || store.pendingVoice != nil) ? "arrow.up" : "waveform")
+                                      : recorder.isRecording ? "stop.fill"
+                                      : (canSend || store.heldCount > 0 || store.pendingVoice != nil) ? "arrow.up" : "waveform")
                                 .font(.system(size: isGenerating ? 13 : 17, weight: .semibold))
                                 .contentTransition(.symbolEffect(.replace))
                                 .animation(.easeInOut(duration: 0.18), value: isGenerating)
@@ -1224,7 +1226,7 @@ struct ChatView: View {
                     Text(String(format: "%d:%02d", recorder.seconds / 60, recorder.seconds % 60))
                         .font(.system(size: 15).monospacedDigit())
                         .foregroundColor(theme.text)
-                    Text("录音中…").font(.system(size: 14)).foregroundColor(theme.textDim)
+                    Text("录音中… 按■停下").font(.system(size: 14)).foregroundColor(theme.textDim)
                     Spacer(minLength: 0)
                 } else {
                     // 0823 她报的：信息主题按回车不攒气泡。病根是这个框没写 axis: .vertical，
@@ -1240,8 +1242,10 @@ struct ChatView: View {
                 }
                 Button(action: performDynamicComposerAction) {
                     ZStack(alignment: .topTrailing) {
+                        // 0902：录音中显示停止键——按下去是停下来去听写、出卡片，不是发送
                         Image(systemName: isGenerating ? "stop.fill"
-                              : (canSend || recorder.isRecording || store.heldCount > 0 || store.pendingVoice != nil) ? "arrow.up" : "mic")
+                              : recorder.isRecording ? "stop.fill"
+                              : (canSend || store.heldCount > 0 || store.pendingVoice != nil) ? "arrow.up" : "mic")
                             .font(.system(size: isGenerating ? 12 : (showBlue ? 15 : 17), weight: showBlue ? .semibold : .regular))
                             .contentTransition(.symbolEffect(.replace))
                             .animation(.easeInOut(duration: 0.18), value: isGenerating)
