@@ -4061,6 +4061,14 @@ struct ListenRecordPill: View {
                         Image(systemName: model.isPlaying ? "pause.fill" : "play.fill")
                     }
                     Button { model.next(); bump() } label: { Image(systemName: "forward.fill") }
+                    // 0903 她发现的：一直没有「叉掉听歌」的地方。放在长按展开的这条里：停播、清掉、小唱片跟着消失
+                    Button { model.stopAndClear() } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(.white.opacity(0.75))
+                            .frame(width: 22, height: 22)
+                            .background(Circle().fill(Color.white.opacity(0.14)))
+                    }
                 }
                 .font(.system(size: 15))
                 .foregroundColor(.white)
