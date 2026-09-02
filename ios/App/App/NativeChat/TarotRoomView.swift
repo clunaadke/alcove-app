@@ -347,6 +347,9 @@ enum TarotInk {
     static var star: Color      { pick(.white, Color(red: 0.40, green: 0.30, blue: 0.65)) }
     /// 按钮文字：玻璃是透的，字直接用正文色
     static var buttonInk: Color { ink }
+    /// 0903 她要的：牌带里牌身外面一圈光晕，不然牌混进壁纸里。夜里白光；白天壁纸本来就亮，白光看不见，
+    /// 换成深紫的晕（暗一圈把牌衬出来）
+    static var cardGlow: Color { pick(Color.white.opacity(0.62), Color(red: 0.22, green: 0.12, blue: 0.42).opacity(0.55)) }
 }
 
 // MARK: - 屋子的装修（0902 深夜她要的三个调色盘：牌面染色 / 雾面玻璃 / 壁纸）
@@ -757,6 +760,7 @@ struct TarotDeckBand: View {
                     let ang = atan(dx / arc)
                     let y = baseY + dx * dx / (2 * arc) - wgt * lift
                     TarotCardBack(width: cardW)
+                        .shadow(color: TarotInk.cardGlow, radius: 5 + 7 * wgt)    // 光晕：正中那张亮一圈
                         .scaleEffect(1 + pop * wgt)
                         .rotationEffect(.radians(Double(ang)))
                         .position(x: width / 2 + dx, y: y)
@@ -1299,6 +1303,7 @@ struct TarotRoomView: View {
                 }
             }
             .rotation3DEffect(.degrees(flip), axis: (x: 0, y: 1, z: 0), perspective: 0.6)
+            .shadow(color: TarotInk.cardGlow, radius: 14)
             .scaleEffect(bigScale)
             if showFace, let card = store.card(c.cardID) {
                 VStack(spacing: 6) {
