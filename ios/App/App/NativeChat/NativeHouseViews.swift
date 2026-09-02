@@ -4038,18 +4038,22 @@ struct ListenRecordPill: View {
                 .onTapGesture(perform: tapped)
             VStack(spacing: 6) {
                 if let song = model.nowPlaying {
-                    // 0902 她要的：歌名后面带歌手，不然一行太空
-                    HStack(spacing: 5) {
-                        Text(song.name)
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundColor(.white)
-                        if !song.artist.isEmpty {
-                            Text("— " + song.artist)
-                                .font(.system(size: 11))
-                                .foregroundColor(.white.opacity(0.7))
+                    // 0902 她要的：歌名后面带歌手；放不下就跑马灯来回滚，不截断
+                    MarqueeText {
+                        HStack(spacing: 5) {
+                            Text(song.name)
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundColor(.white)
+                            if !song.artist.isEmpty {
+                                Text("— " + song.artist)
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.white.opacity(0.7))
+                            }
                         }
+                        .lineLimit(1)
+                        .fixedSize()
                     }
-                    .lineLimit(1)
+                    .frame(height: 16)
                 }
                 Slider(value: Binding(get: { model.progress }, set: { model.seek(to: $0); bump() }),
                        in: 0...max(model.duration, 1)) { editing in
@@ -4102,6 +4106,43 @@ struct ListenRecordPill: View {
             try? await Task.sleep(nanoseconds: 3_000_000_000)
             guard !Task.isCancelled else { return }
             withAnimation(.spring(response: 0.32, dampingFraction: 0.8)) { expanded = false }
+        }
+    }
+}
+
+/// 跑马灯：内容比容器窄就原地不动；宽了就慢慢往左滚到头、停一下、再滚回来，循环。
+/// 0902 她要的，给小唱片长条上的歌名用（歌名加歌手一行放不下时）。
+struct MarqueeText<Content: View>: View {
+    @ViewBuilder let content: () -> Content
+    @State private var contentW: CGFloat = 0
+    @State private var boxW: CGFloat = 0
+    @State private var offset: CGFloat = 0
+
+    private var overflow: CGFloat { max(0, contentW - boxW) }
+
+    var body: some View {
+        GeometryReader { geo in
+            content()
+                .background(GeometryReader { g in
+                    Color.clear.onAppear { contentW = g.size.width }
+                        .onChange(of: g.size.width) { contentW = $0 }
+                })
+                .offset(x: -offset)
+                .frame(width: geo.size.width, alignment: .leading)
+                .clipped()
+                .onAppear { boxW = geo.size.width; restart() }
+                .onChange(of: geo.size.width) { boxW = $0; restart() }
+                .onChange(of: contentW) { _ in restart() }
+        }
+    }
+
+    /// 每边停 1.2 秒，滚的速度按字数算（每秒 30pt），来回一趟
+    private func restart() {
+        offset = 0
+        guard overflow > 0 else { return }
+        let travel = Double(overflow) / 30.0
+        withAnimation(.linear(duration: travel).delay(1.2).repeatForever(autoreverses: true)) {
+            offset = overflow
         }
     }
 }
