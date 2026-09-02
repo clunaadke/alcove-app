@@ -166,21 +166,62 @@ final class TarotStore: ObservableObject {
     }
 }
 
-// MARK: - 夜空的颜色
+// MARK: - 屋子的颜色（0902 她定的：黑夜照她发的那两张图，深紫、哥特、神秘；白天她还没想好，
+// 我先给一版「晨雾」——淡紫灰的天、深紫的字，牌染成深一点的紫，她看了再改）
+//
+// 跟着全屋的日夜开关走（houseInterfaceAppearance），进屋那一刻读一次。
 
 enum TarotInk {
-    static let ink = Color(red: 0.93, green: 0.92, blue: 1.0)
-    static let dim = Color(red: 0.93, green: 0.92, blue: 1.0).opacity(0.62)
-    static let faint = Color(red: 0.93, green: 0.92, blue: 1.0).opacity(0.38)
-    /// 淡金：细线、边框、位置名
-    static let gold = Color(red: 0.86, green: 0.78, blue: 0.58)
-    /// 牌面单色染成的那个淡紫
-    static let tint = Color(red: 0.80, green: 0.76, blue: 1.0)
-    static let glass = Color.white.opacity(0.06)
-    static let glassLine = Color.white.opacity(0.14)
-    static let skyTop = Color(red: 0.02, green: 0.02, blue: 0.07)
-    static let skyMid = Color(red: 0.06, green: 0.07, blue: 0.20)
-    static let skyBottom = Color(red: 0.10, green: 0.06, blue: 0.19)
+    static var dark: Bool { UserDefaults.standard.string(forKey: AlcoveAppearance.key) != "light" }
+
+    private static func pick(_ night: Color, _ day: Color) -> Color { dark ? night : day }
+
+    /// 正文
+    static var ink: Color   { pick(Color(red: 0.93, green: 0.90, blue: 1.0), Color(red: 0.17, green: 0.12, blue: 0.27)) }
+    static var dim: Color   { ink.opacity(0.62) }
+    static var faint: Color { ink.opacity(0.38) }
+    /// 点缀色：细线、边框、位置名、小标签。夜里是薰衣草银，白天是深一点的紫
+    static var gold: Color  { pick(Color(red: 0.72, green: 0.62, blue: 1.0), Color(red: 0.47, green: 0.34, blue: 0.78)) }
+    /// 牌面单色染成的那个紫（她参考图里那种）
+    static var tint: Color  { pick(Color(red: 0.72, green: 0.60, blue: 1.0), Color(red: 0.60, green: 0.48, blue: 0.90)) }
+    /// 暗玻璃卡：底色 + 边线 + 胶囊底
+    static var glass: Color     { pick(Color.white.opacity(0.055), Color.black.opacity(0.045)) }
+    static var glassLine: Color { pick(Color.white.opacity(0.14), Color.black.opacity(0.10)) }
+    static var pill: Color      { pick(Color.white.opacity(0.09), Color.black.opacity(0.06)) }
+    /// 按钮底下那层紫晕（玻璃是透的，得靠它才看得出是颗按钮）
+    static var buttonGlow: Color { pick(Color(red: 0.45, green: 0.25, blue: 0.80).opacity(0.42),
+                                        Color(red: 0.55, green: 0.42, blue: 0.85).opacity(0.28)) }
+    static var toastBack: Color { pick(Color.black.opacity(0.62), Color.white.opacity(0.82)) }
+    /// 天：夜里近黑带紫 → 深紫 → 暗紫；白天淡紫灰的晨雾
+    static var skyTop: Color    { pick(Color(red: 0.03, green: 0.02, blue: 0.06), Color(red: 0.95, green: 0.93, blue: 0.98)) }
+    static var skyMid: Color    { pick(Color(red: 0.10, green: 0.05, blue: 0.20), Color(red: 0.90, green: 0.87, blue: 0.96)) }
+    static var skyBottom: Color { pick(Color(red: 0.06, green: 0.03, blue: 0.11), Color(red: 0.96, green: 0.94, blue: 0.97)) }
+    /// 两团星云
+    static var nebulaA: Color   { pick(Color(red: 0.42, green: 0.18, blue: 0.78).opacity(0.46), Color(red: 0.62, green: 0.50, blue: 0.90).opacity(0.32)) }
+    static var nebulaB: Color   { pick(Color(red: 0.58, green: 0.16, blue: 0.62).opacity(0.34), Color(red: 0.90, green: 0.62, blue: 0.80).opacity(0.24)) }
+    static var star: Color      { pick(.white, Color(red: 0.40, green: 0.30, blue: 0.65)) }
+    /// 按钮文字：玻璃是透的，字直接用正文色
+    static var buttonInk: Color { ink }
+}
+
+/// iOS 那种雾面玻璃按钮：不实心，底下压一层紫晕，边上一圈细亮线
+struct TarotGlassButtonStyle: ViewModifier {
+    var prominent: Bool = true
+
+    func body(content: Content) -> some View {
+        content
+            .foregroundColor(TarotInk.buttonInk)
+            .background(TarotInk.buttonGlow.opacity(prominent ? 1 : 0.45), in: Capsule())
+            .background(.ultraThinMaterial, in: Capsule())
+            .overlay(Capsule().stroke(TarotInk.ink.opacity(prominent ? 0.28 : 0.16), lineWidth: 1))
+            .shadow(color: TarotInk.buttonGlow.opacity(prominent ? 0.6 : 0), radius: 14, y: 4)
+    }
+}
+
+extension View {
+    func tarotGlassButton(prominent: Bool = true) -> some View {
+        modifier(TarotGlassButtonStyle(prominent: prominent))
+    }
 }
 
 /// 夜空：深蓝到深紫的底，两团星云，一层会呼吸的星星
@@ -199,9 +240,9 @@ struct TarotSky: View {
         ZStack {
             LinearGradient(colors: [TarotInk.skyTop, TarotInk.skyMid, TarotInk.skyBottom],
                            startPoint: .top, endPoint: .bottom)
-            RadialGradient(colors: [Color(red: 0.30, green: 0.26, blue: 0.70).opacity(0.38), .clear],
+            RadialGradient(colors: [TarotInk.nebulaA, .clear],
                            center: UnitPoint(x: 0.2, y: 0.25), startRadius: 0, endRadius: 320)
-            RadialGradient(colors: [Color(red: 0.62, green: 0.30, blue: 0.56).opacity(0.28), .clear],
+            RadialGradient(colors: [TarotInk.nebulaB, .clear],
                            center: UnitPoint(x: 0.85, y: 0.7), startRadius: 0, endRadius: 300)
             TimelineView(.animation(minimumInterval: 1.0 / 12.0)) { tl in
                 Canvas { ctx, size in
@@ -211,7 +252,7 @@ struct TarotSky: View {
                         let r = st.r * (0.8 + 0.4 * tw)
                         let rect = CGRect(x: st.x * size.width - r, y: st.y * size.height - r,
                                           width: r * 2, height: r * 2)
-                        ctx.fill(Path(ellipseIn: rect), with: .color(.white.opacity(0.35 + 0.55 * tw)))
+                        ctx.fill(Path(ellipseIn: rect), with: .color(TarotInk.star.opacity(0.35 + 0.55 * tw)))
                     }
                 }
             }
@@ -248,13 +289,15 @@ struct TarotCardFace: View {
 /// 牌背：深夜蓝、细金边、一格格小星、正中一枚月亮
 struct TarotCardBack: View {
     var width: CGFloat = 120
+    /// 牌背上的线：薰衣草银。牌背不分昼夜
+    static let line = Color(red: 0.78, green: 0.70, blue: 1.0)
 
     var body: some View {
         let h = width * 1.72
         let shape = RoundedRectangle(cornerRadius: width * 0.07, style: .continuous)
         return ZStack {
-            shape.fill(LinearGradient(colors: [Color(red: 0.10, green: 0.11, blue: 0.30),
-                                               Color(red: 0.05, green: 0.05, blue: 0.16)],
+            shape.fill(LinearGradient(colors: [Color(red: 0.16, green: 0.08, blue: 0.32),
+                                               Color(red: 0.06, green: 0.03, blue: 0.14)],
                                       startPoint: .top, endPoint: .bottom))
             Canvas { ctx, size in
                 let step = size.width / 6
@@ -264,7 +307,7 @@ struct TarotCardBack: View {
                     var x = (row % 2 == 0) ? step * 0.5 : step
                     while x < size.width {
                         ctx.fill(Self.star(at: CGPoint(x: x, y: y), r: step * 0.11),
-                                 with: .color(TarotInk.gold.opacity(0.28)))
+                                 with: .color(Self.line.opacity(0.30)))
                         x += step
                     }
                     y += step * 0.75
@@ -273,16 +316,16 @@ struct TarotCardBack: View {
                 let c = CGPoint(x: size.width / 2, y: size.height / 2)
                 let R = size.width * 0.19
                 ctx.fill(Path(ellipseIn: CGRect(x: c.x - R, y: c.y - R, width: R * 2, height: R * 2)),
-                         with: .color(TarotInk.gold.opacity(0.9)))
+                         with: .color(Self.line.opacity(0.92)))
                 let off = CGPoint(x: c.x + R * 0.42, y: c.y - R * 0.18)
                 ctx.fill(Path(ellipseIn: CGRect(x: off.x - R * 0.86, y: off.y - R * 0.86,
                                                 width: R * 1.72, height: R * 1.72)),
-                         with: .color(Color(red: 0.08, green: 0.08, blue: 0.24)))
+                         with: .color(Color(red: 0.10, green: 0.05, blue: 0.22)))
             }
             .clipShape(shape)
-            shape.stroke(TarotInk.gold.opacity(0.7), lineWidth: 1)
+            shape.stroke(Self.line.opacity(0.7), lineWidth: 1)
             RoundedRectangle(cornerRadius: width * 0.05, style: .continuous)
-                .stroke(TarotInk.gold.opacity(0.35), lineWidth: 0.8)
+                .stroke(Self.line.opacity(0.35), lineWidth: 0.8)
                 .padding(width * 0.06)
         }
         .frame(width: width, height: h)
@@ -459,10 +502,9 @@ struct TarotRoomView: View {
                     } label: {
                         Text("洗牌")
                             .font(.system(size: 15, weight: .semibold, design: .serif))
-                            .foregroundColor(TarotInk.skyTop)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 14)
-                            .background(Capsule().fill(TarotInk.tint))
+                            .tarotGlassButton()
                     }
                     .buttonStyle(.plain)
                     .disabled(spread == nil)
@@ -491,7 +533,7 @@ struct TarotRoomView: View {
 
     private func glassCard(selected: Bool) -> some View {
         RoundedRectangle(cornerRadius: 16, style: .continuous)
-            .fill(selected ? Color.white.opacity(0.12) : TarotInk.glass)
+            .fill(selected ? TarotInk.pill : TarotInk.glass)
             .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .stroke(selected ? TarotInk.gold.opacity(0.7) : TarotInk.glassLine, lineWidth: 1))
     }
@@ -744,7 +786,7 @@ struct TarotRoomView: View {
                 .font(.system(size: 12.5))
                 .foregroundColor(TarotInk.ink)
                 .padding(.horizontal, 14).padding(.vertical, 9)
-                .background(Capsule().fill(Color.black.opacity(0.6)))
+                .background(Capsule().fill(TarotInk.toastBack))
                 .overlay(Capsule().stroke(TarotInk.glassLine, lineWidth: 1))
                 .padding(.bottom, 40)
         }
@@ -824,15 +866,14 @@ struct TarotReadingView: View {
                     }
                 } label: {
                     HStack(spacing: 8) {
-                        if asking { ProgressView().tint(TarotInk.skyTop).controlSize(.small) }
+                        if asking { ProgressView().tint(TarotInk.ink).controlSize(.small) }
                         else { Image(systemName: "bubble.left.and.text.bubble.right") }
                         Text((asked || reading.asked) ? "已经发给陈璟了" : "让陈璟解牌")
                     }
                     .font(.system(size: 15, weight: .semibold, design: .serif))
-                    .foregroundColor(TarotInk.skyTop)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 14)
-                    .background(Capsule().fill((asked || reading.asked) ? TarotInk.tint.opacity(0.55) : TarotInk.tint))
+                    .tarotGlassButton(prominent: !(asked || reading.asked))
                 }
                 .buttonStyle(.plain)
                 .padding(.top, 4)
@@ -919,7 +960,7 @@ struct FlowPills: View {
                             .font(.system(size: 12, weight: .medium))
                             .foregroundColor(TarotInk.ink)
                             .padding(.horizontal, 11).padding(.vertical, 6)
-                            .background(Capsule().fill(Color.white.opacity(0.09)))
+                            .background(Capsule().fill(TarotInk.pill))
                             .overlay(Capsule().stroke(TarotInk.glassLine, lineWidth: 1))
                     }
                 }
@@ -959,7 +1000,7 @@ struct TarotHistorySheet: View {
                         Spacer()
                         Text(toast).font(.system(size: 12.5)).foregroundColor(TarotInk.ink)
                             .padding(.horizontal, 14).padding(.vertical, 9)
-                            .background(Capsule().fill(Color.black.opacity(0.6)))
+                            .background(Capsule().fill(TarotInk.toastBack))
                             .padding(.bottom, 30)
                     }
                     .onAppear {
@@ -969,7 +1010,7 @@ struct TarotHistorySheet: View {
             }
             .navigationTitle("占卜记录")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbarColorScheme(TarotInk.dark ? .dark : .light, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("完成") { dismiss() }.foregroundColor(TarotInk.dim)
@@ -988,11 +1029,11 @@ struct TarotHistorySheet: View {
                                      toast: { toast = $0 })
                 }
                 .navigationBarTitleDisplayMode(.inline)
-                .toolbarColorScheme(.dark, for: .navigationBar)
+                .toolbarColorScheme(TarotInk.dark ? .dark : .light, for: .navigationBar)
             }
         }
         .task { await store.loadReadings() }
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(TarotInk.dark ? .dark : .light)
     }
 
     private func row(_ r: TarotReading) -> some View {
