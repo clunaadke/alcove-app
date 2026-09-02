@@ -33,6 +33,77 @@ extension Notification.Name {
     static let alcoveDialRequested = Notification.Name("alcoveDialRequested")
     /// 她从系统界面（绿条/灵动岛）挂断了拨出的电话
     static let alcoveSystemHangup = Notification.Name("alcoveSystemHangup")
+    /// 0902 缩小成胶囊之后点了胶囊 → RootView 把通话页再展开
+    static let alcoveCallRestore = Notification.Name("alcoveCallRestore")
+    /// 0902 通话结束（挂断/对方挂断）→ RootView 收掉通话页
+    static let alcoveCallEnded = Notification.Name("alcoveCallEnded")
+}
+
+// MARK: - 0902 通话总机：通话的命不再绑在通话页上
+
+/// 她 0902 要的「缩小成胶囊，通话不断」。以前 CallSessionModel 是通话页的 @StateObject，
+/// 页一关（fullScreenCover 一收）录音、轮询、播放全跟着死。现在通话的状态住在这里，
+/// 通话页只是它的一张脸：页收起来 → 胶囊浮出来；点胶囊 → 页再展开；挂断 → 都收。
+@MainActor
+final class CallHub: ObservableObject {
+    static let shared = CallHub()
+    @Published private(set) var session: CallSessionModel?
+    private(set) var kind: CallKind = .outgoing
+    private var pageVisible = false
+
+    /// 通话页要一个会话：有活着的就给它，没有就新建
+    func session(for kind: CallKind) -> CallSessionModel {
+        if let s = session { return s }
+        let s = CallSessionModel()
+        self.kind = kind
+        session = s
+        s.onEnded = { [weak self] in self?.ended() }
+        return s
+    }
+
+    func pageShown() {
+        pageVisible = true
+        FloatingOverlay.shared.hide(id: "call")
+    }
+
+    /// 通话页收起来了（缩小）：通话还活着就浮出胶囊
+    func pageHidden() {
+        pageVisible = false
+        guard let s = session else { return }
+        FloatingOverlay.shared.show(id: "call") {
+            FloatingDock(id: "call") { CallPill(session: s) }
+        }
+    }
+
+    private func ended() {
+        session = nil
+        FloatingOverlay.shared.hide(id: "call")
+        NotificationCenter.default.post(name: .alcoveCallEnded, object: nil)
+    }
+}
+
+/// 吸在屏幕边上的那颗胶囊：微信那个线条电话 + 走动的时长（她 0902 定的：只要这两样）
+struct CallPill: View {
+    @ObservedObject var session: CallSessionModel
+
+    var body: some View {
+        Button {
+            NotificationCenter.default.post(name: .alcoveCallRestore, object: nil)
+        } label: {
+            HStack(spacing: 6) {
+                CallGlyph(size: 13, color: .white, down: false)
+                Text(String(format: "%02d:%02d", session.seconds / 60, session.seconds % 60))
+                    .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                    .foregroundColor(.white)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(Capsule().fill(session.speaking ? CallSkin.accent : CallSkin.pillGreen))
+            .overlay(Capsule().stroke(.white.opacity(0.55), lineWidth: 1))
+            .shadow(color: CallSkin.ink.opacity(0.28), radius: 6, y: 3)
+        }
+        .buttonStyle(.plain)
+    }
 }
 
 // MARK: - 通话页配色（白瓷波点，她定的：这一页不做黑夜模式）
@@ -52,6 +123,7 @@ enum CallSkin {
     static let line     = hex(0xE4DDE0)
     static let hangup   = hex(0xC97F86)
     static let accent   = hex(0xB08A94)
+    static let pillGreen = hex(0x5FB878)  // 缩小后那颗胶囊：微信通话绿
 }
 
 /// 白瓷上那层波点。自己画一份不借棋牌室那个——那边跟着日夜开关走，
@@ -146,6 +218,8 @@ final class CallSessionModel: NSObject, ObservableObject, AVAudioPlayerDelegate 
     private var hangupObserver: NSObjectProtocol?
     private var isOutgoing = false
     private var closed = false
+    /// 0902：通话页可以收起再展开，start 只准跑一次
+    private var started = false
 
     private var callID = ""
     /// 已经念过的（按通话记录的行号）。反复取记录不会把念过的再念一遍
@@ -155,6 +229,8 @@ final class CallSessionModel: NSObject, ObservableObject, AVAudioPlayerDelegate 
     private var downloading: Set<Int> = []
 
     func start(kind: CallKind) {
+        guard !started else { return }
+        started = true
         let session = AVAudioSession.sharedInstance()
         try? session.setCategory(.playAndRecord, mode: .voiceChat,
                                  options: [.defaultToSpeaker, .allowBluetooth])
@@ -483,8 +559,10 @@ struct CallLogSheet: View {
 
 struct CallView: View {
     let kind: CallKind
-    var onClose: () -> Void
-    @StateObject private var session = CallSessionModel()
+    /// 缩小：页收起来、通话继续、胶囊浮出来
+    var onMinimize: () -> Void
+    /// 0902 起会话由 CallHub 发，页只是它的脸——收起再展开还是同一通
+    @ObservedObject var session: CallSessionModel
 
     private var hisName: String {
         UserDefaults.standard.string(forKey: "assistantName") ?? "陈璟"
@@ -499,9 +577,26 @@ struct CallView: View {
                 transcript
                 controls
             }
+            // 0902 她要的缩小键：左上角，跟微信一个位置
+            VStack {
+                HStack {
+                    Button(action: onMinimize) {
+                        Image(systemName: "arrow.down.right.and.arrow.up.left")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundColor(CallSkin.inkDim)
+                            .frame(width: 40, height: 40)
+                            .contentShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    Spacer()
+                }
+                .padding(.leading, 10)
+                .padding(.top, 6)
+                Spacer()
+            }
         }
         .onAppear {
-            session.onEnded = onClose
+            CallHub.shared.pageShown()
             session.start(kind: kind)
         }
         .interactiveDismissDisabled()

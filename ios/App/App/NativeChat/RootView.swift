@@ -208,8 +208,17 @@ struct RootView: View {
             housePage = nil
             if activeCall == nil { activeCall = .outgoing }
         }
-        .fullScreenCover(item: $activeCall) { kind in
-            CallView(kind: kind) { activeCall = nil }
+        // 0902 通话可缩小：页收起（activeCall=nil）通话不断，CallHub 浮出胶囊；点胶囊再展开
+        .fullScreenCover(item: $activeCall, onDismiss: { CallHub.shared.pageHidden() }) { kind in
+            CallView(kind: kind, onMinimize: { activeCall = nil },
+                     session: CallHub.shared.session(for: kind))
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .alcoveCallRestore)) { _ in
+            guard CallHub.shared.session != nil, activeCall == nil else { return }
+            activeCall = CallHub.shared.kind
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .alcoveCallEnded)) { _ in
+            activeCall = nil
         }
         .onReceive(NotificationCenter.default.publisher(for: .alcoveShowPermissions)) { _ in
             housePage = nil

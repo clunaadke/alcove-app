@@ -48,7 +48,8 @@ final class VoiceRecorder: NSObject, ObservableObject {
         recorder?.stop()
         recorder = nil
         isRecording = false
-        try? AVAudioSession.sharedInstance().setActive(false)
+        // 0902：通话缩小着的时候她在聊天页录语音条，录完别把整个音频会话关了——那是通话的命
+        if !AlcoveNotify.shared.inCall { try? AVAudioSession.sharedInstance().setActive(false) }
         guard let url = fileURL else { return nil }
         fileURL = nil
         return try? Data(contentsOf: url)
@@ -60,7 +61,7 @@ final class VoiceRecorder: NSObject, ObservableObject {
         recorder?.stop()
         recorder = nil
         isRecording = false
-        try? AVAudioSession.sharedInstance().setActive(false)
+        if !AlcoveNotify.shared.inCall { try? AVAudioSession.sharedInstance().setActive(false) }
         if let url = fileURL { try? FileManager.default.removeItem(at: url) }
         fileURL = nil
     }

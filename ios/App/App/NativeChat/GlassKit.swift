@@ -307,3 +307,155 @@ struct FlowLayout: Layout {
         }
     }
 }
+
+// MARK: - 0902 悬浮小卡（微信通话那种）：一层透明窗 + 可拖拽吸边的零件
+//
+// 陈霁 0902 定的：通话页能缩小成一个胶囊吸在屏幕边上，拖着走，点一下展开，通话不断。
+// 她还有好几样想做成这种（一起听的卡先不做）。所以拆成两件通用零件：
+//   · FloatingOverlay —— 单独一层 UIWindow，永远在最上面（fullScreenCover 也盖不住它），
+//     只有悬浮件自己那块区域接触摸，其余全部穿透给底下的页面。
+//   · FloatingDock   —— 拖拽 + 松手吸到最近的屏幕边 + 记住停在哪边哪高。
+// 用法：FloatingOverlay.shared.show(id: "call") { FloatingDock(id: "call") { 你的内容 } }
+//       FloatingOverlay.shared.hide(id: "call")
+//
+// ‼️为什么不直接 overlay 在 RootView 上：通话缩小后她可能在共读室/棋牌室，那些页是
+// fullScreenCover，压在 RootView 上面，RootView 的 overlay 会被盖住。单独一层窗才永远可见。
+// ‼️触摸穿透的做法：SwiftUI 的 hosting view 对整块区域都算命中，不能靠 super.hitTest 分辨；
+// 所以每个悬浮件把自己在屏幕上的矩形报给窗，窗只在这些矩形里接触摸，其余返回 nil。
+
+final class FloatingOverlayWindow: UIWindow {
+    /// 悬浮件报上来的命中区域（屏幕坐标），窗只在这里面接触摸
+    static var hitRects: [String: CGRect] = [:]
+
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        let hit = Self.hitRects.values.contains { $0.insetBy(dx: -6, dy: -6).contains(point) }
+        guard hit else { return nil }
+        return super.hitTest(point, with: event)
+    }
+}
+
+struct FloatingItem: Identifiable {
+    let id: String
+    let view: AnyView
+}
+
+@MainActor
+final class FloatingOverlay: ObservableObject {
+    static let shared = FloatingOverlay()
+    @Published var items: [FloatingItem] = []
+    private var window: FloatingOverlayWindow?
+
+    func show<V: View>(id: String, @ViewBuilder content: () -> V) {
+        let item = FloatingItem(id: id, view: AnyView(content()))
+        if let i = items.firstIndex(where: { $0.id == id }) { items[i] = item } else { items.append(item) }
+        ensureWindow()
+        window?.isHidden = false
+    }
+
+    func hide(id: String) {
+        items.removeAll { $0.id == id }
+        FloatingOverlayWindow.hitRects[id] = nil
+        if items.isEmpty { window?.isHidden = true }
+    }
+
+    func isShowing(_ id: String) -> Bool { items.contains { $0.id == id } }
+
+    private func ensureWindow() {
+        guard window == nil else { return }
+        // 跟 AppDelegate 一个起法：这个 app 没有 SceneDelegate，UIWindow(frame:) 会自己挂到主场景
+        let w = FloatingOverlayWindow(frame: UIScreen.main.bounds)
+        if let scene = UIApplication.shared.connectedScenes
+            .compactMap({ $0 as? UIWindowScene })
+            .first(where: { $0.activationState == .foregroundActive })
+            ?? UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first {
+            w.windowScene = scene
+        }
+        w.windowLevel = .alert + 1
+        w.backgroundColor = .clear
+        let host = UIHostingController(rootView: FloatingOverlayRoot(overlay: self))
+        host.view.backgroundColor = .clear
+        w.rootViewController = host
+        window = w
+    }
+}
+
+struct FloatingOverlayRoot: View {
+    @ObservedObject var overlay: FloatingOverlay
+
+    var body: some View {
+        ZStack {
+            ForEach(overlay.items) { item in item.view }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+/// 可拖拽、松手吸边、记位置的壳。内容随便放（胶囊、小卡都行）。
+struct FloatingDock<Content: View>: View {
+    let id: String
+    /// 离屏幕边留多少
+    var margin: CGFloat = 10
+    @ViewBuilder let content: () -> Content
+
+    @State private var size: CGSize = .zero
+    @State private var center: CGPoint? = nil
+    @State private var dragOrigin: CGPoint? = nil
+
+    private var sideKey: String { "float.\(id).side" }
+    private var yKey: String { "float.\(id).y" }
+
+    var body: some View {
+        GeometryReader { geo in
+            let bounds = geo.size
+            let safe = geo.safeAreaInsets
+            content()
+                .background(GeometryReader { g in
+                    Color.clear
+                        .onAppear { size = g.size; report(g.frame(in: .global)) }
+                        .onChange(of: g.size) { size = $0 }
+                        .onChange(of: g.frame(in: .global)) { report($0) }
+                })
+                .position(center ?? restingPoint(bounds: bounds, safe: safe))
+                .gesture(
+                    DragGesture(minimumDistance: 6, coordinateSpace: .global)
+                        .onChanged { v in
+                            if dragOrigin == nil { dragOrigin = center ?? restingPoint(bounds: bounds, safe: safe) }
+                            guard let o = dragOrigin else { return }
+                            center = CGPoint(x: o.x + v.translation.width, y: o.y + v.translation.height)
+                        }
+                        .onEnded { _ in
+                            dragOrigin = nil
+                            let target = snapped(center ?? restingPoint(bounds: bounds, safe: safe),
+                                                 bounds: bounds, safe: safe)
+                            withAnimation(.spring(response: 0.36, dampingFraction: 0.82)) { center = target }
+                            UserDefaults.standard.set(target.x < bounds.width / 2 ? "left" : "right", forKey: sideKey)
+                            UserDefaults.standard.set(Double(target.y), forKey: yKey)
+                        }
+                )
+        }
+        .ignoresSafeArea()
+    }
+
+    private func report(_ frame: CGRect) {
+        FloatingOverlayWindow.hitRects[id] = frame
+    }
+
+    /// 记住的位置；第一次默认贴右边、偏上（微信也是这个位置）
+    private func restingPoint(bounds: CGSize, safe: EdgeInsets) -> CGPoint {
+        let side = UserDefaults.standard.string(forKey: sideKey) ?? "right"
+        let savedY = UserDefaults.standard.double(forKey: yKey)
+        let y = savedY > 0 ? CGFloat(savedY) : safe.top + 120
+        return snapped(CGPoint(x: side == "left" ? 0 : bounds.width, y: y), bounds: bounds, safe: safe)
+    }
+
+    /// 吸到最近的左/右边，上下别出安全区
+    private func snapped(_ p: CGPoint, bounds: CGSize, safe: EdgeInsets) -> CGPoint {
+        let halfW = size.width / 2, halfH = size.height / 2
+        let x = p.x < bounds.width / 2 ? margin + halfW : bounds.width - margin - halfW
+        let minY = safe.top + margin + halfH
+        let maxY = bounds.height - safe.bottom - margin - halfH
+        let y = min(max(p.y, minY), max(minY, maxY))
+        return CGPoint(x: x, y: y)
+    }
+}
+
