@@ -682,6 +682,15 @@ struct TarotCardBack: View {
     /// 老牌背的线色，别处还引用着
     static let line = Color(red: 0.78, green: 0.70, blue: 1.0)
 
+    /// 往白里掺 k（0 = 原色，1 = 纯白）
+    static func lighten(_ c: Color, _ k: Double) -> Color {
+        var r: CGFloat = 0.72, g: CGFloat = 0.60, b: CGFloat = 1, a: CGFloat = 1
+        _ = UIColor(c).getRed(&r, green: &g, blue: &b, alpha: &a)
+        return Color(red: Double(r) + (1 - Double(r)) * k,
+                     green: Double(g) + (1 - Double(g)) * k,
+                     blue: Double(b) + (1 - Double(b)) * k)
+    }
+
     var body: some View {
         let h = width * 1.72
         let shape = RoundedRectangle(cornerRadius: width * 0.07, style: .continuous)
@@ -690,13 +699,16 @@ struct TarotCardBack: View {
             shape.fill(LinearGradient(colors: [decor.deep(0.30), decor.deep(0.10)],
                                       startPoint: .top, endPoint: .bottom))
             // 花纹是黑底白线：抽色 → 染成 tint → screen 混合，黑的部分透出底色，线是 tint
-            Image("TarotBack")
+            // 原图线条本来就淡，叠两层 screen（暗处约 1.7 倍亮，亮处基本不变），线色再往白里掺一点
+            let lineTint = Self.lighten(tint, 0.22)
+            let pattern = Image("TarotBack")
                 .resizable()
                 .scaledToFit()
                 .frame(width: width * 0.94, height: h * 0.94)
                 .saturation(0)
-                .colorMultiply(tint)
-                .blendMode(.screen)
+                .colorMultiply(lineTint)
+            pattern.blendMode(.screen)
+            pattern.opacity(0.7).blendMode(.screen)
             shape.stroke(tint.opacity(0.75), lineWidth: 1)
             RoundedRectangle(cornerRadius: width * 0.05, style: .continuous)
                 .stroke(tint.opacity(0.35), lineWidth: 0.8)
