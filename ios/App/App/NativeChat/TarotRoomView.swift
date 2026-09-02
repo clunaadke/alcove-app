@@ -349,7 +349,7 @@ enum TarotInk {
     static var buttonInk: Color { ink }
     /// 0903 她要的：牌带里牌身外面一圈光晕，不然牌混进壁纸里。夜里白光；白天壁纸本来就亮，白光看不见，
     /// 换成深紫的晕（暗一圈把牌衬出来）
-    static var cardGlow: Color { pick(Color.white.opacity(0.62), Color(red: 0.22, green: 0.12, blue: 0.42).opacity(0.55)) }
+    static var cardGlow: Color { pick(Color.white.opacity(0.5), Color(red: 0.22, green: 0.12, blue: 0.42).opacity(0.45)) }
 }
 
 // MARK: - 屋子的装修（0902 深夜她要的三个调色盘：牌面染色 / 雾面玻璃 / 壁纸）
@@ -753,6 +753,14 @@ struct TarotDeckBand: View {
         let lo = max(0, c - half), hi = min(n - 1, c + half)
         return ZStack {
             if n > 0, lo <= hi {
+                // 0903 她要的：牌连在一起的地方不做晕，整条牌带只在上边和下边各一道光；
+                // 画一条跟着弧走的带子、糊开、垫在牌后面，中间被牌盖住，露出来的就是上下两道
+                let xMin = width / 2 + (CGFloat(lo) - max(0, scroll)) * gap - cardW / 2
+                let xMax = width / 2 + (CGFloat(hi) - max(0, scroll)) * gap + cardW / 2
+                TarotBandGlow(baseY: baseY, arc: arc, halfH: cardW * 1.72 / 2 - 2, xMin: xMin, xMax: xMax)
+                    .fill(TarotInk.cardGlow)
+                    .blur(radius: 8)
+                    .zIndex(-1)
                 ForEach(lo...hi, id: \.self) { i in
                     let d = CGFloat(i) - max(0, scroll)            // 离正中间几张（带小数）
                     let dx = d * gap
@@ -760,7 +768,7 @@ struct TarotDeckBand: View {
                     let ang = atan(dx / arc)
                     let y = baseY + dx * dx / (2 * arc) - wgt * lift
                     TarotCardBack(width: cardW)
-                        .shadow(color: TarotInk.cardGlow, radius: 5 + 7 * wgt)    // 光晕：正中那张亮一圈
+                        .shadow(color: TarotInk.cardGlow.opacity(Double(wgt)), radius: 5)   // 只有正中那张一圈小晕
                         .scaleEffect(1 + pop * wgt)
                         .rotationEffect(.radians(Double(ang)))
                         .position(x: width / 2 + dx, y: y)
@@ -811,6 +819,35 @@ struct TarotDeckBand: View {
                     scroll = clamp(target.rounded())
                 }
             }
+    }
+}
+
+/// 牌带背后那条跟着弧走的光带（见 TarotDeckBand.band）
+struct TarotBandGlow: Shape {
+    let baseY: CGFloat
+    let arc: CGFloat
+    let halfH: CGFloat
+    let xMin: CGFloat
+    let xMax: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        var p = Path()
+        let cx = rect.midX
+        let steps = 24
+        func y(_ x: CGFloat) -> CGFloat { baseY + (x - cx) * (x - cx) / (2 * arc) }
+        let x0 = max(rect.minX, xMin), x1 = min(rect.maxX, xMax)
+        guard x1 > x0 else { return p }
+        p.move(to: CGPoint(x: x0, y: y(x0) - halfH))
+        for i in 1...steps {
+            let x = x0 + (x1 - x0) * CGFloat(i) / CGFloat(steps)
+            p.addLine(to: CGPoint(x: x, y: y(x) - halfH))
+        }
+        for i in stride(from: steps, through: 0, by: -1) {
+            let x = x0 + (x1 - x0) * CGFloat(i) / CGFloat(steps)
+            p.addLine(to: CGPoint(x: x, y: y(x) + halfH))
+        }
+        p.closeSubpath()
+        return p
     }
 }
 
