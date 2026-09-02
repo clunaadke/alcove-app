@@ -3826,7 +3826,7 @@ private struct TarotFramed: ViewModifier {
         content
             .foregroundColor(TarotCardInk.ink)
             .padding(.horizontal, 44)
-            .padding(.top, 64)                           // 角饰 82pt 高，标头从它们下面开始
+            .padding(.top, 52)                           // 0903 她说还有点空间：从角饰下面再往上提一点
             .padding(.bottom, 56)
             .frame(width: 372, alignment: .leading)      // 横着的长方形，跟边框原本的比例走；整行居中
             .background(
@@ -3853,9 +3853,10 @@ private struct TarotInterpBlock: View {
                 Button(expanded ? "收起" : "逐牌") { withAnimation(.easeInOut(duration: 0.2)) { expanded.toggle() } }
                     .font(.system(size: 9.5, weight: .semibold)).foregroundColor(TarotCardInk.accent)
             }
-            Text(interp.overall).font(.system(size: 11.5, design: .serif)).lineSpacing(3)
-                .fixedSize(horizontal: false, vertical: true)
+            // 0903 她要的：默认只留一句话；整体印象和逐牌都收进「逐牌」
             if expanded {
+                Text(interp.overall).font(.system(size: 11.5, design: .serif)).lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true)
                 ForEach(interp.cards) { c in
                     VStack(alignment: .leading, spacing: 3) {
                         Text((c.positionName.isEmpty || interp.cards.count == 1 ? "" : c.positionName + " · ")
@@ -3912,7 +3913,7 @@ private struct TarotSpreadView: View {
 
     private var n: Int { cards.count }
     private var faceW: CGFloat { n <= 3 ? 56 : 44 }
-    private var cellH: CGFloat { faceW * 1.72 + 30 }
+    private var cellH: CGFloat { faceW * 1.72 + 18 }
 
     var body: some View {
         if n <= 1, let c = cards.first {
@@ -3931,7 +3932,7 @@ private struct TarotSpreadView: View {
                             cell(4).position(x: w * 0.78, y: h - cellH / 2)
                         }
                     }
-                    .frame(height: cellH * 2 + 6)
+                    .frame(height: cellH * 2 + 2)
                 } else {
                     HStack(alignment: .top, spacing: n > 3 ? 6 : 12) {
                         ForEach(cards.indices, id: \.self) { i in cell(i) }
@@ -3975,12 +3976,15 @@ private struct TarotSpreadView: View {
                     .stroke(TarotCardInk.accent.opacity(on ? 0.95 : 0), lineWidth: 1.5))
                 .shadow(color: TarotCardInk.accent.opacity(on ? 0.35 : 0), radius: 8)
                 .offset(y: on ? -4 : 0)
-            Text(c.positionName).font(.system(size: 8.5, weight: .semibold))
-                .foregroundColor(on ? TarotCardInk.accent : TarotCardInk.dim)
-            Text(c.name).font(.system(size: 10, weight: .medium, design: .serif))
-                .lineLimit(1).minimumScaleFactor(0.7)
+            // 0903 她要的：牌位和牌名并一行
+            HStack(spacing: 3) {
+                Text(c.positionName).font(.system(size: 8.5, weight: .semibold))
+                    .foregroundColor(on ? TarotCardInk.accent : TarotCardInk.dim)
+                Text(c.name).font(.system(size: 10, weight: .medium, design: .serif))
+            }
+            .lineLimit(1).minimumScaleFactor(0.6)
         }
-        .frame(width: faceW + 16)
+        .frame(width: faceW + 24)
         .contentShape(Rectangle())
         .onTapGesture { withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { selected = i } }
     }
