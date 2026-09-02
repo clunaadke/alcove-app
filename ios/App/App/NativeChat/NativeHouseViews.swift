@@ -538,6 +538,7 @@ struct NativeHouseDrawer: View {
                         drawerRow(.pulse, detail: "心率、五感、八维、念头池")
                         drawerRow(.roof, detail: "陈檐住在这层")
                         drawerRow(.pond, detail: "念头、许愿与朋友圈")
+                        drawerRow(.tarot, detail: "抽一张牌，让他解")   // 0902 占星室
                         drawerRow(.letterbox, detail: "你和陈璟的往来书信")
                     }
 
