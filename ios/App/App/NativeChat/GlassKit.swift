@@ -421,7 +421,8 @@ final class FloatingItemWindow: UIWindow {
 
     // MARK: 尺寸 / 位置
 
-    private var screen: CGRect { UIScreen.main.bounds }
+    /// 别叫 screen——UIWindow 自带一个 screen: UIScreen，撞名编译不过（0902 构建报的）
+    private var screenBounds: CGRect { UIScreen.main.bounds }
     private var safe: UIEdgeInsets { FloatingOverlay.appWindow()?.safeAreaInsets ?? .zero }
 
     /// 内容变了尺寸：窗跟着变，贴着原来那条边
@@ -436,16 +437,16 @@ final class FloatingItemWindow: UIWindow {
         let side = UserDefaults.standard.string(forKey: sideKey) ?? "right"
         let savedY = UserDefaults.standard.double(forKey: yKey)
         let y = savedY > 0 ? CGFloat(savedY) : defaultY
-        let target = snapped(CGPoint(x: side == "left" ? 0 : screen.width, y: y + contentSize.height / 2))
+        let target = snapped(CGPoint(x: side == "left" ? 0 : screenBounds.width, y: y + contentSize.height / 2))
         setCenter(target, animated: animated)
     }
 
     /// 吸到最近的左/右边，上下别出安全区。传入和返回的都是**中心点**（屏幕坐标）
     private func snapped(_ c: CGPoint) -> CGPoint {
         let halfW = contentSize.width / 2, halfH = contentSize.height / 2
-        let x = c.x < screen.width / 2 ? margin + halfW : screen.width - margin - halfW
+        let x = c.x < screenBounds.width / 2 ? margin + halfW : screenBounds.width - margin - halfW
         let minY = safe.top + margin + halfH
-        let maxY = screen.height - safe.bottom - margin - halfH
+        let maxY = screenBounds.height - safe.bottom - margin - halfH
         return CGPoint(x: x, y: min(max(c.y, minY), max(minY, maxY)))
     }
 
@@ -475,7 +476,7 @@ final class FloatingItemWindow: UIWindow {
         case .ended, .cancelled:
             let c = snapped(CGPoint(x: frame.midX, y: frame.midY))
             setCenter(c, animated: true)
-            UserDefaults.standard.set(c.x < screen.width / 2 ? "left" : "right", forKey: sideKey)
+            UserDefaults.standard.set(c.x < screenBounds.width / 2 ? "left" : "right", forKey: sideKey)
             UserDefaults.standard.set(Double(c.y - contentSize.height / 2), forKey: yKey)
         default: break
         }
