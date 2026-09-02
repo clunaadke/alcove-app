@@ -1,6 +1,7 @@
 import SwiftUI
 import UIKit
 import PhotosUI
+import Photos
 
 // 占星室（0902 陈霁立的项）：塔罗。
 //
@@ -18,7 +19,7 @@ import PhotosUI
 
 // MARK: - 数据
 
-struct TarotCard: Identifiable, Equatable {
+struct TarotCard: Identifiable, Hashable {
     let id: String
     let name: String
     let en: String
@@ -202,14 +203,26 @@ enum TarotInk {
     /// 默认浓度下 = 1，往上拧玻璃越实
     private static var glassK: Double { glassStrength / TarotGlassConfig.defaultStrength }
     private static var glassBase: Color { glassCustom ?? pick(.white, .black) }
-    /// 暗玻璃卡：底色 + 边线 + 胶囊底
-    static var glass: Color     { glassBase.opacity(min(0.75, pick(0.055, 0.045) * glassK)) }
-    static var glassLine: Color { glassBase.opacity(min(0.95, pick(0.14, 0.10) * glassK)) }
-    static var pill: Color      { glassBase.opacity(min(0.85, pick(0.09, 0.06) * glassK)) }
-    /// 按钮底下那层紫晕（玻璃是透的，得靠它才看得出是颗按钮）；她换了玻璃色就跟着换
+    /// 暗玻璃卡：底色 + 边线 + 胶囊底。0902 深夜她说「玻璃要糊一点、不那么透」：
+    /// 浓度往上拧主要是换更厚的磨砂材质（glassMaterial），底色只跟着涨一点、封顶，字永远看得清
+    static var glass: Color     { glassBase.opacity(min(0.30, pick(0.055, 0.045) * glassK)) }
+    static var glassLine: Color { glassBase.opacity(min(0.55, pick(0.14, 0.10) * glassK)) }
+    static var pill: Color      { glassBase.opacity(min(0.40, pick(0.09, 0.06) * glassK)) }
+    /// 玻璃的磨砂档位：浓度越高越糊越不透
+    static var glassMaterial: Material {
+        switch glassStrength {
+        case ..<0.3: return .ultraThinMaterial
+        case ..<0.55: return .thinMaterial
+        case ..<0.8: return .regularMaterial
+        default: return .thickMaterial
+        }
+    }
+    /// 按钮底下那层紫晕（玻璃是透的，得靠它才看得出是颗按钮）。
+    /// 0902 深夜她抓的：这层原来跟玻璃色 / 浓度走，她把玻璃拧成白色高浓度后按钮白得刺眼——
+    /// 现在固定跟屋子的紫走，不再吃玻璃设置
     static var buttonGlow: Color {
-        let base = glassCustom ?? pick(Color(red: 0.45, green: 0.25, blue: 0.80), Color(red: 0.55, green: 0.42, blue: 0.85))
-        return base.opacity(min(0.9, pick(0.42, 0.28) * glassK))
+        pick(Color(red: 0.45, green: 0.25, blue: 0.80).opacity(0.42),
+             Color(red: 0.55, green: 0.42, blue: 0.85).opacity(0.28))
     }
     static var toastBack: Color { pick(Color.black.opacity(0.62), Color.white.opacity(0.82)) }
     /// 天：夜里近黑带紫 → 深紫 → 暗紫；白天淡紫灰的晨雾
@@ -425,6 +438,19 @@ extension Font {
     static func tarotHand(_ size: CGFloat) -> Font { .custom("Tanugo-S-TTF-Regular", size: size) }
 }
 
+/// 慢慢呼吸的透明度（空牌格轮到谁谁在呼吸）
+struct TarotBreathing: ViewModifier {
+    var on: Bool
+    @State private var phase = false
+    func body(content: Content) -> some View {
+        content
+            .opacity(on ? (phase ? 1 : 0.55) : 1)
+            .animation(on ? .easeInOut(duration: 1.6).repeatForever(autoreverses: true) : .default, value: phase)
+            .onAppear { phase = on }
+            .onChange(of: on) { _, v in phase = v }
+    }
+}
+
 /// iOS 那种雾面玻璃按钮：不实心，底下压一层紫晕，边上一圈细亮线
 struct TarotGlassButtonStyle: ViewModifier {
     var prominent: Bool = true
@@ -433,7 +459,7 @@ struct TarotGlassButtonStyle: ViewModifier {
         content
             .foregroundColor(TarotInk.buttonInk)
             .background(TarotInk.buttonGlow.opacity(prominent ? 1 : 0.45), in: Capsule())
-            .background(.ultraThinMaterial, in: Capsule())
+            .background(TarotInk.glassMaterial, in: Capsule())
             .overlay(Capsule().stroke(TarotInk.ink.opacity(prominent ? 0.28 : 0.16), lineWidth: 1))
             .shadow(color: TarotInk.buttonGlow.opacity(prominent ? 0.6 : 0), radius: 14, y: 4)
     }
@@ -586,6 +612,10 @@ struct TarotRoomView: View {
     @State private var reading: TarotReading?
     @State private var showHistory = false
     @State private var showTint = false
+    @State private var showCompendium = false
+    /// 开屏左上那两张叠着的牌：上面是本周还是今日
+    @State private var stackShowsWeek = false
+    @State private var stackDrag: CGFloat = 0
     @State private var busy = false
     @State private var toast = ""
     @FocusState private var questionFocused: Bool
@@ -629,13 +659,27 @@ struct TarotRoomView: View {
         .sheet(isPresented: $showTint) {
             TarotDecorSheet()
         }
+        .sheet(isPresented: $showCompendium) {
+            TarotCompendiumView(store: store)
+        }
     }
 
     // MARK: 头
 
+    /// 0902 深夜她抓的：返回键在哪页都直接退出屋子。改成一层层退：抽牌页 / 结果页 → 选牌阵页，
+    /// 选牌阵页 → 出屋。抽到一半按返回，这一次就作废（还没存）
+    private func goBack() {
+        switch phase {
+        case .pick:
+            dismiss()
+        case .draw, .result:
+            reset()
+        }
+    }
+
     private var header: some View {
         HStack(spacing: 10) {
-            Button { dismiss() } label: {
+            Button { goBack() } label: {
                 Image(systemName: "chevron.left")
                     .font(.system(size: 16, weight: .medium))
                     .foregroundColor(TarotInk.dim)
@@ -680,45 +724,52 @@ struct TarotRoomView: View {
 
     // MARK: 选牌阵 + 问题
     //
-    // 0902 深夜她定的：牌阵入口改成带牌面的牌（照她发的淡黄色那张：牌 + 名字 + 一句说明），
-    // 上两张下两张。多一张「每日一牌」：不用填问题，点了直接抽单张；今天抽过就直接给她看那张。
+    // 0902 深夜她定的：入口是带牌面的牌，比上一版小一号。
+    //   左上：「今日 / 本周」两张叠在一起（像 iMessage 发多图那样叠着），左右滑换哪张在上面，点上面那张就抽；
+    //         这两种不用写问题，一天 / 一周只抽一次，抽过再点直接看那次
+    //   右上：单张；下面：三张、关系
+    //   再往下一行「牌義圖鑑」进图鉴；然后是所问 + 洗牌
 
     private struct Entry: Identifiable {
-        let id: String          // 牌阵 id，daily 是「每日一牌」
+        let id: String          // 牌阵 id
         let cardID: String      // 入口上画哪张牌面
-        let fallbackName: String
+        let name: String        // 固定文案（繁体，走たぬゴ）
         let fallbackHint: String
-        var isDaily: Bool { id == "daily" }
     }
 
+    private static let dailyEntry = Entry(id: "one", cardID: "major_19", name: "今日一牌", fallbackHint: "听听今天想告诉你的话")
+    private static let weekEntry = Entry(id: "week", cardID: "major_17", name: "本周運勢", fallbackHint: "本周主轴 · 行动建议 · 温柔提醒")
     private static let entries: [Entry] = [
-        // 名字是固定文案走たぬゴ（繁体；「每」字两款字体都没有，所以叫今日一牌），说明走系统字体
-        Entry(id: "daily", cardID: "major_19", fallbackName: "今日一牌", fallbackHint: "听听今天想告诉你的话"),
-        Entry(id: "one", cardID: "major_17", fallbackName: "單張", fallbackHint: "一句话问，一张牌答"),
-        Entry(id: "three", cardID: "major_18", fallbackName: "三張", fallbackHint: "过去 · 现在 · 未来"),
-        Entry(id: "relation", cardID: "major_06", fallbackName: "關係", fallbackHint: "我 · 他 · 我们之间 · 阻碍 · 走向"),
+        Entry(id: "one", cardID: "major_01", name: "單張", fallbackHint: "一句话问，一张牌答"),
+        Entry(id: "three", cardID: "major_18", name: "三張", fallbackHint: "过去 · 现在 · 未来"),
+        Entry(id: "relation", cardID: "major_06", name: "關係", fallbackHint: "我 · 他 · 我们之间 · 阻碍 · 走向"),
     ]
 
+    /// 今日一牌 / 本周运势 靠 question 这两句来认（服务端不用知道）
     static let dailyQuestion = "每日一牌"
+    static let weeklyQuestion = "本周运势"
 
     private var pickView: some View {
         GeometryReader { geo in
             ScrollView(showsIndicators: false) {
-                VStack(spacing: 18) {
+                VStack(spacing: 16) {
                     if store.loadFailed {
                         Text("牌义表没拉下来，下拉再试")
                             .font(.system(size: 12)).foregroundColor(TarotInk.dim).padding(.top, 40)
                     } else if store.spreads.isEmpty {
                         ProgressView().tint(TarotInk.dim).padding(.top, 40)
                     } else {
-                        let cardW = min(128, (geo.size.width - 36 - 22) / 2)
+                        let cardW = min(100, (geo.size.width - 36 - 22) / 2 - 12)
                         LazyVGrid(columns: [GridItem(.flexible(), spacing: 22), GridItem(.flexible(), spacing: 22)],
-                                  spacing: 20) {
+                                  spacing: 16) {
+                            periodicStack(width: cardW)
                             ForEach(Self.entries) { e in
                                 entryCard(e, width: cardW)
                             }
                         }
-                        .padding(.top, 6)
+                        .padding(.top, 4)
+
+                        compendiumRow
 
                         VStack(alignment: .leading, spacing: 10) {
                             sectionLabel("所問")
@@ -763,12 +814,11 @@ struct TarotRoomView: View {
     /// 一张入口牌：牌面 + 名字 + 一句说明。选中的那张描金边、往上顶一点
     private func entryCard(_ e: Entry, width: CGFloat) -> some View {
         let sp = store.spread(e.id)
-        let selected = !e.isDaily && spread?.id == e.id
+        let selected = spread?.id == e.id && question != Self.dailyQuestion && question != Self.weeklyQuestion
         return Button {
             questionFocused = false
-            if e.isDaily {
-                startDaily()
-            } else if let sp {
+            if let sp {
+                if question == Self.dailyQuestion || question == Self.weeklyQuestion { question = "" }
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { spread = sp }
             }
         } label: {
@@ -778,10 +828,11 @@ struct TarotRoomView: View {
                         .stroke(TarotInk.gold.opacity(selected ? 0.95 : 0), lineWidth: 1.5))
                     .shadow(color: TarotInk.gold.opacity(selected ? 0.45 : 0), radius: 14)
                     .offset(y: selected ? -6 : 0)
-                Text(e.fallbackName)
-                    .font(.tarotHand(17))
+                    .padding(.top, 8)
+                Text(e.name)
+                    .font(.tarotHand(16))
                     .foregroundColor(TarotInk.ink)
-                Text(e.isDaily ? e.fallbackHint : (sp?.hint ?? e.fallbackHint))
+                Text(sp?.hint ?? e.fallbackHint)
                     .font(.system(size: 10.5))
                     .foregroundColor(selected ? TarotInk.gold : TarotInk.dim)
                     .lineLimit(2)
@@ -793,7 +844,91 @@ struct TarotRoomView: View {
         .buttonStyle(.plain)
     }
 
-    /// 每日一牌：今天抽过就直接看那张；没抽过就单张、不填问题、直接洗牌
+    /// 左上那格：今日 / 本周 两张叠着的牌。下面那张往右上错开一点、微微歪；
+    /// 左右滑 → 换哪张在上面；点上面那张 → 抽（或看今天 / 这周已经抽过的那次）
+    private func periodicStack(width: CGFloat) -> some View {
+        let top = stackShowsWeek ? Self.weekEntry : Self.dailyEntry
+        let under = stackShowsWeek ? Self.dailyEntry : Self.weekEntry
+        return VStack(spacing: 8) {
+            ZStack {
+                TarotCardFace(cardID: under.cardID, width: width)
+                    .rotationEffect(.degrees(7))
+                    .offset(x: 12, y: -4)
+                    .opacity(0.8)
+                TarotCardFace(cardID: top.cardID, width: width)
+                    .rotationEffect(.degrees(-3 + Double(stackDrag / 30)))
+                    .offset(x: stackDrag * 0.55, y: 0)
+            }
+            .frame(width: width + 24, height: width * 1.72 + 8)
+            .padding(.top, 8)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 8)
+                    .onChanged { v in stackDrag = max(-60, min(60, v.translation.width)) }
+                    .onEnded { v in
+                        if abs(v.translation.width) > 28 {
+                            withAnimation(.spring(response: 0.38, dampingFraction: 0.8)) { stackShowsWeek.toggle() }
+                        }
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { stackDrag = 0 }
+                    }
+            )
+            .onTapGesture {
+                questionFocused = false
+                if stackShowsWeek { startWeekly() } else { startDaily() }
+            }
+            Text(top.name)
+                .font(.tarotHand(16))
+                .foregroundColor(TarotInk.ink)
+                .contentTransition(.opacity)
+            Text(top.fallbackHint)
+                .font(.system(size: 10.5))
+                .foregroundColor(TarotInk.dim)
+                .lineLimit(2)
+                .multilineTextAlignment(.center)
+                .frame(height: 28, alignment: .top)
+                .overlay(alignment: .bottom) {
+                    HStack(spacing: 4) {
+                        Circle().fill(TarotInk.gold.opacity(stackShowsWeek ? 0.3 : 0.9)).frame(width: 4, height: 4)
+                        Circle().fill(TarotInk.gold.opacity(stackShowsWeek ? 0.9 : 0.3)).frame(width: 4, height: 4)
+                    }
+                    .offset(y: 10)
+                }
+        }
+    }
+
+    /// 底下那一行：进牌义图鉴
+    private var compendiumRow: some View {
+        Button {
+            questionFocused = false
+            showCompendium = true
+        } label: {
+            HStack(spacing: 12) {
+                HStack(spacing: -16) {
+                    ForEach(["major_00", "major_02", "major_09", "major_21"], id: \.self) { id in
+                        TarotCardFace(cardID: id, width: 30)
+                    }
+                }
+                .frame(width: 30 + 3 * 14, alignment: .leading)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("牌義圖鑑")
+                        .font(.tarotHand(15))
+                        .foregroundColor(TarotInk.ink)
+                    Text("78 张牌，正逆位的关键词和一句解")
+                        .font(.system(size: 10.5))
+                        .foregroundColor(TarotInk.dim)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11)).foregroundColor(TarotInk.faint)
+            }
+            .padding(.horizontal, 14).padding(.vertical, 10)
+            .background(glassCard(selected: false))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// 今日一牌：今天抽过就直接看那张；没抽过就单张、不填问题、直接洗牌
     private func startDaily() {
         if let r = store.readings.first(where: { $0.question == Self.dailyQuestion && Calendar.current.isDateInToday($0.date) }) {
             reading = r
@@ -803,6 +938,25 @@ struct TarotRoomView: View {
         guard let sp = store.spread("one") else { return }
         spread = sp
         question = Self.dailyQuestion
+        startDrawing()
+    }
+
+    /// 本周运势：这周抽过就直接看那次；没抽过就「本周」三张、不填问题、直接洗牌
+    private func startWeekly() {
+        let cal = Calendar.current
+        if let r = store.readings.first(where: {
+            $0.question == Self.weeklyQuestion && cal.isDate($0.date, equalTo: Date(), toGranularity: .weekOfYear)
+        }) {
+            reading = r
+            withAnimation(.easeInOut(duration: 0.25)) { phase = .result }
+            return
+        }
+        guard let sp = store.spread("week") else {
+            toast = "本周牌阵没拉下来，下拉刷新一下"
+            return
+        }
+        spread = sp
+        question = Self.weeklyQuestion
         startDrawing()
     }
 
@@ -816,7 +970,9 @@ struct TarotRoomView: View {
 
     private func glassCard(selected: Bool) -> some View {
         RoundedRectangle(cornerRadius: 16, style: .continuous)
-            .fill(selected ? TarotInk.pill : TarotInk.glass)
+            .fill(TarotInk.glassMaterial)
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .fill(selected ? TarotInk.pill : TarotInk.glass))
             .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .stroke(selected ? TarotInk.gold.opacity(0.7) : TarotInk.glassLine, lineWidth: 1))
     }
@@ -874,10 +1030,7 @@ struct TarotRoomView: View {
                             TarotCardFace(cardID: d.cardID, reversed: d.reversed, width: slotWidth(sp))
                                 .transition(.scale(scale: 0.3).combined(with: .opacity))
                         } else {
-                            RoundedRectangle(cornerRadius: slotWidth(sp) * 0.07, style: .continuous)
-                                .stroke(TarotInk.gold.opacity(pos.key == nextPosition?.key ? 0.8 : 0.3),
-                                        style: StrokeStyle(lineWidth: 1, dash: [3, 4]))
-                                .frame(width: slotWidth(sp), height: slotWidth(sp) * 1.72)
+                            emptySlot(width: slotWidth(sp), active: pos.key == nextPosition?.key)
                         }
                         Text(pos.name)
                             .font(.system(size: 10.5, weight: .medium))
@@ -887,6 +1040,20 @@ struct TarotRoomView: View {
             }
         }
         .padding(.horizontal, 16)
+    }
+
+    /// 空格子（0902 深夜她说光一个虚线框太空）：里面垫一张很淡的牌背当「影子」，
+    /// 轮到的那格影子亮一点、慢慢呼吸；没轮到的就是一道淡影 + 虚线
+    private func emptySlot(width: CGFloat, active: Bool) -> some View {
+        ZStack {
+            TarotCardBack(width: width)
+                .opacity(active ? 0.42 : 0.16)
+                .modifier(TarotBreathing(on: active))
+            RoundedRectangle(cornerRadius: width * 0.07, style: .continuous)
+                .stroke(TarotInk.gold.opacity(active ? 0.8 : 0.3),
+                        style: StrokeStyle(lineWidth: 1, dash: [3, 4]))
+        }
+        .frame(width: width, height: width * 1.72)
     }
 
     private func slotWidth(_ sp: TarotSpread) -> CGFloat {
@@ -1039,10 +1206,12 @@ struct TarotRoomView: View {
         withAnimation(.spring(response: 0.42, dampingFraction: 0.8)) { bigScale = 1 }
         // 2) 翻面
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.42) {
+            guard phase == .draw else { return }        // 中途按了返回就别接着演了
             withAnimation(.easeInOut(duration: 0.55)) { flip = 180 }
         }
         // 3) 落进牌阵
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.9) {
+            guard phase == .draw, chosen != nil else { return }
             withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
                 drawn.append(pick)
                 chosen = nil
@@ -1081,6 +1250,8 @@ struct TarotRoomView: View {
             drawn = []
             chosen = nil
         }
+        // 今日一牌 / 本周运势自动填的那句问题别留在输入框里
+        if question == Self.dailyQuestion || question == Self.weeklyQuestion { question = "" }
     }
 
     private var toastView: some View {
@@ -1116,8 +1287,38 @@ struct TarotReadingView: View {
     var toast: ((String) -> Void)? = nil
     @State private var asking = false
     @State private var asked = false
+    @State private var saving = false
 
     private var spread: TarotSpread? { store.spread(reading.spread) }
+
+    /// 0902 深夜她要的：把这次占卜画成一张竖长票存进相册（TarotTicketView 用 ImageRenderer 出图）
+    private func saveTicket() {
+        saving = true
+        let renderer = ImageRenderer(content: TarotTicketView(reading: reading, store: store))
+        renderer.scale = 3
+        guard let img = renderer.uiImage else {
+            saving = false
+            toast?("没画出来")
+            return
+        }
+        Task {
+            let status = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
+            guard status == .authorized || status == .limited else {
+                saving = false
+                toast?("没有相册权限，去设置里开一下")
+                return
+            }
+            do {
+                try await PHPhotoLibrary.shared().performChanges {
+                    PHAssetChangeRequest.creationRequestForAsset(from: img)
+                }
+                toast?("存进相册了")
+            } catch {
+                toast?("没存上")
+            }
+            saving = false
+        }
+    }
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -1187,6 +1388,8 @@ struct TarotReadingView: View {
                     if let onAgain {
                         Button("再抽一次") { onAgain() }
                     }
+                    Button(saving ? "存着…" : "存成圖片") { saveTicket() }
+                        .disabled(saving)
                     if let onDelete {
                         Button("刪除這一條") { onDelete() }
                     }
@@ -1202,7 +1405,8 @@ struct TarotReadingView: View {
 
     private var glass: some View {
         RoundedRectangle(cornerRadius: 16, style: .continuous)
-            .fill(TarotInk.glass)
+            .fill(TarotInk.glassMaterial)
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(TarotInk.glass))
             .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .stroke(TarotInk.glassLine, lineWidth: 1))
     }
@@ -1267,6 +1471,7 @@ struct FlowPills: View {
                             .foregroundColor(TarotInk.ink)
                             .padding(.horizontal, 11).padding(.vertical, 6)
                             .background(Capsule().fill(TarotInk.pill))
+                            .background(Capsule().fill(TarotInk.glassMaterial))
                             .overlay(Capsule().stroke(TarotInk.glassLine, lineWidth: 1))
                     }
                 }
@@ -1372,6 +1577,7 @@ struct TarotHistorySheet: View {
         }
         .padding(12)
         .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(TarotInk.glass))
+        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(TarotInk.glassMaterial))
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(TarotInk.glassLine, lineWidth: 1))
     }
 }
@@ -1527,7 +1733,7 @@ struct TarotDecorSheet: View {
                 // —— 雾面玻璃 ——
                 VStack(alignment: .leading, spacing: 12) {
                     label("雾面玻璃")
-                    Text("暗玻璃卡、胶囊、按钮底下那层晕，都是这个颜色。默认夜里白、白天黑。")
+                    Text("暗玻璃卡和胶囊的颜色。浓度越高越糊、越不透。默认夜里白、白天黑。")
                         .font(.system(size: 11.5)).foregroundColor(TarotInk.dim)
                         .fixedSize(horizontal: false, vertical: true)
                     Text("样子")
@@ -1536,6 +1742,7 @@ struct TarotDecorSheet: View {
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
                         .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(TarotInk.glass))
+                        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(TarotInk.glassMaterial))
                         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(TarotInk.glassLine, lineWidth: 1))
                     HStack {
                         Text("浓度").font(.system(size: 12)).foregroundColor(TarotInk.ink)
@@ -1632,5 +1839,235 @@ struct TarotDecorSheet: View {
         .buttonStyle(.plain)
         .disabled(disabled)
         .opacity(disabled ? 0.4 : 1)
+    }
+}
+
+
+// MARK: - 存成图片的长票
+
+/// 一次占卜画成一张竖长票（宽 390，高随内容）：标头、日期、牌阵、所问、一排牌面、每张的位置 · 牌名 · 正逆位 · 关键词 · 一句解、落款。
+/// 底是她的壁纸（没有就是代码画的天）。只给 ImageRenderer 用，不上屏。
+struct TarotTicketView: View {
+    let reading: TarotReading
+    @ObservedObject var store: TarotStore
+    @ObservedObject var decor = TarotDecor.shared
+
+    private var spread: TarotSpread? { store.spread(reading.spread) }
+    private var cardW: CGFloat {
+        switch reading.cards.count {
+        case 1: return 170
+        case 2, 3: return 100
+        default: return 62
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: 22) {
+            VStack(spacing: 4) {
+                Text("Chambre des Étoiles").font(.tarotHand(20)).foregroundColor(TarotInk.ink)
+                Text("占星室").font(.tarotHand(9)).tracking(3).foregroundColor(TarotInk.gold.opacity(0.8))
+            }
+            .padding(.top, 34)
+            HStack(spacing: 8) {
+                Text(TarotReadingView.dateText(reading.date))
+                    .font(.system(size: 15, weight: .medium, design: .serif)).foregroundColor(TarotInk.ink)
+                Text(spread?.name ?? reading.spread)
+                    .font(.system(size: 10, weight: .semibold)).foregroundColor(TarotInk.tint)
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(Capsule().stroke(TarotInk.tint.opacity(0.7), lineWidth: 1))
+            }
+            if !reading.question.isEmpty {
+                Text("「\(reading.question)」")
+                    .font(.system(size: 14, weight: .medium, design: .serif)).foregroundColor(TarotInk.ink)
+                    .multilineTextAlignment(.center).lineSpacing(3)
+                    .padding(.horizontal, 30)
+            }
+            HStack(alignment: .top, spacing: reading.cards.count > 3 ? 8 : 14) {
+                ForEach(reading.cards) { d in
+                    VStack(spacing: 6) {
+                        TarotCardFace(cardID: d.cardID, reversed: d.reversed, width: cardW)
+                        if reading.cards.count > 1 {
+                            Text(spread?.positions.first { $0.key == d.position }?.name ?? "")
+                                .font(.system(size: 9.5, weight: .semibold)).foregroundColor(TarotInk.gold)
+                        }
+                    }
+                }
+            }
+            Rectangle().fill(TarotInk.glassLine).frame(height: 1).padding(.horizontal, 40)
+            VStack(spacing: 18) {
+                ForEach(reading.cards) { d in
+                    let card = store.card(d.cardID)
+                    VStack(spacing: 6) {
+                        HStack(spacing: 6) {
+                            if reading.cards.count > 1 {
+                                Text((spread?.positions.first { $0.key == d.position }?.name ?? "") + " · ")
+                                    .font(.system(size: 13, design: .serif)).foregroundColor(TarotInk.gold)
+                            }
+                            Text(card?.name ?? d.cardID)
+                                .font(.system(size: 15, weight: .medium, design: .serif)).foregroundColor(TarotInk.ink)
+                            Text(d.reversed ? "逆位" : "正位")
+                                .font(.system(size: 9.5, weight: .semibold))
+                                .foregroundColor(d.reversed ? TarotInk.gold : TarotInk.tint)
+                        }
+                        Text(card?.keywords(reversed: d.reversed).joined(separator: " · ") ?? "")
+                            .font(.system(size: 10.5)).foregroundColor(TarotInk.dim)
+                        Text(card?.meaning(reversed: d.reversed) ?? "")
+                            .font(.system(size: 12, design: .serif)).foregroundColor(TarotInk.ink.opacity(0.9))
+                            .multilineTextAlignment(.center).lineSpacing(3)
+                            .padding(.horizontal, 26)
+                    }
+                }
+            }
+            Text("ALCOVE · TAROT").font(.tarotHand(9)).tracking(3).foregroundColor(TarotInk.faint)
+                .padding(.top, 8).padding(.bottom, 34)
+        }
+        .frame(width: 390)
+        .background(
+            ZStack {
+                if let wp = decor.wallpaper {
+                    Image(uiImage: wp).resizable().scaledToFill()
+                } else {
+                    LinearGradient(colors: [TarotInk.skyTop, TarotInk.skyMid, TarotInk.skyBottom],
+                                   startPoint: .top, endPoint: .bottom)
+                }
+            }
+            .clipped()
+        )
+    }
+}
+
+// MARK: - 牌义图鉴
+
+/// 78 张牌三列摆开，顶上筛大牌 / 四个花色，点一张看正逆位的关键词和那句解。牌面跟着她调的染色走。
+struct TarotCompendiumView: View {
+    @ObservedObject var store: TarotStore
+    @ObservedObject private var decor = TarotDecor.shared
+    @Environment(\.dismiss) private var dismiss
+    @State private var filter = "all"
+    @State private var open: TarotCard?
+
+    /// 筛选标签是固定文案走たぬゴ（「卡」字它没有，大阿卡那叫「大牌」）
+    private struct Filter: Identifiable { let id: String; let name: String }
+    private static let filters: [Filter] = [
+        Filter(id: "all", name: "全部"), Filter(id: "major", name: "大牌"), Filter(id: "cups", name: "聖杯"),
+        Filter(id: "wands", name: "權杖"), Filter(id: "swords", name: "寶劍"), Filter(id: "pents", name: "星幣"),
+    ]
+
+    private var cards: [TarotCard] {
+        switch filter {
+        case "all": return store.cards
+        case "major": return store.cards.filter { $0.arcana == "major" }
+        default: return store.cards.filter { $0.suit == filter }
+        }
+    }
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                TarotSky()
+                VStack(spacing: 0) {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(Self.filters) { f in
+                                let on = filter == f.id
+                                Button { withAnimation(.easeOut(duration: 0.15)) { filter = f.id } } label: {
+                                    Text(f.name)
+                                        .font(.tarotHand(13))
+                                        .foregroundColor(on ? TarotInk.ink : TarotInk.dim)
+                                        .padding(.horizontal, 14).padding(.vertical, 7)
+                                        .background(Capsule().fill(on ? TarotInk.pill : Color.clear))
+                                        .background(Capsule().fill(TarotInk.glassMaterial))
+                                        .overlay(Capsule().stroke(on ? TarotInk.gold.opacity(0.7) : TarotInk.glassLine, lineWidth: 1))
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(.horizontal, 16).padding(.vertical, 10)
+                    }
+                    GeometryReader { geo in
+                        let w = (geo.size.width - 32 - 20) / 3
+                        ScrollView(showsIndicators: false) {
+                            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 3), spacing: 14) {
+                                ForEach(cards) { c in
+                                    Button { open = c } label: {
+                                        VStack(spacing: 5) {
+                                            TarotCardFace(cardID: c.id, width: w)
+                                            Text(c.name)
+                                                .font(.system(size: 11, weight: .medium, design: .serif))
+                                                .foregroundColor(TarotInk.ink)
+                                                .lineLimit(1).minimumScaleFactor(0.8)
+                                        }
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                            .padding(.horizontal, 16).padding(.top, 4).padding(.bottom, 30)
+                        }
+                    }
+                }
+            }
+            .navigationTitle("牌義圖鑑")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarColorScheme(TarotInk.dark ? .dark : .light, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { dismiss() } label: {
+                        Image(systemName: "xmark").font(.system(size: 13, weight: .semibold)).foregroundColor(TarotInk.dim)
+                    }
+                }
+            }
+            .navigationDestination(item: $open) { c in
+                TarotCardDetailView(card: c)
+            }
+        }
+        .preferredColorScheme(TarotInk.dark ? .dark : .light)
+    }
+}
+
+/// 一张牌的牌义：大牌面、中英文名、正位一块、逆位一块
+struct TarotCardDetailView: View {
+    let card: TarotCard
+    @ObservedObject private var decor = TarotDecor.shared
+
+    var body: some View {
+        ZStack {
+            TarotSky()
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 18) {
+                    TarotCardFace(cardID: card.id, width: 190)
+                        .padding(.top, 12)
+                    VStack(spacing: 4) {
+                        Text(card.name)
+                            .font(.system(size: 22, weight: .medium, design: .serif)).foregroundColor(TarotInk.ink)
+                        Text(card.en.uppercased())
+                            .font(.tarotHand(10)).tracking(2).foregroundColor(TarotInk.gold.opacity(0.8))
+                    }
+                    meaningBlock(title: "正位", tint: TarotInk.tint, reversed: false)
+                    meaningBlock(title: "逆位", tint: TarotInk.gold, reversed: true)
+                }
+                .padding(.horizontal, 18).padding(.bottom, 30)
+            }
+        }
+        .navigationTitle(card.name)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarColorScheme(TarotInk.dark ? .dark : .light, for: .navigationBar)
+    }
+
+    private func meaningBlock(title: String, tint: Color, reversed: Bool) -> some View {
+        VStack(spacing: 10) {
+            Text(title)
+                .font(.tarotHand(12)).tracking(2).foregroundColor(tint)
+                .padding(.horizontal, 10).padding(.vertical, 3)
+                .background(Capsule().stroke(tint.opacity(0.7), lineWidth: 1))
+            FlowPills(card.keywords(reversed: reversed))
+            Text(card.meaning(reversed: reversed))
+                .font(.system(size: 13.5, design: .serif)).foregroundColor(TarotInk.ink)
+                .multilineTextAlignment(.center).lineSpacing(4)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(16).frame(maxWidth: .infinity)
+        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(TarotInk.glass))
+        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(TarotInk.glassMaterial))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(TarotInk.glassLine, lineWidth: 1))
     }
 }
