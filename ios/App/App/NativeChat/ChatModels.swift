@@ -126,6 +126,13 @@ struct ChatMessage: Identifiable, Equatable {
         return try? JSONDecoder().decode(TarotAskCard.self, from: data)
     }
 
+    /// 陈璟出题让她抽的那张（他发的，assistant 侧）
+    var tarotOffer: TarotOfferCard? {
+        guard let raw = Self.taggedBody(text, tag: "TAROT_OFFER"),
+              let data = raw.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(TarotOfferCard.self, from: data)
+    }
+
     var choiceCard: ChoiceQuestionCard? {
         guard let raw = Self.taggedBody(text, tag: "CHOICE_CARD"),
               let data = raw.data(using: .utf8) else { return nil }
@@ -359,8 +366,32 @@ struct TarotAskCard: Decodable, Equatable {
     let spreadName: String
     let question: String
     let cards: [Card]
+    /// 谁抽的：her / him（0903 凌晨陈璟也能自己抽了）
+    let by: String?
     enum CodingKeys: String, CodingKey {
-        case id, ts, spread, question, cards
+        case id, ts, spread, question, cards, by
+        case spreadName = "spread_name"
+    }
+    var byHim: Bool { by == "him" }
+}
+
+/// 0903 凌晨她要的：陈璟出题、她在聊天页自己抽（tarot.offer_card）。cards 抽满就 done
+struct TarotOfferCard: Decodable, Equatable {
+    struct Position: Decodable, Equatable, Identifiable {
+        let key: String
+        let name: String
+        var id: String { key }
+    }
+    let id: String
+    let ts: String
+    let spread: String
+    let spreadName: String
+    let question: String
+    let positions: [Position]
+    let cards: [TarotAskCard.Card]
+    let done: Bool
+    enum CodingKeys: String, CodingKey {
+        case id, ts, spread, question, positions, cards, done
         case spreadName = "spread_name"
     }
 }

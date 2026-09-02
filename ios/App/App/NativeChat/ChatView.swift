@@ -2659,6 +2659,11 @@ struct MessageRow: View {
                     ReadingShareMessageCard(card: reading, theme: theme)
                 } else if let tarot = msg.tarotCard {
                     TarotMessageCard(card: tarot, theme: theme)
+                } else if let offer = msg.tarotOffer {
+                    TarotOfferMessageCard(card: offer, theme: theme, onContentChange: onContentChange)
+                } else if msg.msgType == "tarot_answer" {
+                    // 她抽满了他出的题：服务端落的那条（全文给他读），聊天页只画一句小条子，牌在上面那张卡里
+                    ChoiceAnswerStrip(text: "🔮 抽好了，牌在上面那张卡里", theme: theme)
                 } else if let work = msg.workCard {
                     WorkDeliveryMessageCard(card: work, theme: theme)
                 } else if let choice = msg.choiceCard {
@@ -3776,58 +3781,253 @@ private struct TarotMessageCard: View {
     let theme: AlcoveTheme
 
     var body: some View {
-        let n = card.cards.count
-        let w: CGFloat = n == 1 ? 150 : (n <= 3 ? 82 : 50)
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 8) {
                 Image(systemName: "sparkles").font(.system(size: 15)).foregroundColor(theme.fyAccent)
-                Text("抽了牌").font(.system(size: 15, weight: .semibold, design: .serif))
+                Text(card.byHim ? "陈璟抽了牌" : "抽了牌").font(.system(size: 15, weight: .semibold, design: .serif))
                 Text("· \(card.spreadName)").font(.system(size: 11)).foregroundColor(theme.textDim)
                 Spacer()
-                Text(timeText).font(.system(size: 8.5, design: .monospaced)).foregroundColor(theme.textDim.opacity(0.8))
+                Text(TarotChatBits.timeText(card.ts)).font(.system(size: 8.5, design: .monospaced)).foregroundColor(theme.textDim.opacity(0.8))
             }
             if !card.question.isEmpty {
                 Text("「\(card.question)」")
                     .font(.system(size: 14, weight: .medium, design: .serif)).lineSpacing(3)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            HStack(alignment: .top, spacing: n <= 3 ? 12 : 7) {
-                ForEach(card.cards) { c in
-                    VStack(spacing: 5) {
-                        TarotCardFace(cardID: c.id, reversed: c.reversed, width: w)
-                        if n > 1 {
-                            Text(c.positionName).font(.system(size: 9.5, weight: .semibold)).foregroundColor(theme.fyAccent)
-                        }
-                        Text(c.name)
-                            .font(.system(size: n > 3 ? 10 : 12.5, weight: .medium, design: .serif))
-                            .lineLimit(1).minimumScaleFactor(0.7)
-                        Text(c.reversed ? "逆位" : "正位").font(.system(size: 8.5)).foregroundColor(theme.textDim)
-                    }
-                    .frame(maxWidth: .infinity)
-                }
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 4)
-            VStack(alignment: .leading, spacing: 4) {
-                ForEach(card.cards) { c in
-                    Text((n > 1 ? c.positionName + "：" : "") + c.keywords.joined(separator: " · "))
-                        .font(.system(size: 10.5)).foregroundColor(theme.textDim).lineLimit(2)
-                }
-            }
-            .padding(10).frame(maxWidth: .infinity, alignment: .leading)
-            .background(theme.fyCardSub.opacity(0.58), in: RoundedRectangle(cornerRadius: 12))
+            TarotChatBits.facesBlock(cards: card.cards, theme: theme)
         }.padding(14).frame(maxWidth: 315, alignment: .leading)
             .background(theme.fyCard.opacity(0.95), in: RoundedRectangle(cornerRadius: 18))
             .overlay(RoundedRectangle(cornerRadius: 18).stroke(theme.fyAccent.opacity(0.38), lineWidth: 0.8))
     }
+}
 
-    private var timeText: String {
-        let date = ISO8601DateFormatter.alcove.date(from: card.ts) ?? ISO8601DateFormatter.alcoveFrac.date(from: card.ts)
-        guard let date else { return String(card.ts.replacingOccurrences(of: "T", with: " ").prefix(16)) }
+/// 塔罗两种卡共用的零件：一排亮着的牌面 + 关键词块 + 时间格式
+private enum TarotChatBits {
+    static func timeText(_ ts: String) -> String {
+        let date = ISO8601DateFormatter.alcove.date(from: ts) ?? ISO8601DateFormatter.alcoveFrac.date(from: ts)
+        guard let date else { return String(ts.replacingOccurrences(of: "T", with: " ").prefix(16)) }
         let f = DateFormatter()
         f.locale = Locale(identifier: "zh_CN")
         f.dateFormat = "M月d日 HH:mm"
         return f.string(from: date)
+    }
+
+    static func faceWidth(_ n: Int) -> CGFloat { n == 1 ? 150 : (n <= 3 ? 82 : 50) }
+
+    @ViewBuilder
+    static func facesBlock(cards: [TarotAskCard.Card], theme: AlcoveTheme) -> some View {
+        let n = cards.count
+        let w = faceWidth(n)
+        HStack(alignment: .top, spacing: n <= 3 ? 12 : 7) {
+            ForEach(cards) { c in
+                VStack(spacing: 5) {
+                    TarotCardFace(cardID: c.id, reversed: c.reversed, width: w)
+                    if n > 1 {
+                        Text(c.positionName).font(.system(size: 9.5, weight: .semibold)).foregroundColor(theme.fyAccent)
+                    }
+                    Text(c.name)
+                        .font(.system(size: n > 3 ? 10 : 12.5, weight: .medium, design: .serif))
+                        .lineLimit(1).minimumScaleFactor(0.7)
+                    Text(c.reversed ? "逆位" : "正位").font(.system(size: 8.5)).foregroundColor(theme.textDim)
+                }
+                .frame(maxWidth: .infinity)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 4)
+        VStack(alignment: .leading, spacing: 4) {
+            ForEach(cards) { c in
+                Text((n > 1 ? c.positionName + "：" : "") + c.keywords.joined(separator: " · "))
+                    .font(.system(size: 10.5)).foregroundColor(theme.textDim).lineLimit(2)
+            }
+        }
+        .padding(10).frame(maxWidth: .infinity, alignment: .leading)
+        .background(theme.fyCardSub.opacity(0.58), in: RoundedRectangle(cornerRadius: 12))
+    }
+}
+
+/// 0903 凌晨她要的：陈璟出题、她就在这张卡里抽。
+/// 没抽完：他的问题 + 一排牌位（抽过的亮牌面，没抽的是淡影牌背）+ 一条缩小的牌带（跟占星室一样滑、一样点）。
+/// 点中一张：牌带退场、那张放大翻面、落进牌位；服务端记一张。抽满一副 → 卡变成亮着的牌面 + 关键词，
+/// 服务端同时给他落一条、把这次的牌 inject 过去让他解。中途退出再进来，抽过的还在（服务端记着）。
+private struct TarotOfferMessageCard: View {
+    let card: TarotOfferCard
+    let theme: AlcoveTheme
+    var onContentChange: (() -> Void)? = nil
+    @ObservedObject private var store = TarotStore.shared
+    @ObservedObject private var decor = TarotDecor.shared
+
+    private struct Pick { let id: String; let reversed: Bool }
+    @State private var deck: [String] = []
+    @State private var drawn: [TarotAskCard.Card] = []
+    @State private var chosen: Pick?
+    @State private var flip: Double = 0
+    @State private var bigScale: CGFloat = 0.4
+    @State private var bandVisible = true
+    @State private var busy = false
+    @State private var error = ""
+    @State private var finished = false
+
+    private var cards: [TarotAskCard.Card] { drawn.isEmpty ? card.cards : drawn }
+    private var done: Bool { card.done || finished || cards.count >= card.positions.count }
+    private var nextPosition: TarotOfferCard.Position? {
+        cards.count < card.positions.count ? card.positions[cards.count] : nil
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: "sparkles").font(.system(size: 15)).foregroundColor(theme.fyAccent)
+                Text(done ? "陈璟出的题，抽好了" : "陈璟出了题，你来抽").font(.system(size: 15, weight: .semibold, design: .serif))
+                Spacer()
+                Text("· \(card.spreadName)").font(.system(size: 11)).foregroundColor(theme.textDim)
+            }
+            if !card.question.isEmpty {
+                Text("「\(card.question)」")
+                    .font(.system(size: 14, weight: .medium, design: .serif)).lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if done {
+                TarotChatBits.facesBlock(cards: cards, theme: theme)
+            } else {
+                drawArea
+            }
+        }.padding(14).frame(maxWidth: 315, alignment: .leading)
+            .background(theme.fyCard.opacity(0.95), in: RoundedRectangle(cornerRadius: 18))
+            .overlay(RoundedRectangle(cornerRadius: 18).stroke(theme.fyAccent.opacity(0.38), lineWidth: 0.8))
+            .task {
+                await store.loadDeck()
+                if deck.isEmpty {
+                    let taken = Set(card.cards.map { $0.id })
+                    deck = store.cards.map { $0.id }.filter { !taken.contains($0) }.shuffled()
+                }
+            }
+    }
+
+    // MARK: 抽牌区：牌位一排 + 大牌 / 牌带
+
+    private var slotW: CGFloat { card.positions.count <= 1 ? 64 : (card.positions.count <= 3 ? 52 : 40) }
+
+    private var drawArea: some View {
+        VStack(spacing: 10) {
+            HStack(alignment: .top, spacing: card.positions.count > 3 ? 8 : 14) {
+                ForEach(card.positions) { pos in
+                    VStack(spacing: 4) {
+                        if let d = cards.first(where: { $0.position == pos.key }) {
+                            TarotCardFace(cardID: d.id, reversed: d.reversed, width: slotW)
+                                .transition(.scale(scale: 0.3).combined(with: .opacity))
+                        } else {
+                            ZStack {
+                                TarotCardBack(width: slotW).opacity(pos.key == nextPosition?.key ? 0.4 : 0.16)
+                                RoundedRectangle(cornerRadius: slotW * 0.07, style: .continuous)
+                                    .stroke(theme.fyAccent.opacity(pos.key == nextPosition?.key ? 0.8 : 0.3),
+                                            style: StrokeStyle(lineWidth: 1, dash: [3, 4]))
+                            }
+                            .frame(width: slotW, height: slotW * 1.72)
+                        }
+                        if card.positions.count > 1 {
+                            Text(pos.name).font(.system(size: 9, weight: .medium))
+                                .foregroundColor(pos.key == nextPosition?.key ? theme.fyAccent : theme.textDim)
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity)
+
+            if let c = chosen {
+                bigCard(c)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 150)
+            } else {
+                VStack(spacing: 6) {
+                    if let pos = nextPosition {
+                        Text(card.positions.count > 1 ? "为「\(pos.name)」抽一张" : "抽一张")
+                            .font(.system(size: 12, weight: .medium, design: .serif))
+                        Text(busy ? "记着…" : "左右滑整副牌，中间那张再点一下")
+                            .font(.system(size: 10)).foregroundColor(theme.textDim)
+                    }
+                    if deck.isEmpty {
+                        ProgressView().controlSize(.small).frame(height: 130)
+                    } else {
+                        TarotDeckBand(deck: deck, cardW: 44, gap: 24, arc: 900, lift: 18, pop: 0.25,
+                                      highPriority: true, onChoose: { choose(index: $0) })
+                            .frame(height: 130)
+                            .opacity(bandVisible ? 1 : 0)
+                            .scaleEffect(bandVisible ? 1 : 0.92, anchor: .bottom)
+                            .allowsHitTesting(bandVisible && !busy)
+                    }
+                }
+            }
+            if !error.isEmpty {
+                Text(error).font(.system(size: 10)).foregroundColor(.red.opacity(0.85))
+            }
+        }
+    }
+
+    /// 选中那张：放大 → 翻面（跟占星室一个节奏）
+    private func bigCard(_ c: Pick) -> some View {
+        let w: CGFloat = 80
+        let showFace = flip >= 90
+        return ZStack {
+            if showFace {
+                TarotCardFace(cardID: c.id, reversed: c.reversed, width: w)
+                    .rotation3DEffect(.degrees(180), axis: (x: 0, y: 1, z: 0))
+            } else {
+                TarotCardBack(width: w)
+            }
+        }
+        .rotation3DEffect(.degrees(flip), axis: (x: 0, y: 1, z: 0), perspective: 0.6)
+        .scaleEffect(bigScale)
+    }
+
+    private func choose(index: Int) {
+        guard index < deck.count, chosen == nil, !busy, let pos = nextPosition else { return }
+        let id = deck[index]
+        let pick = Pick(id: id, reversed: Bool.random())
+        busy = true
+        error = ""
+        Task {
+            // 先记到服务端，记上了才演动画；没记上就当没点
+            guard let obj = try? await NativeHouseAPI.object(
+                "/api/tarot/offer/draw", method: "POST",
+                body: ["id": card.id, "card": ["id": id, "reversed": pick.reversed]]),
+                  obj["ok"] as? Bool == true else {
+                busy = false
+                error = "没记上，网络不给力，再点一下"
+                return
+            }
+            let info = TarotAskCard.Card(
+                id: id, name: store.card(id)?.name ?? id, reversed: pick.reversed,
+                position: pos.key, positionName: pos.name,
+                keywords: store.card(id)?.keywords(reversed: pick.reversed) ?? [])
+            let isDone = obj["done"] as? Bool ?? false
+            deck.remove(at: index)
+            flip = 0
+            bigScale = 0.4
+            chosen = pick
+            withAnimation(.easeOut(duration: 0.28)) { bandVisible = false }
+            withAnimation(.spring(response: 0.42, dampingFraction: 0.8)) { bigScale = 1 }
+            onContentChange?()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.42) {
+                withAnimation(.easeInOut(duration: 0.55)) { flip = 180 }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.9) {
+                withAnimation(.spring(response: 0.4, dampingFraction: 0.85)) {
+                    var all = cards
+                    all.append(info)
+                    drawn = all
+                    chosen = nil
+                    if isDone { finished = true }
+                }
+                busy = false
+                if !isDone {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                        withAnimation(.easeOut(duration: 0.3)) { bandVisible = true }
+                    }
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { onContentChange?() }
+            }
+        }
     }
 }
 

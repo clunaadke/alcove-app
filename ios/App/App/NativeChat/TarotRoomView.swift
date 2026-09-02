@@ -90,6 +90,13 @@ struct TarotReading: Identifiable, Hashable {
     let question: String
     let cards: [TarotDrawn]
     var asked: Bool
+    /// 谁抽的：her / him（0903 凌晨陈璟也能抽了）
+    let by: String
+    /// 谁出的题：'' / him（他出题、她在聊天页抽的那种）
+    let askedBy: String
+
+    var byHim: Bool { by == "him" }
+    var askedByHim: Bool { askedBy == "him" }
 
     init?(json: [String: Any]) {
         guard let id = json["id"] as? String else { return nil }
@@ -97,6 +104,8 @@ struct TarotReading: Identifiable, Hashable {
         ts = json["ts"] as? String ?? ""
         spread = json["spread"] as? String ?? "one"
         question = json["question"] as? String ?? ""
+        by = json["by"] as? String ?? "her"
+        askedBy = json["asked_by"] as? String ?? ""
         cards = (json["cards"] as? [[String: Any]] ?? []).compactMap { c in
             guard let cid = c["id"] as? String else { return nil }
             return TarotDrawn(cardID: cid, reversed: c["reversed"] as? Bool ?? false,
@@ -589,6 +598,110 @@ struct TarotCardBack: View {
     }
 }
 
+// MARK: - 牌带零件
+
+/// 牌带（0902 深夜照她发的粉色参考图做的；0903 凌晨抽成零件，聊天页「他出题她抽」的卡也用它）：
+/// 整副牌一字排开、只带一点弧度，手指左右拖整副牌跟着走，滚到正中间的那张自动往前突出来放大；
+/// 再点它 → onChoose(第几张)。两头滑到头就停，但首尾也能到正中间。松手带一点惯性，然后吸到最近的一张。
+/// 只画屏幕附近那十几张；两边渐隐。放进聊天页的 ScrollView 里要 highPriority，不然竖着滚会把它吞掉。
+struct TarotDeckBand: View {
+    let deck: [String]
+    var cardW: CGFloat = 84
+    var gap: CGFloat = 46            // 相邻两张中心距（叠着排）
+    var arc: CGFloat = 1500          // 弧的半径：越大越直
+    var lift: CGFloat = 34           // 中间那张往上顶多少
+    var pop: CGFloat = 0.22          // 中间那张放大多少
+    var highPriority: Bool = false
+    let onChoose: (Int) -> Void
+
+    /// 滚到哪：以「第几张在正中间」计，可以是小数（手指拖着的时候）。-1 = 还没定位
+    @State private var scroll: CGFloat = -1
+    @State private var dragStart: CGFloat?
+
+    private var maxScroll: CGFloat { CGFloat(max(0, deck.count - 1)) }
+    private func clamp(_ v: CGFloat) -> CGFloat { min(max(0, v), maxScroll) }
+
+    var body: some View {
+        GeometryReader { geo in
+            let w = geo.size.width, h = geo.size.height
+            if highPriority {
+                band(width: w, height: h).highPriorityGesture(drag(width: w))
+            } else {
+                band(width: w, height: h).gesture(drag(width: w))
+            }
+        }
+        .onAppear { if scroll < 0 { scroll = CGFloat(deck.count / 2) } }
+        .onChange(of: deck.count) { _, _ in scroll = clamp(scroll) }
+    }
+
+    private func band(width: CGFloat, height: CGFloat) -> some View {
+        let n = deck.count
+        let baseY = height * 0.58
+        let half = Int(ceil(width / 2 / gap)) + 2
+        let c = Int(max(0, scroll).rounded())
+        let lo = max(0, c - half), hi = min(n - 1, c + half)
+        return ZStack {
+            if n > 0, lo <= hi {
+                ForEach(lo...hi, id: \.self) { i in
+                    let d = CGFloat(i) - max(0, scroll)            // 离正中间几张（带小数）
+                    let dx = d * gap
+                    let wgt = max(0, 1 - abs(d))                   // 「突出」程度：正中间 1，隔一张 0
+                    let ang = atan(dx / arc)
+                    let y = baseY + dx * dx / (2 * arc) - wgt * lift
+                    TarotCardBack(width: cardW)
+                        .scaleEffect(1 + pop * wgt)
+                        .rotationEffect(.radians(Double(ang)))
+                        .position(x: width / 2 + dx, y: y)
+                        .zIndex(1000 - Double(abs(d)))
+                }
+            }
+        }
+        .frame(width: width, height: height)
+        .clipped()
+        .mask(
+            LinearGradient(stops: [.init(color: .clear, location: 0),
+                                   .init(color: .black, location: 0.22),
+                                   .init(color: .black, location: 0.78),
+                                   .init(color: .clear, location: 1)],
+                           startPoint: .leading, endPoint: .trailing)
+        )
+        .contentShape(Rectangle())
+        .drawingGroup()
+    }
+
+    private func drag(width: CGFloat) -> some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { v in
+                if dragStart == nil { dragStart = scroll }
+                scroll = clamp((dragStart ?? scroll) - v.translation.width / gap)
+            }
+            .onEnded { v in
+                let start = dragStart ?? scroll
+                dragStart = nil
+                let dist = hypot(v.translation.width, v.translation.height)
+                if dist < 8 {
+                    // 点：点的是正中间那张就选它；点的是旁边的就把那张滚到中间
+                    let hit = (v.location.x - width / 2) / gap
+                    let center = Int(scroll.rounded())
+                    if abs(hit) < 0.75, abs(scroll - CGFloat(center)) < 0.05, center < deck.count {
+                        onChoose(center)
+                    } else {
+                        withAnimation(.spring(response: 0.38, dampingFraction: 0.86)) {
+                            scroll = clamp((scroll + hit).rounded())
+                        }
+                    }
+                    return
+                }
+                // 松手：按预测的落点带一点惯性，最多再飞 6 张，然后吸到最近一张
+                var target = start - v.predictedEndTranslation.width / gap
+                target = min(max(target, scroll - 6), scroll + 6)
+                withAnimation(.spring(response: 0.42, dampingFraction: 0.86)) {
+                    scroll = clamp(target.rounded())
+                }
+            }
+    }
+}
+
 // MARK: - 房间
 
 struct TarotRoomView: View {
@@ -602,9 +715,6 @@ struct TarotRoomView: View {
     @State private var question = ""
     @State private var deckOrder: [String] = []
     @State private var drawn: [TarotDrawn] = []
-    /// 牌带滚到哪：以「第几张在正中间」计，可以是小数（手指拖着的时候）
-    @State private var scroll: CGFloat = 0
-    @State private var dragStart: CGFloat?
     @State private var fanVisible = true
     @State private var chosen: TarotDrawn?
     @State private var flip: Double = 0         // 0 背面 … 180 正面
@@ -1003,14 +1113,14 @@ struct TarotRoomView: View {
                         Text("为「\(pos.name)」抽一张")
                             .font(.system(size: 14, weight: .medium, design: .serif))
                             .foregroundColor(TarotInk.ink)
-                        Text(abs(scroll - scroll.rounded()) < 0.01 ? "左右滑动整副牌，中间那张再点一下就是它" : "左右滑动整副牌")
+                        Text("左右滑动整副牌，中间那张再点一下就是它")
                             .font(.system(size: 11.5))
                             .foregroundColor(TarotInk.dim)
                     }
                     Spacer(minLength: 0)
                     Spacer(minLength: 0)
                 }
-                fan(width: geo.size.width)
+                TarotDeckBand(deck: deckOrder, onChoose: { choose(index: $0) })
                     .frame(height: fanHeight)
                     .opacity(fanVisible ? 1 : 0)
                     .scaleEffect(fanVisible ? 1 : 0.92, anchor: .bottom)
@@ -1101,92 +1211,10 @@ struct TarotRoomView: View {
         }
     }
 
-    /// 牌带（0902 深夜照她发的粉色参考图改的）：整副牌一字排开、只带一点弧度，
-    /// 手指左右拖整副牌跟着走，滚到正中间的那张自动往前突出来放大；再点它就选中。
-    /// 两头滑到头就停，但第一张 / 最后一张也能滑到正中间。松手带一点惯性，然后吸到最近的一张。
-    /// 只画屏幕附近那十几张，其余不生成。
-    private let fanCardW: CGFloat = 84
-    private let fanGap: CGFloat = 46          // 相邻两张中心距（叠着排）
-    private let fanArc: CGFloat = 1500        // 弧的半径：越大越直
-    private let fanLift: CGFloat = 34         // 中间那张往上顶多少
-    private let fanPop: CGFloat = 0.22        // 中间那张放大多少
-
-    private var maxScroll: CGFloat { CGFloat(max(0, deckOrder.count - 1)) }
-    private func clampScroll(_ v: CGFloat) -> CGFloat { min(max(0, v), maxScroll) }
-
-    private func fan(width: CGFloat) -> some View {
-        let n = deckOrder.count
-        let baseY = fanHeight * 0.58
-        let half = Int(ceil(width / 2 / fanGap)) + 2
-        let c = Int(scroll.rounded())
-        let lo = max(0, c - half), hi = min(n - 1, c + half)
-        return ZStack {
-            if n > 0, lo <= hi {
-                ForEach(lo...hi, id: \.self) { i in
-                    let d = CGFloat(i) - scroll                    // 离正中间几张（带小数）
-                    let dx = d * fanGap
-                    let w = max(0, 1 - abs(d))                     // 「突出」程度：正中间 1，隔一张 0
-                    let ang = atan(dx / fanArc)
-                    let y = baseY + dx * dx / (2 * fanArc) - w * fanLift
-                    TarotCardBack(width: fanCardW)
-                        .scaleEffect(1 + fanPop * w)
-                        .rotationEffect(.radians(Double(ang)))
-                        .position(x: width / 2 + dx, y: y)
-                        .zIndex(1000 - Double(abs(d)))
-                }
-            }
-        }
-        .frame(width: width, height: fanHeight)
-        .clipped()
-        // 两边渐隐（0902 深夜她照参考图要的）：左右各 22% 淡出去，中间那段实打实
-        .mask(
-            LinearGradient(stops: [.init(color: .clear, location: 0),
-                                   .init(color: .black, location: 0.22),
-                                   .init(color: .black, location: 0.78),
-                                   .init(color: .clear, location: 1)],
-                           startPoint: .leading, endPoint: .trailing)
-        )
-        .contentShape(Rectangle())
-        .gesture(
-            DragGesture(minimumDistance: 0)
-                .onChanged { v in
-                    if dragStart == nil { dragStart = scroll }
-                    scroll = clampScroll((dragStart ?? scroll) - v.translation.width / fanGap)
-                }
-                .onEnded { v in
-                    let start = dragStart ?? scroll
-                    dragStart = nil
-                    let dist = hypot(v.translation.width, v.translation.height)
-                    if dist < 8 {
-                        // 点：点的是正中间那张就选它；点的是旁边的就把那张滚到中间
-                        let hit = (v.location.x - width / 2) / fanGap
-                        let center = Int(scroll.rounded())
-                        if abs(hit) < 0.75, abs(scroll - CGFloat(center)) < 0.05 {
-                            choose(index: center)
-                        } else {
-                            withAnimation(.spring(response: 0.38, dampingFraction: 0.86)) {
-                                scroll = clampScroll((scroll + hit).rounded())
-                            }
-                        }
-                        return
-                    }
-                    // 松手：按预测的落点带一点惯性，最多再飞 6 张，然后吸到最近一张
-                    var target = start - v.predictedEndTranslation.width / fanGap
-                    target = min(max(target, scroll - 6), scroll + 6)
-                    withAnimation(.spring(response: 0.42, dampingFraction: 0.86)) {
-                        scroll = clampScroll(target.rounded())
-                    }
-                }
-        )
-        .drawingGroup()
-    }
-
     private func startDrawing() {
         guard spread != nil else { return }
         deckOrder = store.cards.map { $0.id }.shuffled()
         drawn = []
-        scroll = CGFloat(deckOrder.count / 2)
-        dragStart = nil
         chosen = nil
         fanVisible = true
         withAnimation(.easeInOut(duration: 0.25)) { phase = .draw }
@@ -1196,8 +1224,6 @@ struct TarotRoomView: View {
         guard index < deckOrder.count, let pos = nextPosition, chosen == nil else { return }
         let id = deckOrder.remove(at: index)
         let pick = TarotDrawn(cardID: id, reversed: Bool.random(), position: pos.key)
-        scroll = clampScroll(scroll)
-        dragStart = nil
         flip = 0
         bigScale = 0.4
         chosen = pick
@@ -1336,6 +1362,13 @@ struct TarotReadingView: View {
                             .foregroundColor(TarotInk.tint)
                             .padding(.horizontal, 8).padding(.vertical, 3)
                             .background(Capsule().stroke(TarotInk.tint.opacity(0.7), lineWidth: 1))
+                        if reading.byHim || reading.askedByHim {
+                            Text(reading.byHim ? "他抽的" : "他出的題")
+                                .font(.tarotHand(10))
+                                .foregroundColor(TarotInk.gold)
+                                .padding(.horizontal, 8).padding(.vertical, 3)
+                                .background(Capsule().stroke(TarotInk.gold.opacity(0.7), lineWidth: 1))
+                        }
                     }
                 }
                 .padding(.top, 8)
@@ -1563,6 +1596,10 @@ struct TarotHistorySheet: View {
                         .foregroundColor(TarotInk.ink)
                     Text(store.spread(r.spread)?.name ?? r.spread)
                         .font(.system(size: 10)).foregroundColor(TarotInk.tint)
+                    if r.byHim || r.askedByHim {
+                        Text(r.byHim ? "他抽的" : "他出的題")
+                            .font(.tarotHand(9)).foregroundColor(TarotInk.gold)
+                    }
                     if r.asked {
                         Image(systemName: "bubble.left.fill").font(.system(size: 9)).foregroundColor(TarotInk.gold)
                     }
