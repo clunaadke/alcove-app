@@ -952,6 +952,7 @@ struct ChatView: View {
                         .padding(.init(top: 8, leading: 12, bottom: 4, trailing: 12))
                     }
                 }
+                if let pv = store.pendingVoice { voicePreviewCard(pv) }
                 if theme.isMessages { messagesComposerRow } else { classicComposerBody }
             }
             .background {
@@ -972,6 +973,67 @@ struct ChatView: View {
             Color.clear.preference(key: InputBarHeightKey.self, value: geo.size.height)
         })
         .onPreferenceChange(InputBarHeightKey.self) { inputBarHeight = $0 }
+    }
+
+    // 0902 她定的语音卡片：录完不直接发，先在打字框上方看转文字和情绪；
+    // 垃圾桶删掉重说，发送键才真的发。发出去的气泡只带转文字，情绪只给他。
+    private func voicePreviewCard(_ pv: PendingVoice) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Image(systemName: "waveform").font(.system(size: 13, weight: .semibold))
+                Text(String(format: "语音 %d:%02d", pv.seconds / 60, pv.seconds % 60))
+                    .font(.system(size: 12.5, weight: .semibold))
+                if let a = pv.analysis, !a.engine.isEmpty, a.engine != "whisper-large-v3" {
+                    Text("备用听写").font(.system(size: 11)).opacity(0.7)
+                }
+                Spacer()
+                Button { store.discardPendingVoice() } label: {
+                    Image(systemName: "trash")
+                        .font(.system(size: 13))
+                        .frame(width: 30, height: 30)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+            .foregroundColor(theme.textDim)
+            if let err = pv.error {
+                Text(err).font(.system(size: 14)).foregroundColor(theme.textDim)
+            } else if let a = pv.analysis {
+                Text(a.text)
+                    .font(.system(size: 15.5))
+                    .foregroundColor(theme.text)
+                    .fixedSize(horizontal: false, vertical: true)
+                if pv.emotionPending {
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.mini)
+                        Text("在听语气…").font(.system(size: 12.5)).foregroundColor(theme.textDim)
+                    }
+                } else if a.hasEmotion {
+                    HStack(alignment: .top, spacing: 6) {
+                        Text(a.emotionZh)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(theme.text)
+                            .padding(.horizontal, 7).padding(.vertical, 2)
+                            .background(Capsule().fill(theme.textDim.opacity(0.16)))
+                        Text(a.hint)
+                            .font(.system(size: 12.5))
+                            .foregroundColor(theme.textDim)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            } else {
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.mini)
+                    Text("听写中…").font(.system(size: 14)).foregroundColor(theme.textDim)
+                }
+            }
+        }
+        .padding(.init(top: 12, leading: 14, bottom: 12, trailing: 10))
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(theme.isDark ? Color.white.opacity(0.07) : Color.black.opacity(0.045))
+        )
+        .padding(.init(top: 8, leading: 12, bottom: 4, trailing: 12))
     }
 
     // 加号菜单：经典输入栏和「信息」输入栏共用同一份
@@ -1101,7 +1163,7 @@ struct ChatView: View {
                                 // 0822 她要的「打断回复」：他在回的时候这颗变成官方那种停止键（圆里一个小方块），
                                 // 平时照旧：没字是语音、有字是发送。
                                 Image(systemName: isGenerating ? "stop.fill"
-                                      : (canSend || recorder.isRecording || store.heldCount > 0) ? "arrow.up" : "waveform")
+                                      : (canSend || recorder.isRecording || store.heldCount > 0 || store.pendingVoice != nil) ? "arrow.up" : "waveform")
                                 .font(.system(size: isGenerating ? 13 : 17, weight: .semibold))
                                 .contentTransition(.symbolEffect(.replace))
                                 .animation(.easeInOut(duration: 0.18), value: isGenerating)
@@ -1135,7 +1197,7 @@ struct ChatView: View {
         let line = theme.isDark ? Color.white.opacity(0.10) : Color.black.opacity(0.06)
         let face = theme.isDark ? Color(red: 28/255, green: 28/255, blue: 30/255) : Color.white
         let shadow = Color.black.opacity(theme.isDark ? 0.35 : 0.10)
-        let showBlue = isGenerating || canSend || recorder.isRecording || store.heldCount > 0
+        let showBlue = isGenerating || canSend || recorder.isRecording || store.heldCount > 0 || store.pendingVoice != nil
         return HStack(alignment: .bottom, spacing: 10) {
             if recorder.isRecording {
                 // 0822 她报的：录音时叉点不掉。玻璃贴在图标上把点击吞了——
@@ -1179,7 +1241,7 @@ struct ChatView: View {
                 Button(action: performDynamicComposerAction) {
                     ZStack(alignment: .topTrailing) {
                         Image(systemName: isGenerating ? "stop.fill"
-                              : (canSend || recorder.isRecording || store.heldCount > 0) ? "arrow.up" : "mic")
+                              : (canSend || recorder.isRecording || store.heldCount > 0 || store.pendingVoice != nil) ? "arrow.up" : "mic")
                             .font(.system(size: isGenerating ? 12 : (showBlue ? 15 : 17), weight: showBlue ? .semibold : .regular))
                             .contentTransition(.symbolEffect(.replace))
                             .animation(.easeInOut(duration: 0.18), value: isGenerating)
@@ -1280,7 +1342,14 @@ struct ChatView: View {
             return
         }
         if recorder.isRecording {
-            if let data = recorder.stopAndTake() { store.sendVoice(data: data) }
+            // 0902：停止录音不再直接发，先去听写 + 判情绪，出一张卡片给她看
+            let secs = recorder.seconds
+            if let data = recorder.stopAndTake() { store.analyzeVoice(data: data, seconds: secs) }
+            return
+        }
+        if store.pendingVoice != nil, store.voiceAnalyzing { return }   // 字还没出来，等一下
+        if store.pendingVoice != nil, !canSend {
+            store.sendPendingVoice(followedByText: false)
             return
         }
         guard canSend else {
@@ -1298,6 +1367,15 @@ struct ChatView: View {
             pendingLink = nil
             text = text.isEmpty ? link : text + "\n" + link
         }
+        if store.pendingVoice != nil {
+            // 语音先走，服务端攒着；上传落定再发后面这些，跟语音一起进他那边
+            store.sendPendingVoice(followedByText: true) { dispatchComposed(text) }
+            return
+        }
+        dispatchComposed(text)
+    }
+
+    private func dispatchComposed(_ text: String) {
         if let stk = pendingSticker {
             pendingSticker = nil
             store.sendSticker(stk, text: outgoingText(text))
@@ -2610,8 +2688,9 @@ struct MessageRow: View {
                     }
                     if msg.isAudio, let raw = msg.attachmentUrl {
                         // 0822 她要的：一开始只有语音条，长按才「转文字」或「收藏」
+                        // 0902 她定的：她自己的语音条默认露转文字（不露情绪）；他的照旧长按才展开
                         AudioBubble(url: AlcoveAPI.attachmentURL(raw), isUser: isUser, theme: theme,
-                                    hasTranscript: !msg.displayText.isEmpty,
+                                    hasTranscript: !msg.displayText.isEmpty && !isUser,
                                     transcriptShown: showTranscript,
                                     onToggleTranscript: {
                                         withAnimation(.easeInOut(duration: 0.18)) { showTranscript.toggle() }
@@ -2629,7 +2708,7 @@ struct MessageRow: View {
                     if let song = msg.musicCard {
                         MusicMessageCard(song: song, theme: theme, isUser: isUser) { onPlayMusic?(song) }
                     } else if !msg.displayText.isEmpty && !(msg.isSticker) && !msg.isBareLink
-                                && (!msg.isAudio || showTranscript) {
+                                && (!msg.isAudio || showTranscript || isUser) {
                         if paragraphSelectionMode && !isUser {
                             HStack(alignment: .top, spacing: 9) {
                                 Button { onToggleParagraphSelection?() } label: {

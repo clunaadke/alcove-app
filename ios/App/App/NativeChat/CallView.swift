@@ -159,6 +159,7 @@ final class CallSessionModel: NSObject, ObservableObject, AVAudioPlayerDelegate 
         try? session.setCategory(.playAndRecord, mode: .voiceChat,
                                  options: [.defaultToSpeaker, .allowBluetooth])
         try? session.setActive(true)
+        armRecorder()            // 0902：通话一开始就把第一只录音机备好
         AlcoveNotify.shared.inCall = true
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.seconds += 1 }
@@ -272,17 +273,35 @@ final class CallSessionModel: NSObject, ObservableObject, AVAudioPlayerDelegate 
 
     // MARK: 她说话（按住说，松开发）
 
-    func beginTalk() {
-        guard !recording, !closed else { return }
+    /// 0902 她报的「一句话说好几遍都认不出」：以前按下去那一刻才建录音机、才 record()，
+    /// iOS 从建到真正收声要一两百毫秒，她开口快的话第一个字就没了，短句掉一个字听写直接崩。
+    /// 现在录音机**提前建好并 prepareToRecord**（通话一开始、每次说完立刻备下一只），
+    /// 按下去只剩 record() 这一步，几乎零延迟。
+    private var armed: AVAudioRecorder?
+    private var armedURL: URL?
+
+    private static let recordSettings: [String: Any] = [
+        AVFormatIDKey: kAudioFormatMPEG4AAC,
+        AVSampleRateKey: 24000,
+        AVNumberOfChannelsKey: 1,
+        AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue,
+    ]
+
+    private func armRecorder() {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("call_\(Int(Date().timeIntervalSince1970 * 1000)).m4a")
-        let settings: [String: Any] = [
-            AVFormatIDKey: kAudioFormatMPEG4AAC,
-            AVSampleRateKey: 24000,
-            AVNumberOfChannelsKey: 1,
-            AVEncoderAudioQualityKey: AVAudioQuality.medium.rawValue,
-        ]
-        guard let rec = try? AVAudioRecorder(url: url, settings: settings) else { return }
+        guard let rec = try? AVAudioRecorder(url: url, settings: Self.recordSettings) else { return }
+        rec.prepareToRecord()
+        armed = rec
+        armedURL = url
+    }
+
+    func beginTalk() {
+        guard !recording, !closed else { return }
+        if armed == nil { armRecorder() }
+        guard let rec = armed, let url = armedURL else { return }
+        armed = nil
+        armedURL = nil
         recorder = rec
         recURL = url
         rec.record()
@@ -294,6 +313,7 @@ final class CallSessionModel: NSObject, ObservableObject, AVAudioPlayerDelegate 
         recorder?.stop()
         recorder = nil
         recording = false
+        armRecorder()            // 立刻备好下一只，她连着说也不掉字
         guard let url = recURL, let data = try? Data(contentsOf: url),
               data.count > 3000 else { return }   // 手滑碰一下不算话
         recURL = nil

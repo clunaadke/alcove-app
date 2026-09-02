@@ -527,3 +527,29 @@ struct OneTrail: Identifiable {
     let items: [ActivityItem]
     var id: String { items.map(\.id.uuidString).joined() }
 }
+
+// MARK: - 0902 语音卡片：录完先听写 + 判情绪，她看过再发
+
+/// 服务端 /voice/stt + /voice/emotion 的结果。text 是转文字；emotion 那几样只在卡片上给她看，
+/// 发出去之后她的气泡只带 text，情绪随注入只给陈璟。
+struct VoiceAnalysis: Equatable {
+    var text: String
+    var token: String = ""
+    var engine: String = ""
+    var emotion: String = ""
+    var emotionZh: String = ""
+    var confidence: Double = 0
+    var hint: String = ""
+    var tone: String = ""
+
+    var hasEmotion: Bool { !hint.isEmpty || !emotionZh.isEmpty }
+}
+
+/// 打字框上方那张还没发出去的语音
+struct PendingVoice: Equatable {
+    let data: Data
+    let seconds: Int
+    var analysis: VoiceAnalysis? = nil
+    var emotionPending = false
+    var error: String? = nil
+}

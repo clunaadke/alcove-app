@@ -523,12 +523,48 @@ enum AlcoveAPI {
         _ = try await postJSON("/api/favorites/remove", body: ["id": id])
     }
 
-    static func upload(data: Data, filename: String, caption: String, group: String? = nil) async throws -> ChatMessage? {
+    // 0902 语音卡片：第一步只听写（Whisper，一秒左右），第二步判情绪（慢几秒）。
+    // 两步分开是为了卡片能先出字；token 是服务端暂存音频的凭据，第二步用完就作废。
+    static func voiceStt(audio: Data) async throws -> VoiceAnalysis {
+        let obj = try await postJSON("/api/voice/stt", body: ["audio_b64": audio.base64EncodedString()])
+        guard obj["ok"] as? Bool == true, let text = obj["text"] as? String, !text.isEmpty else {
+            throw URLError(.badServerResponse)
+        }
+        return VoiceAnalysis(text: text, token: obj["token"] as? String ?? "",
+                             engine: obj["engine"] as? String ?? "")
+    }
+
+    static func voiceEmotion(token: String, text: String) async throws -> VoiceAnalysis {
+        let obj = try await postJSON("/api/voice/emotion", body: ["token": token, "text": text])
+        guard obj["ok"] as? Bool == true else { throw URLError(.badServerResponse) }
+        return VoiceAnalysis(text: obj["text"] as? String ?? text, token: token,
+                             emotion: obj["emotion"] as? String ?? "",
+                             emotionZh: obj["emotion_zh"] as? String ?? "",
+                             confidence: (obj["confidence"] as? NSNumber)?.doubleValue ?? 0,
+                             hint: obj["hint"] as? String ?? "",
+                             tone: obj["tone"] as? String ?? "")
+    }
+
+    /// voice：语音卡片上她看过的转文字和情绪，随上传一起带给服务端（不再算第二遍）。
+    /// hold：紧接着还有一句文字要发，服务端先攒着，随那句一起给他。
+    static func upload(data: Data, filename: String, caption: String, group: String? = nil,
+                       voice: VoiceAnalysis? = nil, hold: Bool = false) async throws -> ChatMessage? {
         var comps = URLComponents(url: fullURL("/api/upload"), resolvingAgainstBaseURL: false)!
         var items = [URLQueryItem(name: "filename", value: filename),
                      URLQueryItem(name: "role", value: "user")]
         if !caption.isEmpty { items.append(URLQueryItem(name: "text", value: caption)) }
         if let group, !group.isEmpty { items.append(URLQueryItem(name: "group", value: group)) }
+        if let v = voice {
+            items.append(URLQueryItem(name: "stt", value: v.text))
+            if v.hasEmotion {
+                items.append(URLQueryItem(name: "emotion", value: v.emotion))
+                items.append(URLQueryItem(name: "emotion_zh", value: v.emotionZh))
+                items.append(URLQueryItem(name: "confidence", value: String(format: "%.2f", v.confidence)))
+                items.append(URLQueryItem(name: "hint", value: v.hint))
+            }
+            if !v.tone.isEmpty { items.append(URLQueryItem(name: "tone", value: v.tone)) }
+        }
+        if hold { items.append(URLQueryItem(name: "hold", value: "1")) }
         comps.queryItems = items
         var req = URLRequest(url: comps.url!)
         req.httpMethod = "POST"

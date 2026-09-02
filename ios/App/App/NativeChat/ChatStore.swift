@@ -246,6 +246,65 @@ final class ChatStore: ObservableObject {
         }
     }
 
+    // MARK: 0902 语音卡片：录完先听写、判情绪，她看过再发
+
+    @Published var pendingVoice: PendingVoice?
+    /// 第一步（听写）还没回来。回来之前发送键不响应，免得把空卡片发出去
+    @Published var voiceAnalyzing = false
+
+    func analyzeVoice(data: Data, seconds: Int) {
+        pendingVoice = PendingVoice(data: data, seconds: seconds, emotionPending: true)
+        voiceAnalyzing = true
+        Task {
+            do {
+                var a = try await AlcoveAPI.voiceStt(audio: data)
+                guard pendingVoice?.data == data else { return }     // 她已经删了这条
+                pendingVoice?.analysis = a
+                voiceAnalyzing = false
+                if let full = try? await AlcoveAPI.voiceEmotion(token: a.token, text: a.text) {
+                    a = full
+                }
+                guard pendingVoice?.data == data else { return }
+                pendingVoice?.analysis = a
+                pendingVoice?.emotionPending = false
+            } catch {
+                guard pendingVoice?.data == data else { return }
+                voiceAnalyzing = false
+                pendingVoice?.emotionPending = false
+                pendingVoice?.error = "没听清，删掉重说一遍？"
+            }
+        }
+    }
+
+    func discardPendingVoice() {
+        pendingVoice = nil
+        voiceAnalyzing = false
+    }
+
+    /// 她按发送：语音带着卡片上的转文字和情绪一起上传。
+    /// followedByText=true：紧接着还有文字/图要发，服务端先攒着语音，随后面那条一起给他；
+    /// 上传落定后再调 then，后面那条才出发——不然 /chat/send 抢在上传前面，语音就得等下下句。
+    func sendPendingVoice(followedByText: Bool, then: (() -> Void)? = nil) {
+        guard let pv = pendingVoice else { return }
+        pendingVoice = nil
+        voiceAnalyzing = false
+        if !followedByText { optimisticTyping() }
+        Task {
+            do {
+                let name = "voice_\(Int(Date().timeIntervalSince1970 * 1000)).m4a"
+                if let rec = try await AlcoveAPI.upload(data: pv.data, filename: name, caption: "",
+                                                        voice: pv.analysis, hold: followedByText) {
+                    appendNew([rec])
+                    if let lt = lastTs, rec.ts > lt { lastTs = rec.ts }
+                    else if lastTs == nil { lastTs = rec.ts }
+                }
+                if let held = try? await AlcoveAPI.heldCount() { heldCount = held }
+            } catch { connectionError = true }
+            then?()
+        }
+    }
+
+    /// 0902 之前的直发路径。卡片流程上线后没人调它了，留着给圆桌那类不走卡片的地方参考
     func sendVoice(data: Data) {
         optimisticTyping()
         Task {
