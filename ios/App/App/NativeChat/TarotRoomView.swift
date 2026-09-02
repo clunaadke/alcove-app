@@ -1446,7 +1446,8 @@ struct TarotReadingView: View {
     /// 0902 深夜她要的：把这次占卜画成一张竖长票存进相册（TarotTicketView 用 ImageRenderer 出图）
     private func saveTicket() {
         saving = true
-        let renderer = ImageRenderer(content: TarotTicketView(reading: reading, store: store))
+        // 0903 她抓的 bug：长图一直画服务端默认那套（日常）——把她当前点的那个类型的解读一起递过去
+        let renderer = ImageRenderer(content: TarotTicketView(reading: reading, store: store, interp: shownInterp))
         renderer.scale = 3
         guard let img = renderer.uiImage else {
             saving = false
@@ -2177,6 +2178,8 @@ struct TarotDecorSheet: View {
 struct TarotTicketView: View {
     let reading: TarotReading
     @ObservedObject var store: TarotStore
+    /// 结果页当前显示的那份客观解读（她点了别的类型就是那个类型的）；nil 用记录自带的
+    var interp: TarotInterp? = nil
     @ObservedObject var decor = TarotDecor.shared
 
     private var spread: TarotSpread? { store.spread(reading.spread) }
@@ -2245,7 +2248,7 @@ struct TarotTicketView: View {
                     }
                 }
             }
-            if let ip = reading.interp {
+            if let ip = interp ?? reading.interp {
                 Rectangle().fill(TarotInk.glassLine).frame(height: 1).padding(.horizontal, 40)
                 VStack(spacing: 8) {
                     Text("客觀解讀 · \(ip.categoryName)").font(.tarotHand(10)).tracking(2).foregroundColor(TarotInk.gold.opacity(0.8))
