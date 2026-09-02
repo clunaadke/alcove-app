@@ -778,6 +778,9 @@ struct TarotDeckBand: View {
         }
         .frame(width: width, height: height)
         .clipped()
+        // 0903 她抓的重影：渐隐之前先把整条牌带压平成一张图，再统一淡出去；
+        // 不然每张牌各自变淡，叠着的地方互相透
+        .compositingGroup()
         .mask(
             LinearGradient(stops: [.init(color: .clear, location: 0),
                                    .init(color: .black, location: 0.22),
