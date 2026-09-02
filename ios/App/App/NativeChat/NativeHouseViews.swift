@@ -4038,10 +4038,18 @@ struct ListenRecordPill: View {
                 .onTapGesture(perform: tapped)
             VStack(spacing: 6) {
                 if let song = model.nowPlaying {
-                    Text(song.name)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(.white)
-                        .lineLimit(1)
+                    // 0902 她要的：歌名后面带歌手，不然一行太空
+                    HStack(spacing: 5) {
+                        Text(song.name)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(.white)
+                        if !song.artist.isEmpty {
+                            Text("— " + song.artist)
+                                .font(.system(size: 11))
+                                .foregroundColor(.white.opacity(0.7))
+                        }
+                    }
+                    .lineLimit(1)
                 }
                 Slider(value: Binding(get: { model.progress }, set: { model.seek(to: $0); bump() }),
                        in: 0...max(model.duration, 1)) { editing in
