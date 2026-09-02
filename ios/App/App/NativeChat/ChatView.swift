@@ -2657,6 +2657,8 @@ struct MessageRow: View {
                     PlayPageMessageCard(card: play, theme: theme)
                 } else if let reading = msg.readingCard {
                     ReadingShareMessageCard(card: reading, theme: theme)
+                } else if let tarot = msg.tarotCard {
+                    TarotMessageCard(card: tarot, theme: theme)
                 } else if let work = msg.workCard {
                     WorkDeliveryMessageCard(card: work, theme: theme)
                 } else if let choice = msg.choiceCard {
@@ -3763,6 +3765,69 @@ private struct WorkDeliveryMessageCard: View {
         }.padding(14).frame(maxWidth: 315, alignment: .leading)
             .background(theme.fyCard.opacity(0.95), in: RoundedRectangle(cornerRadius: 18))
             .overlay(RoundedRectangle(cornerRadius: 18).stroke(theme.fyAccent.opacity(0.38), lineWidth: 0.8))
+    }
+}
+
+/// 0902 深夜她要的：塔罗卡。顶上「抽了牌 · 牌阵 · 时间」，问题用「」括起来，
+/// 下面一排牌面（复用占星室的 TarotCardFace，颜色跟她在占星室调的染色走），每张底下位置 · 牌名 · 正逆位，
+/// 底下一块关键词。牌默认亮着——翻面版等「陈璟让她抽牌」那一单再做。死解不进卡，占星室记录里有。
+private struct TarotMessageCard: View {
+    let card: TarotAskCard
+    let theme: AlcoveTheme
+
+    var body: some View {
+        let n = card.cards.count
+        let w: CGFloat = n == 1 ? 150 : (n <= 3 ? 82 : 50)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: "sparkles").font(.system(size: 15)).foregroundColor(theme.fyAccent)
+                Text("抽了牌").font(.system(size: 15, weight: .semibold, design: .serif))
+                Text("· \(card.spreadName)").font(.system(size: 11)).foregroundColor(theme.textDim)
+                Spacer()
+                Text(timeText).font(.system(size: 8.5, design: .monospaced)).foregroundColor(theme.textDim.opacity(0.8))
+            }
+            if !card.question.isEmpty {
+                Text("「\(card.question)」")
+                    .font(.system(size: 14, weight: .medium, design: .serif)).lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            HStack(alignment: .top, spacing: n <= 3 ? 12 : 7) {
+                ForEach(card.cards) { c in
+                    VStack(spacing: 5) {
+                        TarotCardFace(cardID: c.id, reversed: c.reversed, width: w)
+                        if n > 1 {
+                            Text(c.positionName).font(.system(size: 9.5, weight: .semibold)).foregroundColor(theme.fyAccent)
+                        }
+                        Text(c.name)
+                            .font(.system(size: n > 3 ? 10 : 12.5, weight: .medium, design: .serif))
+                            .lineLimit(1).minimumScaleFactor(0.7)
+                        Text(c.reversed ? "逆位" : "正位").font(.system(size: 8.5)).foregroundColor(theme.textDim)
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 4)
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(card.cards) { c in
+                    Text((n > 1 ? c.positionName + "：" : "") + c.keywords.joined(separator: " · "))
+                        .font(.system(size: 10.5)).foregroundColor(theme.textDim).lineLimit(2)
+                }
+            }
+            .padding(10).frame(maxWidth: .infinity, alignment: .leading)
+            .background(theme.fyCardSub.opacity(0.58), in: RoundedRectangle(cornerRadius: 12))
+        }.padding(14).frame(maxWidth: 315, alignment: .leading)
+            .background(theme.fyCard.opacity(0.95), in: RoundedRectangle(cornerRadius: 18))
+            .overlay(RoundedRectangle(cornerRadius: 18).stroke(theme.fyAccent.opacity(0.38), lineWidth: 0.8))
+    }
+
+    private var timeText: String {
+        let date = ISO8601DateFormatter.alcove.date(from: card.ts) ?? ISO8601DateFormatter.alcoveFrac.date(from: card.ts)
+        guard let date else { return String(card.ts.replacingOccurrences(of: "T", with: " ").prefix(16)) }
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "zh_CN")
+        f.dateFormat = "M月d日 HH:mm"
+        return f.string(from: date)
     }
 }
 

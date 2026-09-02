@@ -119,6 +119,13 @@ struct ChatMessage: Identifiable, Equatable {
         return try? JSONDecoder().decode(WorkDeliveryCard.self, from: data)
     }
 
+    /// 0902 深夜她要的：占星室「让陈璟解牌」那条在聊天页长成一张牌卡
+    var tarotCard: TarotAskCard? {
+        guard let raw = Self.taggedBody(text, tag: "TAROT_CARD"),
+              let data = raw.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(TarotAskCard.self, from: data)
+    }
+
     var choiceCard: ChoiceQuestionCard? {
         guard let raw = Self.taggedBody(text, tag: "CHOICE_CARD"),
               let data = raw.data(using: .utf8) else { return nil }
@@ -330,6 +337,32 @@ struct ReadingShareCard: Decodable, Equatable {
     let book: String
     let author: String
     let quotes: [Quote]
+}
+
+/// 占星室发进聊天的那次占卜（服务端 tarot.ask_card）。text 字段是给陈璟读的人话，app 不显示
+struct TarotAskCard: Decodable, Equatable {
+    struct Card: Decodable, Equatable, Identifiable {
+        let id: String
+        let name: String
+        let reversed: Bool
+        let position: String
+        let positionName: String
+        let keywords: [String]
+        enum CodingKeys: String, CodingKey {
+            case id, name, reversed, position, keywords
+            case positionName = "position_name"
+        }
+    }
+    let id: String
+    let ts: String
+    let spread: String
+    let spreadName: String
+    let question: String
+    let cards: [Card]
+    enum CodingKeys: String, CodingKey {
+        case id, ts, spread, question, cards
+        case spreadName = "spread_name"
+    }
 }
 
 struct WorkDeliveryCard: Codable, Equatable {

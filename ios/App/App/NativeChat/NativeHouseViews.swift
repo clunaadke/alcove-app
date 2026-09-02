@@ -3949,21 +3949,35 @@ struct ListenRecordPill: View {
     /// 一起听开着时点唱片能不能把大卡叫回来（只有主聊天页露着的时候能）。RootView 算好传进来
     var canRestoreCard: Bool = false
 
-    @State private var angle: Double = 0
+    // 0902 深夜她抓的：封面「一秒一卡」。原来是 30Hz Timer 一格格拨 angle，
+    // 而 progress 每秒 publish 一次 → 父视图重建这个 struct → Timer publisher 跟着重建、重订阅，
+    // 每秒断一下。改成按时间算角度：记住上次停在哪 + 这次从哪一刻开始转，
+    // TimelineView(.animation) 跟着屏幕刷新率驱动，不靠 state 一格格拨，暂停就停在原地。
+    @State private var angleBase: Double = 0
+    @State private var spinSince: Date?
     @State private var expanded = false
     @State private var collapseTask: Task<Void, Never>?
     private let size: CGFloat = 62
-    private let ticker = Timer.publish(every: 1.0 / 30.0, on: .main, in: .common).autoconnect()
+    private let secondsPerTurn: Double = 8
 
     var body: some View {
         Group {
             if expanded { strip } else { disc }
         }
-        .onReceive(ticker) { _ in
-            guard model.isPlaying else { return }
-            angle += 360.0 / (8.0 * 30.0)
-            if angle >= 360 { angle -= 360 }
+        .onAppear { if model.isPlaying, spinSince == nil { spinSince = Date() } }
+        .onChange(of: model.isPlaying) { _, playing in
+            if playing {
+                if spinSince == nil { spinSince = Date() }
+            } else {
+                angleBase = angle(at: Date())
+                spinSince = nil
+            }
         }
+    }
+
+    private func angle(at date: Date) -> Double {
+        let spun = spinSince.map { date.timeIntervalSince($0) } ?? 0
+        return (angleBase + spun / secondsPerTurn * 360).truncatingRemainder(dividingBy: 360)
     }
 
     // MARK: 唱片
@@ -4008,22 +4022,25 @@ struct ListenRecordPill: View {
         }
     }
 
-    /// 转着的封面 + 中心小孔
+    /// 转着的封面 + 中心小孔。放歌时 TimelineView 每帧算一次角度；暂停时 paused，停在原地不耗电
     private func record(diameter: CGFloat) -> some View {
-        ZStack {
-            if let cover = model.nowPlaying?.cover, let url = MusicModel.artworkURL(cover) {
-                AsyncImage(url: url) { image in
-                    image.resizable().scaledToFill()
-                } placeholder: { Color.black.opacity(0.35) }
-            } else {
-                Color.black.opacity(0.35)
+        TimelineView(.animation(paused: !model.isPlaying)) { tl in
+            ZStack {
+                if let cover = model.nowPlaying?.cover, let url = MusicModel.artworkURL(cover) {
+                    AsyncImage(url: url) { image in
+                        image.resizable().scaledToFill()
+                    } placeholder: { Color.black.opacity(0.35) }
+                } else {
+                    Color.black.opacity(0.35)
+                }
+                Circle().fill(Color.black.opacity(0.55)).frame(width: diameter * 0.19, height: diameter * 0.19)
+                Circle().stroke(Color.white.opacity(0.6), lineWidth: 1).frame(width: diameter * 0.19, height: diameter * 0.19)
             }
-            Circle().fill(Color.black.opacity(0.55)).frame(width: diameter * 0.19, height: diameter * 0.19)
-            Circle().stroke(Color.white.opacity(0.6), lineWidth: 1).frame(width: diameter * 0.19, height: diameter * 0.19)
+            .frame(width: diameter, height: diameter)
+            .clipShape(Circle())
+            .rotationEffect(.degrees(angle(at: tl.date)))
         }
         .frame(width: diameter, height: diameter)
-        .clipShape(Circle())
-        .rotationEffect(.degrees(angle))
     }
 
     private var progressFraction: CGFloat {
