@@ -2618,10 +2618,13 @@ struct MessageRow: View {
     }
     /// 只有话没有动作的轮次不挂轨迹行（那些话本来就在气泡里）
     private var trailWorthShowing: Bool { trailToolCount > 0 }
+    /// 塔罗卡那一行：整行居中
+    private var isTarotRow: Bool { msg.tarotCard != nil || msg.tarotOffer != nil }
 
     var body: some View {
         HStack(alignment: .bottom, spacing: 0) {
-            if isUser { Spacer(minLength: 48) }
+            // 0903 她要的：塔罗卡不管谁发的都在屏幕正中间，两侧留白都不吃
+            if isUser { Spacer(minLength: isTarotRow ? 0 : 48) }
             VStack(alignment: isUser ? .trailing : .leading,
                    spacing: theme.isPaper && !isUser ? 10 : 7) {
                 // 0820：有时间线就照发生顺序摆 —— 想一段出一个面板，
@@ -2659,8 +2662,10 @@ struct MessageRow: View {
                     ReadingShareMessageCard(card: reading, theme: theme)
                 } else if let tarot = msg.tarotCard {
                     TarotMessageCard(card: tarot, theme: theme)
+                        .frame(maxWidth: .infinity)   // 整行居中
                 } else if let offer = msg.tarotOffer {
                     TarotOfferMessageCard(card: offer, theme: theme, onContentChange: onContentChange)
+                        .frame(maxWidth: .infinity)
                 } else if msg.msgType == "tarot_answer" {
                     // 她抽满了他出的题：服务端落的那条（全文给他读），聊天页只画一句小条子，牌在上面那张卡里
                     ChoiceAnswerStrip(text: "🔮 抽好了，牌在上面那张卡里", theme: theme)
@@ -2811,11 +2816,11 @@ struct MessageRow: View {
             }
             if !isUser {
                 // 晨报和旅行卡片是整行居中的东西，不吃我这边气泡的右侧留白
-                Spacer(minLength: (msg.morningPaperDate != nil || msg.journeyCard != nil) ? 0
+                Spacer(minLength: (msg.morningPaperDate != nil || msg.journeyCard != nil || isTarotRow) ? 0
                        : (msg.choiceCard != nil ? 34 : (theme.isPaper ? 15 : 48)))
             }
         }
-        .padding(.leading, theme.isPaper && !isUser && msg.morningPaperDate == nil && msg.journeyCard == nil ? 12 : 0)
+        .padding(.leading, theme.isPaper && !isUser && msg.morningPaperDate == nil && msg.journeyCard == nil && !isTarotRow ? 12 : 0)
         .padding(.top, 2)
         .padding(.bottom, showTime ? 12 : 5)
         .sheet(item: Binding(get: { openedThink.map { OneThought(text: $0) } },
@@ -3798,9 +3803,26 @@ private struct TarotMessageCard: View {
             if let interp = card.interp {
                 TarotInterpBlock(interp: interp, theme: theme)
             }
-        }.padding(14).frame(maxWidth: 315, alignment: .leading)
-            .background(theme.fyCard.opacity(0.95), in: RoundedRectangle(cornerRadius: 18))
-            .overlay(RoundedRectangle(cornerRadius: 18).stroke(theme.fyAccent.opacity(0.38), lineWidth: 0.8))
+        }
+        .modifier(TarotFramed())
+    }
+}
+
+/// 0903 她要的：塔罗卡不要底，贴她给的那张边框（Assets/TarotFrame，透明 PNG，按 3x 放进去：
+/// 367×275pt，四角各 110×82pt 固定不变形，中间的边拉伸）。内容往里缩，别压到角上的月亮和水晶。
+private struct TarotFramed: ViewModifier {
+    func body(content: Content) -> some View {
+        content
+            .padding(.horizontal, 40)
+            .padding(.top, 46)
+            .padding(.bottom, 40)
+            .frame(width: 372, alignment: .leading)      // 横着的长方形，跟边框原本的比例走；整行居中
+            .background(
+                Image("TarotFrame")
+                    .resizable(capInsets: EdgeInsets(top: 82, leading: 110, bottom: 82, trailing: 110),
+                               resizingMode: .stretch)
+                    .allowsHitTesting(false)
+            )
     }
 }
 
@@ -3847,7 +3869,7 @@ private struct TarotInterpBlock: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(10).frame(maxWidth: .infinity, alignment: .leading)
-        .background(theme.fyCardSub.opacity(0.58), in: RoundedRectangle(cornerRadius: 12))
+        .background(theme.fyCardSub.opacity(0.4), in: RoundedRectangle(cornerRadius: 12))
     }
 }
 
@@ -3862,13 +3884,13 @@ private enum TarotChatBits {
         return f.string(from: date)
     }
 
-    static func faceWidth(_ n: Int) -> CGFloat { n == 1 ? 150 : (n <= 3 ? 82 : 50) }
+    static func faceWidth(_ n: Int) -> CGFloat { n == 1 ? 84 : (n <= 3 ? 64 : 46) }
 
     @ViewBuilder
     static func facesBlock(cards: [TarotAskCard.Card], theme: AlcoveTheme) -> some View {
         let n = cards.count
         let w = faceWidth(n)
-        HStack(alignment: .top, spacing: n <= 3 ? 12 : 7) {
+        HStack(alignment: .top, spacing: n <= 3 ? 10 : 5) {
             ForEach(cards) { c in
                 VStack(spacing: 5) {
                     TarotCardFace(cardID: c.id, reversed: c.reversed, width: w)
@@ -3876,7 +3898,7 @@ private enum TarotChatBits {
                         Text(c.positionName).font(.system(size: 9.5, weight: .semibold)).foregroundColor(theme.fyAccent)
                     }
                     Text(c.name)
-                        .font(.system(size: n > 3 ? 10 : 12.5, weight: .medium, design: .serif))
+                        .font(.system(size: n > 3 ? 9.5 : 11.5, weight: .medium, design: .serif))
                         .lineLimit(1).minimumScaleFactor(0.7)
                     Text(c.reversed ? "逆位" : "正位").font(.system(size: 8.5)).foregroundColor(theme.textDim)
                 }
@@ -3892,7 +3914,7 @@ private enum TarotChatBits {
             }
         }
         .padding(10).frame(maxWidth: .infinity, alignment: .leading)
-        .background(theme.fyCardSub.opacity(0.58), in: RoundedRectangle(cornerRadius: 12))
+        .background(theme.fyCardSub.opacity(0.4), in: RoundedRectangle(cornerRadius: 12))
     }
 }
 
@@ -3947,9 +3969,8 @@ private struct TarotOfferMessageCard: View {
             } else {
                 drawArea
             }
-        }.padding(14).frame(maxWidth: 315, alignment: .leading)
-            .background(theme.fyCard.opacity(0.95), in: RoundedRectangle(cornerRadius: 18))
-            .overlay(RoundedRectangle(cornerRadius: 18).stroke(theme.fyAccent.opacity(0.38), lineWidth: 0.8))
+        }
+        .modifier(TarotFramed())
             .task {
                 await store.loadDeck()
                 if deck.isEmpty {
@@ -3961,7 +3982,7 @@ private struct TarotOfferMessageCard: View {
 
     // MARK: 抽牌区：牌位一排 + 大牌 / 牌带
 
-    private var slotW: CGFloat { card.positions.count <= 1 ? 64 : (card.positions.count <= 3 ? 52 : 40) }
+    private var slotW: CGFloat { card.positions.count <= 1 ? 56 : (card.positions.count <= 3 ? 44 : 34) }
 
     private var drawArea: some View {
         VStack(spacing: 10) {
@@ -3992,7 +4013,7 @@ private struct TarotOfferMessageCard: View {
             if let c = chosen {
                 bigCard(c)
                     .frame(maxWidth: .infinity)
-                    .frame(height: 150)
+                    .frame(height: 130)
             } else {
                 VStack(spacing: 6) {
                     if let pos = nextPosition {
@@ -4004,9 +4025,9 @@ private struct TarotOfferMessageCard: View {
                     if deck.isEmpty {
                         ProgressView().controlSize(.small).frame(height: 130)
                     } else {
-                        TarotDeckBand(deck: deck, cardW: 44, gap: 24, arc: 900, lift: 18, pop: 0.25,
+                        TarotDeckBand(deck: deck, cardW: 40, gap: 22, arc: 900, lift: 16, pop: 0.25,
                                       highPriority: true, onChoose: { choose(index: $0) })
-                            .frame(height: 130)
+                            .frame(height: 116)
                             .opacity(bandVisible ? 1 : 0)
                             .scaleEffect(bandVisible ? 1 : 0.92, anchor: .bottom)
                             .allowsHitTesting(bandVisible && !busy)
@@ -4021,7 +4042,7 @@ private struct TarotOfferMessageCard: View {
 
     /// 选中那张：放大 → 翻面（跟占星室一个节奏）
     private func bigCard(_ c: Pick) -> some View {
-        let w: CGFloat = 80
+        let w: CGFloat = 68
         let showFace = flip >= 90
         return ZStack {
             if showFace {
