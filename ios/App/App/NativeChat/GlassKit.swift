@@ -326,8 +326,11 @@ struct FlowLayout: Layout {
 final class FloatingOverlayWindow: UIWindow {
     /// 悬浮件报上来的命中区域（屏幕坐标），窗只在这里面接触摸
     static var hitRects: [String: CGRect] = [:]
+    /// 悬浮件从自己这层弹了 sheet（比如小唱片弹播放器）：整屏都得接触摸，不然 sheet 点不动
+    static var passAll = false
 
     override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        if Self.passAll { return super.hitTest(point, with: event) }
         let hit = Self.hitRects.values.contains { $0.insetBy(dx: -6, dy: -6).contains(point) }
         guard hit else { return nil }
         return super.hitTest(point, with: event)
@@ -414,7 +417,15 @@ struct FloatingDock<Content: View>: View {
                 .background(GeometryReader { g in
                     Color.clear
                         .onAppear { size = g.size; report(g.frame(in: .global)) }
-                        .onChange(of: g.size) { size = $0 }
+                        .onChange(of: g.size) { newSize in
+                            // 内容变大变小（小唱片长按展开成长条）：按新尺寸重新贴边，别伸到屏幕外
+                            size = newSize
+                            if let c = center {
+                                withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                                    center = snapped(c, bounds: bounds, safe: safe)
+                                }
+                            }
+                        }
                         .onChange(of: g.frame(in: .global)) { report($0) }
                 })
                 .position(center ?? restingPoint(bounds: bounds, safe: safe))

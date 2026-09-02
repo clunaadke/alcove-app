@@ -3828,43 +3828,58 @@ struct ListenBoardCard: View {
 /// 0902 她要的小唱片：整个 app 唯一一种「歌在放」的收起态。
 /// 圆封面像唱片一样转（放歌时 8 秒一圈，暂停停住），外圈一圈进度环，中心一个小孔；
 /// 右下角一颗小播放/暂停键；一起听开着时左上角一个小「俩」标。
-/// 点唱片：一起听开着 → 大卡回来；没开 → 直接进播放器（打字框上方那条迷你条从此退休）。
+/// 点唱片：一起听开着且在主聊天 → 大卡回来；否则 → 从**这一层浮窗**弹出播放器
+///   （0902 她抓的：播放器挂在主聊天那层弹，会把盖在上面的工作室页顶掉；浮窗永远在最上面，在哪都不顶谁）。
+/// 长按：展开成小长条（进度条 + 上一首/暂停/下一首），三秒没碰自己缩回唱片。
 struct ListenRecordPill: View {
     @ObservedObject var model: MusicModel
-    let onTap: () -> Void
+    /// 一起听开着时点唱片能不能把大卡叫回来（只有主聊天页露着的时候能）
+    var canRestoreCard: () -> Bool = { false }
+    var restoreCard: () -> Void = {}
+
     @State private var angle: Double = 0
+    @State private var expanded = false
+    @State private var showPlayer = false
+    @State private var collapseTask: Task<Void, Never>?
     private let size: CGFloat = 62
     private let ticker = Timer.publish(every: 1.0 / 30.0, on: .main, in: .common).autoconnect()
 
     var body: some View {
+        Group {
+            if expanded { strip } else { disc }
+        }
+        .onReceive(ticker) { _ in
+            guard model.isPlaying else { return }
+            angle += 360.0 / (8.0 * 30.0)
+            if angle >= 360 { angle -= 360 }
+        }
+        .sheet(isPresented: $showPlayer) {
+            MusicPlayerSheet(model: model)
+                .presentationDetents([.fraction(0.75)])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(.ultraThinMaterial)
+                .onAppear { FloatingOverlayWindow.passAll = true }
+                .onDisappear { FloatingOverlayWindow.passAll = false }
+        }
+    }
+
+    // MARK: 唱片
+
+    private var disc: some View {
         ZStack {
-            // 进度环
             Circle().stroke(Color.white.opacity(0.35), lineWidth: 2.5)
             Circle()
-                .trim(from: 0, to: CGFloat(model.duration > 0 ? min(1, model.progress / model.duration) : 0))
+                .trim(from: 0, to: progressFraction)
                 .stroke(Color.white, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
                 .rotationEffect(.degrees(-90))
-            // 唱片：封面 + 中心小孔
-            ZStack {
-                if let cover = model.nowPlaying?.cover, let url = MusicModel.artworkURL(cover) {
-                    AsyncImage(url: url) { image in
-                        image.resizable().scaledToFill()
-                    } placeholder: { Color.black.opacity(0.35) }
-                } else {
-                    Color.black.opacity(0.35)
-                }
-                Circle().fill(Color.black.opacity(0.55)).frame(width: 10, height: 10)
-                Circle().stroke(Color.white.opacity(0.6), lineWidth: 1).frame(width: 10, height: 10)
-            }
-            .frame(width: size - 10, height: size - 10)
-            .clipShape(Circle())
-            .rotationEffect(.degrees(angle))
+            record(diameter: size - 10)
         }
         .frame(width: size, height: size)
         .background(Circle().fill(Color.black.opacity(0.28)))
         .shadow(color: .black.opacity(0.3), radius: 6, y: 3)
         .contentShape(Circle())
-        .onTapGesture(perform: onTap)
+        .onTapGesture(perform: tapped)
+        .onLongPressGesture(minimumDuration: 0.4) { expand() }
         .overlay(alignment: .bottomTrailing) {
             Button { model.toggle() } label: {
                 Image(systemName: model.isPlaying ? "pause.fill" : "play.fill")
@@ -3888,10 +3903,93 @@ struct ListenRecordPill: View {
                     .offset(x: -3, y: -3)
             }
         }
-        .onReceive(ticker) { _ in
-            guard model.isPlaying else { return }
-            angle += 360.0 / (8.0 * 30.0)
-            if angle >= 360 { angle -= 360 }
+    }
+
+    /// 转着的封面 + 中心小孔
+    private func record(diameter: CGFloat) -> some View {
+        ZStack {
+            if let cover = model.nowPlaying?.cover, let url = MusicModel.artworkURL(cover) {
+                AsyncImage(url: url) { image in
+                    image.resizable().scaledToFill()
+                } placeholder: { Color.black.opacity(0.35) }
+            } else {
+                Color.black.opacity(0.35)
+            }
+            Circle().fill(Color.black.opacity(0.55)).frame(width: diameter * 0.19, height: diameter * 0.19)
+            Circle().stroke(Color.white.opacity(0.6), lineWidth: 1).frame(width: diameter * 0.19, height: diameter * 0.19)
+        }
+        .frame(width: diameter, height: diameter)
+        .clipShape(Circle())
+        .rotationEffect(.degrees(angle))
+    }
+
+    private var progressFraction: CGFloat {
+        CGFloat(model.duration > 0 ? min(1, model.progress / model.duration) : 0)
+    }
+
+    // MARK: 长按展开的小长条
+
+    private var strip: some View {
+        HStack(spacing: 10) {
+            record(diameter: 40)
+                .onTapGesture(perform: tapped)
+            VStack(spacing: 6) {
+                if let song = model.nowPlaying {
+                    Text(song.name)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(.white)
+                        .lineLimit(1)
+                }
+                Slider(value: Binding(get: { model.progress }, set: { model.seek(to: $0); bump() }),
+                       in: 0...max(model.duration, 1)) { editing in
+                    if editing { collapseTask?.cancel() } else { bump() }
+                }
+                .tint(.white)
+                .scaleEffect(y: 0.7)
+                HStack(spacing: 22) {
+                    Button { model.prev(); bump() } label: { Image(systemName: "backward.fill") }
+                    Button { model.toggle(); bump() } label: {
+                        Image(systemName: model.isPlaying ? "pause.fill" : "play.fill")
+                    }
+                    Button { model.next(); bump() } label: { Image(systemName: "forward.fill") }
+                }
+                .font(.system(size: 15))
+                .foregroundColor(.white)
+                .buttonStyle(.plain)
+            }
+            .frame(width: 150)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(Capsule().fill(Color.black.opacity(0.62)))
+        .background(.ultraThinMaterial, in: Capsule())
+        .overlay(Capsule().stroke(Color.white.opacity(0.35), lineWidth: 1))
+        .shadow(color: .black.opacity(0.3), radius: 8, y: 3)
+        .transition(.scale(scale: 0.6).combined(with: .opacity))
+    }
+
+    // MARK: 行为
+
+    private func tapped() {
+        if model.togetherOn && canRestoreCard() {
+            restoreCard()
+        } else {
+            showPlayer = true
+        }
+    }
+
+    private func expand() {
+        withAnimation(.spring(response: 0.32, dampingFraction: 0.8)) { expanded = true }
+        bump()
+    }
+
+    /// 每碰一下重新数三秒，三秒没碰缩回唱片
+    private func bump() {
+        collapseTask?.cancel()
+        collapseTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            guard !Task.isCancelled else { return }
+            withAnimation(.spring(response: 0.32, dampingFraction: 0.8)) { expanded = false }
         }
     }
 }

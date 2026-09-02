@@ -475,13 +475,13 @@ struct RootView: View {
         if show {
             FloatingOverlay.shared.show(id: "listen") {
                 FloatingDock(id: "listen", defaultY: 230) {
-                    ListenRecordPill(model: listenMusic) {
-                        if listenMusic.togetherOn {
-                            withAnimation(.easeOut(duration: 0.22)) { listenMinimized = false }
-                        } else {
-                            showChatPlayer = true
-                        }
-                    }
+                    // 只有主聊天页露着（没盖工作室/共读室那些整页）时，点唱片才把大卡叫回来；
+                    // 否则播放器由唱片自己那层浮窗弹，不顶掉正在看的页
+                    ListenRecordPill(model: listenMusic,
+                                     canRestoreCard: { housePage == nil && !showTerminal && !showRoundtable },
+                                     restoreCard: {
+                                         withAnimation(.easeOut(duration: 0.22)) { listenMinimized = false }
+                                     })
                 }
             }
         } else {
