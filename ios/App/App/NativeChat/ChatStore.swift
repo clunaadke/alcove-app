@@ -709,6 +709,14 @@ final class ChatStore: ObservableObject {
             if out.contains(where: { $0.ts == rec.ts && $0.role == rec.role && $0.text == rec.text }) {
                 continue
             }
+            // 0903 她抓的：他出题她抽满以后，服务端把那条 [TAROT_OFFER] 卡的正文改成了抽好的样子，
+            // 再拉一遍时上面那条「时间 + 内容」认不出来，就被当成新的又追加了一张。
+            // 卡片类消息（[XXX_CARD]…这种带标记的）同时间同角色就是同一条，内容变了 = 服务端改了，替换不追加。
+            if rec.text.hasPrefix("["),
+               let idx = out.firstIndex(where: { !$0.pending && $0.ts == rec.ts && $0.role == rec.role && $0.text.hasPrefix("[") }) {
+                out[idx] = rec
+                continue
+            }
             // 0819 她报的：发一张图出来两张。乐观插入用的是本地时间戳，
             // poll 回来是服务器时间戳，上面那条 ts 相等永远不成立。
             // 图按附件路径、表情按 sticker_id 再认一次，认出来是替换不是丢弃。
