@@ -216,7 +216,10 @@ final class CallSessionModel: NSObject, ObservableObject, AVAudioPlayerDelegate 
     private func refreshTurns() async {
         guard !closed, !callID.isEmpty else { return }
         guard let fresh = try? await AlcoveAPI.callHistory(callID: callID) else { return }
-        if fresh.count != turns.count { turns = fresh }
+        // 0902 她报的「他的声音总慢一拍」：他那句的文字先落库、声音晚两三秒才回填地址，
+        // 条数没变。以前只比条数，回填的地址永远看不见，要等他下一句条数变了才整份重拿。
+        // 改成内容不同就更新（CallTurn 是 Equatable），声音一到就能响。
+        if fresh != turns { turns = fresh }
         prefetchAudio()
         pump()
     }
