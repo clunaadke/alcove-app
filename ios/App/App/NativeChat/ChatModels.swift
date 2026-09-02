@@ -368,11 +368,39 @@ struct TarotAskCard: Decodable, Equatable {
     let cards: [Card]
     /// 谁抽的：her / him（0903 凌晨陈璟也能自己抽了）
     let by: String?
+    /// 客观解读（服务端查表拼的，0903）
+    let interp: TarotInterpCard?
     enum CodingKeys: String, CodingKey {
-        case id, ts, spread, question, cards, by
+        case id, ts, spread, question, cards, by, interp
         case spreadName = "spread_name"
     }
     var byHim: Bool { by == "him" }
+}
+
+/// 聊天卡里那段客观解读（tarot_reading.build 的输出，只取要画的字段）
+struct TarotInterpCard: Decodable, Equatable {
+    struct Card: Decodable, Equatable, Identifiable {
+        let id: String
+        let name: String
+        let reversed: Bool
+        let positionName: String
+        let text: String
+        let advice: String
+        enum CodingKeys: String, CodingKey {
+            case id, name, reversed, text, advice
+            case positionName = "position_name"
+        }
+    }
+    let categoryName: String
+    let overall: String
+    let cards: [Card]
+    let relations: [String]
+    let advice: [String]
+    let oneline: String
+    enum CodingKeys: String, CodingKey {
+        case overall, cards, relations, advice, oneline
+        case categoryName = "category_name"
+    }
 }
 
 /// 0903 凌晨她要的：陈璟出题、她在聊天页自己抽（tarot.offer_card）。cards 抽满就 done
@@ -390,8 +418,9 @@ struct TarotOfferCard: Decodable, Equatable {
     let positions: [Position]
     let cards: [TarotAskCard.Card]
     let done: Bool
+    let interp: TarotInterpCard?
     enum CodingKeys: String, CodingKey {
-        case id, ts, spread, question, positions, cards, done
+        case id, ts, spread, question, positions, cards, done, interp
         case spreadName = "spread_name"
     }
 }

@@ -83,6 +83,72 @@ struct TarotDrawn: Identifiable, Hashable {
     var json: [String: Any] { ["id": cardID, "reversed": reversed, "position": position] }
 }
 
+/// 客观解读（0903 她要的：不认识她、只看牌的那份。服务端 tarot_reading.build 查表拼的，免费）
+struct TarotInterp: Hashable {
+    struct Card: Hashable, Identifiable {
+        let id: String
+        let name: String
+        let reversed: Bool
+        let positionName: String
+        let intro: String
+        let nature: String
+        let text: String
+        let advice: String
+    }
+    let category: String
+    let categoryName: String
+    let overall: String
+    let cards: [Card]
+    let relations: [String]
+    let advice: [String]
+    let oneline: String
+
+    init?(json: [String: Any]?) {
+        guard let json, let overall = json["overall"] as? String else { return nil }
+        category = json["category"] as? String ?? "daily"
+        categoryName = json["category_name"] as? String ?? "日常"
+        self.overall = overall
+        cards = (json["cards"] as? [[String: Any]] ?? []).compactMap { c in
+            guard let id = c["id"] as? String else { return nil }
+            return Card(id: id, name: c["name"] as? String ?? id, reversed: c["reversed"] as? Bool ?? false,
+                        positionName: c["position_name"] as? String ?? "", intro: c["intro"] as? String ?? "",
+                        nature: c["nature"] as? String ?? "", text: c["text"] as? String ?? "",
+                        advice: c["advice"] as? String ?? "")
+        }
+        relations = json["relations"] as? [String] ?? []
+        advice = json["advice"] as? [String] ?? []
+        oneline = json["oneline"] as? String ?? ""
+    }
+}
+
+/// AI 细解（0903：她很想了解的时候按一下，DeepSeek 写的，存过一次就不再花钱）
+struct TarotAI: Hashable {
+    struct Card: Hashable, Identifiable {
+        let name: String
+        let reading: String
+        var id: String { name + "|" + reading.prefix(12) }
+    }
+    let category: String
+    let overall: String
+    let cards: [Card]
+    let relations: String
+    let advice: String
+    let oneline: String
+
+    init?(json: [String: Any]?) {
+        guard let json, let overall = json["overall"] as? String else { return nil }
+        category = json["category"] as? String ?? ""
+        self.overall = overall
+        cards = (json["cards"] as? [[String: Any]] ?? []).compactMap { c in
+            guard let n = c["name"] as? String else { return nil }
+            return Card(name: n, reading: c["reading"] as? String ?? "")
+        }
+        relations = json["relations"] as? String ?? ""
+        advice = json["advice"] as? String ?? ""
+        oneline = json["oneline"] as? String ?? ""
+    }
+}
+
 struct TarotReading: Identifiable, Hashable {
     let id: String
     let ts: String
@@ -95,6 +161,9 @@ struct TarotReading: Identifiable, Hashable {
     /// 谁出的题：'' / him（他出题、她在聊天页抽的那种）
     let askedBy: String
 
+    /// 客观解读，服务端一起给
+    let interp: TarotInterp?
+
     var byHim: Bool { by == "him" }
     var askedByHim: Bool { askedBy == "him" }
 
@@ -106,6 +175,7 @@ struct TarotReading: Identifiable, Hashable {
         question = json["question"] as? String ?? ""
         by = json["by"] as? String ?? "her"
         askedBy = json["asked_by"] as? String ?? ""
+        interp = TarotInterp(json: json["interp"] as? [String: Any])
         cards = (json["cards"] as? [[String: Any]] ?? []).compactMap { c in
             guard let cid = c["id"] as? String else { return nil }
             return TarotDrawn(cardID: cid, reversed: c["reversed"] as? Bool ?? false,
@@ -169,6 +239,30 @@ final class TarotStore: ObservableObject {
               obj["ok"] as? Bool == true else { return (false, false) }
         if let i = readings.firstIndex(where: { $0.id == id }) { readings[i].asked = true }
         return (true, obj["asleep"] as? Bool ?? false)
+    }
+
+    /// 换一种问题类型重算客观解读（不存，拿着就行）
+    func interp(_ id: String, category: String?) async -> TarotInterp? {
+        var body: [String: Any] = ["id": id]
+        if let category { body["category"] = category }
+        guard let obj = try? await NativeHouseAPI.object("/api/tarot/interp", method: "POST", body: body) else { return nil }
+        return TarotInterp(json: obj["interp"] as? [String: Any])
+    }
+
+    func aiCached(_ id: String) async -> TarotAI? {
+        guard let obj = try? await NativeHouseAPI.object("/api/tarot/ai?id=\(id)") else { return nil }
+        return TarotAI(json: obj["ai"] as? [String: Any])
+    }
+
+    /// AI 细解：生成（或拿缓存）。返回 (结果, 错误话)
+    func ai(_ id: String, category: String?, force: Bool = false) async -> (TarotAI?, String) {
+        var body: [String: Any] = ["id": id, "force": force]
+        if let category { body["category"] = category }
+        guard let obj = try? await NativeHouseAPI.objectIncludingHTTPError("/api/tarot/ai", method: "POST", body: body) else {
+            return (nil, "没连上，网络不给力")
+        }
+        guard obj["ok"] as? Bool == true else { return (nil, (obj["error"] as? String).map { "AI 没写出来：" + $0 } ?? "AI 没写出来") }
+        return (TarotAI(json: obj["ai"] as? [String: Any]), "")
     }
 
     func delete(_ id: String) async {
@@ -1314,8 +1408,23 @@ struct TarotReadingView: View {
     @State private var asking = false
     @State private var asked = false
     @State private var saving = false
+    /// 客观解读：进来用服务端给的；她点了别的类型就重算
+    @State private var interp: TarotInterp?
+    @State private var category: String?
+    @State private var interpBusy = false
+    /// AI 细解
+    @State private var ai: TarotAI?
+    @State private var aiBusy = false
+    @State private var aiError = ""
 
     private var spread: TarotSpread? { store.spread(reading.spread) }
+    private var shownInterp: TarotInterp? { interp ?? reading.interp }
+
+    private struct Category: Identifiable { let id: String; let name: String }
+    private static let categories: [Category] = [
+        Category(id: "love", name: "感情"), Category(id: "work", name: "事業"),
+        Category(id: "self", name: "自我"), Category(id: "daily", name: "日常"),
+    ]
 
     /// 0902 深夜她要的：把这次占卜画成一张竖长票存进相册（TarotTicketView 用 ImageRenderer 出图）
     private func saveTicket() {
@@ -1390,6 +1499,11 @@ struct TarotReadingView: View {
                     cardBlock(d)
                 }
 
+                if let ip = shownInterp {
+                    interpBlock(ip)
+                }
+                aiBlock
+
                 Button {
                     guard !asking, !asked, !reading.asked else { return }
                     asking = true
@@ -1442,6 +1556,138 @@ struct TarotReadingView: View {
             .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(TarotInk.glass))
             .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .stroke(TarotInk.glassLine, lineWidth: 1))
+    }
+
+    // MARK: 客观解读（查表拼的）
+
+    private func interpBlock(_ ip: TarotInterp) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Text("客觀解讀").font(.tarotHand(13)).tracking(1).foregroundColor(TarotInk.gold)
+                Spacer()
+                if interpBusy { ProgressView().controlSize(.mini).tint(TarotInk.dim) }
+            }
+            // 问题类型：不点 = 服务端按问题猜的那种
+            HStack(spacing: 6) {
+                ForEach(Self.categories) { c in
+                    let on = (category ?? ip.category) == c.id
+                    Button {
+                        guard !interpBusy else { return }
+                        category = c.id
+                        interpBusy = true
+                        Task {
+                            if let fresh = await store.interp(reading.id, category: c.id) { interp = fresh }
+                            interpBusy = false
+                        }
+                    } label: {
+                        Text(c.name).font(.tarotHand(11))
+                            .foregroundColor(on ? TarotInk.ink : TarotInk.dim)
+                            .padding(.horizontal, 10).padding(.vertical, 5)
+                            .background(Capsule().fill(on ? TarotInk.pill : Color.clear))
+                            .overlay(Capsule().stroke(on ? TarotInk.gold.opacity(0.7) : TarotInk.glassLine, lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                }
+                Spacer()
+            }
+            para("整體印象", ip.overall)
+            ForEach(ip.cards) { c in
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(spacing: 6) {
+                        if ip.cards.count > 1 && !c.positionName.isEmpty {
+                            Text(c.positionName).font(.system(size: 10.5, weight: .semibold)).foregroundColor(TarotInk.gold)
+                        }
+                        Text(c.name).font(.system(size: 14, weight: .medium, design: .serif)).foregroundColor(TarotInk.ink)
+                        Text(c.reversed ? "逆位" : "正位").font(.system(size: 10)).foregroundColor(c.reversed ? TarotInk.gold : TarotInk.tint)
+                    }
+                    Text(c.intro).font(.system(size: 11)).foregroundColor(TarotInk.faint)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(c.text).font(.system(size: 13, design: .serif)).foregroundColor(TarotInk.ink).lineSpacing(4)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if !c.advice.isEmpty {
+                        Text("→ " + c.advice).font(.system(size: 12)).foregroundColor(TarotInk.dim)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+            if !ip.relations.isEmpty { para("牌面關係", ip.relations.joined(separator: "\n")) }
+            if !ip.advice.isEmpty { para("建議", ip.advice.map { "· " + $0 }.joined(separator: "\n")) }
+            para("一句話", ip.oneline)
+        }
+        .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+        .background(glass)
+    }
+
+    private func para(_ title: String, _ body: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title).font(.tarotHand(11)).tracking(1.5).foregroundColor(TarotInk.gold.opacity(0.8))
+            Text(body).font(.system(size: 13, design: .serif)).foregroundColor(TarotInk.ink).lineSpacing(4)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    // MARK: AI 细解（按需，两三分钱一次，存过就不再花）
+
+    private var aiBlock: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Text("AI 細解").font(.tarotHand(13)).tracking(1).foregroundColor(TarotInk.gold)
+                Spacer()
+                if ai != nil {
+                    Button { runAI(force: true) } label: {
+                        Text(aiBusy ? "寫著…" : "重寫").font(.tarotHand(11)).foregroundColor(TarotInk.dim)
+                    }
+                    .buttonStyle(.plain).disabled(aiBusy)
+                }
+            }
+            if let a = ai {
+                para("整體印象", a.overall)
+                ForEach(a.cards) { c in
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(c.name).font(.system(size: 14, weight: .medium, design: .serif)).foregroundColor(TarotInk.ink)
+                        Text(c.reading).font(.system(size: 13, design: .serif)).foregroundColor(TarotInk.ink).lineSpacing(4)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                if !a.relations.isEmpty { para("牌面關係", a.relations) }
+                if !a.advice.isEmpty { para("建議", a.advice) }
+                if !a.oneline.isEmpty { para("一句話", a.oneline) }
+            } else {
+                Text("很想深挖的时候再按。一个不认识你的塔罗师，只看牌，写得很细。一次两三分钱，写过就存着。")
+                    .font(.system(size: 11.5)).foregroundColor(TarotInk.dim)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button { runAI(force: false) } label: {
+                    HStack(spacing: 8) {
+                        if aiBusy { ProgressView().controlSize(.small).tint(TarotInk.ink) }
+                        Text(aiBusy ? "寫著，要半分鐘…" : "讓 AI 細解")
+                    }
+                    .font(.tarotHand(14))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 11)
+                    .tarotGlassButton(prominent: false)
+                }
+                .buttonStyle(.plain).disabled(aiBusy)
+            }
+            if !aiError.isEmpty {
+                Text(aiError).font(.system(size: 11)).foregroundColor(TarotInk.gold)
+            }
+        }
+        .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+        .background(glass)
+        .task {
+            if ai == nil, let hit = await store.aiCached(reading.id) { ai = hit }
+        }
+    }
+
+    private func runAI(force: Bool) {
+        guard !aiBusy else { return }
+        aiBusy = true
+        aiError = ""
+        Task {
+            let (res, err) = await store.ai(reading.id, category: category ?? shownInterp?.category, force: force)
+            aiBusy = false
+            if let res { ai = res } else { aiError = err }
+        }
     }
 
     private func cardBlock(_ d: TarotDrawn) -> some View {
@@ -1953,6 +2199,16 @@ struct TarotTicketView: View {
                             .multilineTextAlignment(.center).lineSpacing(3)
                             .padding(.horizontal, 26)
                     }
+                }
+            }
+            if let ip = reading.interp {
+                Rectangle().fill(TarotInk.glassLine).frame(height: 1).padding(.horizontal, 40)
+                VStack(spacing: 8) {
+                    Text("客觀解讀 · \(ip.categoryName)").font(.tarotHand(10)).tracking(2).foregroundColor(TarotInk.gold.opacity(0.8))
+                    Text(ip.overall).font(.system(size: 12, design: .serif)).foregroundColor(TarotInk.ink)
+                        .multilineTextAlignment(.center).lineSpacing(3).padding(.horizontal, 26)
+                    Text(ip.oneline).font(.system(size: 12, weight: .medium, design: .serif)).foregroundColor(TarotInk.gold)
+                        .multilineTextAlignment(.center).padding(.horizontal, 26)
                 }
             }
             Text("ALCOVE · TAROT").font(.tarotHand(9)).tracking(3).foregroundColor(TarotInk.faint)

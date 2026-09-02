@@ -3795,9 +3795,59 @@ private struct TarotMessageCard: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             TarotChatBits.facesBlock(cards: card.cards, theme: theme)
+            if let interp = card.interp {
+                TarotInterpBlock(interp: interp, theme: theme)
+            }
         }.padding(14).frame(maxWidth: 315, alignment: .leading)
             .background(theme.fyCard.opacity(0.95), in: RoundedRectangle(cornerRadius: 18))
             .overlay(RoundedRectangle(cornerRadius: 18).stroke(theme.fyAccent.opacity(0.38), lineWidth: 0.8))
+    }
+}
+
+/// 0903 她要的：卡里带一段客观解读（查表拼的，陈璟那边读到的是同一段）。默认只露整体 + 一句话，点开看逐牌
+private struct TarotInterpBlock: View {
+    let interp: TarotInterpCard
+    let theme: AlcoveTheme
+    @State private var expanded = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("客观解读 · 按\(interp.categoryName)").font(.system(size: 9.5, weight: .semibold)).tracking(0.5)
+                    .foregroundColor(theme.fyAccent)
+                Spacer()
+                Button(expanded ? "收起" : "逐牌") { withAnimation(.easeInOut(duration: 0.2)) { expanded.toggle() } }
+                    .font(.system(size: 9.5, weight: .semibold)).foregroundColor(theme.fyAccent)
+            }
+            Text(interp.overall).font(.system(size: 11.5, design: .serif)).lineSpacing(3)
+                .fixedSize(horizontal: false, vertical: true)
+            if expanded {
+                ForEach(interp.cards) { c in
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text((c.positionName.isEmpty || interp.cards.count == 1 ? "" : c.positionName + " · ")
+                             + c.name + (c.reversed ? " 逆位" : " 正位"))
+                            .font(.system(size: 11, weight: .semibold, design: .serif))
+                        Text(c.text).font(.system(size: 11, design: .serif)).lineSpacing(3)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                if !interp.relations.isEmpty {
+                    Text("牌面关系：" + interp.relations.joined(separator: " "))
+                        .font(.system(size: 11, design: .serif)).lineSpacing(3).foregroundColor(theme.textDim)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if !interp.advice.isEmpty {
+                    Text("建议：" + interp.advice.joined(separator: " "))
+                        .font(.system(size: 11, design: .serif)).lineSpacing(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Text(interp.oneline).font(.system(size: 11, weight: .medium, design: .serif))
+                .foregroundColor(theme.fyAccent)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(10).frame(maxWidth: .infinity, alignment: .leading)
+        .background(theme.fyCardSub.opacity(0.58), in: RoundedRectangle(cornerRadius: 12))
     }
 }
 
@@ -3867,6 +3917,8 @@ private struct TarotOfferMessageCard: View {
     @State private var busy = false
     @State private var error = ""
     @State private var finished = false
+    /// 抽满那一下服务端一起回来的客观解读（重进以后走 card.interp）
+    @State private var interpLocal: TarotInterpCard?
 
     private var cards: [TarotAskCard.Card] { drawn.isEmpty ? card.cards : drawn }
     private var done: Bool { card.done || finished || cards.count >= card.positions.count }
@@ -3889,6 +3941,9 @@ private struct TarotOfferMessageCard: View {
             }
             if done {
                 TarotChatBits.facesBlock(cards: cards, theme: theme)
+                if let interp = card.interp ?? interpLocal {
+                    TarotInterpBlock(interp: interp, theme: theme)
+                }
             } else {
                 drawArea
             }
@@ -4001,6 +4056,11 @@ private struct TarotOfferMessageCard: View {
                 position: pos.key, positionName: pos.name,
                 keywords: store.card(id)?.keywords(reversed: pick.reversed) ?? [])
             let isDone = obj["done"] as? Bool ?? false
+            if isDone, let raw = (obj["offer"] as? [String: Any])?["interp"],
+               let data = try? JSONSerialization.data(withJSONObject: raw),
+               let parsed = try? JSONDecoder().decode(TarotInterpCard.self, from: data) {
+                interpLocal = parsed
+            }
             deck.remove(at: index)
             flip = 0
             bigScale = 0.4
