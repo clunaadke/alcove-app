@@ -23,6 +23,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
     case home, profile, activityRoom, calendar, digest, wall, usage, workbench, studio
     case memory, dreams, shelf, fiction, nianlun, clockwork, album, portrait, impression, morningPaper, nowhere, pulse
     case pond
+    case tarot          // 0902 占星室（塔罗）
     case roof
     case factory
     case crosstalk, radio, coread, cowatch, liao, daddyDay, lab, qipai
@@ -54,6 +55,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .fiction: return "书房"
         case .nianlun: return "年轮"
         case .pond: return "檐下"
+        case .tarot: return "占星室"
         case .roof: return "檐上"
         case .factory: return "出厂设置"
         case .clockwork: return "发条"
@@ -84,7 +86,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
     var ownsFullScreen: Bool {
         switch self {
         case .studio, .pond, .roof, .memory, .digest, .factory, .search, .favorites, .surf,
-             .settings, .letterbox, .qipai: return true
+             .settings, .letterbox, .qipai, .tarot: return true
         default: return false
         }
     }
@@ -112,6 +114,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .fiction: return "books.vertical"
         case .nianlun: return "circle.hexagongrid"
         case .pond: return "drop.circle"
+        case .tarot: return "sparkles"
         case .roof: return "pawprint.circle"
         case .factory: return "slider.horizontal.3"
         case .clockwork: return "clock.arrow.circlepath"
@@ -279,6 +282,8 @@ struct NativeHouseSheet: View {
                     NativeOBLettersView()
                 case .pond:
                     NativePondView()
+                case .tarot:
+                    TarotRoomView()
                 case .roof:
                     NativeRoofView()
                 case .factory:
@@ -736,6 +741,7 @@ struct NativeHouseDrawer: View {
         case .surf: return "X、小红书、B站与 YouTube"
         case .cowatch: return "一起看 B站与 YouTube"
         case .qipai: return "斗地主、炸金花与 UNO"
+        case .tarot: return "抽一张牌，让他解"
         case .wall: return model.wallLine
         case .usage: return model.usageLine
         default: return "打开"
@@ -762,7 +768,7 @@ private struct NativeSidebarView: View {
     private var theme: AlcoveTheme { .panelNamed(themeName) }
 
     private let foyer: [HouseDestination] = [
-        .memory, .dreams, .shelf, .pond, .nianlun, .clockwork, .album, .portrait,
+        .memory, .dreams, .tarot, .shelf, .pond, .nianlun, .clockwork, .album, .portrait,
         .impression, .morningPaper, .nowhere, .pulse
     ]
     // Pipe Lab remains compiled for rollback, but the -p experiment is paused and
