@@ -357,9 +357,9 @@ final class ChatStore: ObservableObject {
                 let older = try await AlcoveAPI.history(before: first.ts, limit: 300)
                 if older.count < 300 { hasOlder = false }
                 let existing = Set(messages.map(\.ts))
-                messages.insert(contentsOf: older.filter {
-                    !existing.contains($0.ts) && !temporarilyHiddenMessageTs.contains($0.ts)
-                }, at: 0)
+                messages.insert(contentsOf: applyTemporaryHides(older.filter {
+                    !existing.contains($0.ts)
+                }), at: 0)
             } catch { connectionError = true }
         }
     }
@@ -367,7 +367,7 @@ final class ChatStore: ObservableObject {
     func loadAround(_ ts: String) async {
         do {
             let page = try await AlcoveAPI.history(around: ts)
-            messages = page.filter { !temporarilyHiddenMessageTs.contains($0.ts) }
+            messages = applyTemporaryHides(page)
             hasOlder = true
             isViewingHistory = true
         } catch { connectionError = true }
@@ -376,7 +376,7 @@ final class ChatStore: ObservableObject {
     func returnToLatest() async {
         do {
             let recs = try await AlcoveAPI.history(limit: 300)
-            messages = recs.filter { !temporarilyHiddenMessageTs.contains($0.ts) }
+            messages = applyTemporaryHides(recs)
             lastTs = recs.last?.ts
             hasOlder = recs.count >= 300
             isViewingHistory = false
@@ -841,9 +841,27 @@ final class ChatStore: ObservableObject {
 
     /// 多选工具栏的“删除”只是这次浏览里收起来；不写后端，刷新或重进后恢复。
     func hideMessagesTemporarily(_ selected: [ChatMessage]) {
-        let ids = Set(selected.map(\.uid))
         temporarilyHiddenMessageTs.formUnion(selected.map(\.ts))
-        messages.removeAll { ids.contains($0.uid) }
+        messages = applyTemporaryHides(messages)
+    }
+
+    /// 0904 她定的：思绪不跟着气泡走。多选删除只收正文；这条身上挂着思绪或
+    /// 时间线（0820 之后的 segments / activity）的，留一个空壳把过程线画在原地。
+    /// 思绪自己有隐藏开关，想不看就用那个。
+    private func carriesProcess(_ m: ChatMessage) -> Bool {
+        !(m.thinking ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !m.segments.isEmpty || !m.activity.isEmpty
+    }
+
+    private func applyTemporaryHides(_ recs: [ChatMessage]) -> [ChatMessage] {
+        recs.compactMap { m in
+            guard temporarilyHiddenMessageTs.contains(m.ts) else { return m }
+            guard carriesProcess(m) else { return nil }
+            var shell = m
+            shell.text = ""
+            shell.inlineImages = []
+            return shell
+        }
     }
 
     /// 0819 她要的：多选几条就收成一段聊天记录（收藏页点开逐条排），
