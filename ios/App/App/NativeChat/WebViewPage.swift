@@ -5,6 +5,8 @@ extension Notification.Name {
     static let alcoveShowPermissions = Notification.Name("alcoveShowPermissions")
     static let alcoveJumpToMessage = Notification.Name("alcoveJumpToMessage")
     static let alcoveRequestJumpToMessage = Notification.Name("alcoveRequestJumpToMessage")
+    // 0904 长卡片（晨报 / Inside）收起后把那条消息滚回屏幕中间，object 是 ChatMessage.id（UUID）
+    static let alcoveRecenterMessage = Notification.Name("alcoveRecenterMessage")
 }
 
 // 常驻共享 WebView：app 启动就后台加载 PWA，按钮点开秒进对应页面，

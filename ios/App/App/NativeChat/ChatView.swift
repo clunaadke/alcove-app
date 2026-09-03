@@ -459,6 +459,17 @@ struct ChatView: View {
                     scrollToTail(proxy, delays: [0.18], animated: false)
                 }
             }
+            // 0904 她报的：晨报 / Inside 卡展开几屏再收起，内容一帧缩没，滚动位置还停在空处，页面白掉要拉很久。
+            // 卡收起时发这个通知，等布局落稳后无动画把那张卡拉回屏幕中间；跑两次是给 LazyVStack 重排一个机会。
+            .onReceive(NotificationCenter.default.publisher(for: .alcoveRecenterMessage)) { note in
+                guard let id = note.object as? UUID else { return }
+                for delay in [0.05, 0.3] {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                        var t = Transaction(); t.disablesAnimations = true
+                        withTransaction(t) { proxy.scrollTo(id, anchor: .center) }
+                    }
+                }
+            }
             .onReceive(NotificationCenter.default.publisher(for: .alcoveJumpToMessage)) { note in
                 guard let ts = note.object as? String else { return }
                 Task {
@@ -2651,9 +2662,9 @@ struct MessageRow: View {
                     }
                 }
                 if let paperDate = msg.morningPaperDate {
-                    MorningPaperMessageCard(date: paperDate, theme: theme)
+                    MorningPaperMessageCard(date: paperDate, theme: theme, messageID: msg.id)
                 } else if let inside = msg.insideText {
-                    InsideMessageCard(text: inside, date: msg.date, theme: theme)
+                    InsideMessageCard(text: inside, date: msg.date, theme: theme, messageID: msg.id)
                 } else if let ghost = msg.ghostCard {
                     GhostActivityMessageCard(card: ghost, theme: theme)
                 } else if let play = msg.playCard {
@@ -4209,13 +4220,23 @@ private struct InsideMessageCard: View {
     let text: String
     let date: Date
     let theme: AlcoveTheme
+    let messageID: UUID
     @State private var expanded = false
     private static let time: DateFormatter = {
         let value = DateFormatter(); value.dateFormat = "HH:mm"; return value
     }()
 
+    // 收起不做动画：几屏高的内容一帧撤掉，再让列表把这张卡拉回屏幕中间（见 .alcoveRecenterMessage）
+    private func collapse() {
+        var t = Transaction(); t.disablesAnimations = true
+        withTransaction(t) { expanded = false }
+        NotificationCenter.default.post(name: .alcoveRecenterMessage, object: messageID)
+    }
+
     var body: some View {
-        Button { withAnimation(.easeInOut(duration: 0.2)) { expanded.toggle() } } label: {
+        Button {
+            if expanded { collapse() } else { withAnimation(.easeInOut(duration: 0.2)) { expanded = true } }
+        } label: {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 7) {
                     Image(systemName: "quote.opening").font(.system(size: 12))
@@ -4244,7 +4265,15 @@ private struct InsideMessageCard: View {
 private struct MorningPaperMessageCard: View {
     let date: String
     let theme: AlcoveTheme
+    let messageID: UUID
     @State private var expanded = false
+
+    // 收起不做动画：整份晨报一帧撤掉，再让列表把这张卡拉回屏幕中间（见 .alcoveRecenterMessage）
+    private func collapse() {
+        var t = Transaction(); t.disablesAnimations = true
+        withTransaction(t) { expanded = false }
+        NotificationCenter.default.post(name: .alcoveRecenterMessage, object: messageID)
+    }
 
     private var dateLine: String {
         let input = DateFormatter(); input.locale = Locale(identifier: "en_US_POSIX")
@@ -4257,7 +4286,9 @@ private struct MorningPaperMessageCard: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Button { withAnimation(.easeInOut(duration: 0.24)) { expanded.toggle() } } label: {
+            Button {
+                if expanded { collapse() } else { withAnimation(.easeInOut(duration: 0.24)) { expanded = true } }
+            } label: {
                 HStack(spacing: 9) {
                     Image(systemName: "newspaper")
                         .font(.system(size: 12, weight: .medium))
@@ -4281,10 +4312,7 @@ private struct MorningPaperMessageCard: View {
                     .padding(.horizontal, 12)
                 NativeMorningPaperView(requestedDate: date, embedded: true)
                     .contentShape(Rectangle())
-                    .onTapGesture {
-                        withAnimation(.easeInOut(duration: 0.24)) { expanded = false }
-                    }
-                    .transition(.opacity.combined(with: .move(edge: .top)))
+                    .onTapGesture { collapse() }
             }
         }
         .foregroundColor(Color(red: 0.22, green: 0.20, blue: 0.18))
