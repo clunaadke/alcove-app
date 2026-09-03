@@ -31,8 +31,8 @@ struct QipaiLobbyView: View {
 
     /// 全屏页自己管安全区（灵动岛 0828 她抓的）——容器不给垫，从窗口拿
     private var safeTop: CGFloat {
-        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
-        let inset = scenes.flatMap(\.windows).first(where: { $0.isKeyWindow })?.safeAreaInsets.top ?? 0
+        // 0904：问 app 主窗，不问 key window（按住悬浮唱片时 key window 是那扇小窗，安全区为 0）
+        let inset = FloatingOverlay.appWindow()?.safeAreaInsets.top ?? 0
         return max(inset, 14)
     }
 

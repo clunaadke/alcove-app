@@ -482,8 +482,9 @@ struct NativeHouseDrawer: View {
     private var theme: AlcoveTheme { .named(themeName) }
 
     private var screenSafeInsets: UIEdgeInsets {
-        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
-        return scenes.flatMap(\.windows).first(where: { $0.isKeyWindow })?.safeAreaInsets ?? .zero
+        // 0904 她报的「拖唱片侧边栏往上跳」：唱片是独立小窗，按住它时 key window 就是那扇小窗，
+        // 安全区为 0。要问就问 app 主窗（appWindow 已把悬浮小窗排除）
+        FloatingOverlay.appWindow()?.safeAreaInsets ?? .zero
     }
 
     private var avatar: UIImage? {
@@ -6928,6 +6929,12 @@ private struct NativeStudioView: View {
                     }.padding(.horizontal, 15).padding(.bottom, 16)
                 }
                 .defaultScrollAnchor(.bottom)
+                // 0904 她报的「工作室键盘下不去，只有发一条才收」：往下滑列表跟手收，点列表任何地方也收
+                .scrollDismissesKeyboard(.interactively)
+                .simultaneousGesture(TapGesture().onEnded {
+                    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
+                                                    to: nil, from: nil, for: nil)
+                })
                 .onChange(of: messages.last?.int("id") ?? 0) { _ in
                     withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo("studio-tail", anchor: .bottom) }
                 }

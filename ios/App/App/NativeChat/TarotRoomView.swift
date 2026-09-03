@@ -898,9 +898,8 @@ struct TarotRoomView: View {
     /// 头得自己让开灵动岛。GeometryReader 在这里读到的是 0，去问 key window。
     /// ‼️这个坑这项目踩了 N 次（0901 麻将、0902 通话、0902 占星室），全屏房间第一件事就是它。
     private var safeTop: CGFloat {
-        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
-        let win = scenes.flatMap(\.windows).first { $0.isKeyWindow } ?? scenes.flatMap(\.windows).first
-        return win?.safeAreaInsets.top ?? 0
+        // 0904：问 app 主窗，不问 key window（按住悬浮唱片时 key window 是那扇小窗，安全区为 0）
+        return FloatingOverlay.appWindow()?.safeAreaInsets.top ?? 0
     }
 
     var body: some View {

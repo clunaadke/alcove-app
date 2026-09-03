@@ -408,7 +408,15 @@ struct ChatView: View {
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
+                // 0904：工作室那些整页盖在上面时弹的键盘不是我的，别跟着滚
+                guard AlcoveNotify.shared.chatVisible else { return }
                 scrollToTail(proxy, delays: [0, 0.12, 0.3], animated: true)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .alcoveHouseClosed)) { _ in
+                // 0904 她报的：整页盖着时键盘把列表撑高又收走，我不在屏幕上没跟着回落。
+                // 回来时本来就在底部的话，无动画校正回底；她在翻历史就不动
+                guard atBottom else { return }
+                scrollToTail(proxy, delays: [0.05, 0.4], animated: false)
             }
             .onChange(of: store.messages.count) { _ in
                 // loadAround replaces the latest page with an old 240-row window.

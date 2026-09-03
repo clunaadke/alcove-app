@@ -201,6 +201,13 @@ struct RootView: View {
         }
         .onChange(of: housePage) { page in
             AlcoveNotify.shared.chatVisible = (page == nil)
+            if page == nil {
+                // 0904 她报的：工作室里键盘开着关页，主聊天列表被顶上去半屏不回落。
+                // 先把还挂着的键盘收掉，再让主聊天列表无动画回到底（ChatView 收这个通知）。
+                UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
+                                                to: nil, from: nil, for: nil)
+                NotificationCenter.default.post(name: .alcoveHouseClosed, object: nil)
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .alcoveCallAnswered)) { _ in
             housePage = nil
