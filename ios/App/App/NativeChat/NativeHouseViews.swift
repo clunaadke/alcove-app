@@ -9029,10 +9029,13 @@ private struct NativeNowhereView: View {
         let lats = points.map(\.latitude), lons = points.map(\.longitude)
         let minLat = lats.min() ?? 30.6176, maxLat = lats.max() ?? minLat
         let minLon = lons.min() ?? 114.2777, maxLon = lons.max() ?? minLon
+        // 足迹横跨全球后，原来的 1.7 倍留白可能把经度跨度放大到 360° 以上，
+        // MapKit 收到非法 region 会直接崩溃。保留原有自动取景，只限制合法范围。
+        let latDelta = min(170.0, max(0.055, (maxLat - minLat) * 1.7))
+        let lonDelta = min(359.0, max(0.055, (maxLon - minLon) * 1.7))
         mapRegion = MKCoordinateRegion(
             center: .init(latitude: (minLat + maxLat) / 2, longitude: (minLon + maxLon) / 2),
-            span: .init(latitudeDelta: max(0.055, (maxLat - minLat) * 1.7),
-                        longitudeDelta: max(0.055, (maxLon - minLon) * 1.7)))
+            span: .init(latitudeDelta: latDelta, longitudeDelta: lonDelta))
     }
 
     private func sendReply(_ card: NowherePostcard) async {
