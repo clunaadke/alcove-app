@@ -24,6 +24,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
     case memory, dreams, shelf, fiction, nianlun, clockwork, album, portrait, impression, morningPaper, nowhere, pulse
     case pond
     case tarot          // 0902 占星室（塔罗）
+    case nursery        // 0905 育儿室（llm-nursery 电子养崽）
     case roof
     case factory
     case crosstalk, radio, coread, cowatch, liao, daddyDay, lab, qipai
@@ -56,6 +57,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .nianlun: return "年轮"
         case .pond: return "檐下"
         case .tarot: return "占星室"
+        case .nursery: return "育儿室"
         case .roof: return "檐上"
         case .factory: return "出厂设置"
         case .clockwork: return "发条"
@@ -86,7 +88,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
     var ownsFullScreen: Bool {
         switch self {
         case .studio, .pond, .roof, .memory, .digest, .factory, .search, .favorites, .surf,
-             .settings, .letterbox, .qipai, .tarot: return true
+             .settings, .letterbox, .qipai, .tarot, .nursery: return true
         default: return false
         }
     }
@@ -115,6 +117,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .nianlun: return "circle.hexagongrid"
         case .pond: return "drop.circle"
         case .tarot: return "sparkles"
+        case .nursery: return "teddybear"
         case .roof: return "pawprint.circle"
         case .factory: return "slider.horizontal.3"
         case .clockwork: return "clock.arrow.circlepath"
@@ -284,6 +287,8 @@ struct NativeHouseSheet: View {
                     NativePondView()
                 case .tarot:
                     TarotRoomView()
+                case .nursery:
+                    NurseryRoomView()
                 case .roof:
                     NativeRoofView()
                 case .factory:
@@ -540,6 +545,7 @@ struct NativeHouseDrawer: View {
                         drawerRow(.roof, detail: "陈檐住在这层")
                         drawerRow(.pond, detail: "念头、许愿与朋友圈")
                         drawerRow(.tarot, detail: "抽一张牌，让他解")   // 0902 占星室
+                        drawerRow(.nursery, detail: "养一个会学你们说话的小家伙")   // 0905 育儿室
                         drawerRow(.letterbox, detail: "你和陈璟的往来书信")
                     }
 
