@@ -1643,7 +1643,8 @@ struct TarotReadingView: View {
                 Spacer()
                 if interpBusy { ProgressView().controlSize(.mini).tint(TarotInk.dim) }
             }
-            // 问题类型：不点 = 服务端按问题猜的那种
+            // 问题类型：不点 = 服务端按问题猜的那种。是否/秘慾不分类，整排标签不出（0904 她定的）
+            if reading.spread != "yesno" && reading.spread != "desire" {
             HStack(spacing: 6) {
                 ForEach(Self.categories) { c in
                     let on = (category ?? ip.category) == c.id
@@ -1665,6 +1666,7 @@ struct TarotReadingView: View {
                     .buttonStyle(.plain)
                 }
                 Spacer()
+            }
             }
             para("整體印象", ip.overall)
             ForEach(ip.cards) { c in
@@ -1688,7 +1690,7 @@ struct TarotReadingView: View {
             }
             if !ip.relations.isEmpty { para("牌面關係", ip.relations.joined(separator: "\n")) }
             if !ip.advice.isEmpty { para("建議", ip.advice.map { "· " + $0 }.joined(separator: "\n")) }
-            para("一句話", ip.oneline)
+            if !ip.oneline.isEmpty { para("一句話", ip.oneline) }
         }
         .padding(16).frame(maxWidth: .infinity, alignment: .leading)
         .background(glass)
@@ -2309,11 +2311,14 @@ struct TarotTicketView: View {
             if let ip = interp ?? reading.interp {
                 Rectangle().fill(TarotInk.glassLine).frame(height: 1).padding(.horizontal, 40)
                 VStack(spacing: 8) {
-                    Text("客觀解讀 · \(ip.categoryName)").font(.tarotHand(10)).tracking(2).foregroundColor(TarotInk.gold.opacity(0.8))
+                    Text(reading.spread == "yesno" || reading.spread == "desire" ? "客觀解讀" : "客觀解讀 · \(ip.categoryName)")
+                        .font(.tarotHand(10)).tracking(2).foregroundColor(TarotInk.gold.opacity(0.8))
                     Text(ip.overall).font(.system(size: 12, design: .serif)).foregroundColor(TarotInk.ink)
                         .multilineTextAlignment(.center).lineSpacing(3).padding(.horizontal, 26)
-                    Text(ip.oneline).font(.system(size: 12, weight: .medium, design: .serif)).foregroundColor(TarotInk.gold)
-                        .multilineTextAlignment(.center).padding(.horizontal, 26)
+                    if !ip.oneline.isEmpty {
+                        Text(ip.oneline).font(.system(size: 12, weight: .medium, design: .serif)).foregroundColor(TarotInk.gold)
+                            .multilineTextAlignment(.center).padding(.horizontal, 26)
+                    }
                 }
             }
             Text("ALCOVE · TAROT").font(.tarotHand(9)).tracking(3).foregroundColor(TarotInk.faint)
