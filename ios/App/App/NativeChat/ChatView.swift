@@ -2772,7 +2772,8 @@ struct MessageRow: View {
                     Text(msg.trace.joined(separator: "  "))
                         .font(.system(size: 11.5, design: .serif))
                         .italic()
-                        .foregroundColor(theme.textLight.opacity(0.82))
+                        // 0904 她抓的：0903 只改了 toolRow，这行独立脚印漏了，颜色也跟思绪走
+                        .foregroundColor(theme.thoughtColor.opacity(0.82))
                         .padding(.leading, 3)
                         .padding(.top, 1)
                 }

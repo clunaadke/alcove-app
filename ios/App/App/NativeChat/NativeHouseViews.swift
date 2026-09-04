@@ -3949,6 +3949,9 @@ struct ListenRecordPill: View {
     @ObservedObject var model: MusicModel
     /// 一起听开着时点唱片能不能把大卡叫回来（只有主聊天页露着的时候能）。RootView 算好传进来
     var canRestoreCard: Bool = false
+    // 0904 她定的：左上角「俩」字标换成两颗叠着的小头像（跟一起听大卡同一份存储）
+    @AppStorage("userAvatarDataURL") private var userAvatar = ""
+    @AppStorage("assistantAvatarDataURL") private var assistantAvatar = ""
 
     // 0902 深夜她抓的「一秒一卡」→ 0903 又抓到「半秒一卡」。第一版是 30Hz Timer 拨 angle；
     // 第二版 TimelineView 按时间算角度，还是卡：progress 每半秒 publish 一次，这个 struct 整个重画，
@@ -3997,15 +4000,37 @@ struct ListenRecordPill: View {
         }
         .overlay(alignment: .topLeading) {
             if model.togetherOn {
-                Text("俩")
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundColor(.white)
-                    .frame(width: 18, height: 18)
-                    .background(Circle().fill(Color(red: 0.69, green: 0.54, blue: 0.58)))
-                    .overlay(Circle().stroke(Color.white.opacity(0.8), lineWidth: 1))
-                    .offset(x: -3, y: -3)
+                // 0904 她定的：粉紫「俩」字标 → 两颗叠着的小头像（她在前，他叠在后）
+                HStack(spacing: -6) {
+                    miniAvatar(userAvatar, fallback: "霁")
+                    miniAvatar(assistantAvatar, fallback: "璟")
+                }
+                .offset(x: -4, y: -4)
             }
         }
+    }
+
+    /// 一起听角标用的小圆头像：15pt，白描边；没设头像就黑玻璃底 + 单字，跟右下角暂停键一个质感
+    private func miniAvatar(_ dataURL: String, fallback: String) -> some View {
+        Group {
+            if let img = Self.decodeAvatar(dataURL) {
+                Image(uiImage: img).resizable().scaledToFill()
+            } else {
+                ZStack {
+                    Circle().fill(Color.black.opacity(0.6))
+                    Text(fallback).font(.system(size: 8, weight: .medium)).foregroundColor(.white)
+                }
+            }
+        }
+        .frame(width: 15, height: 15)
+        .clipShape(Circle())
+        .overlay(Circle().stroke(Color.white.opacity(0.8), lineWidth: 1))
+    }
+
+    private static func decodeAvatar(_ dataURL: String) -> UIImage? {
+        let parts = dataURL.split(separator: ",", maxSplits: 1)
+        guard let data = Data(base64Encoded: parts.count == 2 ? String(parts[1]) : dataURL) else { return nil }
+        return UIImage(data: data)
     }
 
     /// 转着的封面 + 中心小孔。封面由 Core Animation 转（见 SpinningCover），小孔是圆的，不用跟着转
