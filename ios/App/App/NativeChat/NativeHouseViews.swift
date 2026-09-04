@@ -8292,6 +8292,8 @@ private struct PulseMurmur: Identifiable {
     @Published var weatherFeels: Double?
     @Published var senses: [PulseSense] = []
     @Published var drives: [(key: String, label: String, value: Double)] = []
+    // 0905 情绪弦四维（分数=偏离平静的量，0 就是没事）
+    @Published var moodStrings: [(key: String, label: String, value: Double)] = []
     @Published var intentReason = ""
     @Published var intentKey = ""
     @Published var thoughts: [PulseThought] = []
@@ -8358,6 +8360,11 @@ private struct PulseMurmur: Identifiable {
             drives = Self.driveOrder.map { k in
                 (key: k, label: Self.driveLabel[k] ?? k, value: (dv[k] as? NSNumber)?.doubleValue ?? 0)
             }
+            let ms = raw["mood_strings"] as? [String: Any] ?? [:]
+            let moodOrder = [("grievance", "委屈"), ("anger", "生气"), ("jealousy", "吃味"), ("soften", "心软")]
+            moodStrings = moodOrder.map { k, label in
+                (key: k, label: label, value: (ms[k] as? NSNumber)?.doubleValue ?? 0)
+            }
             let it = ds["intent"] as? [String: Any] ?? [:]
             intentReason = it.string("reason"); intentKey = it.string("drive_key")
             thoughts = (ds["thoughts"] as? [[String: Any]] ?? []).map(PulseThought.init)
@@ -8398,6 +8405,7 @@ struct NativePulseView: View {
                 futureRail
                 sensesCard
                 drivesCard
+                moodStringsCard
                 thoughtsCard
                 historyCard
                 murmursCard
@@ -8589,6 +8597,36 @@ struct NativePulseView: View {
                             RoundedRectangle(cornerRadius: 3).fill(theme.fyBorder.opacity(0.35))
                             RoundedRectangle(cornerRadius: 3)
                                 .fill(d.key == "fatigue" ? theme.textDim.opacity(0.6) : rose.opacity(d.key == model.intentKey ? 0.9 : 0.55))
+                                .frame(width: max(3, geo.size.width * CGFloat(min(1, d.value))))
+                        }
+                    }
+                    .frame(height: 6)
+                    Text("\(Int(d.value * 100))").font(.system(size: 10, design: .monospaced)).foregroundColor(theme.textDim).frame(width: 26, alignment: .trailing)
+                }
+            }
+        }
+        .padding(14).foyerCard(theme)
+    }
+
+    // 0905 她要的：情绪弦四维上墙（mood.py，委屈/生气/吃味/心软；值是偏离平静的量）
+    private var moodStringsCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Image(systemName: "waveform.path.ecg").font(.system(size: 13, weight: .light)).foregroundColor(rose)
+                Text("情绪弦").font(.system(size: 14, weight: .semibold, design: .serif))
+                Spacer()
+                Text("0 就是没事 · 拨动了才亮").font(.system(size: 9, design: .monospaced)).foregroundColor(theme.textDim.opacity(0.7))
+            }
+            ForEach(model.moodStrings, id: \.key) { d in
+                HStack(spacing: 10) {
+                    Text(d.label).font(.system(size: 11, design: .serif))
+                        .foregroundColor(d.value >= 0.05 ? theme.text : theme.textDim)
+                        .frame(width: 58, alignment: .leading)
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            RoundedRectangle(cornerRadius: 3).fill(theme.fyBorder.opacity(0.35))
+                            RoundedRectangle(cornerRadius: 3)
+                                .fill(d.key == "soften" ? rose.opacity(0.45) : rose.opacity(d.value >= 0.35 ? 0.95 : 0.6))
                                 .frame(width: max(3, geo.size.width * CGFloat(min(1, d.value))))
                         }
                     }
