@@ -881,10 +881,12 @@ struct ChatView: View {
                             .lineLimit(2)
                             .frame(maxWidth: .infinity, alignment: .leading)
                         Button { selectedQuote = nil } label: {
+                            // 0905 她报的叉不掉：图标 11 热区 44，跟别的叉一个待遇（光有 frame 不铺 contentShape 点不中）
                             Image(systemName: "xmark")
                                 .font(.system(size: 11, weight: .semibold))
                                 .foregroundColor(theme.textDim)
-                                .frame(width: 28, height: 28)
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                     }
@@ -1292,7 +1294,8 @@ struct ChatView: View {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         draft = ""
-        store.sendHold(text)
+        // 0905 她报的：攒气泡时引用不跟着走。攒的这条就把引用带上（outgoingText 拼完会清掉引用条）
+        store.sendHold(outgoingText(text))
         inputFocused = true
     }
 
