@@ -1017,8 +1017,10 @@ struct TarotRoomView: View {
     private static let weekEntry = Entry(id: "week", cardID: "major_17", name: "本周運勢", fallbackHint: "本周主轴 · 行动建议 · 温柔提醒")
     private static let entries: [Entry] = [
         Entry(id: "one", cardID: "major_01", name: "單張", fallbackHint: "一句话问，一张牌答"),
+        Entry(id: "yesno", cardID: "major_11", name: "是／否", fallbackHint: "傾向 · 阻力 · 變化"),
         Entry(id: "three", cardID: "major_18", name: "三張", fallbackHint: "过去 · 现在 · 未来"),
         Entry(id: "relation", cardID: "major_06", name: "關係", fallbackHint: "我 · 他 · 我们之间 · 阻碍 · 走向"),
+        Entry(id: "desire", cardID: "major_15", name: "秘慾", fallbackHint: "玩法 · 禁忌 · 加碼"),
     ]
 
     /// 今日一牌 / 本周运势 靠 question 这两句来认（服务端不用知道）
@@ -1035,8 +1037,8 @@ struct TarotRoomView: View {
                     } else if store.spreads.isEmpty {
                         ProgressView().tint(TarotInk.dim).padding(.top, 40)
                     } else {
-                        let cardW = min(100, (geo.size.width - 36 - 22) / 2 - 12)
-                        LazyVGrid(columns: [GridItem(.flexible(), spacing: 22), GridItem(.flexible(), spacing: 22)],
+                        let cardW = min(78, (geo.size.width - 36 - 20) / 3 - 4)
+                        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 3),
                                   spacing: 16) {
                             periodicStack(width: cardW)
                             ForEach(Self.entries) { e in
