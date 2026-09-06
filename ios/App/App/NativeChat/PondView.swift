@@ -382,21 +382,30 @@ private struct PondItemCard: View {
         let columns = item.images.count == 1
             ? [GridItem(.flexible())]
             : [GridItem(.flexible(), spacing: 5), GridItem(.flexible(), spacing: 5)]
+        let boxHeight: CGFloat = item.images.count == 1 ? 178 : 104
         return LazyVGrid(columns: columns, spacing: 5) {
             ForEach(item.images, id: \.self) { path in
-                AsyncImage(url: AlcoveAPI.attachmentURL(path)) { phase in
-                    if let image = phase.image {
-                        image.resizable().aspectRatio(contentMode: .fill)
-                    } else {
-                        Rectangle().fill(palette.glass)
+                // 0907 她抓的：窄图会撑破卡片、左右漫到屏幕外去。
+                // 原来是 AsyncImage 先 .frame(height:) 再 .frame(maxWidth:)：
+                // 中间那层的宽度由「按高度填满后被放大的图」自己说了算，
+                // 高瘦的图横向能放到比屏幕还宽，等外层想 clipped 时布局已经越界。
+                // 现在拿一张空底把格子尺寸钉死，图只在格子里当背景铺，铺不下当场裁。
+                Color.clear
+                    .frame(maxWidth: .infinity)
+                    .frame(height: boxHeight)
+                    .overlay {
+                        AsyncImage(url: AlcoveAPI.attachmentURL(path)) { phase in
+                            if let image = phase.image {
+                                image.resizable().aspectRatio(contentMode: .fill)
+                            } else {
+                                Rectangle().fill(palette.glass)
+                            }
+                        }
                     }
-                }
-                .frame(height: item.images.count == 1 ? 178 : 104)
-                .frame(maxWidth: .infinity)
-                .clipped()
-                .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .strokeBorder(palette.line.opacity(0.5), lineWidth: 0.6))
+                    .clipped()
+                    .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous)
+                        .strokeBorder(palette.line.opacity(0.5), lineWidth: 0.6))
             }
         }
     }
