@@ -3020,10 +3020,16 @@ final class MusicModel: ObservableObject {
         }
     }
 
+    /// 0907 她抓的：陈璟点播的小卡片有封面，小唱片和播放页却是空转盘。
+    /// 病根就在这儿拼的 ?param=600y600 —— 网易云图床的缩略图是**按需生成**的，
+    /// 没生成过的尺寸直接回 404，而且每张图能活的尺寸都不一样（实测同一张
+    /// 300 和 500 有、600 没有；另一张 300 和 600 都有）。缩到哪个尺寸能活全看运气。
+    /// 小卡片没走这个函数、用的是原图，所以只有它有封面。
+    /// 原图一定在，一张封面才几十 K，不值得为这点流量赌 404。
+    /// pixels 保留是为了不动四处调用，但不再往地址上拼。
     static func artworkURL(_ raw: String, pixels: Int = 600) -> URL? {
         guard !raw.isEmpty else { return nil }
-        let separator = raw.contains("?") ? "&" : "?"
-        return URL(string: "\(raw)\(separator)param=\(pixels)y\(pixels)")
+        return URL(string: raw)
     }
 }
 
