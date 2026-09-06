@@ -1,0 +1,12 @@
+Hiyori Momose FREE / 桃濑日和
+Copyright Live2D Inc. Illustration: Kani Biimu; Modeling: Live2D.
+Official sample: https://www.live2d.com/en/learn/sample/
+Download: https://cubism.live2d.com/sample-data/bin/hiyori/hiyori_en.zip
+Original readme: Hiyori-ReadMe.txt
+Material license: https://www.live2d.com/eula/live2d-free-material-license-agreement_en.html
+Model terms: https://www.live2d.com/learn/sample/model-terms/
+Cubism Core: https://cubism.live2d.com/sdk-web/cubismcore/live2dcubismcore.min.js
+Core license: https://www.live2d.com/eula/live2d-proprietary-software-license-agreement_en.html
+SDK release conditions: https://www.live2d.com/en/sdk/license/
+PixiJS 7.4.2 and pixi-live2d-display-lipsyncpatch 0.5.0-ls-8: see adjacent license files.
+This sample is only a display/integration placeholder; no AI character or conversation is connected.

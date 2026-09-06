@@ -1,0 +1,3 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';import {curtainWidth,dragOpenness} from './curtain-state.mjs';
+test('curtains retain gathered width when open and clamp out-of-range values',()=>{assert.equal(curtainWidth(0,1),1);assert.equal(curtainWidth(1,1),.24);assert.equal(curtainWidth(8,1),.24);assert.equal(curtainWidth(-1,1),1);});
+test('left and right panels pull outward to open and inward to close',()=>{assert.equal(dragOpenness(.5,-90,'left'),1);assert.equal(dragOpenness(.5,90,'right'),1);assert.equal(dragOpenness(.5,90,'left'),0);assert.equal(dragOpenness(.5,-90,'right'),0);});
