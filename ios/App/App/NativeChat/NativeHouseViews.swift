@@ -6938,7 +6938,12 @@ private struct NativeStudioView: View {
     // 0818 她说工作室发图不能多选、没有预览。这三样跟主聊天对齐：
     // 选完先进待发条（可单张删），跟文字一起发，一次最多九张。
     @State private var pendingImages: [(thumb: UIImage, data: Data, ext: String)] = []
-    @State private var previewImage: UIImage?
+    // 0907 她抓的：点预览会无限「打开→退出→打开」，点哪儿都不行只能清后台。
+    // 原来这儿存的是 UIImage，弹窗那行再拿它现造 StudioLocalPhoto ——
+    // 那东西的 id 是 UUID()，每次界面重算都换一个新号，
+    // fullScreenCover 认号不认人，号一变就当成另一张图，关掉重开、循环不止。
+    // 存成带 id 的包装，进预览时发一次号，之后一直是它。
+    @State private var previewImage: StudioLocalPhoto?
     @State private var photoViewer: StudioPhotoTarget?
     @State private var showPhotoPicker = false
     @State private var showFilePicker = false
@@ -7008,8 +7013,7 @@ private struct NativeStudioView: View {
         .fullScreenCover(item: $photoViewer) { target in
             StudioPhotoViewer(url: target.url) { photoViewer = nil }
         }
-        .fullScreenCover(item: Binding(get: { previewImage.map { StudioLocalPhoto(image: $0) } },
-                                       set: { if $0 == nil { previewImage = nil } })) { local in
+        .fullScreenCover(item: $previewImage) { local in
             StudioLocalPhotoViewer(image: local.image) { previewImage = nil }
         }
         .alert("工作室", isPresented: $showStudioNotice) { Button("知道了", role: .cancel) {} } message: { Text(studioNotice) }
@@ -7190,7 +7194,7 @@ private struct NativeStudioView: View {
                        accent: theme.fyAccent,
                        onPickPhotos: { showPhotoPicker = true },
                        onPickFile: { showFilePicker = true },
-                       onPreview: { previewImage = $0 },
+                       onPreview: { previewImage = StudioLocalPhoto(image: $0) },
                        onSend: { text in await send(text) })
     }
 
