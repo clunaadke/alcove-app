@@ -2856,8 +2856,11 @@ struct MessageRow: View {
                             .foregroundColor(Color(uiColor: .systemBlue))
                         }
                         // 0907 她抓的：原来要求这条有正文才给按钮，
-                        // 删到只剩一张表情时多选入口整个没了，那条再也选不中
-                        if showTime, !isUser {
+                        // 删到只剩一张表情时多选入口整个没了，那条再也选不中。
+                        // 0907 她定的：信息主题下这个按钮也归过程点那个开关管 ——
+                        // 关了就跟思绪、脚印、心率一起藏，截图时那一行干干净净。
+                        // 代价是关着的时候进不去多选，要删东西得先把开关打开。
+                        if showTime, !isUser, !(theme.isMessages && !showProcessDots) {
                             Button { onBeginParagraphSelection?() } label: {
                                 Image(systemName: "checklist")
                                     .font(.system(size: 11, weight: .medium))
