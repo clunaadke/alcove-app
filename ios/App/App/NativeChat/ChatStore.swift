@@ -712,15 +712,16 @@ final class ChatStore: ObservableObject {
                 out[idx] = rec
                 continue
             }
-            // 极端情况：poll 与 send 响应重复送同一条
-            if out.contains(where: { $0.ts == rec.ts && $0.role == rec.role && $0.text == rec.text }) {
-                continue
-            }
-            // 0903 她抓的：他出题她抽满以后，服务端把那条 [TAROT_OFFER] 卡的正文改成了抽好的样子，
-            // 再拉一遍时上面那条「时间 + 内容」认不出来，就被当成新的又追加了一张。
-            // 卡片类消息（[XXX_CARD]…这种带标记的）同时间同角色就是同一条，内容变了 = 服务端改了，替换不追加。
-            if rec.text.hasPrefix("["),
-               let idx = out.firstIndex(where: { !$0.pending && $0.ts == rec.ts && $0.role == rec.role && $0.text.hasPrefix("[") }) {
+            // 极端情况：poll 与 send 响应重复送同一条。
+            // 同时间 + 同角色就是同一条，内容变了 = 服务端改了，替换，绝不追加。
+            // 0903 她抓的：他出题她抽满以后服务端改了那条卡的正文，比内容认不出来，
+            // 就被当成新的又追加了一张。
+            // 0907 她抓的（更狠）：这儿原来还比 text，可被临时隐藏收走正文的那条
+            // text 是空的，一比就不等 —— 于是每次 poll 都追加一张新的，
+            // 她屏上「表情一直在发一直在发」。判据里从此不许再出现 text。
+            if let idx = out.firstIndex(where: {
+                !$0.pending && $0.ts == rec.ts && $0.role == rec.role
+            }) {
                 out[idx] = rec
                 continue
             }
@@ -863,11 +864,11 @@ final class ChatStore: ObservableObject {
             || !m.segments.isEmpty || !m.activity.isEmpty
     }
 
-    /// 这条身上还有没有看得见的东西：图、表情、语音、文件、通话条。
-    /// 正文和图都收走以后还剩这些，就留在原地画；什么都不剩才整条抹掉。
+    /// 收完正文和图之后，这条还剩不剩「跟正文并排的图」。
+    /// 0907 修：这里只认图。表情、通话条、语音、文件本身就是被勾的那个东西，
+    /// 勾了就是要收走它们；写进这儿会让它们永远删不掉（她当场报的第一个 bug）。
     private func carriesVisual(_ m: ChatMessage) -> Bool {
-        !(m.attachmentUrl ?? "").isEmpty || !m.inlineImages.isEmpty
-            || m.isSticker || m.callSummary != nil
+        m.isImage || !m.inlineImages.isEmpty
     }
 
     /// 按当前两份名单把这条该收的收掉，返回收完之后的样子。
