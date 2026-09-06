@@ -2609,7 +2609,10 @@ struct MessageRow: View {
     private var isUser: Bool { msg.role == "user" }
     private var timestampTextInset: CGFloat {
         if theme.isPaper && !isUser { return 0 }
-        return !msg.text.isEmpty && !msg.isSticker ? 12 : 0
+        // 0907 她要的：时间戳一律缩进到同一条竖线上，不管这条是文字、表情还是图。
+        // 原来只有「有正文的文字气泡」才缩进 —— 删到只剩一张表情时时间戳顶到最左边，
+        // 跟上一条的时间戳对不齐。
+        return 12
     }
     private var shouldShowMetaRow: Bool {
         msg.msgType != "choice_answer" && (msg.pending || msg.asleepAtSend || showTime)
@@ -2766,6 +2769,7 @@ struct MessageRow: View {
                         // 0822 她要的：一开始只有语音条，长按才「转文字」或「收藏」
                         // 0902 她给的参考图：转文字收在同一条气泡里，点右边的小箭头展开
                         AudioBubble(url: AlcoveAPI.attachmentURL(raw), isUser: isUser, theme: theme,
+                                    fontSize: CGFloat(fontSize),
                                     hasTranscript: !msg.displayText.isEmpty,
                                     transcript: msg.displayText,
                                     transcriptShown: showTranscript,
@@ -2851,7 +2855,9 @@ struct MessageRow: View {
                             .font(.system(size: 9, weight: .semibold))
                             .foregroundColor(Color(uiColor: .systemBlue))
                         }
-                        if showTime, !isUser, !msg.displayText.isEmpty {
+                        // 0907 她抓的：原来要求这条有正文才给按钮，
+                        // 删到只剩一张表情时多选入口整个没了，那条再也选不中
+                        if showTime, !isUser {
                             Button { onBeginParagraphSelection?() } label: {
                                 Image(systemName: "checklist")
                                     .font(.system(size: 11, weight: .medium))
@@ -4842,6 +4848,102 @@ struct TypingIndicator: View {
     }
 }
 
+/// 0907 她定的：语音滚出屏幕要继续放。
+/// 所以播放器不能再住在气泡里 —— 气泡一滚出去就被回收，播放器要么跟着断，
+/// 要么变成没人管的幽灵继续响（她当时听到两条叠在一起，就是幽灵干的）。
+/// 现在整个 App 只有这一个播放器：谁在响、响到哪儿都记在这儿，
+/// 气泡只负责照着它画。同一时间只有一条语音在响。
+final class VoicePlayer: ObservableObject {
+    static let shared = VoicePlayer()
+
+    @Published private(set) var currentURL: URL?
+    @Published private(set) var playing = false
+    @Published private(set) var elapsed: Double = 0
+
+    private var player: AVPlayer?
+    private var endObserver: NSObjectProtocol?
+    private var timeObserver: Any?
+    private var total: Double = 0
+
+    private init() {}
+
+    func isPlaying(_ url: URL) -> Bool { currentURL == url && playing }
+
+    /// 这条语音放到百分之几了；不是当前这条就是 0
+    func progress(_ url: URL, fallbackDuration: Double) -> Double {
+        guard currentURL == url else { return 0 }
+        let span = total > 0 ? total : fallbackDuration
+        guard span > 0 else { return 0 }
+        return min(1, max(0, elapsed / span))
+    }
+
+    func toggle(_ url: URL) {
+        // 正在响的就是这条 → 按停
+        if currentURL == url, playing {
+            player?.pause()
+            playing = false
+            return
+        }
+        // 暂停在这条上 → 原地续上，别从头再来
+        if currentURL == url, let p = player {
+            activateSession()
+            if total > 0, elapsed >= total - 0.05 { p.seek(to: .zero); elapsed = 0 }
+            p.play()
+            playing = true
+            return
+        }
+        start(url)
+    }
+
+    private func activateSession() {
+        // 0822 她说「点语音没有声音」：没开 playback 会话，静音键一拨就哑
+        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
+        try? AVAudioSession.sharedInstance().setActive(true)
+    }
+
+    private func start(_ url: URL) {
+        teardown()
+        activateSession()
+        let p = AVPlayer(url: url)
+        player = p
+        currentURL = url
+        elapsed = 0
+        total = 0
+        endObserver = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime,
+            object: p.currentItem, queue: .main) { [weak self] _ in
+            self?.playing = false
+            self?.elapsed = 0
+        }
+        timeObserver = p.addPeriodicTimeObserver(
+            forInterval: CMTime(seconds: 0.1, preferredTimescale: 600),
+            queue: .main) { [weak self] t in
+            guard let self else { return }
+            if self.total <= 0 {
+                let d = CMTimeGetSeconds(p.currentItem?.duration ?? .zero)
+                if d.isFinite, d > 0 { self.total = d }
+            }
+            let secs = CMTimeGetSeconds(t)
+            if secs.isFinite { self.elapsed = secs }
+        }
+        p.play()
+        playing = true
+    }
+
+    /// 换一条语音之前，把上一条的播放器和两个监听收干净
+    private func teardown() {
+        player?.pause()
+        if let old = endObserver { NotificationCenter.default.removeObserver(old) }
+        endObserver = nil
+        if let t = timeObserver { player?.removeTimeObserver(t) }
+        timeObserver = nil
+        player = nil
+        playing = false
+        elapsed = 0
+        total = 0
+    }
+}
+
 // 语音条：点击播放/暂停
 /// 语音条（0902 她给的参考图重画）：一条气泡里是「播放键 · 波纹 · 时长 · 小箭头」，
 /// 点右边的小箭头，转文字在**同一条气泡里**往下展开，不再另起一个文字气泡。
@@ -4850,18 +4952,21 @@ struct AudioBubble: View {
     let url: URL
     let isUser: Bool
     var theme: AlcoveTheme = .haven
+    // 0907 她要的：转文字跟正文一样大。原来写死 15.5，比正文气泡大一号
+    var fontSize: CGFloat = 14
     var hasTranscript: Bool = false
     var transcript: String = ""
     var transcriptShown: Bool = false
     var onToggleTranscript: (() -> Void)? = nil
     var onFavorite: (() -> Void)? = nil
 
-    @State private var player: AVPlayer?
-    @State private var playing = false
-    @State private var endObserver: NSObjectProtocol?
-    @State private var timeObserver: Any?
+    // 0907：播放器搬去 VoicePlayer 了，气泡只照着它画。
+    // duration 留在这儿——它只用来决定画几根波纹，跟谁在响没关系。
+    @ObservedObject private var voice = VoicePlayer.shared
     @State private var duration: Double = 0
-    @State private var progress: Double = 0
+
+    private var playing: Bool { voice.isPlaying(url) }
+    private var progress: Double { voice.progress(url, fallbackDuration: duration) }
 
     private var ink: Color { (theme.isMessages && isUser) ? .white : theme.text }
 
@@ -4903,6 +5008,9 @@ struct AudioBubble: View {
                     .font(.system(size: 13, design: .monospaced))
                     .opacity(0.85)
                 if hasTranscript {
+                    // 0907 她要的：展开以后箭头跟着气泡最右边走。
+                    // 只在展开时撑开——没展开时加 Spacer 会把语音条拉成整行宽
+                    if transcriptShown { Spacer(minLength: 8) }
                     Button { onToggleTranscript?() } label: {
                         Image(systemName: "chevron.down")
                             .font(.system(size: 12, weight: .semibold))
@@ -4922,8 +5030,8 @@ struct AudioBubble: View {
                     .frame(height: 1)
                     .padding(.horizontal, 12)
                 Text(transcript)
-                    .font(.system(size: 15.5))
-                    .lineSpacing(3)
+                    .font(.system(size: fontSize))
+                    .lineSpacing(theme.isPaper ? 7 : 5)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
                     .fixedSize(horizontal: false, vertical: true)
@@ -4964,35 +5072,7 @@ struct AudioBubble: View {
         }
     }
 
-    private func togglePlay() {
-        if playing {
-            player?.pause()
-            playing = false
-            return
-        }
-        // 0822 她说「点语音没有声音」：之前没开 playback 会话，静音键一拨就哑。
-        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
-        try? AVAudioSession.sharedInstance().setActive(true)
-        if player == nil { player = AVPlayer(url: url) }
-        guard let p = player else { return }
-        if progress >= 0.999 || progress == 0 { p.seek(to: .zero) }
-        p.play()
-        playing = true
-        if let old = endObserver { NotificationCenter.default.removeObserver(old) }
-        endObserver = NotificationCenter.default.addObserver(
-            forName: .AVPlayerItemDidPlayToEndTime,
-            object: p.currentItem, queue: .main) { _ in
-            playing = false
-            progress = 0
-        }
-        if let old = timeObserver { p.removeTimeObserver(old) }
-        timeObserver = p.addPeriodicTimeObserver(
-            forInterval: CMTime(seconds: 0.1, preferredTimescale: 600), queue: .main) { t in
-            let total = duration > 0 ? duration : CMTimeGetSeconds(p.currentItem?.duration ?? .zero)
-            guard total.isFinite, total > 0 else { return }
-            progress = min(1, max(0, CMTimeGetSeconds(t) / total))
-        }
-    }
+    private func togglePlay() { voice.toggle(url) }
 }
 
 struct PhotoViewerSelection: Identifiable {

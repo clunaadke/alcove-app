@@ -722,7 +722,11 @@ final class ChatStore: ObservableObject {
             if let idx = out.firstIndex(where: {
                 !$0.pending && $0.ts == rec.ts && $0.role == rec.role
             }) {
-                out[idx] = rec
+                // 0907 她抓的第二刀：不能无脑替换。替换会换掉这条的 uid，
+                // SwiftUI 拿 uid 认视图，一换就当成新的，@State 全部打回原形 ——
+                // 展开的语音转文字、点开的思绪面板，每次 poll（几秒一次）自己收回去。
+                // 隐藏中的那条显示的本来就是壳，跳过；其余只有正文真变了才换。
+                if !isHidden(rec), out[idx].text != rec.text { out[idx] = rec }
                 continue
             }
             // 0819 她报的：发一张图出来两张。乐观插入用的是本地时间戳，
