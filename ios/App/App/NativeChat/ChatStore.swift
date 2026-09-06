@@ -5,7 +5,10 @@ import SwiftUI
 final class ChatStore: ObservableObject {
     @Published var messages: [ChatMessage] = []
     private var deletedMessageTs: Set<String> = []
-    private var temporarilyHiddenMessageTs: Set<String> = []
+    // 0906 她要的：多选时图一个圈、字一个圈，勾哪个收哪个。
+    // 两个名单各管一块；同一条两个名单都在 = 整条收走。
+    private var temporarilyHiddenTextTs: Set<String> = []
+    private var temporarilyHiddenPhotoTs: Set<String> = []
     @Published var isTyping = false
     @Published var currentTool: String?
     @Published var stickers: [Sticker] = []
@@ -329,13 +332,15 @@ final class ChatStore: ObservableObject {
 
     // 前后台切换后强制刷新
     func refresh() {
-        temporarilyHiddenMessageTs.removeAll()
+        temporarilyHiddenTextTs.removeAll()
+        temporarilyHiddenPhotoTs.removeAll()
         Task { await initialLoad() }
     }
 
     private func initialLoad() async {
         do {
-            temporarilyHiddenMessageTs.removeAll()
+            temporarilyHiddenTextTs.removeAll()
+            temporarilyHiddenPhotoTs.removeAll()
             let recs = try await AlcoveAPI.history(limit: 300)
             messages = recs
             lastTs = recs.last?.ts
@@ -699,7 +704,9 @@ final class ChatStore: ObservableObject {
         var out = messages
         for rec in recs {
             // 删除请求与轮询可能交叉：服务器旧快照晚到时不能把已删气泡复活。
-            if deletedMessageTs.contains(rec.ts) || temporarilyHiddenMessageTs.contains(rec.ts) { continue }
+            // 0906：临时隐藏不在这儿整条丢了——只收走了图或只收走了字的，
+            // 剩下那一半还得画在原地，统一交给下面的 applyTemporaryHides 按块收。
+            if deletedMessageTs.contains(rec.ts) { continue }
             if rec.role == "user",
                let idx = out.lastIndex(where: { $0.pending && $0.text == rec.text }) {
                 out[idx] = rec
@@ -746,7 +753,7 @@ final class ChatStore: ObservableObject {
                 out.append(rec)
             }
         }
-        messages = out
+        messages = applyTemporaryHides(out)
     }
 
     func sendText(_ text: String) {
@@ -840,8 +847,11 @@ final class ChatStore: ObservableObject {
     }
 
     /// 多选工具栏的“删除”只是这次浏览里收起来；不写后端，刷新或重进后恢复。
-    func hideMessagesTemporarily(_ selected: [ChatMessage]) {
-        temporarilyHiddenMessageTs.formUnion(selected.map(\.ts))
+    /// 0906 她要的：图和字分开收。text 收正文、photo 收图，同一条两边都传 = 整条收走。
+    /// 多图是一组多条记录，photo 要把整组都传进来，不然组里剩的那几张还画着。
+    func hideMessagePartsTemporarily(text: [ChatMessage], photo: [ChatMessage]) {
+        temporarilyHiddenTextTs.formUnion(text.map(\.ts))
+        temporarilyHiddenPhotoTs.formUnion(photo.map(\.ts))
         messages = applyTemporaryHides(messages)
     }
 
@@ -853,14 +863,63 @@ final class ChatStore: ObservableObject {
             || !m.segments.isEmpty || !m.activity.isEmpty
     }
 
-    private func applyTemporaryHides(_ recs: [ChatMessage]) -> [ChatMessage] {
-        recs.compactMap { m in
-            guard temporarilyHiddenMessageTs.contains(m.ts) else { return m }
-            guard carriesProcess(m) else { return nil }
-            var shell = m
-            shell.text = ""
+    /// 这条身上还有没有看得见的东西：图、表情、语音、文件、通话条。
+    /// 正文和图都收走以后还剩这些，就留在原地画；什么都不剩才整条抹掉。
+    private func carriesVisual(_ m: ChatMessage) -> Bool {
+        !(m.attachmentUrl ?? "").isEmpty || !m.inlineImages.isEmpty
+            || m.isSticker || m.callSummary != nil
+    }
+
+    /// 按当前两份名单把这条该收的收掉，返回收完之后的样子。
+    private func stripHiddenParts(_ m: ChatMessage) -> ChatMessage {
+        var shell = m
+        if temporarilyHiddenTextTs.contains(m.ts) { shell.text = "" }
+        if temporarilyHiddenPhotoTs.contains(m.ts) {
+            // 只动图：语音、文件那种附件不归图的圈管，别误伤
+            if m.isImage {
+                shell.attachmentUrl = nil
+                shell.attachmentType = nil
+                shell.attachmentGroup = nil
+            }
             shell.inlineImages = []
-            return shell
+        }
+        return shell
+    }
+
+    private func isHidden(_ m: ChatMessage) -> Bool {
+        temporarilyHiddenTextTs.contains(m.ts) || temporarilyHiddenPhotoTs.contains(m.ts)
+    }
+
+    /// 收完以后一点内容都不剩。思绪不算内容——它是整轮的东西，不是这一条的。
+    private func isWipedClean(_ m: ChatMessage) -> Bool {
+        guard isHidden(m) else { return false }
+        let shell = stripHiddenParts(m)
+        return shell.text.isEmpty && !carriesVisual(shell)
+    }
+
+    private func applyTemporaryHides(_ recs: [ChatMessage]) -> [ChatMessage] {
+        // 0906 她要的：一整轮被收干净了，连那个光秃秃的时间戳带日期线一起消失。
+        // 先数一遍每轮还剩几条：整轮都空了的，思绪壳也不留（轮本身没了，留壳只会
+        // 在她屏上剩一个孤零零的时间戳）。只收了一部分的照旧留壳保思绪 —— 0904 那条规矩。
+        var turnTotal: [String: Int] = [:]
+        var turnWiped: [String: Int] = [:]
+        for m in recs {
+            guard let turn = m.turnID, !turn.isEmpty else { continue }
+            turnTotal[turn, default: 0] += 1
+            if isWipedClean(m) { turnWiped[turn, default: 0] += 1 }
+        }
+        // 注意别写成 .map(\.key)：Dictionary 的元素是元组，Swift 的 keypath 指不了元组成员
+        var wipedTurns = Set<String>()
+        for (turn, total) in turnTotal where (turnWiped[turn] ?? 0) == total {
+            wipedTurns.insert(turn)
+        }
+
+        return recs.compactMap { m in
+            guard isHidden(m) else { return m }
+            let shell = stripHiddenParts(m)
+            guard shell.text.isEmpty, !carriesVisual(shell) else { return shell }
+            if let turn = m.turnID, !turn.isEmpty, wipedTurns.contains(turn) { return nil }
+            return carriesProcess(shell) ? shell : nil
         }
     }
 

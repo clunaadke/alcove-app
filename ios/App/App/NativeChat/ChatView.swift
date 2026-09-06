@@ -66,6 +66,8 @@ struct ChatView: View {
     @State private var flashTS: String?
     @State private var paragraphSelectionMode = false
     @State private var selectedParagraphIDs: Set<UUID> = []
+    // 0906 她要的：图和字分开勾。这份记的是「哪些消息的图被勾了」，存组头那条的号
+    @State private var selectedPhotoIDs: Set<UUID> = []
     @State private var showParagraphDeleteConfirmation = false
     @ObservedObject private var music = MusicModel.shared
     @FocusState private var inputFocused: Bool
@@ -506,7 +508,7 @@ struct ChatView: View {
             }
         }
         .confirmationDialog(
-            "隐藏选中的 \(selectedParagraphIDs.count) 条消息？",
+            "隐藏选中的 \(selectedBlockCount) 块内容？",
             isPresented: $showParagraphDeleteConfirmation,
             titleVisibility: .visible
         ) {
@@ -526,7 +528,7 @@ struct ChatView: View {
         HStack(spacing: 18) {
             Button("取消") { leaveParagraphSelection() }
                 .foregroundColor(theme.textDim)
-            Text("已选 \(selectedParagraphIDs.count) 条")
+            Text("已选 \(selectedBlockCount) 块")
                 .font(.system(size: 13, weight: .medium))
                 .foregroundColor(theme.text)
             Spacer()
@@ -535,13 +537,13 @@ struct ChatView: View {
             } label: {
                 Label("收藏", systemImage: "star")
             }
-            .disabled(selectedParagraphIDs.isEmpty)
+            .disabled(nothingSelected)
             Button(role: .destructive) {
                 showParagraphDeleteConfirmation = true
             } label: {
                 Label("删除", systemImage: "trash")
             }
-            .disabled(selectedParagraphIDs.isEmpty)
+            .disabled(nothingSelected)
         }
         .font(.system(size: 13, weight: .medium))
         .padding(.horizontal, 18)
@@ -553,22 +555,47 @@ struct ChatView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
     }
 
-    private func selectedParagraphs() -> [ChatMessage] {
-        store.messages.filter { selectedParagraphIDs.contains($0.uid) }
+    private var selectedBlockCount: Int {
+        selectedParagraphIDs.count + selectedPhotoIDs.count
+    }
+
+    private var nothingSelected: Bool {
+        selectedParagraphIDs.isEmpty && selectedPhotoIDs.isEmpty
+    }
+
+    /// 图的圈勾的是「这一组图」：多图是一组多条记录串起来画的，收就得整组收。
+    private func photoGroupMessages(headUID: UUID) -> [ChatMessage] {
+        guard let index = store.messages.firstIndex(where: { $0.uid == headUID }) else { return [] }
+        let head = store.messages[index]
+        guard head.inlineImages.isEmpty, let key = head.photoBatchKey else { return [head] }
+        var group: [ChatMessage] = []
+        var i = index
+        while i < store.messages.count, store.messages[i].photoBatchKey == key {
+            group.append(store.messages[i])
+            i += 1
+        }
+        return group
     }
 
     private func leaveParagraphSelection() {
         paragraphSelectionMode = false
         selectedParagraphIDs.removeAll()
+        selectedPhotoIDs.removeAll()
     }
 
+    /// 0906 她定的：收藏不管勾了哪块，一律收整条、带图。
     private func favoriteSelectedParagraphs() {
-        store.favoriteMessages(selectedParagraphs())
+        let picked = store.messages.filter {
+            selectedParagraphIDs.contains($0.uid) || selectedPhotoIDs.contains($0.uid)
+        }
+        store.favoriteMessages(picked)
         leaveParagraphSelection()
     }
 
     private func deleteSelectedParagraphs() {
-        store.hideMessagesTemporarily(selectedParagraphs())
+        let textTargets = store.messages.filter { selectedParagraphIDs.contains($0.uid) }
+        let photoTargets = selectedPhotoIDs.flatMap { photoGroupMessages(headUID: $0) }
+        store.hideMessagePartsTemporarily(text: textTargets, photo: photoTargets)
         leaveParagraphSelection()
     }
 
@@ -648,6 +675,12 @@ struct ChatView: View {
             let rowSelectionIDs = Set(store.messages[index...selectionEnd].map(\.uid))
             let rowSelected = !rowSelectionIDs.isEmpty
                 && rowSelectionIDs.isSubset(of: selectedParagraphIDs)
+            // 0906 她要的：既有图又有字的，图一个圈、字一个圈；
+            // 其余（纯图、纯字、语音、表情、卡片）照旧整行一个圈
+            let rowHasPhoto = !photos.isEmpty
+                || (message.isImage && !(message.attachmentUrl ?? "").isEmpty)
+            let splittable = rowHasPhoto && !message.displayText.isEmpty
+                && !message.isAudio && !message.isSticker
 
             let divided = needsDivider(prev: previous, cur: message)
             if divided {
@@ -706,14 +739,28 @@ struct ChatView: View {
                     onDelete: { store.deleteMessage(message) },
                     onFavorite: { store.favoriteMessage(message) },
                     wholeTurnText: wholeTurnText(for: message),
-                    paragraphSelectionMode: false,
-                    paragraphSelected: false,
+                    paragraphSelectionMode: paragraphSelectionMode && splittable,
+                    paragraphSelected: selectedParagraphIDs.contains(message.uid),
+                    photoSelected: selectedPhotoIDs.contains(message.uid),
+                    onTogglePhotoSelection: {
+                        if selectedPhotoIDs.contains(message.uid) {
+                            selectedPhotoIDs.remove(message.uid)
+                        } else {
+                            selectedPhotoIDs.insert(message.uid)
+                        }
+                    },
                     onBeginParagraphSelection: {
                         paragraphSelectionMode = true
                         selectedParagraphIDs.formUnion(rowSelectionIDs)
                         inputFocused = false
                     },
-                    onToggleParagraphSelection: nil,
+                    onToggleParagraphSelection: {
+                        if selectedParagraphIDs.contains(message.uid) {
+                            selectedParagraphIDs.remove(message.uid)
+                        } else {
+                            selectedParagraphIDs.insert(message.uid)
+                        }
+                    },
                     onQuote: { text in
                         selectedQuote = text
                         inputFocused = true
@@ -722,7 +769,7 @@ struct ChatView: View {
                     onPlayMusic: { song in Task { await music.play(song) } },
                     onContentChange: { scrollKick += 1 }
                 )
-                if paragraphSelectionMode {
+                if paragraphSelectionMode && !splittable {
                     Button {
                         if rowSelected { selectedParagraphIDs.subtract(rowSelectionIDs) }
                         else { selectedParagraphIDs.formUnion(rowSelectionIDs) }
@@ -2536,6 +2583,9 @@ struct MessageRow: View {
     var wholeTurnText: String = ""
     var paragraphSelectionMode = false
     var paragraphSelected = false
+    // 0906 她要的：带图又带字的消息，多选时图一个圈、字一个圈，勾哪个收哪个
+    var photoSelected = false
+    var onTogglePhotoSelection: (() -> Void)? = nil
     var onBeginParagraphSelection: (() -> Void)? = nil
     var onToggleParagraphSelection: (() -> Void)? = nil
     var onQuote: ((String) -> Void)? = nil
@@ -2711,13 +2761,7 @@ struct MessageRow: View {
                 } else if msg.isSticker {
                     stickerBody
                 } else {
-                    if !photoURLs.isEmpty {
-                        OfficialPhotoGridMessageView(urls: photoURLs, messageID: "chat-\(msg.id)",
-                                                     onOpen: onTapImages)
-                            .matchedTransitionSource(id: "chat-\(msg.id)", in: photoNamespace)
-                    } else if msg.isImage, let raw = msg.attachmentUrl {
-                        imageBody(raw)
-                    }
+                    photoBlock
                     if msg.isAudio, let raw = msg.attachmentUrl {
                         // 0822 她要的：一开始只有语音条，长按才「转文字」或「收藏」
                         // 0902 她给的参考图：转文字收在同一条气泡里，点右边的小箭头展开
@@ -2742,7 +2786,7 @@ struct MessageRow: View {
                         MusicMessageCard(song: song, theme: theme, isUser: isUser) { onPlayMusic?(song) }
                     } else if !msg.displayText.isEmpty && !(msg.isSticker) && !msg.isBareLink
                                 && !msg.isAudio {   // 语音的转文字画在语音条里面，不另起气泡
-                        if paragraphSelectionMode && !isUser {
+                        if paragraphSelectionMode {
                             HStack(alignment: .top, spacing: 9) {
                                 Button { onToggleParagraphSelection?() } label: {
                                     Image(systemName: paragraphSelected
@@ -3440,6 +3484,43 @@ struct MessageRow: View {
                     .font(.system(size: 14))
                     .foregroundColor(.secondary)
             }
+        }
+    }
+
+    private var hasPhotoBlock: Bool {
+        !photoURLs.isEmpty || (msg.isImage && !(msg.attachmentUrl ?? "").isEmpty)
+    }
+
+    @ViewBuilder
+    private var photoBlockCore: some View {
+        if !photoURLs.isEmpty {
+            OfficialPhotoGridMessageView(urls: photoURLs, messageID: "chat-\(msg.id)",
+                                         onOpen: onTapImages)
+                .matchedTransitionSource(id: "chat-\(msg.id)", in: photoNamespace)
+        } else if msg.isImage, let raw = msg.attachmentUrl {
+            imageBody(raw)
+        }
+    }
+
+    /// 0906 她要的：多选时图自己一个圈，跟正文那个圈各管各的。
+    /// 圈画在图左边，图和气泡的上下顺序一点不动。
+    @ViewBuilder
+    private var photoBlock: some View {
+        if paragraphSelectionMode, hasPhotoBlock, let toggle = onTogglePhotoSelection {
+            HStack(alignment: .top, spacing: 9) {
+                Button { toggle() } label: {
+                    Image(systemName: photoSelected ? "checkmark.circle.fill" : "circle")
+                        .font(.system(size: 19, weight: .regular))
+                        .foregroundColor(photoSelected ? theme.fyAccent : theme.textDim)
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 3)
+                photoBlockCore.allowsHitTesting(false)
+            }
+            .contentShape(Rectangle())
+            .onTapGesture { toggle() }
+        } else {
+            photoBlockCore
         }
     }
 
