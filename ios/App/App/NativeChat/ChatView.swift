@@ -31,6 +31,10 @@ struct ChatView: View {
     @State private var photoViewer: PhotoViewerSelection?
     @StateObject private var recorder = VoiceRecorder()
     @State private var atBottom = true
+    // 0907 她定的：翻着历史点打字框不许把她拽回最新，只有本来就在最新那儿
+    // 才让消息跟着键盘抬起来。难点是键盘顶上来那一瞬底部锚点会被盖住、
+    // atBottom 会假性变 false，所以在焦点刚来、键盘还没动之前先拍个快照。
+    @State private var wasAtBottomWhenFocused = true
     @State private var followLiveOutput = true
     @State private var historyJumpInProgress = false
     // Every delayed auto-tail captures this generation. History navigation
@@ -108,6 +112,11 @@ struct ChatView: View {
     /// 0902：打字框上方的迷你播放条退休了（小唱片浮在屏幕边上替它），不再占地方
     private var musicBarClearance: CGFloat { 0 }
     private var bottomChromeHeight: CGFloat { inputBarHeight + musicBarClearance }
+
+    /// 该不该跟着滚到最新：人在底部，或者这次打字框是在底部时点开的。
+    private var shouldFollowTail: Bool {
+        atBottom || (inputFocused && wasAtBottomWhenFocused)
+    }
 
     var body: some View {
         GeometryReader { root in
@@ -345,33 +354,15 @@ struct ChatView: View {
 
                 // 0902：迷你播放条退休，歌在放的时候是屏幕边上的小唱片（RootView 管）
 
-                // 0902：语音卡片出来时这颗「回到底部」会压在卡片右上角的垃圾桶上，先让开
-                if !atBottom && store.pendingVoice == nil {
-                    Button {
-                        followLiveOutput = true
-                        if store.isViewingHistory {
-                            Task {
-                                await store.returnToLatest()
-                                scrollToTail(proxy, delays: [0.05, 0.2], animated: false)
-                            }
-                        } else {
-                            withAnimation { proxy.scrollTo("tail", anchor: .bottom) }
-                        }
-                    } label: {
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 15, weight: .medium))
-                            .foregroundColor(theme.textDim)
-                            .frame(width: 36, height: 36)
-                            .background(.ultraThinMaterial, in: Circle())
-                            .background(theme.glassTint, in: Circle())
-                            .overlay(Circle().stroke(theme.glassBorder, lineWidth: 1))
-                            .shadow(color: .black.opacity(0.08), radius: 6, y: 2)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-                    .padding(.trailing, 16)
-                    .padding(.bottom, bottomChromeHeight + 12)
-                    .transition(.opacity)
-                }
+                // 0907 她定的：右下角那颗「回到底部」圆按钮退休，改成
+                // 点屏幕最底下那条空隙（打字框下面、home 横条那一带）直接回到最新 ——
+                // 跟 iOS 点最顶上状态栏回到顶是同一个手感，左右对称。
+                // 只吃点一下；上滑还是系统的返回主屏手势，两者不打架。
+                Color.clear
+                    .frame(height: max(safeBottom, 16))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                    .contentShape(Rectangle())
+                    .onTapGesture { jumpToTail(proxy) }
 
                 if !showMiniTerminal && !paragraphSelectionMode {
                     ClawdPet(store: store) {
@@ -404,14 +395,19 @@ struct ChatView: View {
             }
             .onChange(of: inputFocused) { f in
                 if f {
+                    // 焦点刚到、键盘还没顶上来，这一刻的 atBottom 才是真的
+                    wasAtBottomWhenFocused = atBottom
+                    guard atBottom else { return }
                     scrollToTail(proxy, delays: [0.05, 0.25, 0.5], animated: true)
                 } else {
+                    guard wasAtBottomWhenFocused else { return }
                     scrollToTail(proxy, delays: [0.1, 0.35], animated: true)
                 }
             }
             .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
                 // 0904：工作室那些整页盖在上面时弹的键盘不是我的，别跟着滚
                 guard AlcoveNotify.shared.chatVisible else { return }
+                guard shouldFollowTail else { return }
                 scrollToTail(proxy, delays: [0, 0.12, 0.3], animated: true)
             }
             .onReceive(NotificationCenter.default.publisher(for: .alcoveHouseClosed)) { _ in
@@ -427,7 +423,7 @@ struct ChatView: View {
                 // requested history target. History navigation owns the scroll until
                 // it has centered the target.
                 guard !historyJumpInProgress, !store.isViewingHistory else { return }
-                guard atBottom || inputFocused else { return }
+                guard shouldFollowTail else { return }
                 scrollToTail(proxy, delays: [0, 0.15, 0.4], animated: true)
             }
             .onChange(of: store.loading) { loading in
@@ -438,22 +434,22 @@ struct ChatView: View {
                 }
             }
             .onChange(of: store.isTyping) { t in
-                if t { followLiveOutput = atBottom || inputFocused }
-                if atBottom || inputFocused {
+                if t { followLiveOutput = shouldFollowTail }
+                if shouldFollowTail {
                     scrollToTail(proxy, delays: [0, 0.2, 0.5], animated: true)
                 }
             }
             .onChange(of: liveLayoutKey) { _ in
-                guard followLiveOutput || inputFocused else { return }
+                guard followLiveOutput else { return }
                 scrollToTail(proxy, delays: [0], animated: false)
             }
             .onChange(of: inputBarHeight) { _ in
-                if atBottom || inputFocused {
+                if shouldFollowTail {
                     scrollToTail(proxy, delays: [0.05, 0.3], animated: true)
                 }
             }
             .onChange(of: music.nowPlaying?.id) { _ in
-                if atBottom || inputFocused {
+                if shouldFollowTail {
                     scrollToTail(proxy, delays: [0.05, 0.3], animated: true)
                 }
             }
@@ -462,7 +458,7 @@ struct ChatView: View {
                 scrollToTail(proxy, delays: [0, 0.12, 0.32], animated: true)
             }
             .onChange(of: scrollKick) { _ in
-                if atBottom || inputFocused {
+                if shouldFollowTail {
                     // 展开 thinking/activity 时内容本身已经在做 0.15s 动画。
                     // 再连跑三次滚尾会让整页先上再下，真机看起来像闪一下。
                     // 等布局落稳后无动画校正一次就够了。
@@ -804,6 +800,19 @@ struct ChatView: View {
             .filter { $0.role == "assistant" && $0.turnID == turnID && !$0.displayText.isEmpty }
             .map(\.displayText)
             .joined(separator: "\n\n")
+    }
+
+    /// 回到最新一条。翻着历史的时候先把最新那页拉回来再落底。
+    private func jumpToTail(_ proxy: ScrollViewProxy) {
+        followLiveOutput = true
+        if store.isViewingHistory {
+            Task {
+                await store.returnToLatest()
+                scrollToTail(proxy, delays: [0.05, 0.2], animated: false)
+            }
+        } else {
+            withAnimation { proxy.scrollTo("tail", anchor: .bottom) }
+        }
     }
 
     private func scrollToTail(
