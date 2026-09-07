@@ -333,6 +333,17 @@ private enum WalletTab: String, CaseIterable, Identifiable {
         case .settings: return "slider.horizontal.3"
         }
     }
+
+    /// 选中时换成实心的，一眼看得出在哪一页
+    var iconFilled: String {
+        switch self {
+        case .wallet: return "creditcard.fill"
+        case .wishlist: return "heart.fill"
+        case .bought: return "shippingbox.fill"
+        case .approvals: return "checkmark.seal.fill"
+        case .settings: return "slider.horizontal.3"
+        }
+    }
 }
 
 // MARK: - 小零件
@@ -448,7 +459,6 @@ struct WalletRoomView: View {
                 WalletInk.paper.ignoresSafeArea()
                 VStack(spacing: 0) {
                     header.padding(.top, max(geo.safeAreaInsets.top, safeTop, 16))
-                    tabBar
                     ScrollView {
                         VStack(spacing: 12) {
                             switch tab {
@@ -461,8 +471,9 @@ struct WalletRoomView: View {
                         }
                         .padding(.horizontal, 14)
                         .padding(.top, 12)
-                        .padding(.bottom, max(safeBottom, 16) + 20)
+                        .padding(.bottom, 18)
                     }
+                    tabBar
                 }
                 if !store.toast.isEmpty {
                     VStack {
@@ -525,32 +536,37 @@ struct WalletRoomView: View {
         .padding(.bottom, 8)
     }
 
+    /// 底部 tab 栏（0907 傍晚她给的参考图：图标在上、字在下，贴住屏幕最底）。
+    /// 顺序她定的，设置钉在最右边。
     private var tabBar: some View {
-        HStack(spacing: 6) {
-            ForEach(WalletTab.allCases) { item in
-                Button {
-                    tab = item
-                } label: {
-                    VStack(spacing: 3) {
-                        Image(systemName: item.icon)
-                            .font(.system(size: 14, weight: .medium))
-                        Text(item.title)
-                            .font(.system(size: 10, weight: .medium))
+        VStack(spacing: 0) {
+            Rectangle()
+                .fill(WalletInk.line.opacity(0.55))
+                .frame(height: 0.5)
+            HStack(spacing: 0) {
+                ForEach(WalletTab.allCases) { item in
+                    Button {
+                        tab = item
+                    } label: {
+                        VStack(spacing: 4) {
+                            Image(systemName: tab == item ? item.iconFilled : item.icon)
+                                .font(.system(size: 17, weight: tab == item ? .semibold : .regular))
+                            Text(item.title)
+                                .font(.system(size: 10.5, weight: tab == item ? .semibold : .regular,
+                                              design: .serif))
+                        }
+                        .foregroundColor(tab == item ? WalletInk.gold : WalletInk.dim)
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 9)
+                        .contentShape(Rectangle())
                     }
-                    .foregroundColor(tab == item ? WalletInk.ink : WalletInk.dim)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
-                    .background(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(tab == item ? WalletInk.goldSoft : Color.clear)
-                    )
-                    .contentShape(Rectangle())
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
+            .padding(.bottom, max(safeBottom, 10))
         }
-        .padding(.horizontal, 12)
-        .padding(.bottom, 6)
+        .background(.ultraThinMaterial)
+        .background(WalletInk.paper.opacity(0.86))
     }
 
     // MARK: 页一 · 钱包
