@@ -133,6 +133,13 @@ struct ChatMessage: Identifiable, Equatable {
         return try? JSONDecoder().decode(TarotOfferCard.self, from: data)
     }
 
+    /// 0907 二期：审批卡（他提议买东西）
+    var buyCard: BuyApprovalCard? {
+        guard let raw = Self.taggedBody(text, tag: "BUY_CARD"),
+              let data = raw.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(BuyApprovalCard.self, from: data)
+    }
+
     var choiceCard: ChoiceQuestionCard? {
         guard let raw = Self.taggedBody(text, tag: "CHOICE_CARD"),
               let data = raw.data(using: .utf8) else { return nil }
@@ -302,6 +309,24 @@ struct CallSummaryInfo: Equatable {
 
     var connected: Bool { outcome == "ended" }
     var duration: String { String(format: "%d:%02d", seconds / 60, seconds % 60) }
+}
+
+/// 0907 二期审批卡：他想买东西时投一张进聊天流。
+/// 正文里只有 id 和一句摘要——她拍板之后那张卡自己会变样，
+/// 因为展开的数据是现取 /api/wallet/approval?id= 的，不用去改已发出的消息。
+struct BuyApprovalCard: Codable, Equatable {
+    let id: Int
+    let n: Int?
+    let total: Double?
+    let title: String?
+    let cover: String?
+    let extra: Int?
+
+    var count: Int { n ?? 1 }
+    var amount: Double { total ?? 0 }
+    var headline: String { (title ?? "").isEmpty ? "想买点东西" : (title ?? "") }
+    var coverURL: String { cover ?? "" }
+    var restInCart: Int { extra ?? 0 }
 }
 
 struct ChoiceQuestionCard: Codable, Equatable {

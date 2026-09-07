@@ -25,6 +25,7 @@
 		9A11C0DE00114F8CA3D60B11 /* TarotRoomView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A11C0DE00114F8CA3D60B22 /* TarotRoomView.swift */; };
 		9A11C0DE00114F8CA3D60C11 /* NurseryRoomView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A11C0DE00114F8CA3D60C22 /* NurseryRoomView.swift */; };
 		9A11C0DE00114F8CA3D60D11 /* WalletRoomView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A11C0DE00114F8CA3D60D22 /* WalletRoomView.swift */; };
+		9A11C0DE00114F8CA3D60E11 /* BuyCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A11C0DE00114F8CA3D60E22 /* BuyCardView.swift */; };
 		9A11C0DE000C4F8CA3D60B11 /* QipaiDaifugoTableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A11C0DE000C4F8CA3D60B22 /* QipaiDaifugoTableView.swift */; };
 		9A11C0DE000B4F8CA3D60B11 /* QipaiUnoTableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A11C0DE000B4F8CA3D60B22 /* QipaiUnoTableView.swift */; };
 		9A11C0DE000A4F8CA3D60B11 /* QipaiZjhTableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A11C0DE000A4F8CA3D60B22 /* QipaiZjhTableView.swift */; };
@@ -140,6 +141,7 @@
 		9A11C0DE00114F8CA3D60B22 /* TarotRoomView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TarotRoomView.swift; sourceTree = "<group>"; };
 		9A11C0DE00114F8CA3D60C22 /* NurseryRoomView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NurseryRoomView.swift; sourceTree = "<group>"; };
 		9A11C0DE00114F8CA3D60D22 /* WalletRoomView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WalletRoomView.swift; sourceTree = "<group>"; };
+		9A11C0DE00114F8CA3D60E22 /* BuyCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BuyCardView.swift; sourceTree = "<group>"; };
 		9A11C0DE000C4F8CA3D60B22 /* QipaiDaifugoTableView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QipaiDaifugoTableView.swift; sourceTree = "<group>"; };
 		9A11C0DE000B4F8CA3D60B22 /* QipaiUnoTableView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QipaiUnoTableView.swift; sourceTree = "<group>"; };
 		9A11C0DE000A4F8CA3D60B22 /* QipaiZjhTableView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QipaiZjhTableView.swift; sourceTree = "<group>"; };
@@ -273,6 +275,7 @@
 				9A11C0DE00114F8CA3D60B22 /* TarotRoomView.swift */,
 				9A11C0DE00114F8CA3D60C22 /* NurseryRoomView.swift */,
 				9A11C0DE00114F8CA3D60D22 /* WalletRoomView.swift */,
+				9A11C0DE00114F8CA3D60E22 /* BuyCardView.swift */,
 				9A11C0DE000C4F8CA3D60B22 /* QipaiDaifugoTableView.swift */,
 				9A11C0DE000B4F8CA3D60B22 /* QipaiUnoTableView.swift */,
 				9A11C0DE000A4F8CA3D60B22 /* QipaiZjhTableView.swift */,
@@ -491,6 +494,7 @@
 				9A11C0DE00114F8CA3D60B11 /* TarotRoomView.swift in Sources */,
 				9A11C0DE00114F8CA3D60C11 /* NurseryRoomView.swift in Sources */,
 				9A11C0DE00114F8CA3D60D11 /* WalletRoomView.swift in Sources */,
+				9A11C0DE00114F8CA3D60E11 /* BuyCardView.swift in Sources */,
 				9A11C0DE000C4F8CA3D60B11 /* QipaiDaifugoTableView.swift in Sources */,
 				9A11C0DE000B4F8CA3D60B11 /* QipaiUnoTableView.swift in Sources */,
 				9A11C0DE000A4F8CA3D60B11 /* QipaiZjhTableView.swift in Sources */,

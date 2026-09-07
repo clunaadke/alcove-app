@@ -2755,6 +2755,9 @@ struct MessageRow: View {
                     ChoiceAnswerStrip(text: "🔮 抽好了，牌在上面那张卡里", theme: theme)
                 } else if let work = msg.workCard {
                     WorkDeliveryMessageCard(card: work, theme: theme)
+                } else if let buy = msg.buyCard {
+                    // 0907 二期审批卡：她要它「跟他的气泡列在一堆」，所以不居中，走左侧
+                    BuyApprovalMessageCard(card: buy, theme: theme)
                 } else if let choice = msg.choiceCard {
                     ChoiceQuestionMessageCard(card: choice, theme: theme)
                 } else if msg.msgType == "choice_answer" {
