@@ -23,7 +23,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
     case home, profile, activityRoom, calendar, digest, wall, usage, workbench, studio
     case memory, dreams, shelf, fiction, nianlun, clockwork, album, portrait, impression, morningPaper, nowhere, pulse
     case pond
-    case live2d, room3d
+    case room3d
     case tarot          // 0902 占星室（塔罗）
     case nursery        // 0905 育儿室（llm-nursery 电子养崽）
     case roof
@@ -58,7 +58,6 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .nianlun: return "年轮"
         case .pond: return "檐下"
         case .room3d: return "我的房间"
-        case .live2d: return "Live2D 房间"
         case .tarot: return "占星室"
         case .nursery: return "育儿室"
         case .roof: return "檐上"
@@ -120,7 +119,6 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .nianlun: return "circle.hexagongrid"
         case .pond: return "drop.circle"
         case .room3d: return "house.lodge"
-        case .live2d: return "person.crop.rectangle"
         case .tarot: return "sparkles"
         case .nursery: return "teddybear"
         case .roof: return "pawprint.circle"
@@ -292,8 +290,6 @@ struct NativeHouseSheet: View {
                     NativePondView()
                 case .room3d:
                     NativeRoom3DPrototypeView()
-                case .live2d:
-                    NativeLive2DPrototypeView()
                 case .tarot:
                     TarotRoomView()
                 case .nursery:
@@ -554,7 +550,6 @@ struct NativeHouseDrawer: View {
                         drawerRow(.roof, detail: "陈檐住在这层")
                         drawerRow(.pond, detail: "念头、许愿与朋友圈")
                         drawerRow(.room3d, detail: "按你的草图搭的小屋")
-                        drawerRow(.live2d, detail: "官方模型 · 显示小样")
                         drawerRow(.tarot, detail: "抽一张牌，让他解")   // 0902 占星室
                         drawerRow(.nursery, detail: "养一个会学你们说话的小家伙")   // 0905 育儿室
                         drawerRow(.letterbox, detail: "你和陈璟的往来书信")
@@ -12990,27 +12985,11 @@ private struct NativeOBSelfView:View{
     var body:some View{VStack(spacing:10){FoyerPanelTitle(title:"Self",theme:theme);ScrollView(.horizontal,showsIndicators:false){HStack(spacing:7){ForEach(aspects,id:\.self){a in Button(a.isEmpty ? "全部":a){aspect=a}.font(.system(size:11,design:.monospaced)).padding(.horizontal,11).frame(height:30).background(aspect==a ? theme.fyAccentSoft:theme.fyCard,in:Capsule())}}};ScrollView{LazyVStack(spacing:10){ForEach(shown){e in VStack(alignment:.leading,spacing:8){HStack{Text(e.aspect).font(.system(size:10,weight:.semibold,design:.monospaced)).foregroundColor(theme.fyAccent);Spacer();Text(e.created.prefix(16).replacingOccurrences(of:"T",with:" ")).font(.system(size:9,design:.monospaced)).foregroundColor(theme.textDim)};Text(e.content).font(.system(size:13,design:.serif)).lineSpacing(4)}.padding(15).frame(maxWidth:.infinity,alignment:.leading).foyerCard(theme)}}.padding(.bottom,18)}}.padding(.horizontal,16).padding(.bottom,18).foregroundColor(theme.text).foyerPanel(theme).padding(.horizontal,12).padding(.top,8).task{entries=(try? await NativeHouseAPI.array("/api/ob/api/self"))?.map(OBSelfEntry.init) ?? []}}
 }
 
-// MARK: - Live2D display-only prototype (bundled assets, no AI/session access)
-private struct NativeLive2DPrototypeView: View {
-    @Environment(\.scenePhase) private var scenePhase
-    @AppStorage("houseInterfaceAppearance") private var appearance = "dark"
-    @State private var visible = false
-    private var dark: Bool { appearance != "light" }
-
-    var body: some View {
-        Live2DPrototypeWebView(active: visible && scenePhase == .active)
-            .background(dark ? Color(red: 0.07, green: 0.075, blue: 0.085)
-                             : Color(red: 0.95, green: 0.95, blue: 0.97))
-            .preferredColorScheme(dark ? .dark : .light)
-            .onAppear { visible = true }
-            .onDisappear { visible = false }
-    }
-}
-
-private struct Live2DPrototypeWebView: UIViewRepresentable {
+// MARK: - Bundled 3D room web container
+private struct Room3DWebView: UIViewRepresentable {
     let active: Bool
-    var assetDirectory = "live2d"
-    var lifecycleObject = "alcoveLive2D"
+    var assetDirectory = "room3d"
+    var lifecycleObject = "alcoveRoom3D"
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeUIView(context: Context) -> WKWebView {
@@ -13049,7 +13028,7 @@ private struct Live2DPrototypeWebView: UIViewRepresentable {
 
     final class Coordinator: NSObject, WKNavigationDelegate {
         var active = false
-        var lifecycleObject = "alcoveLive2D"
+        var lifecycleObject = "alcoveRoom3D"
         var root: URL?
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             webView.evaluateJavaScript("window.\(lifecycleObject)?.setActive(\(active ? "true" : "false"))", completionHandler: nil)
@@ -13073,7 +13052,7 @@ private struct NativeRoom3DPrototypeView: View {
     @AppStorage("houseInterfaceAppearance") private var appearance = "dark"
     @State private var visible = false
     var body: some View {
-        Live2DPrototypeWebView(active: visible && scenePhase == .active,
+        Room3DWebView(active: visible && scenePhase == .active,
                                assetDirectory: "room3d", lifecycleObject: "alcoveRoom3D")
             .preferredColorScheme(appearance == "light" ? .light : .dark)
             .onAppear { visible = true }
