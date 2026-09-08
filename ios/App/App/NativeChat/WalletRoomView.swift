@@ -12,20 +12,78 @@ import SwiftUI
 // 五页对应她 0907 画的侧边栏：钱包 / 心愿单 / 已购买 / 审批记录 / 设置。
 // 审批记录第一期恒空，页面在、表也在，等第二期审批卡接上就自己有内容了。
 
-// MARK: - 调色（钉死的暖纸账本色，不跟日夜切换）
-
+// MARK: - 调色（0909 她拍板：审美往开屏／棋牌室靠，卡片全毛玻璃，日夜跟 app 走）
+//
+// 原来是钉死的暖纸账本色（米黄纸 + 芥末金），她说丑，跟屋里别的房间不是一家人。
+// 现在直接借棋牌室那套色号（低饱和灰蓝、白瓷/夜瓷），但**不共用 QipaiPalette
+// 那个开关** —— 那个开关是棋牌室大厅的日月按钮、存在 UserDefaults 里的；
+// 钱包要跟 app 的总开关走（AlcoveAppearance.isDark），两者不能互相拨。
+// 所以这里自己留一个 dark，色号照抄，切换来源不同。
+//
+// 写成计算属性而不是 let：一千多行里到处是 WalletInk.xxx，改名等于全文替换，
+// 只换值和取法就够了，一个引用都不用动。
 private enum WalletInk {
-    static let paper = Color(red: 0.984, green: 0.973, blue: 0.949)
-    static let card = Color(red: 1.0, green: 0.998, blue: 0.992)
-    static let ink = Color(red: 0.239, green: 0.216, blue: 0.196)
-    static let dim = Color(red: 0.239, green: 0.216, blue: 0.196).opacity(0.5)
-    static let faint = Color(red: 0.239, green: 0.216, blue: 0.196).opacity(0.3)
-    static let gold = Color(red: 0.784, green: 0.573, blue: 0.259)
-    static let goldSoft = Color(red: 0.973, green: 0.925, blue: 0.831)
-    static let green = Color(red: 0.302, green: 0.518, blue: 0.404)
-    static let red = Color(red: 0.741, green: 0.353, blue: 0.310)
-    static let line = Color(red: 0.878, green: 0.847, blue: 0.792)
-    static let shadow = Color(red: 0.6, green: 0.53, blue: 0.42).opacity(0.16)
+    /// 由 WalletRoomView 在 body 里按 AlcoveAppearance.isDark 赋值
+    static var dark = false
+    private static func pick(_ day: UInt32, _ night: UInt32) -> Color {
+        QipaiPalette.qhex(dark ? night : day)
+    }
+    static var paper: Color { pick(0xECEDF2, 0x20242E) }   // 底色·雾/夜（同棋牌室 fog）
+    static var card: Color { pick(0xF7F8FB, 0x2A2F3A) }    // 面板·白瓷/夜瓷
+    static var ink: Color { pick(0x585F6E, 0xD8DCE6) }     // 正文·石板/月白
+    static var dim: Color { pick(0x9AA0AD, 0x8A92A3) }
+    static var faint: Color { dark ? Color.white.opacity(0.26)
+                                   : QipaiPalette.qhex(0x9AA0AD).opacity(0.55) }
+    static var gold: Color { pick(0x7C8AA6, 0x93A5C8) }    // 强调·灰蓝（原芥末金，名字留着不改）
+    static var goldSoft: Color { dark ? Color.white.opacity(0.13)
+                                      : QipaiPalette.qhex(0x7C8AA6).opacity(0.16) }
+    static var green: Color { pick(0x6E9A87, 0x8FBCA9) }
+    static var red: Color { pick(0xC25B55, 0xD0736C) }
+    static var line: Color { pick(0xD5D9E2, 0x3D4452) }
+    /// 压在强调色块上的字：白天灰蓝够深、白字够看；夜里强调色变浅，白字会糊，改用底色
+    static var onGold: Color { dark ? paper : .white }
+    /// 阴影固定深色：夜里 ink 是月白，拿它当阴影会变成白光晕（棋牌室 0828 踩过）
+    static var shadow: Color { (dark ? Color.black : QipaiPalette.qhex(0x585F6E)).opacity(0.10) }
+}
+
+// MARK: - 毛玻璃面板（照棋牌室白瓷面板的配方，但读 WalletInk）
+//
+// 没直接用 .qipaiPanel()：那个 modifier 内部读的是 QipaiPalette，会跟着棋牌室
+// 大厅的日月按钮走，钱包要跟 app 总开关走，混在一起会出现「一间屋白天一间屋黑夜」。
+// 配方一模一样：系统毛玻璃打底 → 一层白瓷 → 顶部一道浅高光让它微微凸起 → 头发丝描边。
+private struct WalletPanelModifier: ViewModifier {
+    var corner: CGFloat = 18
+    var dotted: Bool = false
+
+    func body(content: Content) -> some View {
+        content
+            .background(
+                ZStack {
+                    RoundedRectangle(cornerRadius: corner, style: .continuous)
+                        .fill(.ultraThinMaterial)
+                    RoundedRectangle(cornerRadius: corner, style: .continuous)
+                        .fill(WalletInk.card.opacity(WalletInk.dark ? 0.72 : 0.55))
+                    if dotted {
+                        QipaiDots(spacing: 14, radius: 1.6, color: WalletInk.line, opacity: 0.3)
+                            .clipShape(RoundedRectangle(cornerRadius: corner, style: .continuous))
+                    }
+                    RoundedRectangle(cornerRadius: corner, style: .continuous)
+                        .fill(LinearGradient(colors: [.white.opacity(0.85), .white.opacity(0)],
+                                             startPoint: .top, endPoint: .center))
+                        .padding(1)
+                        .opacity(WalletInk.dark ? 0.12 : 0.6)
+                }
+            )
+            .overlay(RoundedRectangle(cornerRadius: corner, style: .continuous)
+                .stroke(WalletInk.line, lineWidth: 1))
+            .shadow(color: WalletInk.shadow, radius: 7, y: 3)
+    }
+}
+
+private extension View {
+    func walletPanel(corner: CGFloat = 18, dotted: Bool = false) -> some View {
+        modifier(WalletPanelModifier(corner: corner, dotted: dotted))
+    }
 }
 
 private func money(_ v: Double) -> String {
@@ -361,8 +419,7 @@ private struct WalletCard<Content: View>: View {
         content
             .padding(padding)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(WalletInk.card, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .shadow(color: WalletInk.shadow, radius: 8, y: 3)
+            .walletPanel(corner: 18)
     }
 }
 
@@ -435,6 +492,12 @@ private struct EmptyHint: View {
 
 struct WalletRoomView: View {
     @Environment(\.dismiss) private var dismiss
+    // 0909 她定的：钱包不做自己的日月按钮，跟 app 的总开关走。
+    // 这两个 @AppStorage 只为「她在别处切了深浅，这页当场跟着变」——
+    // AlcoveAppearance.isDark 是直接读 UserDefaults 的，不订阅就不会重画。
+    @AppStorage(AlcoveAppearance.key) private var appearanceRaw = ""
+    @AppStorage(AlcoveAppearance.themeKey) private var themeNameRaw = "haven"
+    private var dark: Bool { AlcoveAppearance.isDark }
     @StateObject private var store = WalletStore()
     @State private var tab: WalletTab = .wallet
     @State private var showTopup = false
@@ -444,6 +507,10 @@ struct WalletRoomView: View {
     @State private var limitDaily = ""
     @State private var limitMonthly = ""
     @State private var limitsFilled = false
+
+    /// 在 body 之前就把调色板拨到位。放 onAppear 里会先画一帧白的再翻黑（棋牌室
+    /// 大厅能忍是因为它自带日月按钮、切换本来就是个动作；这页是进门就该已经对）。
+    init() { WalletInk.dark = AlcoveAppearance.isDark }
 
     /// 全屏房间第一课：安全区问 app 主窗（见 [[fullscreen-room-safe-area]]）
     private var safeTop: CGFloat {
@@ -456,7 +523,22 @@ struct WalletRoomView: View {
     var body: some View {
         GeometryReader { geo in
             ZStack {
+                // 0909 背景照棋牌室大厅的层次：底色 → 波点 → 噪点颗粒。
+                // 中间垫一层很淡的雾玻璃（开屏那张图，同一个图集，不占新体积）——
+                // 这是唯一往开屏靠的一笔，让两间屋子有血缘，但不是照抄它的样式。
                 WalletInk.paper.ignoresSafeArea()
+                Color.clear
+                    .overlay(Image("MistLaunch").resizable().scaledToFill())
+                    .clipped()
+                    .opacity(WalletInk.dark ? 0.16 : 0.10)
+                    .ignoresSafeArea()
+                    .allowsHitTesting(false)
+                QipaiDots(spacing: 16, radius: 1.3, color: WalletInk.line, opacity: 0.28)
+                    .ignoresSafeArea()
+                Color.clear
+                    .qipaiGrain(0.5)          // 那层"不是特别特别清晰"的颗粒
+                    .ignoresSafeArea()
+                    .allowsHitTesting(false)
                 VStack(spacing: 0) {
                     header.padding(.top, max(geo.safeAreaInsets.top, safeTop, 16))
                     ScrollView {
@@ -490,7 +572,11 @@ struct WalletRoomView: View {
                 }
             }
         }
-        .environment(\.colorScheme, .light)
+        .environment(\.colorScheme, dark ? .dark : .light)
+        // 她在别处把屋子掰到黑夜/白天：拨调色板，然后整棵树重建，
+        // 让所有算出来的颜色重新取一遍（跟棋牌室大厅 .id(night) 一个套路）
+        .onChange(of: dark) { WalletInk.dark = $0 }
+        .id(dark)
         .task {
             await store.refreshAll()
             fillLimitsOnce()
@@ -514,19 +600,21 @@ struct WalletRoomView: View {
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundColor(WalletInk.gold)
                     .frame(width: 40, height: 40)
-                    .background(WalletInk.card, in: Circle())
-                    .shadow(color: WalletInk.shadow, radius: 6, y: 2)
+                    .walletPanel(corner: 20)      // 圆的：40 的一半
                     .contentShape(Circle())
             }
             .buttonStyle(.plain)
             Spacer()
-            VStack(spacing: 0) {
-                Text("👛 钱包")
-                    .font(.system(size: 19, weight: .bold, design: .rounded))
-                    .foregroundColor(WalletInk.ink)
-                Text("wallet")
-                    .font(.system(size: 9, weight: .medium, design: .rounded))
+            // 0909：表情符号去掉（棋牌室和开屏都没有 emoji），中文用衬线、
+            // 英文小字全大写拉开字距 —— 跟棋牌室大厅那种克制的标题一个口味。
+            VStack(spacing: 2) {
+                Text("钱包")
+                    .font(.system(size: 17, weight: .medium, design: .serif))
                     .tracking(3)
+                    .foregroundColor(WalletInk.ink)
+                Text("WALLET")
+                    .font(.system(size: 8.5, weight: .regular, design: .serif))
+                    .tracking(3.2)
                     .foregroundColor(WalletInk.dim)
             }
             Spacer()
@@ -597,7 +685,7 @@ struct WalletRoomView: View {
                     } label: {
                         Text("给他充钱")
                             .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(.white)
+                            .foregroundColor(WalletInk.onGold)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 11)
                             .background(WalletInk.gold, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
@@ -744,7 +832,7 @@ struct WalletRoomView: View {
                             if let image = phase.image {
                                 image.resizable().scaledToFill()
                             } else {
-                                Color(red: 0.94, green: 0.93, blue: 0.90)
+                                WalletInk.goldSoft
                             }
                         }
                         .frame(width: 62, height: 62)
@@ -862,7 +950,7 @@ struct WalletRoomView: View {
                                 } label: {
                                     Text("到了")
                                         .font(.system(size: 11, weight: .semibold))
-                                        .foregroundColor(.white)
+                                        .foregroundColor(WalletInk.onGold)
                                         .padding(.horizontal, 12)
                                         .padding(.vertical, 6)
                                         .background(WalletInk.gold, in: Capsule())
@@ -939,7 +1027,7 @@ struct WalletRoomView: View {
                     } label: {
                         Text("存起来")
                             .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(.white)
+                            .foregroundColor(WalletInk.onGold)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 11)
                             .background(WalletInk.gold, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
@@ -1039,7 +1127,7 @@ struct WalletRoomView: View {
             .padding(18)
         }
         .background(WalletInk.paper.ignoresSafeArea())
-        .environment(\.colorScheme, .light)
+        .environment(\.colorScheme, dark ? .dark : .light)
     }
 
     private func fillLimitsOnce() {
