@@ -11,5 +11,5 @@ body{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 #alcove-living-water .alw-en{font:300 10px/1.8 'Alcove Serif',serif;letter-spacing:2.1px}
 #alcove-living-water .alw-cn{margin-top:9px;font:300 11px/1.8 'Alcove Serif',serif;letter-spacing:.7px}
 /* Same visible type size as the upper-left English; retain a 48pt touch target. */
-#alcove-living-water .alw-enter{position:absolute;right:max(6.5%,var(--safe-right));bottom:calc(var(--safe-bottom) + 12px);min-width:62px;min-height:48px;padding:4px 8px;border:0;background:transparent;color:#fff;font:400 10px/1.8 'Alcove Script',cursive;text-shadow:0 1px 9px #376496;cursor:pointer;z-index:4;-webkit-tap-highlight-color:transparent}
+#alcove-living-water .alw-enter{position:absolute;right:max(6.5%,var(--safe-right));bottom:calc(var(--safe-bottom) + 12px);min-width:62px;min-height:48px;padding:4px 8px;border:0;background:transparent;color:#fff;font:300 10px/1.8 'Alcove Serif',serif;letter-spacing:2.1px;text-shadow:0 1px 9px #376496;cursor:pointer;z-index:4;-webkit-tap-highlight-color:transparent}
 #alcove-living-water .alw-access{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}

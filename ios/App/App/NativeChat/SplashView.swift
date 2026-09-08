@@ -22,8 +22,10 @@ struct SplashView: View {
                 if loadFailed {
                     // Never auto-dismiss, even when WebKit cannot load the artwork.
                     Button(action: onEnter) {
-                        Text("Enter")
+                        // 跟网页里那颗、以及左上角那行英文对齐：同一号衬线体、大写、同样字距
+                        Text("ENTER")
                             .font(.system(size: 10, weight: .light, design: .serif))
+                            .tracking(2.1)
                             .foregroundStyle(.white)
                             .frame(width: 62, height: 48)
                             .contentShape(Rectangle())

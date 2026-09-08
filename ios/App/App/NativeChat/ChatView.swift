@@ -358,13 +358,21 @@ struct ChatView: View {
                 // 点屏幕最底下那条空隙（打字框下面、home 横条那一带）直接回到最新 ——
                 // 跟 iOS 点最顶上状态栏回到顶是同一个手感，左右对称。
                 // 只吃点一下；上滑还是系统的返回主屏手势，两者不打架。
-                // 0909 修：contentShape 必须贴着那条窄条写，撑满屏幕的 frame 只能
+                // 0909 修一：contentShape 必须贴着那条窄条写，撑满屏幕的 frame 只能
                 // 挂在最外面。写反了等于给整页盖一张透明板，列表滑不动、按钮点不着。
-                Color.clear
-                    .frame(height: max(safeBottom, 16))
-                    .contentShape(Rectangle())
-                    .onTapGesture { jumpToTail(proxy) }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                // 0909 修二：这条窄条压在打字框上（信息主题的打字框是 safeAreaBar 挂的，
+                // 属于列表那一层，画在这条之前，所以这条永远盖着它）——加号、输入框、
+                // 语音键全被吃掉。补回退休那颗圆按钮原有的两个出现条件：
+                // 只在「人不在最新」时才存在，语音卡片在时让开。
+                // 在最新的时候（也就是打字的时候）它压根不存在，打字框完整可用；
+                // 翻历史时才铺开，那正是需要一键回到最新的时候。
+                if !atBottom && store.pendingVoice == nil {
+                    Color.clear
+                        .frame(height: max(safeBottom, 16))
+                        .contentShape(Rectangle())
+                        .onTapGesture { jumpToTail(proxy) }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                }
 
                 if !showMiniTerminal && !paragraphSelectionMode {
                     ClawdPet(store: store) {
