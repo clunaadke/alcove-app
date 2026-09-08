@@ -35,11 +35,18 @@ final class SmokeDelegate: UIResponder, UIApplicationDelegate {
         guard !completed else { return }
         web = window.flatMap { findWeb($0) }
         read { state in
-            guard state["renderer"] as? String == "webgl", Int(state["frame"] as? String ?? "0") ?? 0 > 2 else {
+            // 0909: GitHub's macOS runner has no display, so the simulator cannot
+            // hand WebKit a WebGL context and the page drops to its 2D canvas
+            // fallback on purpose. The animation still runs, so accept any renderer
+            // the page actually settled on and record which one CI used.
+            let renderer = state["renderer"] as? String ?? ""
+            guard ["webgl", "canvas", "fallback"].contains(renderer),
+                  Int(state["frame"] as? String ?? "0") ?? 0 > 2 else {
                 if attempt < 15 { self.later(1) { self.findArtwork(attempt: attempt + 1) } }
-                else { self.finish(error: "WebGL never started: \(state)") }
+                else { self.finish(error: "Artwork never started: \(state)") }
                 return
             }
+            self.checks["renderer"] = renderer
             guard state["active"] as? String == "true", state["quoteCount"] as? String == "7", self.entryCount == 0 else {
                 self.finish(error: "Incorrect initial native state: \(state)"); return
             }
@@ -109,7 +116,9 @@ final class SmokeDelegate: UIResponder, UIApplicationDelegate {
                             self.finish(error: "Native inactive notification did not pause artwork"); return
                         }
                         NotificationCenter.default.post(name: UIApplication.didBecomeActiveNotification, object: UIApplication.shared)
-                        self.later(0.4) {
+                        // The 2D fallback repaints every pixel on the CPU, so one frame
+                        // can take a few hundred ms on a runner. Give resume room.
+                        self.later(1.2) {
                             self.read { resumed in
                                 guard resumed["active"] as? String == "true", resumed["frame"] as? String != still["frame"] as? String else {
                                     self.finish(error: "Native activation did not resume artwork"); return
