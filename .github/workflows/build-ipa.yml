@@ -62,6 +62,17 @@ jobs:
           fi
           exit "$status"
 
+      - name: Verify native mist splash on iPhone simulator
+        run: bash scripts/mist-splash-smoke/run.sh
+
+      - name: Upload mist splash verification
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Mist-splash-verification
+          path: mist-smoke-results/
+          if-no-files-found: ignore
+
       - name: Strip signatures from frameworks
         working-directory: ios/App
         run: |

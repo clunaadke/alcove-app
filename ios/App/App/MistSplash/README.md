@@ -7,7 +7,8 @@ There is no automatic dismissal or external navigation. All assets are bundled.
 
 - `quotes.js`: the seven supplied passages, including original punctuation and line breaks.
 - `splash.js`: the same wipe mask, regrowing mist, height-field hand wake and at most
-  two ambient ripple sources. Full-screen aspect correction keeps the ripples round.
+  two ambient ripple sources. Full-screen aspect correction keeps the ripples round. A smooth background mapping
+  preserves both wet glass edges, and a soft blue vignette deepens the perimeter.
   The hand impulse radius is 3.2 cells, down slightly from the approved 3.4;
   rain strength and wipe width are unchanged.
 - `splash.css`: both the upper-left English and Enter are 10px. Enter retains the
@@ -22,9 +23,16 @@ There is no automatic dismissal or external navigation. All assets are bundled.
 When quotes change, regenerate the serif subset locally and check its cmap for every
 non-whitespace character. This screen does not use or change the app's default fonts.
 
-The native wrapper forwards window safe-area insets and scene activity. Rendering pauses
+The native wrapper forwards window safe-area insets and UIApplication activity
+notifications. It deliberately does not use SwiftUI scenePhase: Alcove starts
+with UIApplicationDelegate and UIHostingController, without a SwiftUI App scene. Rendering pauses
 when inactive and stops when dismissed. Rotation reloads the artwork at the new aspect
 ratio without ever automatically entering chat. Compact layouts use two text columns.
 
 The SwiftUI root and its existing chat features remain mounted behind the opening screen.
 The build workflow packages the MistSplash folder as a resource in the unsigned IPA.
+Before packaging, scripts/mist-splash-smoke/run.sh builds an iPhone simulator
+harness using the production SplashView and the same UIKit lifecycle. It verifies
+WebGL starts, frames advance, pointer input clears fog, native inactivity pauses
+and activation resumes, and Enter bridges exactly once. Results and screenshots
+are uploaded as Mist-splash-verification.

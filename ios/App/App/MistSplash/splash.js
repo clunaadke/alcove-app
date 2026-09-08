@@ -6,9 +6,19 @@
     const viewport=screen.getBoundingClientRect();
     const W=390,H=Math.round(W*viewport.height/viewport.width),S=Math.min(2,window.devicePixelRatio||2),NX=130,NY=Math.round(NX*H/W),COUNT=NX*NY;
     const aspect=H/W;
-    let photoScale=[1,1];
-    function updatePhotoScale(){const pa=photo.naturalWidth/photo.naturalHeight;const va=W/H;photoScale=va<pa?[va/pa,1]:[1,pa/va]}
-    function drawPhoto(ctx){const pw=photo.naturalWidth,ph=photo.naturalHeight,sw=pw*photoScale[0],sh=ph*photoScale[1];ctx.drawImage(photo,(pw-sw)/2,(ph-sh)/2,sw,sh,0,0,W,H)}
+    let backdrop;
+    // Preserve both glass edges. Absorb the aspect change in the empty middle,
+    // with a smooth mapping whose edge scale keeps the droplets proportional.
+    function preparePhoto(){
+      backdrop=make(W*S,H*S);const b=backdrop.getContext('2d'),pw=photo.naturalWidth,ph=photo.naturalHeight,ratio=(W/H)/(pw/ph);
+      const warp=(p,scale)=>p+(scale-1)*Math.sin(p*Math.PI*2)/(Math.PI*2);
+      if(ratio<1){for(let x=0;x<backdrop.width;x++){const a=warp(x/backdrop.width,ratio),z=warp((x+1)/backdrop.width,ratio);b.drawImage(photo,a*pw,0,(z-a)*pw,ph,x,0,1,backdrop.height)}}
+      else{for(let y=0;y<backdrop.height;y++){const a=warp(y/backdrop.height,1/ratio),z=warp((y+1)/backdrop.height,1/ratio);b.drawImage(photo,0,a*ph,pw,(z-a)*ph,0,y,backdrop.width,1)}}
+      const edge=b.createRadialGradient(backdrop.width*.52,backdrop.height*.45,backdrop.width*.12,backdrop.width*.5,backdrop.height*.5,backdrop.height*.63);
+      edge.addColorStop(0,'rgba(7,38,87,0)');edge.addColorStop(.55,'rgba(7,38,87,.025)');edge.addColorStop(1,'rgba(7,38,87,.24)');b.fillStyle=edge;b.fillRect(0,0,backdrop.width,backdrop.height);
+      const sides=b.createLinearGradient(0,0,backdrop.width,0);sides.addColorStop(0,'rgba(5,33,83,.20)');sides.addColorStop(.22,'rgba(5,33,83,0)');sides.addColorStop(.78,'rgba(5,33,83,0)');sides.addColorStop(1,'rgba(5,33,83,.24)');b.fillStyle=sides;b.fillRect(0,0,backdrop.width,backdrop.height);
+    }
+    function drawPhoto(ctx){ctx.drawImage(backdrop,0,0,W,H)}
     canvas.width=W*S;canvas.height=H*S;
     const reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
     const make=(w,h)=>{const a=document.createElement('canvas');a.width=w;a.height=h;return a};
@@ -66,8 +76,8 @@
       for(let i=1;i<=n;i++){const t=i/n,p={x:a.x+(b.x-a.x)*t,y:a.y+(b.y-a.y)*t},r=(oldRadius+(radius-oldRadius)*t)*clamp((pathLength+distance*t)/24,.38,1);dab(p,r,angle,now,.10);if(i%2===0||i===n)disturb(p.x,p.y,.22+clamp(speed/1500,0,.22))}pathLength+=distance;lastMove=now;
     }
     const point=e=>{const r=canvas.getBoundingClientRect();return{x:(e.clientX-r.left)*W/r.width,y:(e.clientY-r.top)*H/r.height}};
-    canvas.addEventListener('pointerdown',e=>{if(active!==null||entered)return;active=e.pointerId;last=point(e);prevPoint=last;lastMove=performance.now();pathLength=0;radius=16;canvas.setPointerCapture(e.pointerId);dab(last,9,0,lastMove,.16);disturb(last.x,last.y,.65)});
-    canvas.addEventListener('pointermove',e=>{if(active!==e.pointerId||!last||entered)return;const now=performance.now(),p=point(e);prevPoint=last;drag(last,p,now);last=p});
+    canvas.addEventListener('pointerdown',e=>{if(active!==null||entered)return;active=e.pointerId;last=point(e);prevPoint=last;lastMove=performance.now();pathLength=0;radius=16;try{canvas.setPointerCapture(e.pointerId)}catch(_){}dab(last,9,0,lastMove,.16);disturb(last.x,last.y,.65)});
+    canvas.addEventListener('pointermove',e=>{if(active!==e.pointerId||!last||entered)return;const now=performance.now(),p=point(e);prevPoint=last;drag(last,p,now);last=p;root.dataset.swipes=String((Number(root.dataset.swipes)||0)+1)});
     const finish=e=>{if(active!==e.pointerId)return;if(last&&prevPoint){const dx=last.x-prevPoint.x,dy=last.y-prevPoint.y,d=Math.hypot(dx,dy);if(d>1){const a=Math.atan2(dy,dx),now=performance.now();for(let i=1;i<=4;i++)dab({x:last.x+dx/d*i,y:last.y+dy/d*i},radius*(1-i/6),a,now,.075)}}active=null;last=null};
     ['pointerup','pointercancel','lostpointercapture'].forEach(k=>canvas.addEventListener(k,finish));
     enter.addEventListener('click',()=>{if(entered)return;entered=true;active=null;last=null;root.dataset.enterRequested='true';postNative('enter');window.dispatchEvent(new CustomEvent('alcove:enter'))});
@@ -78,19 +88,19 @@
     }
     function updateRain(now){rain=rain.filter(q=>now-q.born<6.8);if(!reduce&&now>=nextRain&&rain.length<2){const count=rain.length===0&&Math.random()<.43?2:1;for(let k=0;k<count;k++)rain.push({x:.035+Math.random()*.93,y:.035+Math.random()*.93,born:now-k*.12,power:.8+Math.random()*.3});nextRain=now+3.4+Math.random()*3.1}rainUniform.fill(0);rain.forEach((q,i)=>{rainUniform.set([q.x,q.y,now-q.born,q.power],i*4)});root.dataset.rainCount=String(rain.length)}
     const vertex='attribute vec2 a;varying vec2 uv;void main(){uv=vec2((a.x+1.)*.5,(1.-a.y)*.5);gl_Position=vec4(a,0.,1.);}';
-    const fragment=`precision highp float;varying vec2 uv;uniform sampler2D photograph;uniform sampler2D lettering;uniform sampler2D cleared;uniform sampler2D water;uniform vec4 rain[2];uniform float time;uniform float motion;uniform float aspect;uniform vec2 photoScale;
-    float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}float noise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(hash(i),hash(i+vec2(1.,0.)),f.x),mix(hash(i+vec2(0.,1.)),hash(i+1.),f.x),f.y);}vec3 photoAt(vec2 p){return texture2D(photograph,clamp(vec2(.5)+(p-vec2(.5))*photoScale,.002,.998)).rgb;}
+    const fragment=`precision highp float;varying vec2 uv;uniform sampler2D photograph;uniform sampler2D lettering;uniform sampler2D cleared;uniform sampler2D water;uniform vec4 rain[2];uniform float time;uniform float motion;uniform float aspect;
+    float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}float noise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(hash(i),hash(i+vec2(1.,0.)),f.x),mix(hash(i+vec2(0.,1.)),hash(i+1.),f.x),f.y);}vec3 photoAt(vec2 p){return texture2D(photograph,clamp(p,.002,.998)).rgb;}
     void main(){vec2 p=uv;vec2 slope=(texture2D(water,p).rg-vec2(128./255.))*2.55;vec2 dis=slope*vec2(.035,.035/aspect)*motion;float light=dot(slope,vec2(-.42,-.78))*.30*motion;
       for(int i=0;i<2;i++){vec4 q=rain[i];if(q.w>0.){vec2 delta=(p-q.xy)*vec2(1.,aspect);float dist=length(delta),ang=atan(delta.y,delta.x),phase=dist-q.z*.075+.003*sin(ang*3.);float env=exp(-pow(phase/.049,2.))*exp(-q.z*.37)*smoothstep(0.,.25,q.z)*(1.-smoothstep(5.8,6.8,q.z));float wave=sin(phase*195.)*env*q.w;vec2 normal=delta/max(dist,.003);dis+=normal*vec2(.018,.018/aspect)*wave*motion;light+=dot(normal,vec2(-.447,-.894))*wave*.15*motion;}}
       vec2 p2=clamp(p+dis,.002,.998);float a=texture2D(cleared,p2).a;float gx=texture2D(cleared,p2+vec2(.003,0.)).a-texture2D(cleared,p2-vec2(.003,0.)).a;float gy=texture2D(cleared,p2+vec2(0.,.002)).a-texture2D(cleared,p2-vec2(0.,.002)).a;
       vec2 q=p2+vec2(gx,gy)*.003;vec3 original=photoAt(q),blur=(photoAt(q+vec2(.015,0.))+photoAt(q-vec2(.015,0.))+photoAt(q+vec2(0.,.012))+photoAt(q-vec2(0.,.012))+original*2.)/6.;
       float n=noise(p*vec2(5.,7.)+vec2(time*.006*motion,0.))*.6+noise(p*vec2(12.,17.))*.4;vec3 fog=mix(mix(original,blur,.40),vec3(.72,.84,.96),.08+n*.11);vec3 clean=mix(blur,vec3(.045,.22,.47),.36);vec4 text=texture2D(lettering,p2);clean=mix(clean,text.rgb,text.a);vec3 color=mix(fog,clean,a)+light+(gx+gy)*.026;gl_FragColor=vec4(color,1.);
     }`;
-    function setup(){updatePhotoScale();let gl=canvas.getContext('webgl',{alpha:false,antialias:false,powerPreference:'low-power'});if(gl){try{
+    function setup(){preparePhoto();let gl=canvas.getContext('webgl',{alpha:false,antialias:false,powerPreference:'low-power'});if(gl){try{
       const shader=(kind,code)=>{const s=gl.createShader(kind);gl.shaderSource(s,code);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(s));return s},program=gl.createProgram();gl.attachShader(program,shader(gl.VERTEX_SHADER,vertex));gl.attachShader(program,shader(gl.FRAGMENT_SHADER,fragment));gl.linkProgram(program);if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(program));gl.useProgram(program);
       const buffer=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buffer);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,-1,1,1,-1,1,1]),gl.STATIC_DRAW);const attr=gl.getAttribLocation(program,'a');gl.enableVertexAttribArray(attr);gl.vertexAttribPointer(attr,2,gl.FLOAT,false,0,0);
-      const textures=[],sources=[photo,textCanvas,mask,water],names=['photograph','lettering','cleared','water'];sources.forEach((src,i)=>{const t=gl.createTexture();textures.push(t);gl.activeTexture(gl.TEXTURE0+i);gl.bindTexture(gl.TEXTURE_2D,t);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,src);gl.uniform1i(gl.getUniformLocation(program,names[i]),i)});
-      const timeLoc=gl.getUniformLocation(program,'time'),rainLoc=gl.getUniformLocation(program,'rain[0]');gl.uniform1f(gl.getUniformLocation(program,'motion'),reduce?0:1);gl.uniform1f(gl.getUniformLocation(program,'aspect'),aspect);gl.uniform2fv(gl.getUniformLocation(program,'photoScale'),photoScale);gl.viewport(0,0,canvas.width,canvas.height);
+      const textures=[],sources=[backdrop,textCanvas,mask,water],names=['photograph','lettering','cleared','water'];sources.forEach((src,i)=>{const t=gl.createTexture();textures.push(t);gl.activeTexture(gl.TEXTURE0+i);gl.bindTexture(gl.TEXTURE_2D,t);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,src);gl.uniform1i(gl.getUniformLocation(program,names[i]),i)});
+      const timeLoc=gl.getUniformLocation(program,'time'),rainLoc=gl.getUniformLocation(program,'rain[0]');gl.uniform1f(gl.getUniformLocation(program,'motion'),reduce?0:1);gl.uniform1f(gl.getUniformLocation(program,'aspect'),aspect);gl.viewport(0,0,canvas.width,canvas.height);
       releaseRenderer=()=>{textures.forEach(t=>gl.deleteTexture(t));gl.deleteBuffer(buffer);gl.deleteProgram(program)};
       render=()=>{for(let i=textDirty?1:2;i<=3;i++){gl.activeTexture(gl.TEXTURE0+i);gl.bindTexture(gl.TEXTURE_2D,textures[i]);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,sources[i])}textDirty=false;gl.uniform1f(timeLoc,clock);gl.uniform4fv(rainLoc,rainUniform);gl.drawArrays(gl.TRIANGLES,0,6)};root.dataset.renderer='webgl';
     }catch(error){gl=null;root.dataset.renderer='fallback'}}
@@ -101,9 +111,9 @@
         };root.dataset.renderer='canvas';
       }raf=requestAnimationFrame(frame)
     }
-    function frame(now){if(stopped||!root.isConnected)return;if(entered||!nativeActive||document.hidden){previous=now;raf=requestAnimationFrame(frame);return}if(now-previous<32){raf=requestAnimationFrame(frame);return}const dt=previous?Math.min(.06,(now-previous)/1000):.033;previous=now;clock+=dt;updateRain(clock);updateWater();for(let i=0;i<amount.length;i++){const a=remaining(i,now);mi.data[i*4+3]=Math.round(a*255);if(a<.0001)amount[i]=0}mc.putImageData(mi,0,0);if(render)render();raf=requestAnimationFrame(frame)}
+    function frame(now){if(stopped||!root.isConnected)return;if(entered||!nativeActive||document.hidden){previous=now;raf=requestAnimationFrame(frame);return}if(now-previous<32){raf=requestAnimationFrame(frame);return}const dt=previous?Math.min(.06,(now-previous)/1000):.033;previous=now;clock+=dt;updateRain(clock);updateWater();let clearedPixels=0;for(let i=0;i<amount.length;i++){const a=remaining(i,now);mi.data[i*4+3]=Math.round(a*255);if(a>.2)clearedPixels++;if(a<.0001)amount[i]=0}mc.putImageData(mi,0,0);root.dataset.clearedPixels=String(clearedPixels);if(render)render();root.dataset.frame=String((Number(root.dataset.frame)||0)+1);raf=requestAnimationFrame(frame)}
     window.alcoveSplashEnvironment=config=>{
-      nativeActive=config.active!==false;
+      nativeActive=config.active!==false;root.dataset.active=String(nativeActive);
       for(const edge of ['top','bottom','left','right'])document.documentElement.style.setProperty('--safe-'+edge,Math.max(0,Number(config[edge])||0)+'px');
       if(render)paintText();
     };

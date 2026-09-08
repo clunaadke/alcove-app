@@ -5,7 +5,6 @@ import WebKit
 /// The local page only emits `enter`; it has no access to chat or network APIs.
 struct SplashView: View {
     let onEnter: () -> Void
-    @Environment(\.scenePhase) private var scenePhase
     @State private var loadFailed = false
 
     var body: some View {
@@ -17,7 +16,6 @@ struct SplashView: View {
                     .frame(width: geometry.size.width, height: geometry.size.height)
                     .clipped()
                 MistSplashWebView(
-                    isActive: scenePhase == .active,
                     onEnter: onEnter,
                     onFailure: { loadFailed = true }
                 )
@@ -41,7 +39,6 @@ struct SplashView: View {
 }
 
 private struct MistSplashWebView: UIViewRepresentable {
-    let isActive: Bool
     let onEnter: () -> Void
     let onFailure: () -> Void
 
@@ -63,7 +60,7 @@ private struct MistSplashWebView: UIViewRepresentable {
         webView.scrollView.bounces = false
         webView.scrollView.contentInsetAdjustmentBehavior = .never
         webView.allowsBackForwardNavigationGestures = false
-        webView.isArtworkActive = isActive
+        webView.observeApplicationActivity()
         if let url = Bundle.main.url(forResource: "index", withExtension: "html", subdirectory: "MistSplash") {
             context.coordinator.resourceDirectory = url.deletingLastPathComponent()
             webView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
@@ -76,13 +73,10 @@ private struct MistSplashWebView: UIViewRepresentable {
     func updateUIView(_ webView: MistWebView, context: Context) {
         context.coordinator.onEnter = onEnter
         context.coordinator.onFailure = onFailure
-        if webView.isArtworkActive != isActive {
-            webView.isArtworkActive = isActive
-            webView.updateArtworkEnvironment()
-        }
     }
 
     static func dismantleUIView(_ webView: MistWebView, coordinator: Coordinator) {
+        NotificationCenter.default.removeObserver(webView)
         webView.evaluateJavaScript("window.alcoveSplashStop && window.alcoveSplashStop()", completionHandler: nil)
         webView.stopLoading()
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "alcoveSplash")
@@ -147,6 +141,29 @@ private struct MistSplashWebView: UIViewRepresentable {
 
 private final class MistWebView: WKWebView {
     var isArtworkActive = true
+
+    // Alcove uses UIApplicationDelegate + UIHostingController, not a SwiftUI App
+    // scene. Its scenePhase environment can stay inactive while the app is visible.
+    func observeApplicationActivity() {
+        isArtworkActive = UIApplication.shared.applicationState == .active
+        let center = NotificationCenter.default
+        center.addObserver(self, selector: #selector(applicationBecameActive),
+                           name: UIApplication.didBecomeActiveNotification, object: nil)
+        center.addObserver(self, selector: #selector(applicationResignedActive),
+                           name: UIApplication.willResignActiveNotification, object: nil)
+        center.addObserver(self, selector: #selector(applicationResignedActive),
+                           name: UIApplication.didEnterBackgroundNotification, object: nil)
+    }
+
+    @objc private func applicationBecameActive() {
+        isArtworkActive = true
+        updateArtworkEnvironment()
+    }
+
+    @objc private func applicationResignedActive() {
+        isArtworkActive = false
+        updateArtworkEnvironment()
+    }
 
     override func safeAreaInsetsDidChange() {
         super.safeAreaInsetsDidChange()

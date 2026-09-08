@@ -5,7 +5,7 @@ html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#83b7e9;-we
 body{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
 #alcove-living-water{width:100%;height:100%;overflow:hidden}
 #alcove-living-water .alw-screen{position:relative;width:100%;height:100%;overflow:hidden;background:#83b7e9;isolation:isolate}
-#alcove-living-water .alw-photo,#alcove-living-water .alw-canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+#alcove-living-water .alw-photo,#alcove-living-water .alw-canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:fill;display:block}
 #alcove-living-water .alw-canvas{touch-action:none;cursor:crosshair;z-index:1}
 #alcove-living-water .alw-intro{position:absolute;left:max(8.2%,calc(var(--safe-left) + 20px));top:calc(var(--safe-top) + 28px);color:#fff;z-index:3;pointer-events:none;text-shadow:0 1px 7px #255b89}
 #alcove-living-water .alw-en{font:300 10px/1.8 'Alcove Serif',serif;letter-spacing:2.1px}
