@@ -48,6 +48,8 @@ struct ChatView: View {
     @Namespace private var photoTransition
     @State private var previewImage: UIImage?
     @State private var inputBarHeight: CGFloat = 90
+    // 打字框底边在屏幕坐标里的位置；底部那条「点一下回到最新」的窄条按它让路
+    @State private var inputBarBottom: CGFloat = .infinity
     @State private var scrollKick = 0
     @State private var showMusicPlayer = false
     @State private var showModelPicker = false
@@ -112,6 +114,14 @@ struct ChatView: View {
     /// 0902：打字框上方的迷你播放条退休了（小唱片浮在屏幕边上替它），不再占地方
     private var musicBarClearance: CGFloat { 0 }
     private var bottomChromeHeight: CGFloat { inputBarHeight + musicBarClearance }
+
+    /// 「点屏幕最底回到最新」那条窄条能有多高：只吃打字框底边到屏幕最底之间那点空隙，
+    /// 封顶 14pt，一个像素都不许压到打字框上。还没量到（.infinity）就当没空隙、
+    /// 窄条不出现 —— 宁可少一个手势，也不能再把加号和输入框吃掉一次。
+    private var tailTapStripHeight: CGFloat {
+        guard inputBarBottom.isFinite else { return 0 }
+        return max(0, min(14, UIScreen.main.bounds.maxY - inputBarBottom))
+    }
 
     /// 该不该跟着滚到最新：人在底部，或者这次打字框是在底部时点开的。
     private var shouldFollowTail: Bool {
@@ -366,9 +376,11 @@ struct ChatView: View {
                 // 只在「人不在最新」时才存在，语音卡片在时让开。
                 // 在最新的时候（也就是打字的时候）它压根不存在，打字框完整可用；
                 // 翻历史时才铺开，那正是需要一键回到最新的时候。
-                if !atBottom && store.pendingVoice == nil {
+                // 0909 修三：她要「就算不在最新也能点打字框」。所以窄条不再自己定高度，
+                // 改成量出打字框底边到屏幕最底之间那点空隙，只长在空隙里，最多 14pt。
+                if !atBottom && store.pendingVoice == nil && tailTapStripHeight > 4 {
                     Color.clear
-                        .frame(height: max(safeBottom, 16))
+                        .frame(height: tailTapStripHeight)
                         .contentShape(Rectangle())
                         .onTapGesture { jumpToTail(proxy) }
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
@@ -1051,9 +1063,13 @@ struct ChatView: View {
         }
         .padding(.bottom, 0)
         .background(GeometryReader { geo in
-            Color.clear.preference(key: InputBarHeightKey.self, value: geo.size.height)
+            Color.clear
+                .preference(key: InputBarHeightKey.self, value: geo.size.height)
+                // 0909：底边报到屏幕坐标里，给底部那条窄条算可用空隙用
+                .preference(key: InputBarBottomKey.self, value: geo.frame(in: .global).maxY)
         })
         .onPreferenceChange(InputBarHeightKey.self) { inputBarHeight = $0 }
+        .onPreferenceChange(InputBarBottomKey.self) { inputBarBottom = $0 }
     }
 
     // 0902 她定的语音卡片：录完不直接发，先在打字框上方看转文字和情绪；
@@ -5639,6 +5655,17 @@ struct InputBarHeightKey: PreferenceKey {
     static var defaultValue: CGFloat = 90
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = nextValue()
+    }
+}
+
+/// 0909：打字框底边在屏幕坐标里的位置。「点最底回到最新」那条窄条靠它
+/// 算出自己最多能有多高 —— 只吃打字框下面那点空隙，一个像素都不许压上去。
+/// 默认给 .infinity：还没量到之前当作打字框贴着屏幕底，窄条先不出现，
+/// 宁可少一个手势，也不能抢走打字框。
+struct InputBarBottomKey: PreferenceKey {
+    static var defaultValue: CGFloat = .infinity
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = min(value, nextValue())
     }
 }
 
