@@ -63,10 +63,10 @@ jobs:
           exit "$status"
 
       - name: Verify native mist splash on iPhone simulator
-        # 0909 止血：这道检查在 GitHub 的无显示器 runner 上过不去（模拟器拿不到
-        # WebGL 上下文），但它排在打包前面，一挂连 IPA 都不出，人装不上 app。
-        # 先让它只报不拦：照跑、照红、截图照传，等它在 CI 上真能跑通再收回来。
-        continue-on-error: true
+        # 0909：这道检查一度全红，当时判成「CI 没显卡、检查太较真」，加了
+        # continue-on-error 放行 —— 判错了。真因是 file:// 页面不许读本地图片像素，
+        # WebGL 和 2D 兜底两条渲染路径一起被掐断，真机上同样划不动。
+        # 根因修掉后它连过两次，闸门收回来，别再让一个对的警报被静音。
         run: bash scripts/mist-splash-smoke/run.sh
 
       - name: Upload mist splash verification
