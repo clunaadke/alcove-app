@@ -10,6 +10,9 @@
     // Preserve both glass edges. Absorb the aspect change in the empty middle,
     // with a smooth mapping whose edge scale keeps the droplets proportional.
     function preparePhoto(){
+      // 0909：位图没解出来就画不上去，backdrop 只剩两道渐变，着色器等于拿一张黑图去画。
+      // 与其糊一屏黑的给她看，不如当场失败、让原生兜底那颗 Enter 出来。
+      if(!photo.naturalWidth||!photo.naturalHeight)throw Error('photo not decoded');
       backdrop=make(W*S,H*S);const b=backdrop.getContext('2d'),pw=photo.naturalWidth,ph=photo.naturalHeight,ratio=(W/H)/(pw/ph);
       const warp=(p,scale)=>p+(scale-1)*Math.sin(p*Math.PI*2)/(Math.PI*2);
       if(ratio<1){for(let x=0;x<backdrop.width;x++){const a=warp(x/backdrop.width,ratio),z=warp((x+1)/backdrop.width,ratio);b.drawImage(photo,a*pw,0,(z-a)*pw,ph,x,0,1,backdrop.height)}}
@@ -126,7 +129,16 @@
     let resizeTimer;
     window.addEventListener('resize',()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(()=>{const r=screen.getBoundingClientRect();if(!entered&&(Math.abs(r.width-viewport.width)>1||Math.abs(r.height-viewport.height)>1))location.reload()},150)});
     const failed=()=>postNative('failed');
-    const ready=()=>{const start=()=>{try{paintText();updateWater();setup()}catch(error){console.error('Mist splash failed',error);failed()}};if(document.fonts)Promise.all([document.fonts.load('300 11px "Alcove Serif"'),document.fonts.load('400 35px "Alcove Script"')]).then(start).catch(start);else start()};
+    // 0909 她报的「重进一次，开屏只剩黑底和水纹」：photo.complete 为真并不代表位图
+    // 已经解好，内存吃紧时 WebKit 会把解码结果丢掉再按需重解。撞上那一刻 drawImage
+    // 什么都画不出来，backdrop 只剩两道渐变，着色器就拿一张黑图去画整屏 ——
+    // 正是她截到的样子。改成先 decode() 等到真的能画了再开工。
+    const ready=()=>{
+      const start=()=>{try{paintText();updateWater();setup()}catch(error){console.error('Mist splash failed',error);failed()}};
+      const afterDecode=()=>{if(!photo.naturalWidth||!photo.naturalHeight){failed();return}start()};
+      const go=()=>{photo.decode?photo.decode().then(afterDecode,afterDecode):afterDecode()};
+      if(document.fonts)Promise.all([document.fonts.load('300 11px "Alcove Serif"'),document.fonts.load('400 35px "Alcove Script"')]).then(go).catch(go);else go()
+    };
     photo.addEventListener('error',failed,{once:true});
     if(photo.complete&&photo.naturalWidth)ready();else photo.addEventListener('load',ready,{once:true});
   })();
