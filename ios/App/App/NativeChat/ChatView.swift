@@ -358,11 +358,13 @@ struct ChatView: View {
                 // 点屏幕最底下那条空隙（打字框下面、home 横条那一带）直接回到最新 ——
                 // 跟 iOS 点最顶上状态栏回到顶是同一个手感，左右对称。
                 // 只吃点一下；上滑还是系统的返回主屏手势，两者不打架。
+                // 0909 修：contentShape 必须贴着那条窄条写，撑满屏幕的 frame 只能
+                // 挂在最外面。写反了等于给整页盖一张透明板，列表滑不动、按钮点不着。
                 Color.clear
                     .frame(height: max(safeBottom, 16))
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
                     .contentShape(Rectangle())
                     .onTapGesture { jumpToTail(proxy) }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
 
                 if !showMiniTerminal && !paragraphSelectionMode {
                     ClawdPet(store: store) {
