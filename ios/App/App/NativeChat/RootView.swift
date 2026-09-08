@@ -142,9 +142,11 @@ struct RootView: View {
                 .zIndex(19)
             }
             if showSplash {
-                SplashView()
+                SplashView(onEnter: {
+                    withAnimation(.easeOut(duration: 0.6)) { showSplash = false }
+                })
                     .transition(.opacity)
-                    .zIndex(10)
+                    .zIndex(90)
             }
             RemoteScreenSharePrompt()
                 .zIndex(100)
@@ -159,10 +161,7 @@ struct RootView: View {
             // 0821 她要的图片缓存：开门就把最近三天的图悄悄存进手机
             Task.detached(priority: .utility) { await ImageDiskCache.shared.prewarmRecent(days: 3) }
             restoreLiveActivityIfEnabled()
-            // 声波念完两个音节再进门，跟 PWA 一个节奏
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.3) {
-                withAnimation(.easeOut(duration: 0.6)) { showSplash = false }
-            }
+            // 雾玻璃开屏一直停留；只有右下角 Enter 才进入聊天。
         }
         .task {
             while !Task.isCancelled {

@@ -1,111 +1,172 @@
 import SwiftUI
+import WebKit
 
-// PWA 开屏原样复刻：声波与休止符——两个音节中间空一拍，我们开始的地方
+/// Runs the approved artwork itself, including its fonts and water renderer.
+/// The local page only emits `enter`; it has no access to chat or network APIs.
 struct SplashView: View {
-    @AppStorage("alcoveTheme") private var themeName = "haven"
-    private var theme: AlcoveTheme { .named(themeName) }
-    @State private var barsUp = false
-    @State private var glowPulse = false
-    @State private var titleIn = false
-    @State private var subIn = false
-    @State private var petalsFall = false
-
-    // (高度, 延迟) 与 PWA 的 --h/--d 一一对应；nil 是休止符
-    private let bars: [(h: CGFloat, d: Double)?] = [
-        (9, 0.00), (15, 0.05), (21, 0.10), (28, 0.15), (34, 0.20),
-        (27, 0.25), (19, 0.30), (13, 0.35), (8, 0.40),
-        nil,
-        (11, 0.66), (17, 0.71), (25, 0.76), (36, 0.81), (29, 0.86),
-        (21, 0.91), (14, 0.96), (9, 1.01)
-    ]
+    let onEnter: () -> Void
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var loadFailed = false
 
     var body: some View {
-        ZStack {
-            LinearGradient(colors: theme.splashBg,
-                           startPoint: .topLeading, endPoint: .bottomTrailing)
-            .ignoresSafeArea()
-
-            GeometryReader { geo in
-                glow(size: 460, color: theme.splashGlowA)
-                    .position(x: geo.size.width * 1.05, y: -geo.size.height * 0.02)
-                glow(size: 400, color: theme.splashGlowB)
-                    .position(x: -geo.size.width * 0.05, y: geo.size.height * 1.0)
-
-                petal(size: 16, rotate: 24, x: geo.size.width * 0.22, height: geo.size.height, duration: 8.5, delay: 0.9)
-                petal(size: 13, rotate: -18, x: geo.size.width * 0.58, height: geo.size.height, duration: 10, delay: 3.4)
-                petal(size: 14, rotate: 40, x: geo.size.width * 0.78, height: geo.size.height, duration: 9, delay: 5.8)
-            }
-            .ignoresSafeArea()
-
-            VStack(spacing: 0) {
-                HStack(alignment: .center, spacing: 5) {
-                    ForEach(Array(bars.enumerated()), id: \.offset) { _, bar in
-                        if let bar {
-                            Capsule()
-                                .fill(LinearGradient(
-                                    colors: [theme.splashBarTop, theme.splashBarBottom],
-                                    startPoint: .top, endPoint: .bottom))
-                                .frame(width: 3.5, height: bar.h)
-                                .scaleEffect(y: barsUp ? 1 : 0.08, anchor: .center)
-                                .opacity(barsUp ? 1 : 0)
-                                .animation(.spring(response: 0.5, dampingFraction: 0.6)
-                                    .delay(bar.d), value: barsUp)
-                        } else {
-                            Color.clear.frame(width: 16, height: 1) // 休止符
-                        }
+        GeometryReader { geometry in
+            ZStack(alignment: .bottomTrailing) {
+                Image("MistLaunch")
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: geometry.size.width, height: geometry.size.height)
+                    .clipped()
+                MistSplashWebView(
+                    isActive: scenePhase == .active,
+                    onEnter: onEnter,
+                    onFailure: { loadFailed = true }
+                )
+                if loadFailed {
+                    // Never auto-dismiss, even when WebKit cannot load the artwork.
+                    Button(action: onEnter) {
+                        Text("Enter")
+                            .font(.system(size: 10, weight: .light, design: .serif))
+                            .foregroundStyle(.white)
+                            .frame(width: 62, height: 48)
+                            .contentShape(Rectangle())
                     }
+                    .accessibilityLabel("进入 Alcove")
+                    .padding(.trailing, 24)
+                    .padding(.bottom, max(geometry.safeAreaInsets.bottom, 34) + 12)
                 }
-                .frame(height: 40)
-                .padding(.bottom, 26)
-
-                Text("Alcove")
-                    .font(.system(size: 38, weight: .light, design: .serif))
-                    .italic()
-                    .tracking(2)
-                    .foregroundColor(theme.splashTitle)
-                    .opacity(titleIn ? 1 : 0)
-                    .blur(radius: titleIn ? 0 : 10)
-                    .offset(y: titleIn ? 0 : 8)
-                    .animation(.easeOut(duration: 1.0).delay(0.85), value: titleIn)
-
-                Text("LUNA & RHYSEL")
-                    .font(.system(size: 12))
-                    .tracking(subIn ? 4.5 : 10)
-                    .foregroundColor(theme.textLight)
-                    .padding(.top, 8)
-                    .opacity(subIn ? 1 : 0)
-                    .animation(.easeOut(duration: 1.1).delay(1.15), value: subIn)
             }
         }
-        .onAppear {
-            barsUp = true
-            titleIn = true
-            subIn = true
-            glowPulse = true
-            petalsFall = true
+        .ignoresSafeArea()
+    }
+}
+
+private struct MistSplashWebView: UIViewRepresentable {
+    let isActive: Bool
+    let onEnter: () -> Void
+    let onFailure: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onEnter: onEnter, onFailure: onFailure)
+    }
+
+    func makeUIView(context: Context) -> MistWebView {
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = .nonPersistent()
+        configuration.userContentController.add(context.coordinator, name: "alcoveSplash")
+        let webView = MistWebView(frame: .zero, configuration: configuration)
+        webView.navigationDelegate = context.coordinator
+        webView.isOpaque = false
+        webView.backgroundColor = .clear
+        webView.underPageBackgroundColor = .clear
+        webView.scrollView.backgroundColor = .clear
+        webView.scrollView.isScrollEnabled = false
+        webView.scrollView.bounces = false
+        webView.scrollView.contentInsetAdjustmentBehavior = .never
+        webView.allowsBackForwardNavigationGestures = false
+        webView.isArtworkActive = isActive
+        if let url = Bundle.main.url(forResource: "index", withExtension: "html", subdirectory: "MistSplash") {
+            context.coordinator.resourceDirectory = url.deletingLastPathComponent()
+            webView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
+        } else {
+            DispatchQueue.main.async { onFailure() }
+        }
+        return webView
+    }
+
+    func updateUIView(_ webView: MistWebView, context: Context) {
+        context.coordinator.onEnter = onEnter
+        context.coordinator.onFailure = onFailure
+        if webView.isArtworkActive != isActive {
+            webView.isArtworkActive = isActive
+            webView.updateArtworkEnvironment()
         }
     }
 
-    private func glow(size: CGFloat, color: Color) -> some View {
-        Circle()
-            .fill(RadialGradient(colors: [color, .clear],
-                                 center: .center, startRadius: 0, endRadius: size * 0.34))
-            .frame(width: size, height: size)
-            .scaleEffect(glowPulse ? 1.16 : 1)
-            .opacity(glowPulse ? 1 : 0.55)
-            .animation(.easeInOut(duration: 2.3).repeatForever(autoreverses: true), value: glowPulse)
+    static func dismantleUIView(_ webView: MistWebView, coordinator: Coordinator) {
+        webView.evaluateJavaScript("window.alcoveSplashStop && window.alcoveSplashStop()", completionHandler: nil)
+        webView.stopLoading()
+        webView.configuration.userContentController.removeScriptMessageHandler(forName: "alcoveSplash")
+        webView.navigationDelegate = nil
     }
 
-    private func petal(size: CGFloat, rotate: Double, x: CGFloat, height: CGFloat,
-                       duration: Double, delay: Double) -> some View {
-        Ellipse()
-            .stroke(theme.splashPetal, lineWidth: 1.1)
-            .frame(width: size * 0.38, height: size * 0.62)
-            .rotationEffect(.degrees(rotate))
-            .position(x: x, y: petalsFall ? height + 40 : -36)
-            .rotationEffect(.degrees(petalsFall ? 300 : 0), anchor: .center)
-            .opacity(petalsFall ? 0.7 : 0)
-            .animation(.linear(duration: duration).delay(delay).repeatForever(autoreverses: false),
-                       value: petalsFall)
+    final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
+        var onEnter: () -> Void
+        var onFailure: () -> Void
+        var resourceDirectory: URL?
+        private var didEnter = false
+        private var recoveredProcess = false
+
+        init(onEnter: @escaping () -> Void, onFailure: @escaping () -> Void) {
+            self.onEnter = onEnter
+            self.onFailure = onFailure
+        }
+
+        func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+            guard message.name == "alcoveSplash", message.frameInfo.isMainFrame,
+                  let action = message.body as? String else { return }
+            if action == "failed" { onFailure(); return }
+            guard action == "enter", !didEnter else { return }
+            didEnter = true
+            onEnter()
+        }
+
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            (webView as? MistWebView)?.updateArtworkEnvironment()
+        }
+
+        func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
+                     decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+            guard let url = navigationAction.request.url, url.isFileURL,
+                  let directory = resourceDirectory,
+                  url.standardizedFileURL.path.hasPrefix(directory.standardizedFileURL.path + "/") else {
+                decisionHandler(.cancel)
+                return
+            }
+            decisionHandler(.allow)
+        }
+
+        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+            if (error as NSError).code != NSURLErrorCancelled { onFailure() }
+        }
+
+        func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+            if (error as NSError).code != NSURLErrorCancelled { onFailure() }
+        }
+
+        func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+            guard !didEnter else { return }
+            if !recoveredProcess {
+                recoveredProcess = true
+                webView.reload()
+            } else {
+                onFailure()
+            }
+        }
+    }
+}
+
+private final class MistWebView: WKWebView {
+    var isArtworkActive = true
+
+    override func safeAreaInsetsDidChange() {
+        super.safeAreaInsetsDidChange()
+        updateArtworkEnvironment()
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        updateArtworkEnvironment()
+    }
+
+    func updateArtworkEnvironment() {
+        let insets = window?.safeAreaInsets ?? safeAreaInsets
+        let payload: [String: Any] = [
+            "active": isArtworkActive,
+            "top": insets.top, "bottom": insets.bottom,
+            "left": insets.left, "right": insets.right
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: payload),
+              let json = String(data: data, encoding: .utf8) else { return }
+        evaluateJavaScript("window.alcoveSplashEnvironment && window.alcoveSplashEnvironment(\(json))", completionHandler: nil)
     }
 }

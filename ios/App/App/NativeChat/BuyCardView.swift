@@ -15,6 +15,7 @@ import UIKit
 
 // MARK: - 浮层（背景透明，才能把后面的聊天糊掉）
 
+@MainActor
 private enum BuyCardPresenter {
     /// 照 FloatingOverlay.present 那条路找最上面那个页面——共读室/工作室是
     /// fullScreenCover，从它们头上弹才不会把它们顶掉（0902 她抓过这个 bug）。
