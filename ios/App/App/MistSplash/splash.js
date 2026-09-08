@@ -12,11 +12,18 @@
     function preparePhoto(){
       // 0909：位图没解出来就画不上去，backdrop 只剩两道渐变，着色器等于拿一张黑图去画。
       // 与其糊一屏黑的给她看，不如当场失败、让原生兜底那颗 Enter 出来。
-      if(!photo.naturalWidth||!photo.naturalHeight)throw Error('photo not decoded');
-      backdrop=make(W*S,H*S);const b=backdrop.getContext('2d'),pw=photo.naturalWidth,ph=photo.naturalHeight,ratio=(W/H)/(pw/ph);
+      const src=photoSource||photo;
+      const pw=src.naturalWidth||src.width,ph=src.naturalHeight||src.height;
+      if(!pw||!ph)throw Error('photo not decoded');
+      backdrop=make(W*S,H*S);const b=backdrop.getContext('2d'),ratio=(W/H)/(pw/ph);
       const warp=(p,scale)=>p+(scale-1)*Math.sin(p*Math.PI*2)/(Math.PI*2);
-      if(ratio<1){for(let x=0;x<backdrop.width;x++){const a=warp(x/backdrop.width,ratio),z=warp((x+1)/backdrop.width,ratio);b.drawImage(photo,a*pw,0,(z-a)*pw,ph,x,0,1,backdrop.height)}}
-      else{for(let y=0;y<backdrop.height;y++){const a=warp(y/backdrop.height,1/ratio),z=warp((y+1)/backdrop.height,1/ratio);b.drawImage(photo,0,a*ph,pw,(z-a)*ph,0,y,backdrop.width,1)}}
+      if(ratio<1){for(let x=0;x<backdrop.width;x++){const a=warp(x/backdrop.width,ratio),z=warp((x+1)/backdrop.width,ratio);b.drawImage(src,a*pw,0,(z-a)*pw,ph,x,0,1,backdrop.height)}}
+      else{for(let y=0;y<backdrop.height;y++){const a=warp(y/backdrop.height,1/ratio),z=warp((y+1)/backdrop.height,1/ratio);b.drawImage(src,0,a*ph,pw,(z-a)*ph,0,y,backdrop.width,1)}}
+      // 0909 关键一针：位图被系统回收过之后 drawImage 是**静默失败**的 ——
+      // 不报错、不抛异常，就是什么都没画上去。photo.complete 和 decode() 都可能骗人，
+      // 只有画完回头看一眼才作数。中心点还是透明 = 这一趟白画了，抛错让外面重试。
+      if(b.getImageData(backdrop.width>>1,backdrop.height>>1,1,1).data[3]===0)
+        throw Error('photo drew nothing');
       const edge=b.createRadialGradient(backdrop.width*.52,backdrop.height*.45,backdrop.width*.12,backdrop.width*.5,backdrop.height*.5,backdrop.height*.63);
       edge.addColorStop(0,'rgba(7,38,87,0)');edge.addColorStop(.55,'rgba(7,38,87,.025)');edge.addColorStop(1,'rgba(7,38,87,.24)');b.fillStyle=edge;b.fillRect(0,0,backdrop.width,backdrop.height);
       const sides=b.createLinearGradient(0,0,backdrop.width,0);sides.addColorStop(0,'rgba(5,33,83,.20)');sides.addColorStop(.22,'rgba(5,33,83,0)');sides.addColorStop(.78,'rgba(5,33,83,0)');sides.addColorStop(1,'rgba(5,33,83,.24)');b.fillStyle=sides;b.fillRect(0,0,backdrop.width,backdrop.height);
@@ -65,6 +72,13 @@
     let height=new Float32Array(COUNT),prior=new Float32Array(COUNT),next=new Float32Array(COUNT);
     const gradientX=new Float32Array(COUNT),gradientY=new Float32Array(COUNT);
     let active=null,last=null,prevPoint=null,lastMove=0,radius=15,pathLength=0,entered=false,previous=0,render=null,clock=0,nextRain=0,nativeActive=true,stopped=false,raf=0,releaseRenderer=()=>{};
+    // 0909：真正拿去画的图源。优先是 createImageBitmap 解出来的位图 —— 那份不会被
+    // 系统回收；拿不到才退回 <img>。见下面 tryStart。
+    let photoSource=null,revealed=false;
+    // 第一帧真画出来之前整页透明，底下垫的是原生那张同一张图，所以看不出破绽；
+    // 画好了再淡入。这样她不会先看见一张没上雾的原图、再啪一下换成上了雾的（闪屏）。
+    const reveal=()=>{if(revealed)return;revealed=true;root.style.opacity='1'};
+    setTimeout(reveal,4000);   // 保险：万一一帧都没画出来，也别让整页永远隐身
     let rain=[];
     const rainUniform=new Float32Array(8);
     const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
@@ -97,7 +111,7 @@
       for(int i=0;i<2;i++){vec4 q=rain[i];if(q.w>0.){vec2 delta=(p-q.xy)*vec2(1.,aspect);float dist=length(delta),ang=atan(delta.y,delta.x),phase=dist-q.z*.075+.003*sin(ang*3.);float env=exp(-pow(phase/.049,2.))*exp(-q.z*.37)*smoothstep(0.,.25,q.z)*(1.-smoothstep(5.8,6.8,q.z));float wave=sin(phase*195.)*env*q.w;vec2 normal=delta/max(dist,.003);dis+=normal*vec2(.018,.018/aspect)*wave*motion;light+=dot(normal,vec2(-.447,-.894))*wave*.15*motion;}}
       vec2 p2=clamp(p+dis,.002,.998);float a=texture2D(cleared,p2).a;float gx=texture2D(cleared,p2+vec2(.003,0.)).a-texture2D(cleared,p2-vec2(.003,0.)).a;float gy=texture2D(cleared,p2+vec2(0.,.002)).a-texture2D(cleared,p2-vec2(0.,.002)).a;
       vec2 q=p2+vec2(gx,gy)*.003;vec3 original=photoAt(q),blur=(photoAt(q+vec2(.015,0.))+photoAt(q-vec2(.015,0.))+photoAt(q+vec2(0.,.012))+photoAt(q-vec2(0.,.012))+original*2.)/6.;
-      float n=noise(p*vec2(5.,7.)+vec2(time*.006*motion,0.))*.6+noise(p*vec2(12.,17.))*.4;vec3 fog=mix(mix(original,blur,.18),vec3(.72,.84,.96),.03+n*.06);vec3 clean=mix(blur,vec3(.045,.22,.47),.36);vec4 text=texture2D(lettering,p2);clean=mix(clean,text.rgb,text.a);vec3 color=mix(fog,clean,a)+light+(gx+gy)*.026;gl_FragColor=vec4(color,1.);
+      float n=noise(p*vec2(5.,7.)+vec2(time*.006*motion,0.))*.6+noise(p*vec2(12.,17.))*.4;vec3 fog=mix(mix(original,blur,.18),vec3(.72,.84,.96),.03+n*.06);float ink=.34+.46*a;vec3 clean=mix(blur,vec3(.012,.075,.26),ink);vec4 text=texture2D(lettering,p2);clean=mix(clean,text.rgb,text.a);vec3 color=mix(fog,clean,a)+light+(gx+gy)*.026;gl_FragColor=vec4(color,1.);
     }`;
     function setup(){preparePhoto();let gl=canvas.getContext('webgl',{alpha:false,antialias:false,powerPreference:'low-power'});if(gl){try{
       const shader=(kind,code)=>{const s=gl.createShader(kind);gl.shaderSource(s,code);gl.compileShader(s);if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(s));return s},program=gl.createProgram();gl.attachShader(program,shader(gl.VERTEX_SHADER,vertex));gl.attachShader(program,shader(gl.FRAGMENT_SHADER,fragment));gl.linkProgram(program);if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(program));gl.useProgram(program);
@@ -119,7 +133,7 @@
     // 0909：这里面任何一句抛错，末尾那句 requestAnimationFrame 就接不上，
     // 整个循环无声地死掉、画面永远停在那一帧，外面完全看不出发生过什么。
     // 兜住并把错误记进 dataset，冒烟测试和真机排查都能读到。
-    function frame(now){try{if(stopped||!root.isConnected)return;if(entered||!nativeActive||document.hidden){previous=now;raf=requestAnimationFrame(frame);return}if(now-previous<32){raf=requestAnimationFrame(frame);return}const dt=previous?Math.min(.06,(now-previous)/1000):.033;previous=now;clock+=dt;updateRain(clock);updateWater();let clearedPixels=0;for(let i=0;i<amount.length;i++){const a=remaining(i,now);mi.data[i*4+3]=Math.round(a*255);if(a>.2)clearedPixels++;if(a<.0001)amount[i]=0}mc.putImageData(mi,0,0);root.dataset.clearedPixels=String(clearedPixels);if(render)render();root.dataset.frame=String((Number(root.dataset.frame)||0)+1);raf=requestAnimationFrame(frame)}catch(error){root.dataset.frameError=String(error&&error.message||error);stopped=true}}
+    function frame(now){try{if(stopped||!root.isConnected)return;if(entered||!nativeActive||document.hidden){previous=now;raf=requestAnimationFrame(frame);return}if(now-previous<32){raf=requestAnimationFrame(frame);return}const dt=previous?Math.min(.06,(now-previous)/1000):.033;previous=now;clock+=dt;updateRain(clock);updateWater();let clearedPixels=0;for(let i=0;i<amount.length;i++){const a=remaining(i,now);mi.data[i*4+3]=Math.round(a*255);if(a>.2)clearedPixels++;if(a<.0001)amount[i]=0}mc.putImageData(mi,0,0);root.dataset.clearedPixels=String(clearedPixels);if(render)render();root.dataset.frame=String((Number(root.dataset.frame)||0)+1);reveal();raf=requestAnimationFrame(frame)}catch(error){root.dataset.frameError=String(error&&error.message||error);stopped=true}}
     window.alcoveSplashEnvironment=config=>{
       nativeActive=config.active!==false;root.dataset.active=String(nativeActive);
       for(const edge of ['top','bottom','left','right'])document.documentElement.style.setProperty('--safe-'+edge,Math.max(0,Number(config[edge])||0)+'px');
@@ -129,14 +143,33 @@
     let resizeTimer;
     window.addEventListener('resize',()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(()=>{const r=screen.getBoundingClientRect();if(!entered&&(Math.abs(r.width-viewport.width)>1||Math.abs(r.height-viewport.height)>1))location.reload()},150)});
     const failed=()=>postNative('failed');
-    // 0909 她报的「重进一次，开屏只剩黑底和水纹」：photo.complete 为真并不代表位图
-    // 已经解好，内存吃紧时 WebKit 会把解码结果丢掉再按需重解。撞上那一刻 drawImage
-    // 什么都画不出来，backdrop 只剩两道渐变，着色器就拿一张黑图去画整屏 ——
-    // 正是她截到的样子。改成先 decode() 等到真的能画了再开工。
+    // 0909 她报的「连开三次有一次全黑」：内存吃紧时 WebKit 会把解好的位图丢掉，
+    // 而 photo.complete、甚至 decode() 成功，都不保证那一刻真的画得上去 ——
+    // drawImage 是静默失败的。上一版只加了 decode()，没修好（她 03:16 又截到）。
+    // 这版三件一起上：
+    //   ① createImageBitmap 拿一份**不会被回收**的位图，优先用它当图源
+    //   ② preparePhoto 画完当场探一针，没画上去就抛错（见上面）
+    //   ③ 抛了就隔 300ms 整个重来，最多三次；三次都不行才交给原生兜底那颗 ENTER
+    let attempts=0;
+    const tryStart=()=>{
+      attempts++;
+      const run=()=>{
+        try{paintText();updateWater();setup()}
+        catch(error){
+          console.error('Mist splash failed',error);
+          root.dataset.startError=String(error&&error.message||error);
+          if(attempts<3){photoSource=null;setTimeout(tryStart,300)}else failed();
+        }
+      };
+      if(photoSource){run();return}
+      const useImg=()=>{photoSource=photo;run()};
+      if(window.createImageBitmap){
+        createImageBitmap(photo).then(bm=>{photoSource=bm;run()},useImg);
+      }else if(photo.decode){photo.decode().then(useImg,useImg)}
+      else useImg();
+    };
     const ready=()=>{
-      const start=()=>{try{paintText();updateWater();setup()}catch(error){console.error('Mist splash failed',error);failed()}};
-      const afterDecode=()=>{if(!photo.naturalWidth||!photo.naturalHeight){failed();return}start()};
-      const go=()=>{photo.decode?photo.decode().then(afterDecode,afterDecode):afterDecode()};
+      const go=()=>tryStart();
       if(document.fonts)Promise.all([document.fonts.load('300 11px "Alcove Serif"'),document.fonts.load('400 35px "Alcove Script"')]).then(go).catch(go);else go()
     };
     photo.addEventListener('error',failed,{once:true});
