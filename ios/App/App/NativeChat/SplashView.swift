@@ -50,6 +50,20 @@ private struct MistSplashWebView: UIViewRepresentable {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .nonPersistent()
         configuration.userContentController.add(context.coordinator, name: "alcoveSplash")
+        // 0909 她报的「怎么划都划不动」：这页是 file:// 打开的，WebKit 把每个本地文件
+        // 当成互相独立的来源。于是把本地图片画进 canvas 之后再去读像素 —— WebGL 的
+        // texImage2D、兜底路径的 getImageData —— 一律按跨域拒掉，抛 SecurityError。
+        // 两条渲染路径就是这么双双断掉的：网页照常显示（字、Enter 都在），
+        // 但会动的那一层一帧都画不出来，所以怎么划都没反应。
+        // 放开 file 来源的读取权限。这一页自己被 CSP 锁死（connect-src 'none'、
+        // script-src 'self'），碰不到网络也加载不了外部脚本，放开不扩大攻击面。
+        // 先 responds(to:) 探一下：万一将来这两个属性没了就跳过，不要抛异常崩在开屏。
+        if configuration.responds(to: Selector(("_setAllowUniversalAccessFromFileURLs:"))) {
+            configuration.setValue(true, forKey: "allowUniversalAccessFromFileURLs")
+        }
+        if configuration.preferences.responds(to: Selector(("_setAllowFileAccessFromFileURLs:"))) {
+            configuration.preferences.setValue(true, forKey: "allowFileAccessFromFileURLs")
+        }
         let webView = MistWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = context.coordinator
         webView.isOpaque = false
