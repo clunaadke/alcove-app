@@ -70,7 +70,10 @@ jobs:
         run: bash scripts/mist-splash-smoke/run.sh
 
       - name: Upload mist splash verification
-        if: always()
+        # 0909 她说的：每个包底下都挂一个八兆的截图包，碍眼。
+        # 改成只在出事时才留证 —— 检查过了就不上传，下载页只剩 IPA 一个；
+        # 哪天再红，截图和 result.json 照旧躺在那儿等人来看（今晚就是靠它定的位）。
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: Mist-splash-verification
