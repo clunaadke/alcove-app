@@ -2784,6 +2784,9 @@ struct MessageRow: View {
                 } else if let buy = msg.buyCard {
                     // 0907 二期审批卡：她要它「跟他的气泡列在一堆」，所以不居中，走左侧
                     BuyApprovalMessageCard(card: buy, theme: theme)
+                } else if let paid = msg.paidCard {
+                    // 0909 付款单：跟审批卡一样列在他的气泡那一堆里，不居中
+                    PaidReceiptMessageCard(card: paid, theme: theme)
                 } else if let choice = msg.choiceCard {
                     ChoiceQuestionMessageCard(card: choice, theme: theme)
                 } else if msg.msgType == "choice_answer" {

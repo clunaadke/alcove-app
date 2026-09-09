@@ -140,6 +140,13 @@ struct ChatMessage: Identifiable, Equatable {
         return try? JSONDecoder().decode(BuyApprovalCard.self, from: data)
     }
 
+    /// 0909 二期：付款单（他付完了，留一张单子给她）
+    var paidCard: PaidReceiptCard? {
+        guard let raw = Self.taggedBody(text, tag: "PAID_CARD"),
+              let data = raw.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(PaidReceiptCard.self, from: data)
+    }
+
     var choiceCard: ChoiceQuestionCard? {
         guard let raw = Self.taggedBody(text, tag: "CHOICE_CARD"),
               let data = raw.data(using: .utf8) else { return nil }
@@ -327,6 +334,21 @@ struct BuyApprovalCard: Codable, Equatable {
     var headline: String { (title ?? "").isEmpty ? "想买点东西" : (title ?? "") }
     var coverURL: String { cover ?? "" }
     var restInCart: Int { extra ?? 0 }
+}
+
+/// 0909 她照参考图定的付款单：顶栏 + 已支付 / 商品 / 应付 / 送到默认地址 / 他留的话。
+/// 收货地址她说写死四个字，所以这里没有地址字段。
+struct PaidReceiptCard: Codable, Equatable {
+    let id: Int
+    let title: String?
+    let cover: String?
+    let amount: Double?
+    let words: String?
+
+    var headline: String { (title ?? "").isEmpty ? "一件东西" : (title ?? "") }
+    var coverURL: String { cover ?? "" }
+    var paid: Double { amount ?? 0 }
+    var message: String { (words ?? "").trimmingCharacters(in: .whitespacesAndNewlines) }
 }
 
 struct ChoiceQuestionCard: Codable, Equatable {

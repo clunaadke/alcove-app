@@ -586,3 +586,159 @@ struct BuyApprovalSheet: View {
         }
     }
 }
+
+// MARK: - 付款单（0909 她照参考图定的：他付完了，留一张单子给她）
+//
+// 她定的几条：收货地址写死「默认地址」四个字，不读真实地址；
+// 白天黑夜跟着聊天页的 theme 走（theme 本身就跟 app 总开关走，不另做开关）。
+
+struct PaidReceiptMessageCard: View {
+    let card: PaidReceiptCard
+    let theme: AlcoveTheme
+
+    /// 「已支付」那颗徽章的绿，跟审批卡里「你说了买吧」同一个色
+    private var paidGreen: Color { Color(red: 0.302, green: 0.518, blue: 0.404) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            header
+            goods
+            amountRow
+            dashLine
+            addressRow
+            if !card.message.isEmpty { wordsBlock }
+            Text("这笔已经付好啦")
+                .font(.system(size: 10.5))
+                .foregroundColor(theme.textDim.opacity(0.7))
+                .padding(.top, 10)
+        }
+        .padding(14)
+        .frame(maxWidth: 320, alignment: .leading)
+        .background(theme.fyCard.opacity(0.94), in: RoundedRectangle(cornerRadius: 18))
+        .overlay(RoundedRectangle(cornerRadius: 18)
+            .stroke(theme.fyBorder.opacity(0.7), lineWidth: 0.7))
+    }
+
+    private var header: some View {
+        HStack(alignment: .top, spacing: 8) {
+            VStack(alignment: .leading, spacing: 5) {
+                Text("ALCOVE CHECKOUT")
+                    .font(.system(size: 8.5, weight: .semibold))
+                    .tracking(2.2)
+                    .foregroundColor(theme.textDim.opacity(0.7))
+                Text("给你留的付款单")
+                    .font(.system(size: 16, weight: .semibold, design: .serif))
+                    .foregroundColor(theme.text)
+            }
+            Spacer(minLength: 6)
+            Text("已支付")
+                .font(.system(size: 10.5, weight: .medium))
+                .foregroundColor(paidGreen)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 4)
+                .background(paidGreen.opacity(theme.isDark ? 0.18 : 0.12), in: Capsule())
+        }
+        .padding(.bottom, 13)
+    }
+
+    private var goods: some View {
+        HStack(spacing: 10) {
+            ZStack {
+                Color.black.opacity(0.06)
+                if let url = URL(string: card.coverURL), !card.coverURL.isEmpty {
+                    CachedImage(url: url) { img in
+                        img.resizable().scaledToFill()
+                    } placeholder: {
+                        Image(systemName: "bag")
+                            .font(.system(size: 15))
+                            .foregroundColor(theme.textDim.opacity(0.5))
+                    }
+                } else {
+                    Image(systemName: "bag")
+                        .font(.system(size: 15))
+                        .foregroundColor(theme.textDim.opacity(0.5))
+                }
+            }
+            .frame(width: 46, height: 46)
+            .clipShape(RoundedRectangle(cornerRadius: 9))
+
+            Text(card.headline)
+                .font(.system(size: 13, design: .serif))
+                .foregroundColor(theme.text.opacity(0.9))
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
+            Spacer(minLength: 0)
+        }
+        .padding(.bottom, 12)
+    }
+
+    private var amountRow: some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text("应付")
+                .font(.system(size: 12))
+                .foregroundColor(theme.textDim)
+            Spacer(minLength: 8)
+            Text("¥" + String(format: "%.2f", card.paid))
+                .font(.system(size: 19, weight: .bold, design: .rounded))
+                .foregroundColor(theme.fyAccent)
+        }
+        .padding(.bottom, 11)
+    }
+
+    /// 参考图上那道虚线。Rectangle 描边会把四条边都画出来，所以自己给一条横线
+    private var dashLine: some View {
+        DashRule()
+            .stroke(style: StrokeStyle(lineWidth: 0.8, dash: [3, 3.6]))
+            .foregroundColor(theme.fyDash.opacity(0.85))
+            .frame(height: 1)
+            .padding(.bottom, 11)
+    }
+
+    private var addressRow: some View {
+        HStack(spacing: 9) {
+            Text("送到")
+                .font(.system(size: 11.5))
+                .foregroundColor(theme.textDim)
+            Text("默认地址")
+                .font(.system(size: 13, weight: .semibold, design: .serif))
+                .foregroundColor(theme.text)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 11)
+        .padding(.vertical, 9)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(theme.fyCardSub.opacity(theme.isDark ? 0.55 : 0.75),
+                    in: RoundedRectangle(cornerRadius: 11))
+    }
+
+    private var wordsBlock: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "paperclip")
+                .font(.system(size: 11))
+                .foregroundColor(theme.fyAccent.opacity(0.75))
+                .padding(.top, 1.5)
+            Text(card.message)
+                .font(.system(size: 12.5, design: .serif))
+                .foregroundColor(theme.text.opacity(0.92))
+                .fixedSize(horizontal: false, vertical: true)
+                .multilineTextAlignment(.leading)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 11)
+        .padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(theme.fyAccentSoft.opacity(theme.isDark ? 0.22 : 0.35),
+                    in: RoundedRectangle(cornerRadius: 11))
+        .padding(.top, 9)
+    }
+}
+
+/// 一条横虚线，宽度跟着容器走
+private struct DashRule: Shape {
+    func path(in rect: CGRect) -> Path {
+        var p = Path()
+        p.move(to: CGPoint(x: 0, y: rect.midY))
+        p.addLine(to: CGPoint(x: rect.maxX, y: rect.midY))
+        return p
+    }
+}
