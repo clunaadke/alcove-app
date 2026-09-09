@@ -742,3 +742,153 @@ private struct DashRule: Shape {
         return p
     }
 }
+
+// MARK: - 券卡（0909 三期：他想用一张券，她点确认才核销）
+//
+// 她定的样子：毛玻璃打底、压一层很淡的波点、别太生硬——所以边不描实线，
+// 用一圈极淡的渐变收边，圆角开到 22，按钮也是胶囊不是方块。
+
+final class TicketCardStore: ObservableObject {
+    static let shared = TicketCardStore()
+
+    @Published private(set) var states: [Int: String] = [:]   // id -> paid/pending/used
+    @Published private(set) var usedAt: [Int: String] = [:]
+    @Published var busy = false
+
+    func status(_ id: Int) -> String { states[id] ?? "" }
+
+    func load(_ id: Int, force: Bool = false) {
+        if !force, states[id] != nil { return }
+        Task { await reload(id) }
+    }
+
+    @MainActor
+    func reload(_ id: Int) async {
+        guard let obj = try? await NativeHouseAPI.object("/api/shop/ticket?id=\(id)"),
+              obj.bool("ok"),
+              let t = obj["ticket"] as? [String: Any] else { return }
+        states[id] = t.string("status")
+        usedAt[id] = t.string("used_at")
+    }
+
+    @MainActor
+    func confirm(_ id: Int) async {
+        busy = true
+        defer { busy = false }
+        _ = try? await NativeHouseAPI.object("/api/shop/ticket/confirm",
+                                            method: "POST", body: ["order_id": id])
+        await reload(id)
+    }
+}
+
+struct TicketUseMessageCard: View {
+    let card: TicketUseCard
+    let theme: AlcoveTheme
+    @ObservedObject private var store = TicketCardStore.shared
+
+    private var used: Bool { store.status(card.id) == "used" }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 11) {
+                thumb
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(used ? "这张券用掉了" : "他想用一张券")
+                        .font(.system(size: 10.5, weight: .medium))
+                        .tracking(1.4)
+                        .foregroundColor(theme.textDim)
+                    Text(card.name)
+                        .font(.system(size: 16, weight: .semibold, design: .serif))
+                        .foregroundColor(theme.text)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.bottom, used ? 4 : 13)
+
+            if used {
+                if let at = store.usedAt[card.id], !at.isEmpty {
+                    Text(String(at.prefix(16).dropFirst(5)).replacingOccurrences(of: "T", with: " ")
+                         + " 核销")
+                        .font(.system(size: 10.5))
+                        .foregroundColor(theme.textDim.opacity(0.8))
+                }
+            } else {
+                Button {
+                    Task { await store.confirm(card.id) }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "checkmark.seal")
+                            .font(.system(size: 12, weight: .medium))
+                        Text("给他")
+                            .font(.system(size: 13, weight: .medium, design: .serif))
+                    }
+                    .foregroundColor(theme.isDark ? theme.text : .white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 9)
+                    .background(
+                        Capsule().fill(theme.fyAccent.opacity(theme.isDark ? 0.55 : 0.88))
+                    )
+                }
+                .buttonStyle(.plain)
+                .disabled(store.busy)
+                .opacity(store.busy ? 0.6 : 1)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: 300, alignment: .leading)
+        .background(
+            ZStack {
+                // 毛玻璃打底
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .fill(.ultraThinMaterial)
+                // 一层很淡的自家色，免得玻璃在浅色壁纸上糊成一片白
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .fill(theme.fyCard.opacity(theme.isDark ? 0.30 : 0.22))
+                // 她要的波点：只在卡片里，压得很轻，剪进圆角不出边
+                QipaiDots(spacing: 15, radius: 1.25,
+                          color: theme.fyAccent, opacity: theme.isDark ? 0.16 : 0.12)
+                    .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                    .allowsHitTesting(false)
+            }
+        )
+        .overlay(
+            // 不描实线：一圈从亮到透明的渐变，边就软了
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .strokeBorder(
+                    LinearGradient(colors: [theme.fyBorder.opacity(0.75),
+                                            theme.fyBorder.opacity(0.12)],
+                                   startPoint: .topLeading, endPoint: .bottomTrailing),
+                    lineWidth: 0.8)
+        )
+        .opacity(used ? 0.72 : 1)
+        .onAppear { store.load(card.id) }
+    }
+
+    private var thumb: some View {
+        ZStack {
+            Color.black.opacity(0.05)
+            if !card.coverURL.isEmpty,
+               let url = URL(string: AlcoveAPI.attachmentURL(card.coverURL).absoluteString) {
+                CachedImage(url: url) { img in
+                    img.resizable().scaledToFill()
+                } placeholder: { ticketGlyph }
+            } else {
+                ticketGlyph
+            }
+        }
+        .frame(width: 46, height: 46)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(theme.fyBorder.opacity(0.35), lineWidth: 0.6)
+        )
+    }
+
+    private var ticketGlyph: some View {
+        Image(systemName: "ticket")
+            .font(.system(size: 16))
+            .foregroundColor(theme.fyAccent.opacity(0.7))
+    }
+}

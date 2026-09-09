@@ -147,6 +147,13 @@ struct ChatMessage: Identifiable, Equatable {
         return try? JSONDecoder().decode(PaidReceiptCard.self, from: data)
     }
 
+    /// 0909 三期：他想用一张券，等她点确认才核销
+    var ticketCard: TicketUseCard? {
+        guard let raw = Self.taggedBody(text, tag: "TICKET_CARD"),
+              let data = raw.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(TicketUseCard.self, from: data)
+    }
+
     var choiceCard: ChoiceQuestionCard? {
         guard let raw = Self.taggedBody(text, tag: "CHOICE_CARD"),
               let data = raw.data(using: .utf8) else { return nil }
@@ -349,6 +356,16 @@ struct PaidReceiptCard: Codable, Equatable {
     var coverURL: String { cover ?? "" }
     var paid: Double { amount ?? 0 }
     var message: String { (words ?? "").trimmingCharacters(in: .whitespacesAndNewlines) }
+}
+
+/// 0909 三期：券卡。正文里只有编号和名字，状态现去 /api/shop/ticket 取
+struct TicketUseCard: Codable, Equatable {
+    let id: Int
+    let title: String?
+    let cover: String?
+
+    var name: String { (title ?? "").isEmpty ? "一张券" : (title ?? "") }
+    var coverURL: String { cover ?? "" }
 }
 
 struct ChoiceQuestionCard: Codable, Equatable {

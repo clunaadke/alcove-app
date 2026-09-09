@@ -2789,6 +2789,9 @@ struct MessageRow: View {
                 } else if let paid = msg.paidCard {
                     // 0909 付款单：跟审批卡一样列在他的气泡那一堆里，不居中
                     PaidReceiptMessageCard(card: paid, theme: theme)
+                } else if let ticket = msg.ticketCard {
+                    // 0909 券卡：她点确认才核销，跟审批卡一样列在他的气泡那堆里
+                    TicketUseMessageCard(card: ticket, theme: theme)
                 } else if let choice = msg.choiceCard {
                     ChoiceQuestionMessageCard(card: choice, theme: theme)
                 } else if msg.msgType == "choice_answer" {
