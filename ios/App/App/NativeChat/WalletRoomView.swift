@@ -1,3 +1,4 @@
+import PhotosUI
 import SwiftUI
 
 // 钱包 / 购物系统（0907 她拍板开工）—— 第一期：纯账本，不碰淘宝、不碰审批卡。
@@ -1137,4 +1138,880 @@ struct WalletRoomView: View {
         limitDaily = s.limits.daily > 0 ? money(s.limits.daily) : ""
         limitMonthly = s.limits.monthly > 0 ? money(s.limits.monthly) : ""
     }
+}
+
+// MARK: - 商城（0909 她开的店，任务#1810~#1816）
+//
+// 跟上面那本钱包账**完全无关**：钱包里是真人民币、她审批他花；
+// 商城这套是他靠活跃自己挣的虚拟币，在她开的店里花。两个库两套接口。
+// 皮照钱包的（她原话「照着钱包页面做，美化都照着做」），所以整个挂在这个文件里，
+// 直接吃 WalletInk / walletPanel / WalletCard，不新增文件、不动工程配置。
+//
+// 分工：她上架改价看许愿（这几页），他用命令行 shop 看货、买、许愿。
+
+struct ShopItem: Identifiable {
+    let id: Int
+    let title: String
+    let spec: String
+    let intro: String
+    let cover: String
+    let price: Int
+    let stock: Int          // -1 = 不限量
+    let sold: Int
+    let kind: String        // goods / ticket
+    let status: String      // on / off
+
+    init?(json: [String: Any]) {
+        let rid = json.int("id")
+        guard rid > 0 else { return nil }
+        id = rid
+        title = json.string("title")
+        spec = json.string("spec")
+        intro = json.string("intro")
+        cover = json.string("cover")
+        price = json.int("price")
+        stock = json.int("stock")
+        sold = json.int("sold")
+        kind = json.string("kind")
+        status = json.string("status")
+    }
+
+    var isTicket: Bool { kind == "ticket" }
+    var onShelf: Bool { status == "on" }
+    var stockText: String { stock < 0 ? "不限量" : "剩 \(stock) 份" }
+}
+
+struct ShopOrder: Identifiable {
+    let id: Int
+    let ts: String
+    let title: String
+    let cover: String
+    let kind: String
+    let price: Int
+    let status: String      // paid / used
+
+    init?(json: [String: Any]) {
+        let rid = json.int("id")
+        guard rid > 0 else { return nil }
+        id = rid
+        ts = json.string("ts")
+        title = json.string("title")
+        cover = json.string("cover")
+        kind = json.string("kind")
+        price = json.int("price")
+        status = json.string("status")
+    }
+
+    var isTicket: Bool { kind == "ticket" }
+    var used: Bool { status == "used" }
+}
+
+struct ShopWish: Identifiable {
+    let id: Int
+    let ts: String
+    let text: String
+    let status: String      // open / done / passed
+    let reply: String
+
+    init?(json: [String: Any]) {
+        let rid = json.int("id")
+        guard rid > 0 else { return nil }
+        id = rid
+        ts = json.string("ts")
+        text = json.string("text")
+        status = json.string("status")
+        reply = json.string("reply")
+    }
+
+    var statusCN: String {
+        switch status {
+        case "done": return "已上架"
+        case "passed": return "这个不上"
+        default: return "等你看"
+        }
+    }
+}
+
+struct ShopRate: Identifiable {
+    let activity: String
+    let coins: Int
+    let label: String
+    var id: String { activity }
+}
+
+@MainActor
+final class ShopStore: ObservableObject {
+    @Published var balance = 0
+    @Published var todayEarned = 0
+    @Published var items: [ShopItem] = []
+    @Published var orders: [ShopOrder] = []
+    @Published var wishes: [ShopWish] = []
+    @Published var rates: [ShopRate] = []
+    @Published var busy = false
+    @Published var toast = ""
+
+    func refreshAll() async {
+        await refreshSummary()
+        await refreshItems()
+        await refreshOrders()
+        await refreshWishes()
+    }
+
+    func refreshSummary() async {
+        guard let obj = try? await NativeHouseAPI.object("/api/shop/summary") else { return }
+        balance = obj.int("balance")
+        todayEarned = obj.int("today_earned")
+        if let raw = obj["rates"] as? [String: Any] {
+            rates = raw.map { key, value in
+                let d = value as? [String: Any] ?? [:]
+                return ShopRate(activity: key, coins: d.int("coins"), label: d.string("label"))
+            }.sorted { ($0.coins, $1.activity) > ($1.coins, $0.activity) }
+        }
+    }
+
+    func refreshItems() async {
+        guard let obj = try? await NativeHouseAPI.object("/api/shop/items") else { return }
+        items = obj.array("items").compactMap(ShopItem.init)
+    }
+
+    func refreshOrders() async {
+        guard let obj = try? await NativeHouseAPI.object("/api/shop/orders") else { return }
+        orders = obj.array("items").compactMap(ShopOrder.init)
+    }
+
+    func refreshWishes() async {
+        guard let obj = try? await NativeHouseAPI.object("/api/shop/wishes") else { return }
+        wishes = obj.array("items").compactMap(ShopWish.init)
+    }
+
+    func say(_ text: String) {
+        toast = text
+        Task {
+            try? await Task.sleep(nanoseconds: 1_800_000_000)
+            if toast == text { toast = "" }
+        }
+    }
+
+    /// 上架。图走 base64 直接塞进 body，后端落进附件目录再返回路径——
+    /// 省掉一套 multipart 上传接口，她一次也就传一张。
+    func addItem(title: String, spec: String, intro: String, price: Int,
+                 stock: Int, isTicket: Bool, coverData: String?) async {
+        busy = true
+        defer { busy = false }
+        var body: [String: Any] = ["title": title, "spec": spec, "intro": intro,
+                                   "price": price, "stock": stock,
+                                   "kind": isTicket ? "ticket" : "goods"]
+        if let coverData, !coverData.isEmpty { body["cover_data"] = coverData }
+        guard let obj = try? await NativeHouseAPI.object("/api/shop/item/add",
+                                                        method: "POST", body: body),
+              obj["ok"] as? Bool == true else {
+            say("没上成，再试一次")
+            return
+        }
+        await refreshItems()
+        say("上架了")
+    }
+
+    func updateItem(_ id: Int, fields: [String: Any]) async {
+        busy = true
+        defer { busy = false }
+        var body = fields
+        body["id"] = id
+        _ = try? await NativeHouseAPI.object("/api/shop/item/update", method: "POST", body: body)
+        await refreshItems()
+    }
+
+    func setRate(_ activity: String, coins: Int, label: String) async {
+        _ = try? await NativeHouseAPI.object(
+            "/api/shop/rate", method: "POST",
+            body: ["activity": activity, "coins": coins, "label": label])
+        await refreshSummary()
+    }
+
+    func decideWish(_ id: Int, status: String, reply: String) async {
+        _ = try? await NativeHouseAPI.object(
+            "/api/shop/wish/decide", method: "POST",
+            body: ["id": id, "status": status, "reply": reply])
+        await refreshWishes()
+    }
+
+    func adjust(_ amount: Int, note: String) async {
+        _ = try? await NativeHouseAPI.object(
+            "/api/shop/adjust", method: "POST", body: ["amount": amount, "note": note])
+        await refreshSummary()
+    }
+}
+
+private enum ShopTab: String, CaseIterable, Identifiable {
+    case shelf, orders, wishes, rates
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .shelf: return "货架"
+        case .orders: return "他买的"
+        case .wishes: return "他想要"
+        case .rates: return "价目表"
+        }
+    }
+    var icon: String {
+        switch self {
+        case .shelf: return "bag"
+        case .orders: return "shippingbox"
+        case .wishes: return "sparkles"
+        case .rates: return "list.number"
+        }
+    }
+    var iconFilled: String {
+        switch self {
+        case .shelf: return "bag.fill"
+        case .orders: return "shippingbox.fill"
+        case .wishes: return "sparkles"
+        case .rates: return "list.number"
+        }
+    }
+}
+
+struct ShopRoomView: View {
+    @Environment(\.dismiss) private var dismiss
+    // 跟钱包一样：不做自己的日月按钮，跟 app 总开关走；订阅这两个 key 才会跟着重画
+    @AppStorage(AlcoveAppearance.key) private var appearanceRaw = ""
+    @AppStorage(AlcoveAppearance.themeKey) private var themeNameRaw = "haven"
+    @StateObject private var store = ShopStore()
+    @State private var tab: ShopTab = .shelf
+    @State private var showAdd = false
+    @State private var editing: ShopItem?
+
+    init() { WalletInk.dark = AlcoveAppearance.isDark }
+
+    private var safeTop: CGFloat { FloatingOverlay.appWindow()?.safeAreaInsets.top ?? 0 }
+    private var safeBottom: CGFloat { FloatingOverlay.appWindow()?.safeAreaInsets.bottom ?? 0 }
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack {
+                WalletInk.paper.ignoresSafeArea()
+                Color.clear
+                    .overlay(Image("MistLaunch").resizable().scaledToFill())
+                    .clipped()
+                    .opacity(WalletInk.dark ? 0.16 : 0.10)
+                    .ignoresSafeArea()
+                    .allowsHitTesting(false)
+                QipaiDots(spacing: 16, radius: 1.3, color: WalletInk.line, opacity: 0.28)
+                    .ignoresSafeArea()
+                Color.clear
+                    .qipaiGrain(0.5)
+                    .ignoresSafeArea()
+                    .allowsHitTesting(false)
+                VStack(spacing: 0) {
+                    header.padding(.top, max(geo.safeAreaInsets.top, safeTop, 16))
+                    ScrollView {
+                        VStack(spacing: 12) {
+                            switch tab {
+                            case .shelf: shelfPage
+                            case .orders: ordersPage
+                            case .wishes: wishesPage
+                            case .rates: ratesPage
+                            }
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.top, 12)
+                        .padding(.bottom, 18)
+                    }
+                    tabBar
+                }
+                if !store.toast.isEmpty {
+                    Text(store.toast)
+                        .font(.system(size: 12.5, design: .serif))
+                        .foregroundColor(WalletInk.onGold)
+                        .padding(.horizontal, 16).padding(.vertical, 10)
+                        .background(WalletInk.gold.opacity(0.92), in: Capsule())
+                        .transition(.opacity)
+                }
+            }
+            .animation(.easeInOut(duration: 0.2), value: store.toast)
+        }
+        .id(AlcoveAppearance.isDark)
+        .onChange(of: appearanceRaw) { _ in WalletInk.dark = AlcoveAppearance.isDark }
+        .onChange(of: themeNameRaw) { _ in WalletInk.dark = AlcoveAppearance.isDark }
+        .task { await store.refreshAll() }
+        .sheet(isPresented: $showAdd) {
+            ShopItemForm(title: "上架一件", item: nil) { t, s, i, p, k, isT, cover in
+                Task { await store.addItem(title: t, spec: s, intro: i, price: p,
+                                           stock: k, isTicket: isT, coverData: cover) }
+            }
+        }
+        .sheet(item: $editing) { item in
+            ShopItemForm(title: "改这件", item: item) { t, s, i, p, k, isT, cover in
+                var f: [String: Any] = ["title": t, "spec": s, "intro": i,
+                                        "price": p, "stock": k,
+                                        "kind": isT ? "ticket" : "goods"]
+                if let cover, !cover.isEmpty { f["cover_data"] = cover }
+                Task { await store.updateItem(item.id, fields: f) }
+            }
+        }
+    }
+
+    private var header: some View {
+        HStack(spacing: 0) {
+            Button { dismiss() } label: {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(WalletInk.gold)
+                    .frame(width: 40, height: 40)
+                    .walletPanel(corner: 20)
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            Spacer()
+            VStack(spacing: 2) {
+                Text("商店")
+                    .font(.system(size: 17, weight: .medium, design: .serif))
+                    .tracking(3)
+                    .foregroundColor(WalletInk.ink)
+                Text("SHOP")
+                    .font(.system(size: 8.5, weight: .regular, design: .serif))
+                    .tracking(3.2)
+                    .foregroundColor(WalletInk.dim)
+            }
+            Spacer()
+            Button { showAdd = true } label: {
+                Image(systemName: "plus")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(tab == .shelf ? WalletInk.gold : WalletInk.dim.opacity(0.45))
+                    .frame(width: 40, height: 40)
+                    .walletPanel(corner: 20)
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .disabled(tab != .shelf)
+        }
+        .padding(.horizontal, 14)
+        .padding(.bottom, 8)
+    }
+
+    private var tabBar: some View {
+        VStack(spacing: 0) {
+            Rectangle().fill(WalletInk.line.opacity(0.55)).frame(height: 0.5)
+            HStack(spacing: 0) {
+                ForEach(ShopTab.allCases) { item in
+                    Button { tab = item } label: {
+                        VStack(spacing: 4) {
+                            Image(systemName: tab == item ? item.iconFilled : item.icon)
+                                .font(.system(size: 17, weight: tab == item ? .semibold : .regular))
+                            Text(item.title)
+                                .font(.system(size: 10.5,
+                                              weight: tab == item ? .semibold : .regular,
+                                              design: .serif))
+                        }
+                        .foregroundColor(tab == item ? WalletInk.gold : WalletInk.dim)
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 9)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.bottom, max(safeBottom, 8))
+            .background(WalletInk.card.opacity(WalletInk.dark ? 0.72 : 0.86))
+        }
+    }
+
+    // MARK: 他有多少钱（每页顶上都挂一条）
+    private var purse: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text("他有")
+                .font(.system(size: 11.5))
+                .foregroundColor(WalletInk.dim)
+            Text("\(store.balance)")
+                .font(.system(size: 26, weight: .bold, design: .rounded))
+                .foregroundColor(WalletInk.gold)
+            Text("块")
+                .font(.system(size: 11.5))
+                .foregroundColor(WalletInk.dim)
+            Spacer()
+            Text("今天挣了 \(store.todayEarned)")
+                .font(.system(size: 11))
+                .foregroundColor(WalletInk.dim)
+        }
+        .padding(14)
+        .walletPanel(corner: 18)
+    }
+
+    // MARK: 货架（她自己看、改、下架）
+    private var shelfPage: some View {
+        VStack(spacing: 12) {
+            purse
+            if store.items.isEmpty {
+                EmptyHint(text: "货架是空的。点右上角的加号上一件。")
+            }
+            ForEach(store.items) { item in
+                Button { editing = item } label: { shelfRow(item) }
+                    .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private func shelfRow(_ item: ShopItem) -> some View {
+        HStack(alignment: .top, spacing: 11) {
+            cover(item.cover, size: 54)
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 6) {
+                    Text(item.title)
+                        .font(.system(size: 14, weight: .medium, design: .serif))
+                        .foregroundColor(WalletInk.ink)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                    if item.isTicket {
+                        Text("券")
+                            .font(.system(size: 9.5, weight: .medium))
+                            .foregroundColor(WalletInk.onGold)
+                            .padding(.horizontal, 5).padding(.vertical, 2)
+                            .background(WalletInk.gold, in: RoundedRectangle(cornerRadius: 4))
+                    }
+                    if !item.onShelf {
+                        Text("已下架")
+                            .font(.system(size: 9.5))
+                            .foregroundColor(WalletInk.dim)
+                            .padding(.horizontal, 5).padding(.vertical, 2)
+                            .background(WalletInk.goldSoft, in: RoundedRectangle(cornerRadius: 4))
+                    }
+                }
+                if !item.spec.isEmpty {
+                    Text(item.spec)
+                        .font(.system(size: 11))
+                        .foregroundColor(WalletInk.dim)
+                }
+                if !item.intro.isEmpty {
+                    Text(item.intro)
+                        .font(.system(size: 11.5))
+                        .foregroundColor(WalletInk.dim)
+                        .lineLimit(3)
+                        .multilineTextAlignment(.leading)
+                }
+                HStack(spacing: 8) {
+                    Text("\(item.price) 块")
+                        .font(.system(size: 13, weight: .bold, design: .rounded))
+                        .foregroundColor(WalletInk.gold)
+                    Text("·").foregroundColor(WalletInk.faint)
+                    Text(item.stockText)
+                        .font(.system(size: 11))
+                        .foregroundColor(WalletInk.dim)
+                    if item.sold > 0 {
+                        Text("· 已售 \(item.sold)")
+                            .font(.system(size: 11))
+                            .foregroundColor(WalletInk.dim)
+                    }
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .walletPanel(corner: 16)
+        .opacity(item.onShelf ? 1 : 0.62)
+    }
+
+    // MARK: 他买了什么、手上还有几张券
+    private var ordersPage: some View {
+        VStack(spacing: 12) {
+            purse
+            let tickets = store.orders.filter { $0.isTicket && !$0.used }
+            if !tickets.isEmpty {
+                VStack(alignment: .leading, spacing: 9) {
+                    Text("他手上的券 \(tickets.count) 张")
+                        .font(.system(size: 12, weight: .semibold, design: .serif))
+                        .foregroundColor(WalletInk.gold)
+                    ForEach(tickets) { t in
+                        HStack(spacing: 9) {
+                            cover(t.cover, size: 34)
+                            Text(t.title)
+                                .font(.system(size: 13, design: .serif))
+                                .foregroundColor(WalletInk.ink)
+                            Spacer(minLength: 0)
+                            Text(String(t.ts.prefix(16).dropFirst(5)))
+                                .font(.system(size: 10))
+                                .foregroundColor(WalletInk.dim)
+                        }
+                    }
+                }
+                .padding(13)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .walletPanel(corner: 16)
+            }
+            if store.orders.isEmpty {
+                EmptyHint(text: "他还什么都没买过。")
+            }
+            ForEach(store.orders) { o in
+                HStack(spacing: 11) {
+                    cover(o.cover, size: 42)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(o.title)
+                            .font(.system(size: 13, design: .serif))
+                            .foregroundColor(WalletInk.ink)
+                        Text(String(o.ts.prefix(16).dropFirst(5)))
+                            .font(.system(size: 10))
+                            .foregroundColor(WalletInk.dim)
+                    }
+                    Spacer(minLength: 0)
+                    Text("\(o.price) 块")
+                        .font(.system(size: 12.5, weight: .semibold, design: .rounded))
+                        .foregroundColor(WalletInk.gold)
+                    if o.used {
+                        Text("已用")
+                            .font(.system(size: 9.5))
+                            .foregroundColor(WalletInk.dim)
+                    }
+                }
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .walletPanel(corner: 16)
+            }
+        }
+    }
+
+    // MARK: 他许的愿（希望她上什么）
+    private var wishesPage: some View {
+        VStack(spacing: 12) {
+            if store.wishes.isEmpty {
+                EmptyHint(text: "他还没提过想要什么。")
+            }
+            ForEach(store.wishes) { w in
+                VStack(alignment: .leading, spacing: 9) {
+                    Text(w.text)
+                        .font(.system(size: 13.5, design: .serif))
+                        .foregroundColor(WalletInk.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .multilineTextAlignment(.leading)
+                    HStack(spacing: 8) {
+                        Text(String(w.ts.prefix(16).dropFirst(5)))
+                            .font(.system(size: 10))
+                            .foregroundColor(WalletInk.dim)
+                        Text("·").foregroundColor(WalletInk.faint)
+                        Text(w.statusCN)
+                            .font(.system(size: 10.5, weight: .medium))
+                            .foregroundColor(w.status == "open" ? WalletInk.gold : WalletInk.dim)
+                        Spacer(minLength: 0)
+                        if w.status == "open" {
+                            Button("上了") {
+                                Task { await store.decideWish(w.id, status: "done", reply: "") }
+                            }
+                            .font(.system(size: 11.5, weight: .medium))
+                            .foregroundColor(WalletInk.onGold)
+                            .padding(.horizontal, 11).padding(.vertical, 5)
+                            .background(WalletInk.gold, in: Capsule())
+                            .buttonStyle(.plain)
+                            Button("这个不上") {
+                                Task { await store.decideWish(w.id, status: "passed", reply: "") }
+                            }
+                            .font(.system(size: 11.5))
+                            .foregroundColor(WalletInk.dim)
+                            .padding(.horizontal, 11).padding(.vertical, 5)
+                            .background(WalletInk.goldSoft, in: Capsule())
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                .padding(13)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .walletPanel(corner: 16)
+            }
+        }
+    }
+
+    // MARK: 价目表（她要的那一页：能加能改）
+    private var ratesPage: some View {
+        VStack(spacing: 12) {
+            purse
+            Text("干一件事值多少钱。改完立刻生效，他下次记账就按新价。")
+                .font(.system(size: 11))
+                .foregroundColor(WalletInk.dim)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            ForEach(store.rates) { r in
+                ShopRateRow(rate: r) { coins in
+                    Task { await store.setRate(r.activity, coins: coins, label: r.label) }
+                }
+            }
+            ShopRateAddRow { act, coins, label in
+                Task { await store.setRate(act, coins: coins, label: label) }
+            }
+        }
+    }
+
+    private func cover(_ raw: String, size: CGFloat) -> some View {
+        ZStack {
+            WalletInk.goldSoft
+            if !raw.isEmpty, let url = URL(string: AlcoveAPI.attachmentURL(raw).absoluteString) {
+                CachedImage(url: url) { img in
+                    img.resizable().scaledToFill()
+                } placeholder: {
+                    Image(systemName: "bag")
+                        .font(.system(size: size * 0.3))
+                        .foregroundColor(WalletInk.dim.opacity(0.55))
+                }
+            } else {
+                Image(systemName: "bag")
+                    .font(.system(size: size * 0.3))
+                    .foregroundColor(WalletInk.dim.opacity(0.55))
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(RoundedRectangle(cornerRadius: size * 0.2))
+    }
+}
+
+// MARK: - 价目表的一行：点数字就地改
+private struct ShopRateRow: View {
+    let rate: ShopRate
+    let onSave: (Int) -> Void
+    @State private var editing = false
+    @State private var draft = ""
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(rate.label.isEmpty ? rate.activity : rate.label)
+                    .font(.system(size: 13, design: .serif))
+                    .foregroundColor(WalletInk.ink)
+                Text(rate.activity)
+                    .font(.system(size: 9.5, design: .monospaced))
+                    .foregroundColor(WalletInk.dim)
+            }
+            Spacer(minLength: 0)
+            if editing {
+                TextField("0", text: $draft)
+                    .keyboardType(.numberPad)
+                    .focused($focused)
+                    .multilineTextAlignment(.trailing)
+                    .font(.system(size: 15, weight: .bold, design: .rounded))
+                    .foregroundColor(WalletInk.gold)
+                    .frame(width: 54)
+                Button("存") {
+                    onSave(Int(draft) ?? rate.coins)
+                    editing = false
+                }
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(WalletInk.onGold)
+                .padding(.horizontal, 10).padding(.vertical, 5)
+                .background(WalletInk.gold, in: Capsule())
+                .buttonStyle(.plain)
+            } else {
+                Button {
+                    draft = String(rate.coins)
+                    editing = true
+                    focused = true
+                } label: {
+                    Text("\(rate.coins) 块")
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .foregroundColor(rate.coins > 0 ? WalletInk.gold : WalletInk.dim)
+                        .padding(.horizontal, 11).padding(.vertical, 5)
+                        .background(WalletInk.goldSoft, in: Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .walletPanel(corner: 15)
+    }
+}
+
+// MARK: - 价目表加一项
+private struct ShopRateAddRow: View {
+    let onAdd: (String, Int, String) -> Void
+    @State private var open = false
+    @State private var activity = ""
+    @State private var label = ""
+    @State private var coins = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if open {
+                shopField("活动代号", "英文小写，他记账时敲这个", $activity)
+                shopField("叫什么", "写给你自己看的，比如 遛狗", $label)
+                shopField("值多少块", "只填数字", $coins, number: true)
+                HStack(spacing: 9) {
+                    Button("加进去") {
+                        let act = activity.trimmingCharacters(in: .whitespaces)
+                        guard !act.isEmpty else { return }
+                        onAdd(act, Int(coins) ?? 0, label)
+                        activity = ""; label = ""; coins = ""; open = false
+                    }
+                    .font(.system(size: 12.5, weight: .medium))
+                    .foregroundColor(WalletInk.onGold)
+                    .padding(.horizontal, 14).padding(.vertical, 7)
+                    .background(WalletInk.gold, in: Capsule())
+                    .buttonStyle(.plain)
+                    Button("算了") { open = false }
+                        .font(.system(size: 12.5))
+                        .foregroundColor(WalletInk.dim)
+                        .buttonStyle(.plain)
+                }
+            } else {
+                Button {
+                    open = true
+                } label: {
+                    HStack(spacing: 7) {
+                        Image(systemName: "plus.circle")
+                        Text("加一项新的活动")
+                    }
+                    .font(.system(size: 12.5, design: .serif))
+                    .foregroundColor(WalletInk.gold)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(13)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .walletPanel(corner: 15, dotted: true)
+    }
+}
+
+// MARK: - 上架 / 改一件
+private struct ShopItemForm: View {
+    let title: String
+    let item: ShopItem?
+    /// 标题、规格、简介、价钱、份数、是不是券、图（base64，没换图就是 nil）
+    let onSubmit: (String, String, String, Int, Int, Bool, String?) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var name = ""
+    @State private var spec = ""
+    @State private var intro = ""
+    @State private var price = ""
+    @State private var stock = ""
+    @State private var isTicket = false
+    @State private var unlimited = false
+    @State private var picked: PhotosPickerItem?
+    @State private var coverData: String?
+    @State private var preview: UIImage?
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 12) {
+                    PhotosPicker(selection: $picked, matching: .images) {
+                        ZStack {
+                            WalletInk.goldSoft
+                            if let preview {
+                                Image(uiImage: preview).resizable().scaledToFill()
+                            } else if let raw = item?.cover, !raw.isEmpty,
+                                      let url = URL(string: AlcoveAPI.attachmentURL(raw).absoluteString) {
+                                CachedImage(url: url) { img in
+                                    img.resizable().scaledToFill()
+                                } placeholder: {
+                                    Text("换张图").font(.system(size: 12)).foregroundColor(WalletInk.dim)
+                                }
+                            } else {
+                                VStack(spacing: 6) {
+                                    Image(systemName: "photo.badge.plus").font(.system(size: 22))
+                                    Text("传张图").font(.system(size: 11.5, design: .serif))
+                                }
+                                .foregroundColor(WalletInk.dim)
+                            }
+                        }
+                        .frame(height: 148)
+                        .frame(maxWidth: .infinity)
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                    }
+                    .buttonStyle(.plain)
+
+                    shopField("名字", "比如 睡觉券", $name)
+                    shopField("规格", "比如 一次 / 60cm", $spec)
+                    shopField("简介", "这是什么、怎么用", $intro, tall: true)
+                    shopField("卖多少块", "只填数字", $price, number: true)
+
+                    Toggle(isOn: $isTicket) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("这是一张券").font(.system(size: 12.5, design: .serif))
+                            Text("券买了之后他能拿来兑换一件事")
+                                .font(.system(size: 9.5)).foregroundColor(WalletInk.dim)
+                        }
+                    }
+                    .tint(WalletInk.gold)
+                    .padding(12).walletPanel(corner: 15)
+
+                    Toggle(isOn: $unlimited) {
+                        Text("不限量").font(.system(size: 12.5, design: .serif))
+                    }
+                    .tint(WalletInk.gold)
+                    .padding(12).walletPanel(corner: 15)
+
+                    if !unlimited {
+                        shopField("有几份", "卖完自动下架", $stock, number: true)
+                    }
+                }
+                .padding(14)
+            }
+            .background(WalletInk.paper.ignoresSafeArea())
+            .navigationTitle(title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("算了") { dismiss() }.foregroundColor(WalletInk.dim)
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("好了") {
+                        let n = name.trimmingCharacters(in: .whitespaces)
+                        guard !n.isEmpty else { return }
+                        onSubmit(n, spec, intro, Int(price) ?? 0,
+                                 unlimited ? -1 : (Int(stock) ?? 1), isTicket, coverData)
+                        dismiss()
+                    }
+                    .foregroundColor(WalletInk.gold)
+                    .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+        }
+        .onAppear {
+            guard let item else { return }
+            name = item.title; spec = item.spec; intro = item.intro
+            price = String(item.price)
+            unlimited = item.stock < 0
+            stock = item.stock < 0 ? "" : String(item.stock)
+            isTicket = item.isTicket
+        }
+        .onChange(of: picked) { newValue in
+            guard let newValue else { return }
+            Task {
+                guard let raw = try? await newValue.loadTransferable(type: Data.self),
+                      let img = UIImage(data: raw) else { return }
+                // 缩到 900 宽再转 jpeg：她相册里那种几兆的原图没必要整张塞进 JSON
+                let scale = min(1, 900 / max(img.size.width, 1))
+                let size = CGSize(width: img.size.width * scale, height: img.size.height * scale)
+                let small = UIGraphicsImageRenderer(size: size).image { _ in
+                    img.draw(in: CGRect(origin: .zero, size: size))
+                }
+                preview = small
+                coverData = small.jpegData(compressionQuality: 0.82)?.base64EncodedString()
+            }
+        }
+    }
+}
+
+/// 商城表单里那种「标签在上、输入在下」的格子，钱包那边没有现成的，写一个共用
+private func shopField(_ label: String, _ hint: String,
+                       _ text: Binding<String>,
+                       number: Bool = false, tall: Bool = false) -> some View {
+    VStack(alignment: .leading, spacing: 6) {
+        Text(label)
+            .font(.system(size: 11.5, weight: .medium, design: .serif))
+            .foregroundColor(WalletInk.gold)
+        if tall {
+            TextEditor(text: text)
+                .font(.system(size: 13))
+                .foregroundColor(WalletInk.ink)
+                .frame(height: 76)
+                .scrollContentBackground(.hidden)
+        } else {
+            TextField(hint, text: text)
+                .font(.system(size: 13))
+                .foregroundColor(WalletInk.ink)
+                .keyboardType(number ? .numberPad : .default)
+        }
+    }
+    .padding(12)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .walletPanel(corner: 15)
 }

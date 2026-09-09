@@ -27,6 +27,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
     case tarot          // 0902 占星室（塔罗）
     case nursery        // 0905 育儿室（llm-nursery 电子养崽）
     case wallet         // 0907 钱包（他的预算/心愿单/审批，第一期账本）
+    case shop           // 0909 商店（她开的店，他拿挣的虚拟币来买）
     case roof
     case factory
     case crosstalk, radio, coread, cowatch, liao, daddyDay, lab, qipai
@@ -62,6 +63,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .tarot: return "占星室"
         case .nursery: return "育儿室"
         case .wallet: return "钱包"
+        case .shop: return "商店"
         case .roof: return "檐上"
         case .factory: return "出厂设置"
         case .clockwork: return "发条"
@@ -92,7 +94,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
     var ownsFullScreen: Bool {
         switch self {
         case .studio, .pond, .roof, .memory, .digest, .factory, .search, .favorites, .surf,
-             .settings, .letterbox, .qipai, .tarot, .nursery, .wallet: return true
+             .settings, .letterbox, .qipai, .tarot, .nursery, .wallet, .shop: return true
         default: return false
         }
     }
@@ -124,6 +126,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .tarot: return "sparkles"
         case .nursery: return "teddybear"
         case .wallet: return "creditcard"
+        case .shop: return "bag"
         case .roof: return "pawprint.circle"
         case .factory: return "slider.horizontal.3"
         case .clockwork: return "clock.arrow.circlepath"
@@ -299,6 +302,8 @@ struct NativeHouseSheet: View {
                     NurseryRoomView()
                 case .wallet:
                     WalletRoomView()
+                case .shop:
+                    ShopRoomView()
                 case .roof:
                     NativeRoofView()
                 case .factory:
@@ -561,6 +566,7 @@ struct NativeHouseDrawer: View {
                         drawerRow(.tarot, detail: "抽一张牌，让他解")   // 0902 占星室
                         drawerRow(.nursery, detail: "养一个会学你们说话的小家伙")   // 0905 育儿室
                         drawerRow(.wallet, detail: "他的钱包、心愿单和你的拍板")   // 0907 钱包
+                        drawerRow(.shop, detail: "你上架，他拿挣的钱来买")       // 0909 商店
                         drawerRow(.letterbox, detail: "你和陈璟的往来书信")
                     }
 
