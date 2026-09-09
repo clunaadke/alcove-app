@@ -81,6 +81,8 @@ struct ChatView: View {
     @AppStorage("alcoveTheme") private var themeName = "haven"
     @AppStorage("imsgShowProcess") private var showProcessDots = true   // 0822 iMessage 主题：过程线圆点开关
     @AppStorage("chatFontSize") private var chatFontSize = 14
+    // 0909 她要的：气泡之间的间距自己调。原来写死 6pt
+    @AppStorage("chatBubbleGap") private var chatBubbleGap = 6.0
     @AppStorage("wallStamp") private var wallStamp = 0.0
     @AppStorage("bubbleGlassStrength") private var bubbleGlassStrength = 56.81
     @AppStorage("bubbleGlassDispersion") private var bubbleGlassDispersion = 0.39
@@ -258,7 +260,7 @@ struct ChatView: View {
         ScrollViewReader { proxy in
             ZStack(alignment: .bottom) {
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 6) {
+                    LazyVStack(alignment: .leading, spacing: chatBubbleGap) {
                         ForEach(Array(store.messages.enumerated()), id: \.element.id) { idx, msg in
                             chatMessageRow(at: idx, message: msg)
                                 .background(

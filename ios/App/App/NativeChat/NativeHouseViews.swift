@@ -1956,6 +1956,7 @@ private struct BubbleAppearanceSettingsView: View {
     @AppStorage("assistantName") private var assistantName = "陈璟"
     @AppStorage("alcoveTheme") private var themeName = "haven"
     @AppStorage("chatFontSize") private var fontSize = 14
+    @AppStorage("chatBubbleGap") private var bubbleGap = 6.0
     @AppStorage("wallStamp") private var wallStamp = 0.0
     @AppStorage("bubbleGlassStrength") private var bubbleGlassStrength = 56.81
     @AppStorage("bubbleGlassDispersion") private var bubbleGlassDispersion = 0.39
@@ -2002,7 +2003,10 @@ private struct BubbleAppearanceSettingsView: View {
                 }
 
                 section("文字") {
-                    fontSizeSlider
+                    VStack(spacing: 12) {
+                        fontSizeSlider
+                        bubbleGapSlider
+                    }
                 }
 
                 section("液态玻璃气泡") {
@@ -2159,6 +2163,23 @@ private struct BubbleAppearanceSettingsView: View {
             if !isUser { Spacer(minLength: 40) }
         }
         .frame(maxWidth: .infinity)
+    }
+
+    /// 0909 她要的：气泡之间的间距。原来写死 6pt，现在 0~20 自己拖
+    private var bubbleGapSlider: some View {
+        HStack(spacing: 9) {
+            Text("气泡间距")
+                .font(.system(size: 12))
+                .frame(width: 100, alignment: .leading)
+
+            Slider(value: $bubbleGap, in: 0...20, step: 1)
+                .tint(panelTheme.fyAccent)
+
+            Text("\(Int(bubbleGap)) pt")
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundColor(panelTheme.textDim)
+                .frame(width: 45, alignment: .trailing)
+        }
     }
 
     private var fontSizeSlider: some View {
