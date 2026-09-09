@@ -9714,6 +9714,12 @@ private struct NativeForgeView: View {
             if loading {
                 retain = Double((obj["retained_rounds"] as? Int) ?? r)
             }
+            // 0909：拨掉「带系统轮」之后总数会变小（她那边 84 → 82），
+            // 滑块的值可能落在新范围外面，夹回来，免得显示成满格
+            let newTotal = (obj["total_rounds"] as? Int) ?? 0
+            if newTotal > 0 && Int(retain) > newTotal {
+                retain = Double(newTotal)
+            }
         }
         loading = false
     }
