@@ -9245,6 +9245,9 @@ private struct NativeForgeView: View {
     @State private var loadingDetailRound: Int?
     @State private var pickPreview: [String: Any] = [:]
     @State private var showSystemRounds = false
+    // 0909 她要的（任务#1800）：滑条模式下这是「带不带」，不是「显不显示」——
+    // 开着锻造就把心跳/keepalive/追问这些一起数进保留轮次，关着只数你俩说话的轮次。
+    @State private var keepSystemRounds = false
     @State private var loadingRounds = false
     @State private var confirmPickedForge = false
     @State private var loading = true
@@ -9370,6 +9373,20 @@ private struct NativeForgeView: View {
                                 infoRow("估算Token", "\(estimatedTokens)")
                                 Spacer()
                                 infoRow("Warm文", "\((activePreview["warm_texts"] as? Int) ?? 0)")
+                            }
+                            Divider().background(theme.fyBorder.opacity(0.5))
+                            Toggle(isOn: $keepSystemRounds) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("是否带系统轮")
+                                        .font(.system(size: 12, weight: .medium))
+                                    Text("开＝带上（心跳、keepalive、追问等）　关＝只留你俩说话的")
+                                        .font(.system(size: 9))
+                                        .foregroundColor(theme.textDim)
+                                }
+                            }
+                            .tint(theme.fyAccent)
+                            .onChange(of: keepSystemRounds) { _ in
+                                Task { await loadPreview() }
                             }
                             }
                             .padding(14).foyerCard(theme)
@@ -9688,7 +9705,9 @@ private struct NativeForgeView: View {
         let r = Int(retain)
         previewSeq += 1
         let mySeq = previewSeq
-        if let obj = try? await NativeHouseAPI.object("/api/forge?retain=\(r)&force_handoff=\(forceHandoff ? 1 : 0)") {
+        if let obj = try? await NativeHouseAPI.object(
+            "/api/forge?retain=\(r)&force_handoff=\(forceHandoff ? 1 : 0)"
+            + "&include_system=\(keepSystemRounds ? 1 : 0)") {
             // 她拖一下滑块会连发十几个请求，慢的那个最后才回来把快的盖掉，数字就倒着跳。只认最新那个
             guard mySeq == previewSeq else { return }
             preview = obj
@@ -9779,7 +9798,8 @@ private struct NativeForgeView: View {
             let body: [String: Any] = mode == .picker
                 ? ["pick": selectedRounds.sorted(), "thoughts": selectedThoughts.sorted(),
                    "tool_rounds": toolDemoRounds.sorted(), "force_handoff": forceHandoff]
-                : ["retain": Int(retain), "force_handoff": forceHandoff]
+                : ["retain": Int(retain), "force_handoff": forceHandoff,
+                   "include_system": keepSystemRounds]
             let obj = try await NativeHouseAPI.object(
                 "/api/forge", method: "POST", body: body)
             report = obj
