@@ -18,12 +18,60 @@ final class SmokeDelegate: UIResponder, UIApplicationDelegate {
         window = win
         win.makeKeyAndVisible()
         later(2) { self.findArtwork(attempt: 0) }
-        later(35) { self.finish(error: "Native splash smoke test timed out") }
+        later(90) { self.finish(error: "Native splash smoke test timed out") }
         return true
     }
 
     private func later(_ delay: Double, _ action: @escaping () -> Void) {
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: action)
+    }
+
+    // 0909: CI runners have no GPU, so the splash falls back to repainting every
+    // pixel on the CPU and one frame can take a few hundred milliseconds. Judging
+    // the page once after a fixed sleep makes the whole gate a coin flip, so keep
+    // looking until it actually reaches the expected state (or the deadline).
+    private func poll(_ timeout: Double, every interval: Double = 0.2,
+                      until check: @escaping ([String: Any]) -> Bool,
+                      pass: @escaping ([String: Any]) -> Void,
+                      fail: @escaping ([String: Any]) -> Void) {
+        pollPage(deadline: Date().addingTimeInterval(timeout), interval: interval,
+                 check: check, pass: pass, fail: fail)
+    }
+
+    private func pollPage(deadline: Date, interval: Double,
+                          check: @escaping ([String: Any]) -> Bool,
+                          pass: @escaping ([String: Any]) -> Void,
+                          fail: @escaping ([String: Any]) -> Void) {
+        guard !completed else { return }
+        read { state in
+            if check(state) { pass(state); return }
+            guard Date() < deadline else { fail(state); return }
+            self.later(interval) {
+                self.pollPage(deadline: deadline, interval: interval,
+                              check: check, pass: pass, fail: fail)
+            }
+        }
+    }
+
+    private func pollNative(_ timeout: Double, every interval: Double = 0.2,
+                            until check: @escaping () -> Bool,
+                            pass: @escaping () -> Void,
+                            fail: @escaping () -> Void) {
+        pollSelf(deadline: Date().addingTimeInterval(timeout), interval: interval,
+                 check: check, pass: pass, fail: fail)
+    }
+
+    private func pollSelf(deadline: Date, interval: Double,
+                          check: @escaping () -> Bool,
+                          pass: @escaping () -> Void,
+                          fail: @escaping () -> Void) {
+        guard !completed else { return }
+        if check() { pass(); return }
+        guard Date() < deadline else { fail(); return }
+        later(interval) {
+            self.pollSelf(deadline: deadline, interval: interval,
+                          check: check, pass: pass, fail: fail)
+        }
     }
 
     private func findWeb(_ view: UIView) -> WKWebView? {
@@ -42,7 +90,7 @@ final class SmokeDelegate: UIResponder, UIApplicationDelegate {
             let renderer = state["renderer"] as? String ?? ""
             guard ["webgl", "canvas", "fallback"].contains(renderer),
                   Int(state["frame"] as? String ?? "0") ?? 0 > 2 else {
-                if attempt < 15 { self.later(1) { self.findArtwork(attempt: attempt + 1) } }
+                if attempt < 25 { self.later(1) { self.findArtwork(attempt: attempt + 1) } }
                 else { self.finish(error: "Artwork never started: \(state)") }
                 return
             }
@@ -52,15 +100,12 @@ final class SmokeDelegate: UIResponder, UIApplicationDelegate {
             }
             self.checks["initial"] = state
             let frame = Int(state["frame"] as? String ?? "0") ?? 0
-            self.later(1) {
-                self.read { moving in
-                    guard (Int(moving["frame"] as? String ?? "0") ?? 0) > frame else {
-                        self.finish(error: "Visible artwork is frozen"); return
-                    }
-                    self.checks["nativeAnimationAdvances"] = true
-                    self.swipe()
-                }
-            }
+            self.poll(8, until: { (Int($0["frame"] as? String ?? "0") ?? 0) > frame }, pass: { _ in
+                self.checks["nativeAnimationAdvances"] = true
+                self.swipe()
+            }, fail: { last in
+                self.finish(error: "Visible artwork is frozen: \(last)")
+            })
         }
     }
 
@@ -84,16 +129,15 @@ final class SmokeDelegate: UIResponder, UIApplicationDelegate {
         send('pointerup',r.width*.85,r.height*.38);return true})()
         """) { _, error in
             if let error { self.finish(error: "Swipe failed: \(error)"); return }
-            self.later(0.3) {
-                self.read { state in
-                    guard (Int(state["swipes"] as? String ?? "0") ?? 0) == 30,
-                          (Int(state["clearedPixels"] as? String ?? "0") ?? 0) > 100 else {
-                        self.finish(error: "Swipe did not clear the fog: \(state)"); return
-                    }
-                    self.checks["swipe"] = state
-                    self.snapshot()
-                }
-            }
+            self.poll(8, until: {
+                (Int($0["swipes"] as? String ?? "0") ?? 0) == 30
+                    && (Int($0["clearedPixels"] as? String ?? "0") ?? 0) > 100
+            }, pass: { state in
+                self.checks["swipe"] = state
+                self.snapshot()
+            }, fail: { state in
+                self.finish(error: "Swipe did not clear the fog: \(state)")
+            })
         }
     }
 
@@ -108,34 +152,50 @@ final class SmokeDelegate: UIResponder, UIApplicationDelegate {
 
     private func pauseAndResume() {
         NotificationCenter.default.post(name: UIApplication.willResignActiveNotification, object: UIApplication.shared)
-        later(0.2) {
-            self.read { paused in
-                self.later(0.3) {
-                    self.read { still in
-                        guard still["active"] as? String == "false", still["frame"] as? String == paused["frame"] as? String else {
-                            self.finish(error: "Native inactive notification did not pause artwork"); return
-                        }
-                        NotificationCenter.default.post(name: UIApplication.didBecomeActiveNotification, object: UIApplication.shared)
-                        // The 2D fallback repaints every pixel on the CPU, so one frame
-                        // can take a few hundred ms on a runner. Give resume room.
-                        self.later(1.2) {
-                            self.read { resumed in
-                                guard resumed["active"] as? String == "true", resumed["frame"] as? String != still["frame"] as? String else {
-                                    self.finish(error: "Native activation did not resume artwork"); return
-                                }
-                                self.checks["nativePauseAndResume"] = true
-                                self.web?.evaluateJavaScript("document.querySelector('.alw-enter').click();document.querySelector('.alw-enter').click();") { _, _ in
-                                    self.later(0.2) {
-                                        guard self.entryCount == 1 else { self.finish(error: "Enter did not bridge exactly once"); return }
-                                        self.checks["entryOnce"] = true
-                                        self.finish(error: nil)
-                                    }
-                                }
-                            }
-                        }
+        // Wait for the page to acknowledge the pause instead of assuming 0.2s is enough.
+        poll(5, until: { $0["active"] as? String == "false" }, pass: { paused in
+            // Proving the artwork is *stopped* needs a real gap, so this one wait stays fixed.
+            self.later(0.5) {
+                self.read { still in
+                    guard still["active"] as? String == "false",
+                          still["frame"] as? String == paused["frame"] as? String else {
+                        self.finish(error: "Native inactive notification did not pause artwork: \(still)"); return
                     }
+                    self.resumeArtwork(from: still)
                 }
             }
+        }, fail: { state in
+            self.finish(error: "Native inactive notification did not pause artwork: \(state)")
+        })
+    }
+
+    private func resumeArtwork(from still: [String: Any]) {
+        NotificationCenter.default.post(name: UIApplication.didBecomeActiveNotification, object: UIApplication.shared)
+        poll(10, until: {
+            $0["active"] as? String == "true" && $0["frame"] as? String != still["frame"] as? String
+        }, pass: { _ in
+            self.checks["nativePauseAndResume"] = true
+            self.pressEnterTwice()
+        }, fail: { state in
+            self.finish(error: "Native activation did not resume artwork: \(state)")
+        })
+    }
+
+    private func pressEnterTwice() {
+        web?.evaluateJavaScript("document.querySelector('.alw-enter').click();document.querySelector('.alw-enter').click();") { _, error in
+            if let error { self.finish(error: "Enter click failed: \(error)"); return }
+            self.pollNative(5, until: { self.entryCount >= 1 }, pass: {
+                // Both clicks were dispatched together; hold briefly to catch a second bridge.
+                self.later(0.5) {
+                    guard self.entryCount == 1 else {
+                        self.finish(error: "Enter did not bridge exactly once: \(self.entryCount)"); return
+                    }
+                    self.checks["entryOnce"] = true
+                    self.finish(error: nil)
+                }
+            }, fail: {
+                self.finish(error: "Enter never bridged to native")
+            })
         }
     }
 

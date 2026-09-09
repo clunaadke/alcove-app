@@ -32,7 +32,7 @@ xcrun simctl bootstatus "$device_id" -b
 xcrun simctl install "$device_id" "$app_dir"
 xcrun simctl launch "$device_id" app.alcove.mistsmoke
 data_dir="$(xcrun simctl get_app_container "$device_id" app.alcove.mistsmoke data)"
-for attempt in $(seq 1 50); do
+for attempt in $(seq 1 150); do
   if [ -f "$data_dir/Documents/result.json" ]; then break; fi
   sleep 1
 done
