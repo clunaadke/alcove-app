@@ -343,6 +343,7 @@ struct NativeHouseSheet: View {
         .ignoresSafeArea(.container, edges: .all)
         .preferredColorScheme(theme.isDark ? .dark : .light)
         .presentationBackground {
+            if route == .room3d { Color.black } else {
             GeometryReader { backgroundGeo in
                 Image(theme.isDark ? "DrawerDark" : "DrawerLight")
                     .resizable()
@@ -351,6 +352,7 @@ struct NativeHouseSheet: View {
                     .clipped()
                     .ignoresSafeArea()
             }
+        }
         }
         .onAppear { prepareTextureIfNeeded() }
         .onChange(of: themeName) { _ in prepareTextureIfNeeded() }
@@ -383,6 +385,7 @@ struct NativeHouseSheet: View {
                 Spacer()
             }
         }
+        .background(route == .room3d ? Color.black : Color.clear)
         .frame(height: route == .activityRoom || route == .coread ? 0 : 46)
         .padding(.top, route == .activityRoom || route == .coread ? 0 : safeTop)
         .padding(.horizontal, 12)
@@ -13041,6 +13044,7 @@ private struct NativeOBSelfView:View{
 // MARK: - Bundled 3D room web container
 private struct Room3DWebView: UIViewRepresentable {
     let active: Bool
+    @Binding var nativeDiagnostic: String
     var assetDirectory = "room3d"
     var lifecycleObject = "alcoveRoom3D"
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -13048,7 +13052,9 @@ private struct Room3DWebView: UIViewRepresentable {
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
         config.websiteDataStore = .nonPersistent()
-        let view = WKWebView(frame: .zero, configuration: config)
+        let view = RoomTouchWebView(frame: .zero, configuration: config)
+        view.onTouch = { [weak coordinator = context.coordinator] in coordinator?.recordTouch() }
+        context.coordinator.report = { if nativeDiagnostic != $0 { nativeDiagnostic = $0 } }
         view.isOpaque = false
         view.backgroundColor = .clear
         view.scrollView.backgroundColor = .clear
@@ -13068,7 +13074,8 @@ private struct Room3DWebView: UIViewRepresentable {
 
     func updateUIView(_ view: WKWebView, context: Context) {
         context.coordinator.active = active
-        view.evaluateJavaScript("window.\(lifecycleObject)?.setActive(\(active ? "true" : "false"))", completionHandler: nil)
+        context.coordinator.report = { if nativeDiagnostic != $0 { nativeDiagnostic = $0 } }
+        context.coordinator.applyLifecycle(view)
     }
 
     static func dismantleUIView(_ view: WKWebView, coordinator: Coordinator) {
@@ -13083,8 +13090,27 @@ private struct Room3DWebView: UIViewRepresentable {
         var active = false
         var lifecycleObject = "alcoveRoom3D"
         var root: URL?
+        var report: ((String) -> Void)?
+        var touches = 0
+        var bridge = "等待网页"
+        func publish() {
+            let text = "原生触摸 \(touches) · 原生\(active ? "启用" : "暂停") · \(bridge)"
+            DispatchQueue.main.async { [weak self] in self?.report?(text) }
+        }
+        func recordTouch() { touches += 1; publish() }
+        func applyLifecycle(_ view: WKWebView) {
+            view.evaluateJavaScript("""
+                (() => { const room = window.\(lifecycleObject);
+                if (!room) return "接口未就绪";
+                room.setActive(\(active ? "true" : "false"));
+                return "已传达"; })()
+                """) { [weak self] result, error in
+                self?.bridge = error.map { "脚本错误：" + $0.localizedDescription } ?? (result as? String ?? "无回执")
+                self?.publish()
+            }
+        }
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            webView.evaluateJavaScript("window.\(lifecycleObject)?.setActive(\(active ? "true" : "false"))", completionHandler: nil)
+            applyLifecycle(webView)
         }
         func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
                      decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
@@ -13099,14 +13125,39 @@ private struct Room3DWebView: UIViewRepresentable {
     }
 }
 
+// Observe hit testing without installing a gesture recognizer that could steal WebKit touches.
+private final class RoomTouchWebView: WKWebView {
+    var onTouch: (() -> Void)?
+    private var lastTouchTimestamp: TimeInterval = -1
+    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        let target = super.hitTest(point, with: event)
+        if target != nil, let event, event.type == .touches,
+           event.timestamp != lastTouchTimestamp {
+            lastTouchTimestamp = event.timestamp
+            onTouch?()
+        }
+        return target
+    }
+}
+
 
 private struct NativeRoom3DPrototypeView: View {
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("houseInterfaceAppearance") private var appearance = "dark"
     @State private var visible = false
+    @State private var nativeDiagnostic = "原生诊断准备中"
     var body: some View {
         Room3DWebView(active: visible && scenePhase == .active,
+                               nativeDiagnostic: $nativeDiagnostic,
                                assetDirectory: "room3d", lifecycleObject: "alcoveRoom3D")
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                Text(nativeDiagnostic)
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(6).background(Color.black)
+                    .allowsHitTesting(false)
+            }
             .preferredColorScheme(appearance == "light" ? .light : .dark)
             .onAppear { visible = true }
             .onDisappear { visible = false }

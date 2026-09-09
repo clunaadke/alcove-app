@@ -20,12 +20,12 @@ test('furniture stays in the room and footprints do not overlap',()=>{
 });
 test('camera framing contains the room corners in portrait and landscape',()=>{
  for(const aspect of [.5,.65,1,1.8])for(const top of [true,false]){
-  const c=new THREE.PerspectiveCamera(38,aspect,.05,60),target=new THREE.Vector3(1.65,.55,1.675);
+  const c=new THREE.PerspectiveCamera(38,aspect,.05,60),target=new THREE.Vector3(L.room.width/2,.55,L.room.depth/2);
   const angle=Math.atan(Math.tan(THREE.MathUtils.degToRad(19))*Math.min(aspect,1));
-  const d=Math.min(23,2.9/Math.sin(angle));
+  const d=Math.min(23,(Math.hypot(L.room.width/2,L.room.depth/2,L.room.height-target.y)+.12)/Math.sin(angle));
   const dir=top?new THREE.Vector3(0,1,.0001):new THREE.Vector3(1,1.2,1.15).normalize();
   c.position.copy(target).addScaledVector(dir,d);c.lookAt(target);c.updateMatrixWorld();
-  for(const x of [-.1,3.3])for(const y of [0,2.6])for(const z of [-.1,3.35]){
+  for(const x of [-.1,L.room.width])for(const y of [0,2.6])for(const z of [-.1,L.room.depth]){
    const p=new THREE.Vector3(x,y,z).project(c);assert.ok(Math.abs(p.x)<=1&&Math.abs(p.y)<=1,`aspect ${aspect} top ${top}: ${p.x},${p.y}`);
   }
  }

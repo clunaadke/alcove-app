@@ -1,7 +1,9 @@
 // Exports the application's actual geometry and canvas textures to a CPU depth renderer.
 // No Chromium, WebGL or iPhone emulation; lighting is deliberately simplified.
-import {parseHTML} from 'linkedom';import {createCanvas} from '@napi-rs/canvas';
+import {parseHTML} from 'linkedom';import {createCanvas,loadImage} from '@napi-rs/canvas';
 import {readFileSync,writeFileSync,unlinkSync} from 'node:fs';import * as THREE from 'three';
+globalThis.self=globalThis;
+globalThis.createImageBitmap=async blob=>{const img=await loadImage(Buffer.from(await blob.arrayBuffer()));const c=createCanvas(img.width,img.height);c.getContext('2d').drawImage(img,0,0);return c;};
 const {window,document}=parseHTML(readFileSync(new URL('../../www/room3d/index.html',import.meta.url),'utf8'));
 Object.assign(globalThis,{window,document,devicePixelRatio:1,requestAnimationFrame:()=>0,cancelAnimationFrame:()=>{},ResizeObserver:class{observe(){}disconnect(){}}});
 const stage=document.getElementById('stage');Object.defineProperties(stage,{clientWidth:{value:1100},clientHeight:{value:1000}});
@@ -9,10 +11,11 @@ const create=document.createElement.bind(document);document.createElement=tag=>t
 let source=readFileSync(new URL('./room.mjs',import.meta.url),'utf8');
 source=source.replace("import { OrbitControls } from 'three/addons/controls/OrbitControls.js';",'class OrbitControls {constructor(){this.target=new THREE.Vector3()}addEventListener(){}update(){camera.lookAt(this.target);camera.updateMatrixWorld()}dispose(){}}');
 source=source.replace("renderer=new THREE.WebGLRenderer({canvas,antialias:true,alpha:true,powerPreference:'low-power'});",'renderer={shadowMap:{},setPixelRatio(){},setSize(){},render(){},dispose(){},forceContextLoss(){}};');
-source+=`\nif(!status.hidden) throw new Error(status.textContent);\nlabels.forEach(l=>scene.remove(l));\nfor(const [name,top] of [['perspective',false],['top',true]]){view(top);wallGroup.visible=!top;globalThis.capture(name,scene,camera);}`;
+source+=`\nawait beddingReady;\nif(scene.getObjectByName('wardrobe').visible||!scene.getObjectByName('shelf').visible)throw new Error('furniture defaults');\nconst wt=document.getElementById('wardrobe-visible');wt.checked=true;wt.onchange();if(!scene.getObjectByName('wardrobe').visible)throw new Error('wardrobe toggle');wt.checked=false;wt.onchange();\nif(furnitureError())throw new Error('Blender bedding did not load');\nif(!status.hidden) throw new Error(status.textContent);\nlabels.forEach(l=>scene.remove(l));\nfor(const [name,top] of [['perspective',false],['top',true]]){view(top);wallGroup.visible=!top;globalThis.capture(name,scene,camera);}`;
+source+='\nfunction furnitureError(){return scene.getObjectByName("beddingFallback")?.visible;}';
 let materialsSeen=0;
 globalThis.capture=(name,scene,camera)=>{
- scene.updateMatrixWorld(true);camera.updateMatrixWorld(true);const tris=[],maps=new Map();
+ scene.updateMatrixWorld(true);camera.updateMatrixWorld(true);const tris=[],maps=new Map(),worldMeshes=[];
  scene.traverse(o=>{
   if(!o.isMesh)return;let v=o;while(v){if(!v.visible)return;v=v.parent;}
   const g=o.geometry,pos=g.attributes.position,index=g.index,uv=g.attributes.uv,material=o.material;
@@ -20,6 +23,9 @@ globalThis.capture=(name,scene,camera)=>{
   let map=null;
   if(material.map&&uv){const t=material.map;if(!maps.has(t)){const id=maps.size;maps.set(t,id);writeFileSync(`/tmp/room-${name}-texture-${id}.png`,t.image.toBuffer('image/png'));}map={id:maps.get(t),repeat:[t.repeat.x,t.repeat.y],flipY:t.flipY};}
   const count=index?index.count:pos.count;
+  const vertices=Array.from({length:pos.count},(_,i)=>new THREE.Vector3().fromBufferAttribute(pos,i).applyMatrix4(o.matrixWorld).toArray());
+  worldMeshes.push({vertices,indices:index?Array.from(index.array):Array.from({length:pos.count},(_,i)=>i),uv:uv?Array.from(uv.array):null,color:material.color.toArray(),opacity:material.opacity,roughness:material.roughness??.8,metalness:material.metalness??0,map,shadowOnly:!!o.userData.shadowOnly,castShadow:o.castShadow});
+  if(o.userData.shadowOnly)return;
   for(let i=0;i<count;i+=3){
    const ids=[0,1,2].map(k=>index?index.getX(i+k):i+k);
    const pts=ids.map(j=>new THREE.Vector3(pos.getX(j),pos.getY(j),pos.getZ(j)).applyMatrix4(o.matrixWorld));
@@ -30,6 +36,7 @@ globalThis.capture=(name,scene,camera)=>{
    tris.push({p:projected,c:[color.r,color.g,color.b].map(v=>v*shade*255),opacity:material.opacity,alphaTest:material.alphaTest,map,uv:map?ids.map(j=>[uv.getX(j),uv.getY(j)]):null});
   }
  });
+ writeFileSync('/tmp/alcove-room-'+name+'-world.json',JSON.stringify(worldMeshes));
  writeFileSync('/tmp/alcove-room-'+name+'.json',JSON.stringify(tris));console.log(name, tris.length,'triangles',maps.size,'textures');
 };
 const generated=new URL('./.preview-generated.mjs',import.meta.url);writeFileSync(generated,source);

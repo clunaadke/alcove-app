@@ -1,9 +1,9 @@
 import * as THREE from 'three';
 import { curtainWidth, dragOpenness } from './curtain-state.mjs';
-export function addCurtains({scene,L,camera,canvas,controls,wallGroup,sun,textures,invalidate,selection}){
+export function addCurtains({scene,L,camera,canvas,controls,wallGroup,sun,textures,invalidate,selection,onOpenness}){
  const root=new THREE.Group();wallGroup.add(root);const panels=[],interactive=[];let openness=.8,drag=null;
  const w=L.window,fullWidth=w.width/2+.1,top=w.sill+w.height+.08,height=1.57;
- const cloth=new THREE.MeshStandardMaterial({color:'#e7e0d2',roughness:1,side:THREE.DoubleSide});
+ const cloth=new THREE.MeshStandardMaterial({color:'#f2f1ed',roughness:1,side:THREE.DoubleSide});
  // Transparent lace texture is generated locally; no personal photo or external asset.
  const tile=document.createElement('canvas');tile.width=256;tile.height=128;const ctx=tile.getContext('2d');ctx.clearRect(0,0,256,128);
  ctx.strokeStyle='#f9f5e9';ctx.lineWidth=4;
@@ -21,14 +21,14 @@ export function addCurtains({scene,L,camera,canvas,controls,wallGroup,sun,textur
   const mesh=new THREE.Mesh(geometry,cloth);mesh.castShadow=true;mesh.receiveShadow=true;mesh.userData.curtainSide=side;group.add(mesh);interactive.push(mesh);
   const hem=new THREE.PlaneGeometry(1,.12,40,3),hp=hem.attributes.position;
   for(let i=0;i<hp.count;i++){const x=hp.getX(i)+.5;hp.setXYZ(i,x,hp.getY(i)-height+.01,.024*Math.cos(x*Math.PI*16)+.012);}hem.computeVertexNormals();
-  const trim=new THREE.Mesh(hem,lace);group.add(trim);
+  const trim=new THREE.Mesh(hem,lace);trim.geometry.dispose(); // plain linen, no lace trim
   for(let i=0;i<9;i++){const ring=new THREE.Mesh(new THREE.TorusGeometry(.018,.003,6,12),rod.material);ring.position.set(i/8,.02,0);group.add(ring);}
   panels.push({group,side});
  }
  panel('left');panel('right');
  const slider=document.getElementById('curtain-range'),button=document.getElementById('curtain-toggle');
  function update(value){openness=THREE.MathUtils.clamp(value,0,1);for(const {group,side} of panels)group.scale.x=curtainWidth(openness,fullWidth)*(side==='left'?1:-1);
-  sun.intensity=1.1+1.9*openness;if(slider)slider.value=String(Math.round(openness*100));if(button)button.textContent=openness>.5?'合上窗帘':'拉开窗帘';invalidate();
+  if(onOpenness)onOpenness(openness);else sun.intensity=1.1+1.9*openness;if(slider)slider.value=String(Math.round(openness*100));if(button)button.textContent=openness>.5?'合上窗帘':'拉开窗帘';invalidate();
  }
  if(slider)slider.oninput=()=>update(Number(slider.value)/100);
  if(button)button.onclick=()=>update(openness>.5?0:1);
@@ -50,5 +50,5 @@ export function addCurtains({scene,L,camera,canvas,controls,wallGroup,sun,textur
  on('pointermove',e=>{if(!drag||e.pointerId!==drag.id)return;const dx=(e.clientX-drag.x)*drag.vx+(e.clientY-drag.y)*drag.vy;update(dragOpenness(drag.start,dx,drag.side,drag.pixels));selection.textContent='窗帘开合仅在房间内生效，不会发送聊天消息。';e.stopImmediatePropagation();e.preventDefault();});
  for(const event of ['pointerup','pointercancel','lostpointercapture'])on(event,e=>{if(drag&&e.pointerId===drag.id){release();if(canvas.hasPointerCapture?.(e.pointerId))canvas.releasePointerCapture(e.pointerId);e.stopImmediatePropagation();}});
  update(openness);
- return {reset:release,dispose(){release();events.forEach(([n,f])=>canvas.removeEventListener(n,f,true));}};
+ return {setPanelAsset(geometry,material){material.side=THREE.DoubleSide;for(const mesh of interactive){mesh.geometry.dispose();mesh.geometry=geometry;mesh.material=material;}invalidate();},reset:release,dispose(){release();events.forEach(([n,f])=>canvas.removeEventListener(n,f,true));}};
 }
