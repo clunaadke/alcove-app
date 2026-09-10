@@ -1542,7 +1542,9 @@ struct ShopRoomView: View {
         VStack(spacing: 12) {
             purse
             if store.items.isEmpty {
-                EmptyHint(text: "货架是空的。点右上角的加号上一件。")
+                EmptyHint(icon: "bag",
+                          title: "货架是空的",
+                          detail: "点右上角的加号上一件。")
             }
             ForEach(store.items) { item in
                 Button { editing = item } label: { shelfRow(item) }
@@ -1639,7 +1641,9 @@ struct ShopRoomView: View {
                 .walletPanel(corner: 16)
             }
             if store.orders.isEmpty {
-                EmptyHint(text: "他还什么都没买过。")
+                EmptyHint(icon: "shippingbox",
+                          title: "他还什么都没买过",
+                          detail: "他下单之后会出现在这儿。")
             }
             ForEach(store.orders) { o in
                 HStack(spacing: 11) {
@@ -1673,7 +1677,9 @@ struct ShopRoomView: View {
     private var wishesPage: some View {
         VStack(spacing: 12) {
             if store.wishes.isEmpty {
-                EmptyHint(text: "他还没提过想要什么。")
+                EmptyHint(icon: "sparkles",
+                          title: "他还没提过想要什么",
+                          detail: "他许了愿会出现在这儿。")
             }
             ForEach(store.wishes) { w in
                 VStack(alignment: .leading, spacing: 9) {
