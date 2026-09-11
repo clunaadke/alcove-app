@@ -1239,6 +1239,38 @@ struct ShopRate: Identifiable {
     var id: String { activity }
 }
 
+/// 0911 流水页：coin_ledger 一行。kind：earn 他记账挣的 / spend 买东西花的 / adjust 她手动加减的
+struct ShopLedgerEntry: Identifiable {
+    let id: Int
+    let ts: String
+    let kind: String
+    let activity: String
+    let coins: Int          // 正数进账、负数出账
+    let note: String
+
+    init?(json: [String: Any]) {
+        let rid = json.int("id")
+        guard rid > 0 else { return nil }
+        id = rid
+        ts = json.string("ts")
+        kind = json.string("kind")
+        activity = json.string("activity")
+        coins = json.int("coins")
+        note = json.string("note")
+    }
+
+    var isIncome: Bool { coins >= 0 }
+}
+
+/// 流水按天分组（北京时间 yyyy-MM-dd），日期那行带当天挣了几块、花了几块
+struct ShopLedgerDay: Identifiable {
+    let day: String
+    var entries: [ShopLedgerEntry]
+    var id: String { day }
+    var earned: Int { entries.filter { $0.coins > 0 }.reduce(0) { $0 + $1.coins } }
+    var spent: Int { entries.filter { $0.coins < 0 }.reduce(0) { $0 - $1.coins } }
+}
+
 @MainActor
 final class ShopStore: ObservableObject {
     @Published var balance = 0
@@ -1247,6 +1279,7 @@ final class ShopStore: ObservableObject {
     @Published var orders: [ShopOrder] = []
     @Published var wishes: [ShopWish] = []
     @Published var rates: [ShopRate] = []
+    @Published var ledger: [ShopLedgerEntry] = []
     @Published var busy = false
     @Published var toast = ""
 
@@ -1255,6 +1288,12 @@ final class ShopStore: ObservableObject {
         await refreshItems()
         await refreshOrders()
         await refreshWishes()
+        await refreshLedger()
+    }
+
+    func refreshLedger() async {
+        guard let obj = try? await NativeHouseAPI.object("/api/shop/ledger?limit=200") else { return }
+        ledger = obj.array("items").compactMap(ShopLedgerEntry.init)
     }
 
     func refreshSummary() async {
@@ -1339,6 +1378,7 @@ final class ShopStore: ObservableObject {
         _ = try? await NativeHouseAPI.object(
             "/api/shop/adjust", method: "POST", body: ["amount": amount, "note": note])
         await refreshSummary()
+        await refreshLedger()
     }
 }
 
@@ -1348,7 +1388,7 @@ private enum ShopTab: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .shelf: return "货架"
-        case .orders: return "他买的"
+        case .orders: return "流水"      // 0911 她把「他买的」改成流水页；case 名留着不动
         case .wishes: return "他想要"
         case .rates: return "价目表"
         }
@@ -1356,7 +1396,7 @@ private enum ShopTab: String, CaseIterable, Identifiable {
     var icon: String {
         switch self {
         case .shelf: return "bag"
-        case .orders: return "shippingbox"
+        case .orders: return "arrow.up.arrow.down.circle"
         case .wishes: return "sparkles"
         case .rates: return "list.number"
         }
@@ -1364,7 +1404,7 @@ private enum ShopTab: String, CaseIterable, Identifiable {
     var iconFilled: String {
         switch self {
         case .shelf: return "bag.fill"
-        case .orders: return "shippingbox.fill"
+        case .orders: return "arrow.up.arrow.down.circle.fill"
         case .wishes: return "sparkles"
         case .rates: return "list.number"
         }
@@ -1640,37 +1680,101 @@ struct ShopRoomView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .walletPanel(corner: 16)
             }
-            if store.orders.isEmpty {
-                EmptyHint(icon: "shippingbox",
-                          title: "他还什么都没买过",
-                          detail: "他下单之后会出现在这儿。")
+            // 0911 她要的流水：他做了什么记了几块、买了啥花了几块，按天分组，
+            // 日期那行带当天挣/花小计；每笔前面一个进/出色块（进绿出红），不显示他记账时留的话
+            if store.ledger.isEmpty {
+                EmptyHint(icon: "arrow.up.arrow.down.circle",
+                          title: "还没有流水",
+                          detail: "他记账、买东西之后会出现在这儿。")
             }
-            ForEach(store.orders) { o in
-                HStack(spacing: 11) {
-                    cover(o.cover, size: 42)
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(o.title)
-                            .font(.system(size: 13, design: .serif))
-                            .foregroundColor(WalletInk.ink)
-                        Text(String(o.ts.prefix(16).dropFirst(5)))
-                            .font(.system(size: 10))
+            ForEach(ledgerDays) { group in
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(ledgerDayTitle(group.day))
+                            .font(.system(size: 12, weight: .semibold, design: .serif))
+                            .foregroundColor(WalletInk.gold)
+                        Spacer(minLength: 0)
+                        Text("挣 \(group.earned) 块 · 花 \(group.spent) 块")
+                            .font(.system(size: 10.5))
                             .foregroundColor(WalletInk.dim)
                     }
-                    Spacer(minLength: 0)
-                    Text("\(o.price) 块")
-                        .font(.system(size: 12.5, weight: .semibold, design: .rounded))
-                        .foregroundColor(WalletInk.gold)
-                    if o.used {
-                        Text("已用")
-                            .font(.system(size: 9.5))
-                            .foregroundColor(WalletInk.dim)
+                    .padding(.horizontal, 4)
+                    ForEach(group.entries) { e in
+                        ledgerRow(e)
                     }
                 }
-                .padding(12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .walletPanel(corner: 16)
             }
         }
+    }
+
+    private var ledgerDays: [ShopLedgerDay] {
+        var out: [ShopLedgerDay] = []
+        for e in store.ledger {                      // 后端按 id 倒序给，新的在前
+            let day = String(e.ts.prefix(10))
+            if let i = out.indices.last, out[i].day == day {
+                out[i].entries.append(e)
+            } else {
+                out.append(ShopLedgerDay(day: day, entries: [e]))
+            }
+        }
+        return out
+    }
+
+    private func ledgerDayTitle(_ day: String) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "zh_CN")
+        f.timeZone = TimeZone(identifier: "Asia/Shanghai")   // 账本时间是北京时间
+        f.dateFormat = "yyyy-MM-dd"
+        if day == f.string(from: Date()) { return "今天" }
+        if day == f.string(from: Date().addingTimeInterval(-86_400)) { return "昨天" }
+        let parts = day.split(separator: "-")
+        guard parts.count == 3, let m = Int(parts[1]), let d = Int(parts[2]) else { return day }
+        return "\(m)月\(d)日"
+    }
+
+    /// 只写他做了什么：挣的取价目表上的名字（逗号、括号后面的补充说明不要），
+    /// 花的是后端记的「买了「X」」，她手动加减的写明是她调的
+    private func ledgerTitle(_ e: ShopLedgerEntry) -> String {
+        switch e.kind {
+        case "earn":
+            let label = store.rates.first(where: { $0.activity == e.activity })?.label ?? ""
+            let short = label.split(whereSeparator: { "，,（(".contains($0) }).first.map(String.init) ?? ""
+            return short.isEmpty ? e.activity : short
+        case "spend":
+            return e.note.isEmpty ? "买了东西" : e.note
+        default:
+            return e.coins >= 0 ? "你给他加的" : "你给他扣的"
+        }
+    }
+
+    private func ledgerRow(_ e: ShopLedgerEntry) -> some View {
+        let tint = e.isIncome ? WalletInk.green : WalletInk.red
+        return HStack(spacing: 11) {
+            Text(e.isIncome ? "进" : "出")
+                .font(.system(size: 13, weight: .semibold, design: .serif))
+                .foregroundColor(tint)
+                .frame(width: 30, height: 30)
+                .background(tint.opacity(0.14),
+                            in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous)
+                            .stroke(tint.opacity(0.55), lineWidth: 1))
+            VStack(alignment: .leading, spacing: 3) {
+                Text(ledgerTitle(e))
+                    .font(.system(size: 13, design: .serif))
+                    .foregroundColor(WalletInk.ink)
+                    .lineLimit(1)
+                Text(String(e.ts.dropFirst(11).prefix(5)))
+                    .font(.system(size: 10))
+                    .foregroundColor(WalletInk.dim)
+            }
+            Spacer(minLength: 0)
+            Text((e.isIncome ? "＋" : "－") + "\(abs(e.coins)) 块")
+                .font(.system(size: 13, weight: .semibold, design: .rounded))
+                .foregroundColor(tint)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .walletPanel(corner: 16)
     }
 
     // MARK: 他许的愿（希望她上什么）
