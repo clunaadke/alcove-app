@@ -254,14 +254,18 @@ struct RootView: View {
             }
         }
         .fullScreenCover(item: $housePage) { target in
-            NativeHouseSheet(
-                initial: target,
-                preparedTexture: preparedPanelTexture,
-                preparedTextureName: preparedPanelTextureName,
-                showTerminal: { showTerminal = true },
-                showRoundtable: { markRoundtableRead(); showRoundtable = true },
-                roundtableUnread: roundtableUnread
-            )
+            if target == .album {
+                NativeAlbumView()
+            } else {
+                NativeHouseSheet(
+                    initial: target,
+                    preparedTexture: preparedPanelTexture,
+                    preparedTextureName: preparedPanelTextureName,
+                    showTerminal: { showTerminal = true },
+                    showRoundtable: { markRoundtableRead(); showRoundtable = true },
+                    roundtableUnread: roundtableUnread
+                )
+            }
         }
         .tint(Color(red: 0.86, green: 0.44, blue: 0.57))
     }

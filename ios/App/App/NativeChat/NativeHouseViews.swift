@@ -92,7 +92,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
     var ownsFullScreen: Bool {
         switch self {
         case .studio, .pond, .roof, .memory, .digest, .factory, .search, .favorites, .surf,
-             .settings, .letterbox, .qipai, .tarot, .nursery, .wallet, .shop: return true
+             .settings, .letterbox, .qipai, .tarot, .nursery, .wallet, .shop, .album: return true
         default: return false
         }
     }
@@ -267,6 +267,8 @@ struct NativeHouseSheet: View {
                     })
                 case .surf:
                     NativeSurfCollectionView()
+                case .album:
+                    NativeAlbumView()
                 case .letterbox:
                     NativeLetterboxView()
                 case .usage:
@@ -563,6 +565,7 @@ struct NativeHouseDrawer: View {
 
                     drawerTitle("记忆与创作", note: "kept close")
                     VStack(spacing: 7) {
+                        drawerRow(.album, detail: "照片和留给它的一句话")
                         drawerRow(.memory, detail: "五条线、小睡、夜里那趟")
                         drawerRow(.dreams, detail: "梦与旧日记")
                         drawerRow(.fiction, detail: "陈璟写给你的小说")

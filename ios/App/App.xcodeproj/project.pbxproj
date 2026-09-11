@@ -79,6 +79,9 @@
 		CA0000000000000000000024 /* AlcoveCapabilityWidget.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = CA0000000000000000000001 /* AlcoveCapabilityWidget.appex */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		CA0000000000000000000025 /* BroadcastUpload.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = CA0000000000000000000002 /* BroadcastUpload.appex */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		CA0000000000000000000027 /* WidgetAssets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = CA0000000000000000000014 /* WidgetAssets.xcassets */; };
+		AB0911000000000000000111 /* AlbumModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0911000000000000000122 /* AlbumModels.swift */; };
+		AB0911000000000000000211 /* AlbumView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0911000000000000000222 /* AlbumView.swift */; };
+		AB0911000000000000000311 /* AlbumCards.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0911000000000000000322 /* AlbumCards.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -177,6 +180,9 @@
 		CA0000000000000000000012 /* AlcoveLabAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AlcoveLabAttributes.swift; path = CapabilityExtensions/Shared/AlcoveLabAttributes.swift; sourceTree = SOURCE_ROOT; };
 		CA0000000000000000000013 /* SampleHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SampleHandler.swift; sourceTree = "<group>"; };
 		CA0000000000000000000014 /* WidgetAssets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = WidgetAssets.xcassets; sourceTree = "<group>"; };
+		AB0911000000000000000122 /* AlbumModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlbumModels.swift; sourceTree = "<group>"; };
+		AB0911000000000000000222 /* AlbumView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlbumView.swift; sourceTree = "<group>"; };
+		AB0911000000000000000322 /* AlbumCards.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlbumCards.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -279,6 +285,9 @@
 				9A11C0DE00114F8CA3D60C22 /* NurseryRoomView.swift */,
 				9A11C0DE00114F8CA3D60D22 /* WalletRoomView.swift */,
 				9A11C0DE00114F8CA3D60E22 /* BuyCardView.swift */,
+				AB0911000000000000000322 /* AlbumCards.swift */,
+				AB0911000000000000000222 /* AlbumView.swift */,
+				AB0911000000000000000122 /* AlbumModels.swift */,
 				9A11C0DE000C4F8CA3D60B22 /* QipaiDaifugoTableView.swift */,
 				9A11C0DE000B4F8CA3D60B22 /* QipaiUnoTableView.swift */,
 				9A11C0DE000A4F8CA3D60B22 /* QipaiZjhTableView.swift */,
@@ -499,6 +508,9 @@
 				9A11C0DE00114F8CA3D60C11 /* NurseryRoomView.swift in Sources */,
 				9A11C0DE00114F8CA3D60D11 /* WalletRoomView.swift in Sources */,
 				9A11C0DE00114F8CA3D60E11 /* BuyCardView.swift in Sources */,
+				AB0911000000000000000311 /* AlbumCards.swift in Sources */,
+				AB0911000000000000000211 /* AlbumView.swift in Sources */,
+				AB0911000000000000000111 /* AlbumModels.swift in Sources */,
 				9A11C0DE000C4F8CA3D60B11 /* QipaiDaifugoTableView.swift in Sources */,
 				9A11C0DE000B4F8CA3D60B11 /* QipaiUnoTableView.swift in Sources */,
 				9A11C0DE000A4F8CA3D60B11 /* QipaiZjhTableView.swift in Sources */,

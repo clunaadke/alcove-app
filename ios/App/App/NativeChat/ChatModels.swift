@@ -133,6 +133,14 @@ struct ChatMessage: Identifiable, Equatable {
         return try? JSONDecoder().decode(TarotOfferCard.self, from: data)
     }
 
+    // Only an explicit committed save event can render a saved-photo card.
+    var albumSavedCard: AlbumSavedBatch? {
+        guard role == "assistant", !pending,
+              let raw = Self.taggedBody(text, tag: "ALBUM_SAVED"),
+              let data = raw.data(using: .utf8) else { return nil }
+        return AlbumSavedBatch.decode(data)
+    }
+
     /// 0907 二期：审批卡（他提议买东西）
     var buyCard: BuyApprovalCard? {
         guard let raw = Self.taggedBody(text, tag: "BUY_CARD"),
