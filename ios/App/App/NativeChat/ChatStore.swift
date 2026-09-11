@@ -827,7 +827,9 @@ final class ChatStore: ObservableObject {
     }
 
     func favoriteMessage(_ msg: ChatMessage) {
-        Task { try? await AlcoveAPI.favoriteMessage(ts: msg.ts, text: msg.text, role: msg.role) }
+        // 0912 她抓的：长按收藏语音，原来只发 ts/text/role，后端不知道是语音 → 全算成文字、语音条也没了。
+        // 走多选那条（单条也行），把附件地址和类型一起带上
+        Task { try? await AlcoveAPI.favoriteAdd([msg]) }
     }
 
     func deleteMessages(_ selected: [ChatMessage]) {

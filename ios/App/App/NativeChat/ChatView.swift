@@ -4950,13 +4950,28 @@ final class VoicePlayer: ObservableObject {
         start(url)
     }
 
+    /// 0912 她要的：拖语音条进度，松手跳到那儿接着放（原来没在放的也直接放）
+    func seek(_ url: URL, fraction: Double, fallbackDuration: Double) {
+        let span = (currentURL == url && total > 0) ? total : fallbackDuration
+        let at = span > 0 ? max(0, min(span - 0.05, fraction * span)) : 0
+        if currentURL == url, let p = player {
+            activateSession()
+            p.seek(to: CMTime(seconds: at, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+            elapsed = at
+            p.play()
+            playing = true
+        } else {
+            start(url, at: at)
+        }
+    }
+
     private func activateSession() {
         // 0822 她说「点语音没有声音」：没开 playback 会话，静音键一拨就哑
         try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
         try? AVAudioSession.sharedInstance().setActive(true)
     }
 
-    private func start(_ url: URL) {
+    private func start(_ url: URL, at: Double = 0) {
         teardown()
         activateSession()
         let p = AVPlayer(url: url)
@@ -4983,6 +4998,10 @@ final class VoicePlayer: ObservableObject {
             }
             let secs = CMTimeGetSeconds(t)
             if secs.isFinite { self.elapsed = secs }
+        }
+        if at > 0 {
+            p.seek(to: CMTime(seconds: at, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+            elapsed = at
         }
         p.play()
         playing = true
@@ -5028,14 +5047,22 @@ struct AudioBubble: View {
     @ObservedObject private var voice = VoicePlayer.shared
     @State private var duration: Double = 0
     @State private var translationShown = false
+    /// 0912 拖进度：手指拖到的位置（0~1），没在拖是 nil；这一下拖是不是横着的（竖着的留给聊天滚动）
+    @State private var scrubFraction: Double?
+    @State private var dragIsScrub: Bool?
 
     private var playing: Bool { voice.isPlaying(url) }
     private var progress: Double { voice.progress(url, fallbackDuration: duration) }
+    /// 拖的时候波纹跟着手指亮，松手再回到播放器的真实进度
+    private var shownProgress: Double { scrubFraction ?? progress }
 
     private var ink: Color { (theme.isMessages && isUser) ? .white : theme.text }
 
     /// 10 条起步，每秒多一条，封顶 30——一条 4.5pt，最长约 135pt 的波纹，气泡不会撑爆
-    private var barCount: Int { max(10, min(30, Int(10 + duration * 1.0))) }
+    /// 0912 她要能拖进度，短语音太窄对不准：起步 10 → 13 条（她说只加宽一点点）
+    private var barCount: Int { max(13, min(30, Int(10 + duration * 1.0))) }
+    /// 波纹实际宽度（每条 2.5 ＋ 间隔 2），拖的时候拿手指位置除以它算百分比
+    private var waveWidth: CGFloat { CGFloat(barCount) * 2.5 + CGFloat(barCount - 1) * 2 }
 
     /// 波纹高低：按链接算一串固定的伪随机数，同一条语音每次画出来一样，不会一刷新就跳
     private var bars: [CGFloat] {
@@ -5051,6 +5078,11 @@ struct AudioBubble: View {
     }
 
     private var timeText: String {
+        // 拖的时候显示拖到哪一秒
+        if let f = scrubFraction, duration > 0 {
+            let at = Int((f * duration).rounded())
+            return String(format: "%d:%02d", at / 60, at % 60)
+        }
         let secs = Int(duration.rounded())
         return duration > 0 ? String(format: "%d:%02d", secs / 60, secs % 60) : "语音"
     }
@@ -5068,6 +5100,7 @@ struct AudioBubble: View {
                 waveform
                     .contentShape(Rectangle())
                     .onTapGesture { togglePlay() }
+                    .simultaneousGesture(scrubGesture)
                 Text(timeText)
                     .font(.system(size: 13, design: .monospaced))
                     .opacity(0.85)
@@ -5147,13 +5180,32 @@ struct AudioBubble: View {
         let heights = bars
         return HStack(alignment: .center, spacing: 2) {
             ForEach(0..<barCount, id: \.self) { i in
-                let lit = Double(i) / Double(barCount) < progress
+                let lit = Double(i) / Double(barCount) < shownProgress
                 Capsule()
                     .fill(ink.opacity(lit ? 0.95 : 0.42))
                     .frame(width: 2.5, height: heights[i % heights.count])
             }
         }
         .frame(height: 22)
+    }
+
+    /// 0912 她要的：按住波纹横着拖＝拖进度，松手从那儿接着放。
+    /// 第一下动的方向定终身：竖着的整下都不管（留给聊天滚动）；点一下还是播放/暂停（上面的 onTapGesture）
+    private var scrubGesture: some Gesture {
+        DragGesture(minimumDistance: 6)
+            .onChanged { value in
+                if dragIsScrub == nil {
+                    dragIsScrub = abs(value.translation.width) > abs(value.translation.height)
+                }
+                guard dragIsScrub == true else { return }
+                scrubFraction = min(1, max(0, Double(value.location.x / waveWidth)))
+            }
+            .onEnded { _ in
+                let f = scrubFraction
+                scrubFraction = nil
+                dragIsScrub = nil
+                if let f { voice.seek(url, fraction: f, fallbackDuration: duration) }
+            }
     }
 
     private func loadDuration() async {

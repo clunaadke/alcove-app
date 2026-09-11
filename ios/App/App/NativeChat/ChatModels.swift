@@ -210,8 +210,11 @@ struct ChatMessage: Identifiable, Equatable {
     /// 0912：语音转文字剥掉他写给 ElevenLabs 的语气标签 [softly] [laughs softly]……
     /// 跟 voice_speak.py 的 strip_tags 同一套规矩（至少一个小写字母才算，[QUOTE] 这种全大写的不碰）。
     /// 新语音后端发出来之前就剥了，这里兜住之前已经发出来的那几条。
-    var audioTranscript: String {
-        var t = displayText.replacingOccurrences(
+    var audioTranscript: String { Self.stripVoiceTags(displayText) }
+
+    /// 0912 收藏页的语音卡片也要用，抽成静态的
+    static func stripVoiceTags(_ raw: String) -> String {
+        var t = raw.replacingOccurrences(
             of: #"\[(?=[^\]\n]*[a-z])[A-Za-z][A-Za-z ,'\-]{0,40}\]"#, with: "", options: .regularExpression)
         t = t.replacingOccurrences(of: #"[ \t]+([,.!?;:，。！？；：])"#, with: "$1", options: .regularExpression)
         t = t.replacingOccurrences(of: #"[ \t]{2,}"#, with: " ", options: .regularExpression)

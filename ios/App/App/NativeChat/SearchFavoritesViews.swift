@@ -389,8 +389,11 @@ private struct FavoriteEntry: Identifiable {
     let attURL: String
     let members: [FavoriteMember]
     let created: String
+    /// 0912：语音收藏带上他自己写的中文翻译（后端按 ts 从原消息里捞）
+    let audioZh: String
 
     var isThread: Bool { kind == "thread" }
+    var isPlayableAudio: Bool { !isThread && atype == "audio" && !attURL.isEmpty }
 
     init(_ raw: [String: Any]) {
         id = raw.int("id")
@@ -403,6 +406,7 @@ private struct FavoriteEntry: Identifiable {
         attURL = raw.string("att_url")
         members = raw.array("members").map(FavoriteMember.init)
         created = raw.string("created")
+        audioZh = raw.string("audio_zh")
     }
 }
 
@@ -489,7 +493,19 @@ struct GlassFavoritesView: View {
                 ScrollView {
                     LazyVStack(spacing: 10) {
                         ForEach(entries) { entry in
-                            card(entry)
+                            if entry.isPlayableAudio {
+                                FavoriteAudioCard(
+                                    entry: entry, palette: palette,
+                                    name: entry.role == "user" ? userName : assistantName,
+                                    picking: picking, isPicked: picked.contains(entry.id),
+                                    onPick: {
+                                        if picked.contains(entry.id) { picked.remove(entry.id) }
+                                        else { picked.insert(entry.id) }
+                                    },
+                                    onRemove: { Task { await remove(entry) } })
+                            } else {
+                                card(entry)
+                            }
                         }
                         Color.clear.frame(height: 40)
                     }
@@ -634,6 +650,95 @@ struct GlassFavoritesView: View {
         picking = false
         deleting = false
         await load()
+    }
+}
+
+// MARK: - 收藏的语音：这一页直接放
+
+/// 0912 她要的：收藏的语音条在收藏页直接放——语音条（能拖进度）＋转文字＋「译」，跟聊天里一样。
+/// 点卡片不跳转；最右边那个跳转键才跳回聊天里那一条。多选删除时点卡片是勾选。
+private struct FavoriteAudioCard: View {
+    let entry: FavoriteEntry
+    let palette: GlassPalette
+    let name: String
+    let picking: Bool
+    let isPicked: Bool
+    let onPick: () -> Void
+    let onRemove: () -> Void
+    @AppStorage("alcoveTheme") private var themeName = "haven"
+    @State private var showTranscript = true
+
+    private var transcript: String { ChatMessage.stripVoiceTags(entry.text) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 7) {
+                if picking {
+                    Image(systemName: isPicked ? "checkmark.circle.fill" : "circle")
+                        .font(.system(size: 16, weight: .light))
+                        .foregroundColor(isPicked ? palette.acc : palette.ink3)
+                }
+                GlassBead(isHers: entry.role == "user", size: 22)
+                Text(name)
+                    .font(.system(size: 11.5, weight: .medium, design: .serif))
+                    .tracking(0.8)
+                    .foregroundColor(palette.ink2)
+                Text("语音")
+                    .font(.system(size: 9, design: .monospaced))
+                    .tracking(0.8)
+                    .foregroundColor(palette.ink3)
+                    .padding(.horizontal, 6).padding(.vertical, 2)
+                    .background(Capsule().strokeBorder(palette.line, lineWidth: 0.6))
+                Spacer()
+                if !picking {
+                    Button {
+                        NotificationCenter.default.post(name: .alcoveRequestJumpToMessage, object: entry.ts)
+                    } label: {
+                        Image(systemName: "arrow.up.right")
+                            .font(.system(size: 13, weight: .light))
+                            .foregroundColor(palette.ink2)
+                            .frame(width: 34, height: 28)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("跳到聊天里这一条")
+                }
+            }
+            AudioBubble(url: AlcoveAPI.attachmentURL(entry.attURL),
+                        isUser: entry.role == "user",
+                        theme: .named(themeName),
+                        fontSize: 13,
+                        hasTranscript: !transcript.isEmpty,
+                        transcript: transcript,
+                        transcriptShown: showTranscript,
+                        onToggleTranscript: {
+                            withAnimation(.easeInOut(duration: 0.18)) { showTranscript.toggle() }
+                        },
+                        translation: entry.audioZh)
+                .allowsHitTesting(!picking)
+            Divider().overlay(palette.line)
+            Text(stamp(entry.ts))
+                .font(.system(size: 9.5, design: .monospaced))
+                .foregroundColor(palette.ink3)
+        }
+        .padding(13)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .onTapGesture { if picking { onPick() } }
+        .glassCard(palette)
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .strokeBorder(isPicked ? palette.acc.opacity(0.55) : .clear, lineWidth: 1.2))
+        .contextMenu {
+            Button(role: .destructive) { onRemove() } label: {
+                Label("不收了", systemImage: "trash")
+            }
+        }
+    }
+
+    private func stamp(_ raw: String) -> String {
+        guard raw.count >= 16 else { return raw }
+        return "\(raw.dropFirst(5).prefix(5)) \(raw.dropFirst(11).prefix(5))"
     }
 }
 
