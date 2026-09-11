@@ -195,7 +195,9 @@ struct RootView: View {
                 SensorReporter.shared.appBackground()
                 AlcoveNotify.shared.chatVisible = false
                 // 0829 锁屏保活：进后台瞬间起无声音频，轮询不断，来电和横幅照收
-                if phase == .background { KeepAlive.shared.start() }
+                // 0911 通话中不起：它会把声音会话改成 .playback（只放不录），锁屏打着电话就录不进声、
+                // 扬声器也被冲回去。通话自己的录放已经把 App 吊着了，用不着它。
+                if phase == .background && !AlcoveNotify.shared.inCall { KeepAlive.shared.start() }
             }
         }
         .onChange(of: housePage) { page in

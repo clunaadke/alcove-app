@@ -273,8 +273,11 @@ final class KeepAlive {
         guard running else { return }
         player.stop()
         engine.stop()
-        try? AVAudioSession.sharedInstance().setActive(false,
-                                                       options: .notifyOthersOnDeactivation)
+        // 0911：锁屏时接起的电话，回前台这一下会走到这里——关会话会把通话的声音一起掐掉
+        if !AlcoveNotify.shared.inCall {
+            try? AVAudioSession.sharedInstance().setActive(false,
+                                                           options: .notifyOthersOnDeactivation)
+        }
         running = false
     }
 }

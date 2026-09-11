@@ -1,6 +1,7 @@
 import SwiftUI
 import AVFoundation
 import UIKit
+import WebKit
 
 // 语音通话页。0831 任务#1195 大改：通话的对话搬出主聊天，只在这一页显示。
 //
@@ -207,6 +208,10 @@ final class CallSessionModel: NSObject, ObservableObject, AVAudioPlayerDelegate 
     @Published var busy = false
     @Published var speaking = false
     @Published var turns: [CallTurn] = []
+    /// 0911 她报的：一直没有扬声器，音量开到最大也是听筒。记住她上次的选择
+    @Published var speakerOn = UserDefaults.standard.bool(forKey: "callSpeakerOn")
+    /// 正在念的那一句（通话页只显示「当下那一段」要用）
+    @Published var playingID: Int?
 
     var onEnded: (() -> Void)?
 
@@ -216,6 +221,7 @@ final class CallSessionModel: NSObject, ObservableObject, AVAudioPlayerDelegate 
     private var recURL: URL?
     private var player: AVAudioPlayer?
     private var hangupObserver: NSObjectProtocol?
+    private var routeObserver: NSObjectProtocol?
     private var isOutgoing = false
     private var closed = false
     /// 0902：通话页可以收起再展开，start 只准跑一次
@@ -235,6 +241,15 @@ final class CallSessionModel: NSObject, ObservableObject, AVAudioPlayerDelegate 
         try? session.setCategory(.playAndRecord, mode: .voiceChat,
                                  options: [.defaultToSpeaker, .allowBluetooth])
         try? session.setActive(true)
+        applySpeaker()
+        // 插拔耳机、连蓝牙、CallKit 接管会话都会把扬声器覆盖冲掉，路线一变就按她的选择再按一次。
+        // 覆盖本身也会发一次路线变化，跳过那一种，别自己跟自己打转。
+        routeObserver = NotificationCenter.default.addObserver(
+            forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main) { [weak self] note in
+            let reason = note.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt
+            guard reason != AVAudioSession.RouteChangeReason.override.rawValue else { return }
+            Task { @MainActor in self?.applySpeaker() }
+        }
         armRecorder()            // 0902：通话一开始就把第一只录音机备好
         AlcoveNotify.shared.inCall = true
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
@@ -327,6 +342,7 @@ final class CallSessionModel: NSObject, ObservableObject, AVAudioPlayerDelegate 
         let pending = turns.first { !$0.isMine && !playedIDs.contains($0.id) }
         guard let next = pending else {
             speaking = false
+            playingID = nil
             if !recording && !busy { line = "到你说" }
             return
         }
@@ -338,7 +354,9 @@ final class CallSessionModel: NSObject, ObservableObject, AVAudioPlayerDelegate 
         p.delegate = self
         player = p
         speaking = true
+        playingID = next.id
         line = "他在说…"
+        applySpeaker()
         p.play()
     }
 
@@ -346,6 +364,7 @@ final class CallSessionModel: NSObject, ObservableObject, AVAudioPlayerDelegate 
                                                  successfully flag: Bool) {
         Task { @MainActor in
             self.player = nil
+            self.playingID = nil
             self.pump()          // 下一句多半已经下好了，接着响
         }
     }
@@ -385,6 +404,7 @@ final class CallSessionModel: NSObject, ObservableObject, AVAudioPlayerDelegate 
         recURL = url
         rec.record()
         recording = true
+        applySpeaker()           // 开录音系统会把路线拨回听筒
     }
 
     func endTalk() {
@@ -392,6 +412,7 @@ final class CallSessionModel: NSObject, ObservableObject, AVAudioPlayerDelegate 
         recorder?.stop()
         recorder = nil
         recording = false
+        applySpeaker()
         armRecorder()            // 立刻备好下一只，她连着说也不掉字
         guard let url = recURL, let data = try? Data(contentsOf: url),
               data.count > 3000 else { return }   // 手滑碰一下不算话
@@ -409,6 +430,30 @@ final class CallSessionModel: NSObject, ObservableObject, AVAudioPlayerDelegate 
         }
     }
 
+    // MARK: 扬声器（0911 新做的）
+
+    /// .voiceChat 模式下系统默认走听筒，start 里那个 .defaultToSpeaker 在这儿不作数，
+    /// 所以一直都是听筒。必须显式 overrideOutputAudioPort；而且录音开关、开始播放、
+    /// 路线变化都会把覆盖冲掉，那几处都会再调一次这里。
+    func toggleSpeaker() {
+        speakerOn.toggle()
+        UserDefaults.standard.set(speakerOn, forKey: "callSpeakerOn")
+        applySpeaker()
+    }
+
+    private func applySpeaker() {
+        try? AVAudioSession.sharedInstance().overrideOutputAudioPort(speakerOn ? .speaker : .none)
+    }
+
+    // MARK: 当下那一段
+
+    /// 0911 她要的：通话页只显示当下这一段。他正在念 → 念的那句；
+    /// 否则最近一句已经出过声的——他那句文字比声音先落库，还没念到的别提前露出来。
+    var currentTurn: CallTurn? {
+        if let pid = playingID, let t = turns.first(where: { $0.id == pid }) { return t }
+        return turns.last { $0.isMine || playedIDs.contains($0.id) }
+    }
+
     // MARK: 收线
 
     func end() {
@@ -420,6 +465,7 @@ final class CallSessionModel: NSObject, ObservableObject, AVAudioPlayerDelegate 
         recorder?.stop()
         timer?.invalidate()
         if let o = hangupObserver { NotificationCenter.default.removeObserver(o) }
+        if let o = routeObserver { NotificationCenter.default.removeObserver(o) }
         if isOutgoing { CallManager.shared.endOutgoing() }
         AlcoveNotify.shared.inCall = false
         try? AVAudioSession.sharedInstance()
@@ -568,27 +614,37 @@ struct CallView: View {
         UserDefaults.standard.string(forKey: "assistantName") ?? "陈璟"
     }
 
+    // 0911 她要的新样子：壁纸上自己落雨（不用手）、头顶只有他的头像、
+    // 对话只显示当下那一段、底下 按住说 / 挂断 / 扬声器 三个圆键。这一页不做黑夜模式。
+    @AppStorage("assistantAvatarDataURL") private var avatarDataURL = ""
+    @State private var avatar: UIImage?
+
     var body: some View {
         ZStack {
-            CallSkin.ground.ignoresSafeArea()
-            CallDots().ignoresSafeArea()
+            CallRainBackground()
             VStack(spacing: 0) {
                 header
-                transcript
+                Spacer(minLength: 16)
+                subtitle
+                Spacer(minLength: 16)
                 controls
             }
-            // 0902 她要的缩小键：左上角，跟微信一个位置
+            // 0902 她要的缩小键：左上角，跟微信一个位置；计时挪到右上角
             VStack {
                 HStack {
                     Button(action: onMinimize) {
                         Image(systemName: "arrow.down.right.and.arrow.up.left")
                             .font(.system(size: 15, weight: .medium))
-                            .foregroundColor(CallSkin.inkDim)
+                            .foregroundColor(CallSkin.ink)
                             .frame(width: 40, height: 40)
                             .contentShape(Circle())
                     }
                     .buttonStyle(.plain)
                     Spacer()
+                    Text(String(format: "%02d:%02d", session.seconds / 60, session.seconds % 60))
+                        .font(.system(size: 14, design: .monospaced))
+                        .foregroundColor(CallSkin.ink)
+                        .padding(.trailing, 20)
                 }
                 .padding(.leading, 10)
                 .padding(.top, 6)
@@ -598,94 +654,130 @@ struct CallView: View {
         .onAppear {
             CallHub.shared.pageShown()
             session.start(kind: kind)
+            // 头像是一大串 base64，别每秒跟着计时重新解一遍
+            if avatar == nil { avatar = Self.decodeAvatar(avatarDataURL) }
         }
         .interactiveDismissDisabled()
     }
 
-    // MARK: 上面：两个头像 + 计时
+    private static func decodeAvatar(_ dataURL: String) -> UIImage? {
+        guard !dataURL.isEmpty else { return nil }
+        let parts = dataURL.split(separator: ",", maxSplits: 1)
+        let b64 = parts.count == 2 ? String(parts[1]) : dataURL
+        guard let data = Data(base64Encoded: b64) else { return nil }
+        return UIImage(data: data)
+    }
+
+    // MARK: 上面：他的头像 + 名字 + 状态 + 声音竖条
 
     private var header: some View {
-        VStack(spacing: 9) {
-            HStack(spacing: 26) {
-                VStack(spacing: 6) {
-                    CallAvatar(name: hisName, active: session.speaking)
-                    Text(hisName)
-                        .font(.system(size: 12.5, weight: .medium))
-                        .foregroundColor(CallSkin.inkDim)
-                }
-                VStack(spacing: 6) {
-                    CallAvatar(name: "陈霁", active: session.recording)
-                    Text("陈霁")
-                        .font(.system(size: 12.5, weight: .medium))
-                        .foregroundColor(CallSkin.inkDim)
-                }
-            }
-            .padding(.top, 26)
-            Text(String(format: "%02d:%02d", session.seconds / 60, session.seconds % 60))
-                .font(.system(size: 13, design: .monospaced))
-                .foregroundColor(CallSkin.inkDim)
+        VStack(spacing: 10) {
+            hisAvatar
+                .padding(.top, 76)
+            Text(hisName)
+                .font(.system(size: 26, weight: .semibold, design: .serif))
+                .foregroundColor(CallSkin.ink)
             Text(session.line)
-                .font(.system(size: 12.5))
-                .foregroundColor(CallSkin.accent)
-            Rectangle()
-                .fill(CallSkin.line)
-                .frame(height: 1)
-                .padding(.horizontal, 40)
-                .padding(.top, 6)
+                .font(.system(size: 13))
+                .foregroundColor(CallSkin.inkDim)
+            CallVoiceBars(active: session.speaking || session.recording)
+                .padding(.top, 8)
         }
     }
 
-    // MARK: 中间：这一通的对话
-
-    private var transcript: some View {
-        ScrollViewReader { proxy in
-            ScrollView(showsIndicators: false) {
-                LazyVStack(spacing: 11) {
-                    if session.turns.isEmpty {
-                        Text("说话就开始")
-                            .font(.system(size: 12.5))
-                            .foregroundColor(CallSkin.inkDim)
-                            .padding(.top, 30)
-                    }
-                    ForEach(session.turns) { t in
-                        CallTurnBubble(turn: t).id(t.id)
-                    }
-                    Color.clear.frame(height: 1).id("tail")
-                }
-                .padding(.horizontal, 18)
-                .padding(.vertical, 14)
-            }
-            .onChange(of: session.turns.count) { _ in
-                withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo("tail", anchor: .bottom) }
+    private var hisAvatar: some View {
+        Group {
+            if let img = avatar {
+                Image(uiImage: img)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 118, height: 118)
+                    .clipShape(Circle())
+                    .overlay(Circle().stroke(.white.opacity(0.85), lineWidth: 1.5))
+            } else {
+                CallAvatar(name: hisName, size: 118, active: session.speaking)
             }
         }
+        .overlay(Circle()
+            .stroke(CallSkin.accent.opacity(session.speaking ? 0.85 : 0), lineWidth: 2.5)
+            .padding(-5))
+        .shadow(color: .black.opacity(0.18), radius: 14, y: 6)
+        .animation(.easeInOut(duration: 0.25), value: session.speaking)
     }
 
-    // MARK: 下面：按住说 + 挂断
+    // MARK: 中间：当下那一段
+
+    /// 他说的：大字（以后换英文声音、接上翻译，就是大字英文 + 小字中文）；
+    /// 她说的：只有中文。她按住说的时候先写「在听你说…」，听写回来换成她那句。
+    /// 一段很长时才出滚动，短的就安安静静居中。
+    private var subtitle: some View {
+        ViewThatFits(in: .vertical) {
+            subtitleContent
+            ScrollView(showsIndicators: false) { subtitleContent }
+        }
+        .frame(maxHeight: 320)
+        .animation(.easeInOut(duration: 0.25), value: session.currentTurn?.id)
+        .animation(.easeInOut(duration: 0.25), value: session.recording)
+    }
+
+    @ViewBuilder private var subtitleContent: some View {
+        VStack(spacing: 10) {
+            if session.recording {
+                Text("在听你说…")
+                    .font(.system(size: 17, design: .serif))
+                    .foregroundColor(CallSkin.inkDim)
+            } else if let t = session.currentTurn {
+                Text(t.text)
+                    .font(.system(size: t.isMine ? 20 : 24, design: .serif))
+                    .foregroundColor(CallSkin.ink)
+                    .lineSpacing(5)
+                    .multilineTextAlignment(.center)
+                    .id(t.id)
+                    .transition(.opacity)
+            } else {
+                Text("说话就开始")
+                    .font(.system(size: 15, design: .serif))
+                    .foregroundColor(CallSkin.inkDim)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 30)
+    }
+
+    // MARK: 下面：按住说 + 挂断 + 扬声器
 
     private var controls: some View {
-        VStack(spacing: 10) {
-            Text(session.busy ? "等一下…" : "按住说话，松开发送")
+        HStack(alignment: .top, spacing: 0) {
+            controlSlot(session.busy ? "等一下…" : (session.recording ? "松开发送" : "按住说话")) {
+                micButton
+            }
+            controlSlot("挂断") { hangupButton }
+            controlSlot(session.speakerOn ? "扬声器已开" : "扬声器已关") { speakerButton }
+        }
+        .padding(.horizontal, 18)
+        .padding(.bottom, 30)
+    }
+
+    private func controlSlot<Content: View>(_ label: String,
+                                            @ViewBuilder content: () -> Content) -> some View {
+        VStack(spacing: 9) {
+            content()
+                .frame(height: 76)
+            Text(label)
                 .font(.system(size: 12))
                 .foregroundColor(CallSkin.inkDim)
-            HStack(spacing: 44) {
-                micButton
-                hangupButton
-            }
-            .padding(.bottom, 26)
         }
-        .padding(.top, 8)
+        .frame(maxWidth: .infinity)
     }
 
     private var micButton: some View {
         Circle()
-            .fill(session.recording ? CallSkin.accent : CallSkin.panel)
-            .frame(width: 74, height: 74)
-            .overlay(Circle().stroke(CallSkin.line, lineWidth: 1))
+            .fill(session.recording ? CallSkin.accent : Color.white.opacity(0.92))
+            .frame(width: 66, height: 66)
             .overlay(Image(systemName: "mic.fill")
-                .font(.system(size: 26))
-                .foregroundColor(session.recording ? .white : CallSkin.accent))
-            .shadow(color: CallSkin.ink.opacity(0.14), radius: 5, y: 2)
+                .font(.system(size: 24))
+                .foregroundColor(session.recording ? .white : CallSkin.ink))
+            .shadow(color: .black.opacity(0.14), radius: 8, y: 3)
             .scaleEffect(session.recording ? 1.1 : 1)
             .animation(.spring(response: 0.25, dampingFraction: 0.7), value: session.recording)
             .gesture(DragGesture(minimumDistance: 0)
@@ -701,8 +793,225 @@ struct CallView: View {
                 .fill(CallSkin.hangup)
                 .frame(width: 74, height: 74)
                 .overlay(CallGlyph(size: 26, color: .white, down: true))
-                .shadow(color: CallSkin.ink.opacity(0.18), radius: 5, y: 2)
+                .shadow(color: .black.opacity(0.18), radius: 8, y: 3)
         }
         .buttonStyle(.plain)
+    }
+
+    /// 开着：深底白喇叭；关着：白底深喇叭。一眼分得清是开是关
+    private var speakerButton: some View {
+        Button {
+            session.toggleSpeaker()
+        } label: {
+            Circle()
+                .fill(session.speakerOn ? CallSkin.ink : Color.white.opacity(0.92))
+                .frame(width: 66, height: 66)
+                .overlay(Image(systemName: session.speakerOn ? "speaker.wave.2.fill" : "speaker.fill")
+                    .font(.system(size: 22))
+                    .foregroundColor(session.speakerOn ? .white : CallSkin.ink))
+                .shadow(color: .black.opacity(0.14), radius: 8, y: 3)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - 名字下面那排声音竖条
+
+/// 他在说、或她按住说的时候轻轻起伏；不接真音量（她说跟参考图差不多就行）
+struct CallVoiceBars: View {
+    let active: Bool
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 20, paused: !active)) { timeline in
+            let t = timeline.date.timeIntervalSinceReferenceDate
+            HStack(spacing: 3) {
+                ForEach(0..<18, id: \.self) { i in
+                    Capsule()
+                        .fill(CallSkin.ink.opacity(0.7))
+                        .frame(width: 3, height: barHeight(i, t))
+                }
+            }
+            .frame(height: 18)
+        }
+    }
+
+    private func barHeight(_ i: Int, _ t: Double) -> CGFloat {
+        guard active else { return 6 }
+        let phase: Double = t * 5.2 + Double(i) * 0.7
+        let wobble: Double = abs(sin(phase) * cos(t * 2.3 + Double(i) * 0.31))
+        return CGFloat(6 + 12 * wobble)
+    }
+}
+
+// MARK: - 0911 通话页的雨（开屏那种水波纹，但不用手，换成自己落的雨滴）
+
+/// 网页第一帧画出来之前、或者 WebGL 起不来的时候，看到的是底下这张同一张壁纸
+enum CallRainAsset {
+    static let wallpaper: UIImage? = Bundle.main
+        .path(forResource: "call-rain", ofType: "jpg", inDirectory: "MistSplash")
+        .flatMap(UIImage.init(contentsOfFile:))
+}
+
+struct CallRainBackground: View {
+    @State private var failed = false
+
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack {
+                CallSkin.ground
+                if let img = CallRainAsset.wallpaper {
+                    Image(uiImage: img)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: geometry.size.width, height: geometry.size.height)
+                        .clipped()
+                }
+                if !failed {
+                    CallRainWebView(onFailure: { failed = true })
+                }
+            }
+        }
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
+    }
+}
+
+/// 照 SplashView.swift 的 MistSplashWebView 抄的一份精简版：只加载 MistSplash/rain.html，
+/// 不收手势，只认网页发来的 failed。
+private struct CallRainWebView: UIViewRepresentable {
+    let onFailure: () -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onFailure: onFailure)
+    }
+
+    func makeUIView(context: Context) -> CallRainWKWebView {
+        let configuration = WKWebViewConfiguration()
+        configuration.websiteDataStore = .nonPersistent()
+        configuration.userContentController.add(context.coordinator, name: "callRain")
+        // 跟开屏 0909 同一个坑：file:// 打开的页面，本地图画进 canvas 再传进 WebGL 会被当跨域拒掉。
+        // 这一页被 CSP 锁死（connect-src 'none'、script-src 'self'），放开不扩大攻击面。
+        if configuration.responds(to: Selector(("_setAllowUniversalAccessFromFileURLs:"))) {
+            configuration.setValue(true, forKey: "allowUniversalAccessFromFileURLs")
+        }
+        if configuration.preferences.responds(to: Selector(("_setAllowFileAccessFromFileURLs:"))) {
+            configuration.preferences.setValue(true, forKey: "allowFileAccessFromFileURLs")
+        }
+        let webView = CallRainWKWebView(frame: .zero, configuration: configuration)
+        webView.navigationDelegate = context.coordinator
+        webView.isOpaque = false
+        webView.backgroundColor = .clear
+        webView.underPageBackgroundColor = .clear
+        webView.scrollView.backgroundColor = .clear
+        webView.scrollView.isScrollEnabled = false
+        webView.scrollView.bounces = false
+        webView.scrollView.contentInsetAdjustmentBehavior = .never
+        webView.isUserInteractionEnabled = false
+        webView.observeApplicationActivity()
+        if let url = Bundle.main.url(forResource: "rain", withExtension: "html", subdirectory: "MistSplash") {
+            context.coordinator.resourceDirectory = url.deletingLastPathComponent()
+            webView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
+        } else {
+            DispatchQueue.main.async { onFailure() }
+        }
+        return webView
+    }
+
+    func updateUIView(_ webView: CallRainWKWebView, context: Context) {
+        context.coordinator.onFailure = onFailure
+    }
+
+    static func dismantleUIView(_ webView: CallRainWKWebView, coordinator: Coordinator) {
+        NotificationCenter.default.removeObserver(webView)
+        webView.evaluateJavaScript("window.callRainStop && window.callRainStop()", completionHandler: nil)
+        webView.stopLoading()
+        webView.configuration.userContentController.removeScriptMessageHandler(forName: "callRain")
+        webView.navigationDelegate = nil
+    }
+
+    final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
+        var onFailure: () -> Void
+        var resourceDirectory: URL?
+        private var recoveredProcess = false
+
+        init(onFailure: @escaping () -> Void) {
+            self.onFailure = onFailure
+        }
+
+        func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+            guard message.name == "callRain", message.frameInfo.isMainFrame,
+                  message.body as? String == "failed" else { return }
+            onFailure()
+        }
+
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            (webView as? CallRainWKWebView)?.updateActivity()
+        }
+
+        func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
+                     decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+            guard let url = navigationAction.request.url, url.isFileURL,
+                  let directory = resourceDirectory,
+                  url.standardizedFileURL.path.hasPrefix(directory.standardizedFileURL.path + "/") else {
+                decisionHandler(.cancel)
+                return
+            }
+            decisionHandler(.allow)
+        }
+
+        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+            if (error as NSError).code != NSURLErrorCancelled { onFailure() }
+        }
+
+        func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+            if (error as NSError).code != NSURLErrorCancelled { onFailure() }
+        }
+
+        func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+            if !recoveredProcess {
+                recoveredProcess = true
+                webView.reload()
+            } else {
+                onFailure()
+            }
+        }
+    }
+}
+
+private final class CallRainWKWebView: WKWebView {
+    private var isAppActive = true
+
+    // 跟开屏一样不用 scenePhase：Alcove 是 UIApplicationDelegate 起的，那个环境值不可靠
+    func observeApplicationActivity() {
+        isAppActive = UIApplication.shared.applicationState == .active
+        let center = NotificationCenter.default
+        center.addObserver(self, selector: #selector(applicationBecameActive),
+                           name: UIApplication.didBecomeActiveNotification, object: nil)
+        center.addObserver(self, selector: #selector(applicationResignedActive),
+                           name: UIApplication.willResignActiveNotification, object: nil)
+        center.addObserver(self, selector: #selector(applicationResignedActive),
+                           name: UIApplication.didEnterBackgroundNotification, object: nil)
+    }
+
+    @objc private func applicationBecameActive() {
+        isAppActive = true
+        updateActivity()
+    }
+
+    @objc private func applicationResignedActive() {
+        isAppActive = false
+        updateActivity()
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        updateActivity()
+    }
+
+    /// 切后台、或通话页收成胶囊（离开 window）都停着不画，省电
+    func updateActivity() {
+        let on = isAppActive && window != nil
+        evaluateJavaScript("window.callRainEnvironment && window.callRainEnvironment({active:\(on)})",
+                           completionHandler: nil)
     }
 }
