@@ -1,8 +1,0 @@
-html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent;-webkit-text-size-adjust:100%;overscroll-behavior:none}
-body{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
-/* 跟开屏同一招防闪屏：第一帧画出来之前整页透明，底下垫着原生那张同一张壁纸，画好了再淡入 */
-#call-rain{position:relative;width:100%;height:100%;overflow:hidden;opacity:0;transition:opacity .45s ease}
-#call-rain .cr-photo,#call-rain .cr-canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
-/* 图只拿来当纹理的源，真正显示的是 canvas */
-#call-rain .cr-photo{object-fit:cover;visibility:hidden}
-#call-rain .cr-canvas{pointer-events:none}

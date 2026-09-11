@@ -1,7 +1,6 @@
 import SwiftUI
 import AVFoundation
 import UIKit
-import WebKit
 
 // 语音通话页。0831 任务#1195 大改：通话的对话搬出主聊天，只在这一页显示。
 //
@@ -125,6 +124,12 @@ enum CallSkin {
     static let hangup   = hex(0xC97F86)
     static let accent   = hex(0xB08A94)
     static let pillGreen = hex(0x5FB878)  // 缩小后那颗胶囊：微信通话绿
+    // 0911 通话页换成她发的雨夜壁纸（深蓝黑），上面的字和键改用这一组；
+    // 通话记录那张白瓷弹窗还用上面那组
+    static let onWall    = Color.white
+    static let onWallDim = Color.white.opacity(0.62)
+    static let glass     = Color.white.opacity(0.16)   // 平时的键：半透明玻璃圆
+    static let glassLine = Color.white.opacity(0.32)
 }
 
 /// 白瓷上那层波点。自己画一份不借棋牌室那个——那边跟着日夜开关走，
@@ -621,7 +626,7 @@ struct CallView: View {
 
     var body: some View {
         ZStack {
-            CallRainBackground()
+            CallWallpaper()
             VStack(spacing: 0) {
                 header
                 Spacer(minLength: 16)
@@ -635,7 +640,7 @@ struct CallView: View {
                     Button(action: onMinimize) {
                         Image(systemName: "arrow.down.right.and.arrow.up.left")
                             .font(.system(size: 15, weight: .medium))
-                            .foregroundColor(CallSkin.ink)
+                            .foregroundColor(CallSkin.onWall)
                             .frame(width: 40, height: 40)
                             .contentShape(Circle())
                     }
@@ -643,7 +648,7 @@ struct CallView: View {
                     Spacer()
                     Text(String(format: "%02d:%02d", session.seconds / 60, session.seconds % 60))
                         .font(.system(size: 14, design: .monospaced))
-                        .foregroundColor(CallSkin.ink)
+                        .foregroundColor(CallSkin.onWall)
                         .padding(.trailing, 20)
                 }
                 .padding(.leading, 10)
@@ -676,10 +681,10 @@ struct CallView: View {
                 .padding(.top, 76)
             Text(hisName)
                 .font(.system(size: 26, weight: .semibold, design: .serif))
-                .foregroundColor(CallSkin.ink)
+                .foregroundColor(CallSkin.onWall)
             Text(session.line)
                 .font(.system(size: 13))
-                .foregroundColor(CallSkin.inkDim)
+                .foregroundColor(CallSkin.onWallDim)
             CallVoiceBars(active: session.speaking || session.recording)
                 .padding(.top, 8)
         }
@@ -725,19 +730,21 @@ struct CallView: View {
             if session.recording {
                 Text("在听你说…")
                     .font(.system(size: 17, design: .serif))
-                    .foregroundColor(CallSkin.inkDim)
+                    .foregroundColor(CallSkin.onWallDim)
             } else if let t = session.currentTurn {
+                // 壁纸下半截有路灯和亮水珠，白字压一层淡黑影，免得糊进去
                 Text(t.text)
                     .font(.system(size: t.isMine ? 20 : 24, design: .serif))
-                    .foregroundColor(CallSkin.ink)
+                    .foregroundColor(CallSkin.onWall)
                     .lineSpacing(5)
                     .multilineTextAlignment(.center)
+                    .shadow(color: .black.opacity(0.45), radius: 6)
                     .id(t.id)
                     .transition(.opacity)
             } else {
                 Text("说话就开始")
                     .font(.system(size: 15, design: .serif))
-                    .foregroundColor(CallSkin.inkDim)
+                    .foregroundColor(CallSkin.onWallDim)
             }
         }
         .frame(maxWidth: .infinity)
@@ -765,18 +772,20 @@ struct CallView: View {
                 .frame(height: 76)
             Text(label)
                 .font(.system(size: 12))
-                .foregroundColor(CallSkin.inkDim)
+                .foregroundColor(CallSkin.onWallDim)
         }
         .frame(maxWidth: .infinity)
     }
 
+    /// 暗壁纸上的键：平时是半透明玻璃圆 + 白图标，按住说话时填满
     private var micButton: some View {
         Circle()
-            .fill(session.recording ? CallSkin.accent : Color.white.opacity(0.92))
+            .fill(session.recording ? CallSkin.accent : CallSkin.glass)
             .frame(width: 66, height: 66)
+            .overlay(Circle().stroke(CallSkin.glassLine, lineWidth: 1))
             .overlay(Image(systemName: "mic.fill")
                 .font(.system(size: 24))
-                .foregroundColor(session.recording ? .white : CallSkin.ink))
+                .foregroundColor(.white))
             .shadow(color: .black.opacity(0.14), radius: 8, y: 3)
             .scaleEffect(session.recording ? 1.1 : 1)
             .animation(.spring(response: 0.25, dampingFraction: 0.7), value: session.recording)
@@ -798,17 +807,18 @@ struct CallView: View {
         .buttonStyle(.plain)
     }
 
-    /// 开着：深底白喇叭；关着：白底深喇叭。一眼分得清是开是关
+    /// 开着：白底深喇叭（亮起来）；关着：半透明玻璃 + 白喇叭。一眼分得清是开是关
     private var speakerButton: some View {
         Button {
             session.toggleSpeaker()
         } label: {
             Circle()
-                .fill(session.speakerOn ? CallSkin.ink : Color.white.opacity(0.92))
+                .fill(session.speakerOn ? Color.white : CallSkin.glass)
                 .frame(width: 66, height: 66)
+                .overlay(Circle().stroke(CallSkin.glassLine, lineWidth: session.speakerOn ? 0 : 1))
                 .overlay(Image(systemName: session.speakerOn ? "speaker.wave.2.fill" : "speaker.fill")
                     .font(.system(size: 22))
-                    .foregroundColor(session.speakerOn ? .white : CallSkin.ink))
+                    .foregroundColor(session.speakerOn ? CallSkin.ink : .white))
                 .shadow(color: .black.opacity(0.14), radius: 8, y: 3)
         }
         .buttonStyle(.plain)
@@ -827,7 +837,7 @@ struct CallVoiceBars: View {
             HStack(spacing: 3) {
                 ForEach(0..<18, id: \.self) { i in
                     Capsule()
-                        .fill(CallSkin.ink.opacity(0.7))
+                        .fill(CallSkin.onWall.opacity(0.75))
                         .frame(width: 3, height: barHeight(i, t))
                 }
             }
@@ -843,175 +853,31 @@ struct CallVoiceBars: View {
     }
 }
 
-// MARK: - 0911 通话页的雨（开屏那种水波纹，但不用手，换成自己落的雨滴）
+// MARK: - 0911 通话页壁纸
 
-/// 网页第一帧画出来之前、或者 WebGL 起不来的时候，看到的是底下这张同一张壁纸
-enum CallRainAsset {
-    static let wallpaper: UIImage? = Bundle.main
-        .path(forResource: "call-rain", ofType: "jpg", inDirectory: "MistSplash")
+/// 她发的雨夜窗户。原本打算在上面做雨滴水波，她说「算了，不做动效了，直接替换这张壁纸」，就放静态图。
+/// 图在 MistSplash 文件夹里：那是工程里整个打包的文件夹，往里放文件不用登记工程文件。
+enum CallWallpaperAsset {
+    static let image: UIImage? = Bundle.main
+        .path(forResource: "call-wallpaper", ofType: "jpg", inDirectory: "MistSplash")
         .flatMap(UIImage.init(contentsOfFile:))
 }
 
-struct CallRainBackground: View {
-    @State private var failed = false
-
+struct CallWallpaper: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-                CallSkin.ground
-                if let img = CallRainAsset.wallpaper {
+                Color.black
+                if let img = CallWallpaperAsset.image {
                     Image(uiImage: img)
                         .resizable()
                         .scaledToFill()
                         .frame(width: geometry.size.width, height: geometry.size.height)
                         .clipped()
                 }
-                if !failed {
-                    CallRainWebView(onFailure: { failed = true })
-                }
             }
         }
         .ignoresSafeArea()
         .allowsHitTesting(false)
-    }
-}
-
-/// 照 SplashView.swift 的 MistSplashWebView 抄的一份精简版：只加载 MistSplash/rain.html，
-/// 不收手势，只认网页发来的 failed。
-private struct CallRainWebView: UIViewRepresentable {
-    let onFailure: () -> Void
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(onFailure: onFailure)
-    }
-
-    func makeUIView(context: Context) -> CallRainWKWebView {
-        let configuration = WKWebViewConfiguration()
-        configuration.websiteDataStore = .nonPersistent()
-        configuration.userContentController.add(context.coordinator, name: "callRain")
-        // 跟开屏 0909 同一个坑：file:// 打开的页面，本地图画进 canvas 再传进 WebGL 会被当跨域拒掉。
-        // 这一页被 CSP 锁死（connect-src 'none'、script-src 'self'），放开不扩大攻击面。
-        if configuration.responds(to: Selector(("_setAllowUniversalAccessFromFileURLs:"))) {
-            configuration.setValue(true, forKey: "allowUniversalAccessFromFileURLs")
-        }
-        if configuration.preferences.responds(to: Selector(("_setAllowFileAccessFromFileURLs:"))) {
-            configuration.preferences.setValue(true, forKey: "allowFileAccessFromFileURLs")
-        }
-        let webView = CallRainWKWebView(frame: .zero, configuration: configuration)
-        webView.navigationDelegate = context.coordinator
-        webView.isOpaque = false
-        webView.backgroundColor = .clear
-        webView.underPageBackgroundColor = .clear
-        webView.scrollView.backgroundColor = .clear
-        webView.scrollView.isScrollEnabled = false
-        webView.scrollView.bounces = false
-        webView.scrollView.contentInsetAdjustmentBehavior = .never
-        webView.isUserInteractionEnabled = false
-        webView.observeApplicationActivity()
-        if let url = Bundle.main.url(forResource: "rain", withExtension: "html", subdirectory: "MistSplash") {
-            context.coordinator.resourceDirectory = url.deletingLastPathComponent()
-            webView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
-        } else {
-            DispatchQueue.main.async { onFailure() }
-        }
-        return webView
-    }
-
-    func updateUIView(_ webView: CallRainWKWebView, context: Context) {
-        context.coordinator.onFailure = onFailure
-    }
-
-    static func dismantleUIView(_ webView: CallRainWKWebView, coordinator: Coordinator) {
-        NotificationCenter.default.removeObserver(webView)
-        webView.evaluateJavaScript("window.callRainStop && window.callRainStop()", completionHandler: nil)
-        webView.stopLoading()
-        webView.configuration.userContentController.removeScriptMessageHandler(forName: "callRain")
-        webView.navigationDelegate = nil
-    }
-
-    final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
-        var onFailure: () -> Void
-        var resourceDirectory: URL?
-        private var recoveredProcess = false
-
-        init(onFailure: @escaping () -> Void) {
-            self.onFailure = onFailure
-        }
-
-        func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-            guard message.name == "callRain", message.frameInfo.isMainFrame,
-                  message.body as? String == "failed" else { return }
-            onFailure()
-        }
-
-        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            (webView as? CallRainWKWebView)?.updateActivity()
-        }
-
-        func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
-                     decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-            guard let url = navigationAction.request.url, url.isFileURL,
-                  let directory = resourceDirectory,
-                  url.standardizedFileURL.path.hasPrefix(directory.standardizedFileURL.path + "/") else {
-                decisionHandler(.cancel)
-                return
-            }
-            decisionHandler(.allow)
-        }
-
-        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-            if (error as NSError).code != NSURLErrorCancelled { onFailure() }
-        }
-
-        func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-            if (error as NSError).code != NSURLErrorCancelled { onFailure() }
-        }
-
-        func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
-            if !recoveredProcess {
-                recoveredProcess = true
-                webView.reload()
-            } else {
-                onFailure()
-            }
-        }
-    }
-}
-
-private final class CallRainWKWebView: WKWebView {
-    private var isAppActive = true
-
-    // 跟开屏一样不用 scenePhase：Alcove 是 UIApplicationDelegate 起的，那个环境值不可靠
-    func observeApplicationActivity() {
-        isAppActive = UIApplication.shared.applicationState == .active
-        let center = NotificationCenter.default
-        center.addObserver(self, selector: #selector(applicationBecameActive),
-                           name: UIApplication.didBecomeActiveNotification, object: nil)
-        center.addObserver(self, selector: #selector(applicationResignedActive),
-                           name: UIApplication.willResignActiveNotification, object: nil)
-        center.addObserver(self, selector: #selector(applicationResignedActive),
-                           name: UIApplication.didEnterBackgroundNotification, object: nil)
-    }
-
-    @objc private func applicationBecameActive() {
-        isAppActive = true
-        updateActivity()
-    }
-
-    @objc private func applicationResignedActive() {
-        isAppActive = false
-        updateActivity()
-    }
-
-    override func didMoveToWindow() {
-        super.didMoveToWindow()
-        updateActivity()
-    }
-
-    /// 切后台、或通话页收成胶囊（离开 window）都停着不画，省电
-    func updateActivity() {
-        let on = isAppActive && window != nil
-        evaluateJavaScript("window.callRainEnvironment && window.callRainEnvironment({active:\(on)})",
-                           completionHandler: nil)
     }
 }
