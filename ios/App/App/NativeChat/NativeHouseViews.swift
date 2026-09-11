@@ -23,7 +23,6 @@ enum HouseDestination: String, Identifiable, CaseIterable {
     case home, profile, activityRoom, calendar, digest, wall, usage, workbench, studio
     case memory, dreams, shelf, fiction, nianlun, clockwork, album, portrait, impression, morningPaper, nowhere, pulse
     case pond
-    case room3d
     case tarot          // 0902 占星室（塔罗）
     case nursery        // 0905 育儿室（llm-nursery 电子养崽）
     case wallet         // 0907 钱包（他的预算/心愿单/审批，第一期账本）
@@ -59,7 +58,6 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .fiction: return "书房"
         case .nianlun: return "年轮"
         case .pond: return "檐下"
-        case .room3d: return "我的房间"
         case .tarot: return "占星室"
         case .nursery: return "育儿室"
         case .wallet: return "钱包"
@@ -122,7 +120,6 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .fiction: return "books.vertical"
         case .nianlun: return "circle.hexagongrid"
         case .pond: return "drop.circle"
-        case .room3d: return "house.lodge"
         case .tarot: return "sparkles"
         case .nursery: return "teddybear"
         case .wallet: return "creditcard"
@@ -294,8 +291,6 @@ struct NativeHouseSheet: View {
                     NativeOBLettersView()
                 case .pond:
                     NativePondView()
-                case .room3d:
-                    NativeRoom3DPrototypeView()
                 case .tarot:
                     TarotRoomView()
                 case .nursery:
@@ -348,7 +343,6 @@ struct NativeHouseSheet: View {
         .ignoresSafeArea(.container, edges: .all)
         .preferredColorScheme(theme.isDark ? .dark : .light)
         .presentationBackground {
-            if route == .room3d { Color.black } else {
             GeometryReader { backgroundGeo in
                 Image(theme.isDark ? "DrawerDark" : "DrawerLight")
                     .resizable()
@@ -357,7 +351,6 @@ struct NativeHouseSheet: View {
                     .clipped()
                     .ignoresSafeArea()
             }
-        }
         }
         .onAppear { prepareTextureIfNeeded() }
         .onChange(of: themeName) { _ in prepareTextureIfNeeded() }
@@ -390,7 +383,6 @@ struct NativeHouseSheet: View {
                 Spacer()
             }
         }
-        .background(route == .room3d ? Color.black : Color.clear)
         .frame(height: route == .activityRoom || route == .coread ? 0 : 46)
         .padding(.top, route == .activityRoom || route == .coread ? 0 : safeTop)
         .padding(.horizontal, 12)
@@ -562,7 +554,6 @@ struct NativeHouseDrawer: View {
                         drawerRow(.pulse, detail: "心率、五感、八维、念头池")
                         drawerRow(.roof, detail: "陈檐住在这层")
                         drawerRow(.pond, detail: "念头、许愿与朋友圈")
-                        drawerRow(.room3d, detail: "按你的草图搭的小屋")
                         drawerRow(.tarot, detail: "抽一张牌，让他解")   // 0902 占星室
                         drawerRow(.nursery, detail: "养一个会学你们说话的小家伙")   // 0905 育儿室
                         drawerRow(.wallet, detail: "他的钱包、心愿单和你的拍板")   // 0907 钱包
@@ -13045,127 +13036,4 @@ private struct NativeOBSelfView:View{
     private var theme:AlcoveTheme{.panelNamed(themeName)};private let aspects=["","nature","values","patterns","limits","becoming","uncertainty","stance"]
     private var shown:[OBSelfEntry]{aspect.isEmpty ? entries:entries.filter{$0.aspect==aspect}}
     var body:some View{VStack(spacing:10){FoyerPanelTitle(title:"Self",theme:theme);ScrollView(.horizontal,showsIndicators:false){HStack(spacing:7){ForEach(aspects,id:\.self){a in Button(a.isEmpty ? "全部":a){aspect=a}.font(.system(size:11,design:.monospaced)).padding(.horizontal,11).frame(height:30).background(aspect==a ? theme.fyAccentSoft:theme.fyCard,in:Capsule())}}};ScrollView{LazyVStack(spacing:10){ForEach(shown){e in VStack(alignment:.leading,spacing:8){HStack{Text(e.aspect).font(.system(size:10,weight:.semibold,design:.monospaced)).foregroundColor(theme.fyAccent);Spacer();Text(e.created.prefix(16).replacingOccurrences(of:"T",with:" ")).font(.system(size:9,design:.monospaced)).foregroundColor(theme.textDim)};Text(e.content).font(.system(size:13,design:.serif)).lineSpacing(4)}.padding(15).frame(maxWidth:.infinity,alignment:.leading).foyerCard(theme)}}.padding(.bottom,18)}}.padding(.horizontal,16).padding(.bottom,18).foregroundColor(theme.text).foyerPanel(theme).padding(.horizontal,12).padding(.top,8).task{entries=(try? await NativeHouseAPI.array("/api/ob/api/self"))?.map(OBSelfEntry.init) ?? []}}
-}
-
-// MARK: - Bundled 3D room web container
-private struct Room3DWebView: UIViewRepresentable {
-    let active: Bool
-    @Binding var nativeDiagnostic: String
-    var assetDirectory = "room3d"
-    var lifecycleObject = "alcoveRoom3D"
-    func makeCoordinator() -> Coordinator { Coordinator() }
-
-    func makeUIView(context: Context) -> WKWebView {
-        let config = WKWebViewConfiguration()
-        config.websiteDataStore = .nonPersistent()
-        let view = RoomTouchWebView(frame: .zero, configuration: config)
-        view.onTouch = { [weak coordinator = context.coordinator] in coordinator?.recordTouch() }
-        context.coordinator.report = { if nativeDiagnostic != $0 { nativeDiagnostic = $0 } }
-        view.isOpaque = false
-        view.backgroundColor = .clear
-        view.scrollView.backgroundColor = .clear
-        view.scrollView.isScrollEnabled = false
-        view.navigationDelegate = context.coordinator
-        context.coordinator.active = active
-        context.coordinator.lifecycleObject = lifecycleObject
-        if let root = Bundle.main.resourceURL?.appendingPathComponent("public/\(assetDirectory)", isDirectory: true),
-           FileManager.default.fileExists(atPath: root.appendingPathComponent("index.html").path) {
-            context.coordinator.root = root.standardizedFileURL
-            view.loadFileURL(root.appendingPathComponent("index.html"), allowingReadAccessTo: root)
-        } else {
-            view.loadHTMLString("<meta name='viewport' content='width=device-width'><p>缺少房间资源，请重新同步 App 资源后构建。</p>", baseURL: nil)
-        }
-        return view
-    }
-
-    func updateUIView(_ view: WKWebView, context: Context) {
-        context.coordinator.active = active
-        context.coordinator.report = { if nativeDiagnostic != $0 { nativeDiagnostic = $0 } }
-        context.coordinator.applyLifecycle(view)
-    }
-
-    static func dismantleUIView(_ view: WKWebView, coordinator: Coordinator) {
-        view.evaluateJavaScript("window.\(coordinator.lifecycleObject)?.dispose()", completionHandler: nil)
-        view.stopLoading()
-        view.navigationDelegate = nil
-        // Remove the document as well, releasing its WebGL context and animation clock.
-        view.loadHTMLString("", baseURL: nil)
-    }
-
-    final class Coordinator: NSObject, WKNavigationDelegate {
-        var active = false
-        var lifecycleObject = "alcoveRoom3D"
-        var root: URL?
-        var report: ((String) -> Void)?
-        var touches = 0
-        var bridge = "等待网页"
-        func publish() {
-            let text = "原生触摸 \(touches) · 原生\(active ? "启用" : "暂停") · \(bridge)"
-            DispatchQueue.main.async { [weak self] in self?.report?(text) }
-        }
-        func recordTouch() { touches += 1; publish() }
-        func applyLifecycle(_ view: WKWebView) {
-            view.evaluateJavaScript("""
-                (() => { const room = window.\(lifecycleObject);
-                if (!room) return "接口未就绪";
-                room.setActive(\(active ? "true" : "false"));
-                return "已传达"; })()
-                """) { [weak self] result, error in
-                self?.bridge = error.map { "脚本错误：" + $0.localizedDescription } ?? (result as? String ?? "无回执")
-                self?.publish()
-            }
-        }
-        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-            applyLifecycle(webView)
-        }
-        func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
-                     decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-            guard let url = navigationAction.request.url else { decisionHandler(.cancel); return }
-            if url.absoluteString == "about:blank" { decisionHandler(.allow); return }
-            if url.isFileURL, let root, url.standardizedFileURL.path.hasPrefix(root.path + "/") {
-                decisionHandler(.allow)
-            } else {
-                decisionHandler(.cancel)
-            }
-        }
-    }
-}
-
-// Observe hit testing without installing a gesture recognizer that could steal WebKit touches.
-private final class RoomTouchWebView: WKWebView {
-    var onTouch: (() -> Void)?
-    private var lastTouchTimestamp: TimeInterval = -1
-    override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
-        let target = super.hitTest(point, with: event)
-        if target != nil, let event, event.type == .touches,
-           event.timestamp != lastTouchTimestamp {
-            lastTouchTimestamp = event.timestamp
-            onTouch?()
-        }
-        return target
-    }
-}
-
-
-private struct NativeRoom3DPrototypeView: View {
-    @Environment(\.scenePhase) private var scenePhase
-    @AppStorage("houseInterfaceAppearance") private var appearance = "dark"
-    @State private var visible = false
-    @State private var nativeDiagnostic = "原生诊断准备中"
-    var body: some View {
-        Room3DWebView(active: visible && scenePhase == .active,
-                               nativeDiagnostic: $nativeDiagnostic,
-                               assetDirectory: "room3d", lifecycleObject: "alcoveRoom3D")
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                Text(nativeDiagnostic)
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(6).background(Color.black)
-                    .allowsHitTesting(false)
-            }
-            .preferredColorScheme(appearance == "light" ? .light : .dark)
-            .onAppear { visible = true }
-            .onDisappear { visible = false }
-    }
 }

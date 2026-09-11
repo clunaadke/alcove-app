@@ -1,1 +1,0 @@
-{"name":"alcove-room-prototype","private":true,"version":"0.1.0","dependencies":{"three":"0.180.0"},"devDependencies":{"@napi-rs/canvas":"0.1.80","esbuild":"0.25.9","linkedom":"0.18.12"}}
