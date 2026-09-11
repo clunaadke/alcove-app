@@ -8,6 +8,9 @@ final class ImageDiskCache {
     static let shared = ImageDiskCache()
 
     let dir: URL
+    /// 0912 她要的：相册的图单独放一格，设置页那几个「清理」「清空」都不碰它。
+    /// 放 Application Support 不放 Caches——Caches 在手机空间紧的时候系统会自己删；不进 iCloud 备份。
+    let albumDir: URL
     private let mem = NSCache<NSURL, UIImage>()
     private var inflight: [URL: Task<UIImage?, Never>] = [:]
     private let lock = NSLock()
@@ -16,6 +19,13 @@ final class ImageDiskCache {
         let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
         dir = caches.appendingPathComponent("alcove-images", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        var album = support.appendingPathComponent("alcove-album", isDirectory: true)
+        try? FileManager.default.createDirectory(at: album, withIntermediateDirectories: true)
+        var noBackup = URLResourceValues()
+        noBackup.isExcludedFromBackup = true
+        try? album.setResourceValues(noBackup)
+        albumDir = album
         mem.countLimit = 400
         // 0828：只限张数不限字节的话，400 张原图解码开能吃掉几百 MB。
         // 按解码后的像素字节算账，超了 NSCache 自己踢旧的。
@@ -34,10 +44,12 @@ final class ImageDiskCache {
 
     // MARK: - 读
 
+    static func isAlbum(_ url: URL) -> Bool { url.path.contains("/album/media/") }
+
     func fileURL(for url: URL) -> URL {
         let digest = SHA256.hash(data: Data(url.absoluteString.utf8))
         let name = digest.map { String(format: "%02x", $0) }.joined()
-        return dir.appendingPathComponent(name + ".img")
+        return (Self.isAlbum(url) ? albumDir : dir).appendingPathComponent(name + ".img")
     }
 
     /// 只查内存、绝不碰磁盘——View 的 init（跑在主线程）只准用这个。
@@ -49,6 +61,10 @@ final class ImageDiskCache {
     /// 磁盘命中：读盘 + 解码 + 预解码位图。只在后台任务里调。
     private func diskLoad(_ url: URL) -> UIImage? {
         let f = fileURL(for: url)
+        if Self.isAlbum(url), !FileManager.default.fileExists(atPath: f.path) {
+            // 0912 以前相册的图混在 alcove-images 里：挪过来，别再下一遍
+            try? FileManager.default.moveItem(at: dir.appendingPathComponent(f.lastPathComponent), to: f)
+        }
         guard let data = try? Data(contentsOf: f), let img = UIImage(data: data) else { return nil }
         let ready = img.preparingForDisplay() ?? img
         memStore(ready, for: url)
@@ -127,6 +143,7 @@ final class ImageDiskCache {
     func oldestDate() -> Date? { entries().map(\.date).min() }
 
     /// 清掉某天之前存的；传 nil 就是全部清。返回腾出来的字节数。
+    /// 只扫 dir，相册那格（albumDir）不在账上也不在清理范围里。
     @discardableResult
     func clear(before cutoff: Date?) -> Int64 {
         var freed: Int64 = 0

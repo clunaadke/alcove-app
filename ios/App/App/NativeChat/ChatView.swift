@@ -2818,8 +2818,8 @@ struct MessageRow: View {
                         // 0902 她给的参考图：转文字收在同一条气泡里，点右边的小箭头展开
                         AudioBubble(url: AlcoveAPI.attachmentURL(raw), isUser: isUser, theme: theme,
                                     fontSize: CGFloat(fontSize),
-                                    hasTranscript: !msg.displayText.isEmpty,
-                                    transcript: msg.displayText,
+                                    hasTranscript: !msg.audioTranscript.isEmpty,
+                                    transcript: msg.audioTranscript,
                                     transcriptShown: showTranscript,
                                     onToggleTranscript: {
                                         withAnimation(.easeInOut(duration: 0.18)) { showTranscript.toggle() }

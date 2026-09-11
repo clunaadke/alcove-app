@@ -207,6 +207,19 @@ struct ChatMessage: Identifiable, Equatable {
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// 0912：语音转文字剥掉他写给 ElevenLabs 的语气标签 [softly] [laughs softly]……
+    /// 跟 voice_speak.py 的 strip_tags 同一套规矩（至少一个小写字母才算，[QUOTE] 这种全大写的不碰）。
+    /// 新语音后端发出来之前就剥了，这里兜住之前已经发出来的那几条。
+    var audioTranscript: String {
+        var t = displayText.replacingOccurrences(
+            of: #"\[(?=[^\]\n]*[a-z])[A-Za-z][A-Za-z '\-]{0,40}\]"#, with: "", options: .regularExpression)
+        t = t.replacingOccurrences(of: #"[ \t]+([,.!?;:，。！？；：])"#, with: "$1", options: .regularExpression)
+        t = t.replacingOccurrences(of: #"[ \t]{2,}"#, with: " ", options: .regularExpression)
+        t = t.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.joined(separator: "\n")
+        t = t.replacingOccurrences(of: #"\n{3,}"#, with: "\n\n", options: .regularExpression)
+        return t.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     private static func taggedBody(_ text: String, tag: String) -> String? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let open = "[\(tag)]", close = "[/\(tag)]"

@@ -169,7 +169,7 @@ struct AlbumPhotoViewer: View {
             }.padding(.horizontal, 8)
             TabView(selection: $selectedId) {
                 ForEach(photos) { photo in
-                    AlbumZoomImage(url: photo.original).tag(photo.id)
+                    AlbumZoomImage(photo: photo).tag(photo.id)
                 }
             }.tabViewStyle(.page(indexDisplayMode: .never))
             if let current {
@@ -204,12 +204,34 @@ struct AlbumPhotoViewer: View {
 }
 
 // Magnify within the current page; changing photos resets zoom automatically.
+// 0912：看的是中图不是原图；中图没到之前垫着缩略图（图库里刚看过，多半秒出），
+// 中图拉不到（比如后端还没重启）才退回原图。
 private struct AlbumZoomImage: View {
-    let url: URL?
+    let photo: AlbumPhoto
     @State private var scale: CGFloat = 1
     @State private var baseScale: CGFloat = 1
+    @State private var useOriginal = false
     var body: some View {
-        AlbumRemoteImage(url: url, fit: true)
+        GeometryReader { geometry in
+            CachedPhaseImage(url: useOriginal ? photo.original : photo.view) { phase in
+                ZStack {
+                    Color.black
+                    switch phase {
+                    case .success(let image):
+                        image.resizable().aspectRatio(contentMode: .fit)
+                    case .empty:
+                        AlbumRemoteImage(url: photo.thumbnail, fit: true)
+                    case .failure:
+                        if useOriginal {
+                            Image(systemName: "photo.badge.exclamationmark").foregroundStyle(.secondary)
+                        } else {
+                            AlbumRemoteImage(url: photo.thumbnail, fit: true)
+                                .onAppear { useOriginal = true }
+                        }
+                    }
+                }.frame(width: geometry.size.width, height: geometry.size.height)
+            }.id(useOriginal)
+        }.clipped()
             .scaleEffect(scale).clipped()
             .gesture(MagnifyGesture().onChanged { value in
                 scale = min(max(baseScale * value.magnification, 1), 4)

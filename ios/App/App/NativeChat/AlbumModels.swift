@@ -21,6 +21,8 @@ struct AlbumPhoto: Codable, Identifiable, Hashable {
     var isPosted: Bool { postStatus == "posted" || !(posts ?? []).isEmpty }
     var thumbnail: URL? { AlbumAPI.imageURL(thumbnailUrl ?? originalUrl) }
     var original: URL? { AlbumAPI.imageURL(originalUrl) }
+    /// 0912 她要的：点开看大图不拉原图（原图动辄七八兆）。后端给一份长边 2048 的，老照片第一次点开时现做
+    var view: URL? { AlbumAPI.imageURL("/api/album/media/\(photoId)_view.jpg") }
 }
 
 struct AlbumPost: Codable, Hashable {
