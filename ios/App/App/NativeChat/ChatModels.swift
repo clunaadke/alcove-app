@@ -62,6 +62,8 @@ struct ChatMessage: Identifiable, Equatable {
     // 0831 任务#1195：通话摘要。打完电话聊天页只留这一条，
     // 落在**打电话那个人**那一侧（她反复强调的），点开展开这一通的逐句记录
     var callSummary: CallSummaryInfo?
+    /// 0912：他发语音时自己写的中文翻译（voice_speak.py --zh → 后端 extra.audio_zh）。展开转文字后点「译」才显示
+    var audioZh: String?
     var pending: Bool = false // 本地乐观渲染，服务器确认前为 true
 
     var id: UUID { uid }
@@ -251,6 +253,10 @@ struct ChatMessage: Identifiable, Equatable {
         else { self.asleepAtSend = false }
         self.msgType = json["msg_type"] as? String
         self.stickerId = json["sticker_id"] as? String
+        // 服务端把 extra 摊平进记录，他写的中文翻译在 audio_zh
+        if let zh = (json["audio_zh"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !zh.isEmpty {
+            self.audioZh = zh
+        }
         self.thinkTitle = (json["think_title"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines)
         if let arr = json["segments"] as? [[String: Any]] {
             self.segments = arr.compactMap(ActivityItem.init(json:))
@@ -298,6 +304,8 @@ struct CallTurn: Identifiable, Equatable {
     let text: String
     let tone: String          // "[语气] 声音很轻、语速快(4.2字/秒)"，只有她那边有
     let audioURL: String?
+    /// 0912：他在电话里用 <译>…</译> 写的中文，后端存在 call_turns.extra 的 zh 里；通话页大字底下的小字
+    var zh: String = ""
 
     var isMine: Bool { role == "user" }
 
@@ -318,6 +326,12 @@ struct CallTurn: Identifiable, Equatable {
         self.tone = json["tone"] as? String ?? ""
         let u = json["audio_url"] as? String
         self.audioURL = (u?.isEmpty ?? true) ? nil : u
+        // extra 是一段 JSON 字符串；他写了中文翻译就在 zh 里
+        if let raw = json["extra"] as? String, let data = raw.data(using: .utf8),
+           let ex = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let z = ex["zh"] as? String {
+            self.zh = z.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
     }
 }
 

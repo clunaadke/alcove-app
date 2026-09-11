@@ -2825,7 +2825,9 @@ struct MessageRow: View {
                                         withAnimation(.easeInOut(duration: 0.18)) { showTranscript.toggle() }
                                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { onContentChange?() }
                                     },
-                                    onFavorite: { onFavorite?() })
+                                    onFavorite: { onFavorite?() },
+                                    translation: msg.audioZh ?? "",
+                                    onContentChange: { onContentChange?() })
                     }
                     if msg.isDocument, let raw = msg.attachmentUrl {
                         DocumentAttachmentCard(
@@ -5010,11 +5012,17 @@ struct AudioBubble: View {
     var transcriptShown: Bool = false
     var onToggleTranscript: (() -> Void)? = nil
     var onFavorite: (() -> Void)? = nil
+    /// 0912 她要的：他自己写的中文翻译。展开转文字后，箭头左边一个「译」；
+    /// 点了在转文字下面再分一条线，小一号、淡一点显示；不点不显示
+    var translation: String = ""
+    /// 译文展开 / 收起会改气泡高度，告诉外面重新贴底
+    var onContentChange: (() -> Void)? = nil
 
     // 0907：播放器搬去 VoicePlayer 了，气泡只照着它画。
     // duration 留在这儿——它只用来决定画几根波纹，跟谁在响没关系。
     @ObservedObject private var voice = VoicePlayer.shared
     @State private var duration: Double = 0
+    @State private var translationShown = false
 
     private var playing: Bool { voice.isPlaying(url) }
     private var progress: Double { voice.progress(url, fallbackDuration: duration) }
@@ -5062,6 +5070,20 @@ struct AudioBubble: View {
                     // 0907 她要的：展开以后箭头跟着气泡最右边走。
                     // 只在展开时撑开——没展开时加 Spacer 会把语音条拉成整行宽
                     if transcriptShown { Spacer(minLength: 8) }
+                    // 0912 她圈的位置：展开后箭头左边一点点。他写了中文翻译才有这个「译」
+                    if transcriptShown && !translation.isEmpty {
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.18)) { translationShown.toggle() }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { onContentChange?() }
+                        } label: {
+                            Text("译")
+                                .font(.system(size: 12, weight: translationShown ? .bold : .semibold))
+                                .frame(width: 22, height: 22)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .opacity(translationShown ? 1 : 0.7)
+                    }
                     Button { onToggleTranscript?() } label: {
                         Image(systemName: "chevron.down")
                             .font(.system(size: 12, weight: .semibold))
@@ -5086,6 +5108,20 @@ struct AudioBubble: View {
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
                     .fixedSize(horizontal: false, vertical: true)
+                // 0912：点了「译」才有——再分一条线，他自己写的中文，小一号、淡一点
+                if translationShown && !translation.isEmpty {
+                    Rectangle()
+                        .fill(ink.opacity(0.12))
+                        .frame(height: 1)
+                        .padding(.horizontal, 12)
+                    Text(translation)
+                        .font(.system(size: max(11, fontSize - 2.5)))
+                        .lineSpacing(theme.isPaper ? 6 : 4)
+                        .opacity(0.62)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 9)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
         }
         .foregroundColor(ink)

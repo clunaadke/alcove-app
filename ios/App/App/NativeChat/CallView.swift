@@ -733,14 +733,24 @@ struct CallView: View {
                     .foregroundColor(CallSkin.onWallDim)
             } else if let t = session.currentTurn {
                 // 壁纸下半截有路灯和亮水珠，白字压一层淡黑影，免得糊进去
-                Text(t.text)
-                    .font(.system(size: t.isMine ? 20 : 24, design: .serif))
-                    .foregroundColor(CallSkin.onWall)
-                    .lineSpacing(5)
-                    .multilineTextAlignment(.center)
-                    .shadow(color: .black.opacity(0.45), radius: 6)
-                    .id(t.id)
-                    .transition(.opacity)
+                VStack(spacing: 8) {
+                    Text(t.text)
+                        .font(.system(size: t.isMine ? 20 : 24, design: .serif))
+                        .foregroundColor(CallSkin.onWall)
+                        .lineSpacing(5)
+                        .multilineTextAlignment(.center)
+                    // 0912：他那句底下是他自己写的中文（<译>…</译>），小字淡色；她说的只有中文，不显示这行
+                    if !t.isMine && !t.zh.isEmpty {
+                        Text(t.zh)
+                            .font(.system(size: 14, design: .serif))
+                            .foregroundColor(CallSkin.onWallDim)
+                            .lineSpacing(3)
+                            .multilineTextAlignment(.center)
+                    }
+                }
+                .shadow(color: .black.opacity(0.45), radius: 6)
+                .id(t.id)
+                .transition(.opacity)
             } else {
                 Text("说话就开始")
                     .font(.system(size: 15, design: .serif))
