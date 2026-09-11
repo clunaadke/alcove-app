@@ -125,7 +125,7 @@ enum CallSkin {
     static let accent   = hex(0xB08A94)
     static let pillGreen = hex(0x5FB878)  // 缩小后那颗胶囊：微信通话绿
     // 0911 通话页换成她发的雨夜壁纸（深蓝黑），上面的字和键改用这一组；
-    // 通话记录那张白瓷弹窗还用上面那组
+    // 0912 通话记录弹窗也换到壁纸上，一起用这组（上面那组白瓷色现在只剩阴影色、电话线条图标默认色这些零碎在用）
     static let onWall    = Color.white
     static let onWallDim = Color.white.opacity(0.62)
     static let glass     = Color.white.opacity(0.16)   // 平时的键：半透明玻璃圆
@@ -485,24 +485,33 @@ struct CallTurnBubble: View {
     let turn: CallTurn
     var mineName: String = "我"
 
+    // 0912 她说通话记录没换成新版：跟通话页一样放在雨夜壁纸上——半透明玻璃气泡、白字；
+    // 他那句底下带他自己写的中文（小字淡色），跟通话页一致
     var body: some View {
         VStack(alignment: turn.isMine ? .trailing : .leading, spacing: 4) {
-            Text(turn.text)
-                .font(.system(size: 14.5))
-                .foregroundColor(CallSkin.ink)
-                .multilineTextAlignment(.leading)
-                .padding(.horizontal, 13).padding(.vertical, 9)
-                .background(RoundedRectangle(cornerRadius: 15, style: .continuous)
-                    .fill(turn.isMine ? CallSkin.mine : CallSkin.panel))
-                .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous)
-                    .stroke(CallSkin.line, lineWidth: 1))
+            VStack(alignment: .leading, spacing: 5) {
+                Text(turn.text)
+                    .font(.system(size: 14.5))
+                    .foregroundColor(CallSkin.onWall)
+                if !turn.isMine && !turn.zh.isEmpty {
+                    Text(turn.zh)
+                        .font(.system(size: 12.5))
+                        .foregroundColor(CallSkin.onWallDim)
+                }
+            }
+            .multilineTextAlignment(.leading)
+            .padding(.horizontal, 13).padding(.vertical, 9)
+            .background(RoundedRectangle(cornerRadius: 15, style: .continuous)
+                .fill(turn.isMine ? CallSkin.accent.opacity(0.45) : CallSkin.glass))
+            .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous)
+                .stroke(CallSkin.glassLine, lineWidth: 1))
             if let tone = turn.toneLabel {
                 Text(tone)
                     .font(.system(size: 10.5))
-                    .foregroundColor(CallSkin.inkDim)
+                    .foregroundColor(CallSkin.onWallDim)
                     .padding(.horizontal, 9).padding(.vertical, 3.5)
-                    .background(Capsule().fill(.white.opacity(0.75)))
-                    .overlay(Capsule().stroke(CallSkin.line, lineWidth: 0.8))
+                    .background(Capsule().fill(CallSkin.glass))
+                    .overlay(Capsule().stroke(CallSkin.glassLine, lineWidth: 0.8))
             }
         }
         .frame(maxWidth: .infinity, alignment: turn.isMine ? .trailing : .leading)
@@ -555,34 +564,35 @@ struct CallLogSheet: View {
 
     var body: some View {
         ZStack {
-            CallSkin.ground.ignoresSafeArea()
-            CallDots().ignoresSafeArea()
+            // 0912：换成通话页那张雨夜壁纸，压一层淡黑，气泡里的白字才看得清
+            CallWallpaper()
+            Color.black.opacity(0.35).ignoresSafeArea()
             VStack(spacing: 0) {
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(title)
                             .font(.system(size: 15, weight: .medium))
-                            .foregroundColor(CallSkin.ink)
+                            .foregroundColor(CallSkin.onWall)
                         Text(info.connected ? "通话 " + info.duration : summaryWord)
                             .font(.system(size: 11.5))
-                            .foregroundColor(CallSkin.inkDim)
+                            .foregroundColor(CallSkin.onWallDim)
                     }
                     Spacer()
                     Button("完成") { dismiss() }
                         .font(.system(size: 14))
-                        .foregroundColor(CallSkin.accent)
+                        .foregroundColor(CallSkin.onWall)
                 }
                 .padding(.horizontal, 18).padding(.top, 18).padding(.bottom, 10)
-                Rectangle().fill(CallSkin.line).frame(height: 1)
+                Rectangle().fill(CallSkin.glassLine).frame(height: 1)
                     .padding(.horizontal, 18)
                 ScrollView(showsIndicators: false) {
                     LazyVStack(spacing: 11) {
                         if loading {
-                            ProgressView().padding(.top, 34)
+                            ProgressView().tint(.white).padding(.top, 34)
                         } else if turns.isEmpty {
                             Text("这一通没说上话")
                                 .font(.system(size: 12.5))
-                                .foregroundColor(CallSkin.inkDim)
+                                .foregroundColor(CallSkin.onWallDim)
                                 .padding(.top, 34)
                         }
                         ForEach(turns) { t in CallTurnBubble(turn: t) }
@@ -696,11 +706,11 @@ struct CallView: View {
                 Image(uiImage: img)
                     .resizable()
                     .scaledToFill()
-                    .frame(width: 118, height: 118)
+                    .frame(width: 92, height: 92)   // 0912 她要缩小一点：118 → 92
                     .clipShape(Circle())
                     .overlay(Circle().stroke(.white.opacity(0.85), lineWidth: 1.5))
             } else {
-                CallAvatar(name: hisName, size: 118, active: session.speaking)
+                CallAvatar(name: hisName, size: 92, active: session.speaking)
             }
         }
         .overlay(Circle()
@@ -735,7 +745,8 @@ struct CallView: View {
                 // 壁纸下半截有路灯和亮水珠，白字压一层淡黑影，免得糊进去
                 VStack(spacing: 8) {
                     Text(t.text)
-                        .font(.system(size: t.isMine ? 20 : 24, design: .serif))
+                        // 0912 她要他的字缩小一点：24 → 20；她那句跟着从 20 → 17，保持比他小一号
+                        .font(.system(size: t.isMine ? 17 : 20, design: .serif))
                         .foregroundColor(CallSkin.onWall)
                         .lineSpacing(5)
                         .multilineTextAlignment(.center)

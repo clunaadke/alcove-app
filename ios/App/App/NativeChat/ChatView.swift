@@ -4940,7 +4940,9 @@ final class VoicePlayer: ObservableObject {
         // 暂停在这条上 → 原地续上，别从头再来
         if currentURL == url, let p = player {
             activateSession()
-            if total > 0, elapsed >= total - 0.05 { p.seek(to: .zero); elapsed = 0 }
+            // 看播放器自己的播放头，不看 elapsed（播完那一下 elapsed 被清零了，骗得过这道判断）
+            let at = CMTimeGetSeconds(p.currentTime())
+            if total > 0, at.isFinite, at >= total - 0.05 { p.seek(to: .zero); elapsed = 0 }
             p.play()
             playing = true
             return
@@ -4964,7 +4966,10 @@ final class VoicePlayer: ObservableObject {
         total = 0
         endObserver = NotificationCenter.default.addObserver(
             forName: .AVPlayerItemDidPlayToEndTime,
-            object: p.currentItem, queue: .main) { [weak self] _ in
+            object: p.currentItem, queue: .main) { [weak self, weak p] _ in
+            // 0912 她抓的：播完再点放不出来、要点两下。原来这里只把 elapsed 清零，播放头还停在末尾，
+            // 再点走下面「原地续上」→ 那道判断看的是 elapsed（已经是 0）不拨回开头 → 在末尾 play() 一声不出。
+            p?.seek(to: .zero)
             self?.playing = false
             self?.elapsed = 0
         }
