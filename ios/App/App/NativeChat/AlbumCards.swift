@@ -181,12 +181,12 @@ struct AlbumPhotoViewer: View {
                             Label(current.isPosted ? "已发过" : current.postStatus == "reserved" ? "正在用于发帖" : current.postStatus == "unused" ? "未发过" : "", systemImage: current.isPosted ? "checkmark.circle" : "circle")
                         }.font(.caption).foregroundStyle(.white.opacity(0.6))
                         if !current.note.isEmpty { Text(current.note).font(.system(size: 16)).lineSpacing(5) }
-                        if let date = current.createdAt { Text(date).font(.caption2).foregroundStyle(.white.opacity(0.45)) }
+                        if let date = current.createdAt { Text(albumDate(date)).font(.caption2).foregroundStyle(.white.opacity(0.45)) }
                         ForEach(current.posts ?? [], id: \.postId) { post in
                             if let raw = post.url, let url = AlbumAPI.imageURL(raw) {
-                                Link("查看帖子 · \(post.publishedAt)", destination: url).font(.caption)
+                                Link("查看帖子 · \(albumDate(post.publishedAt, time: true))", destination: url).font(.caption)
                             } else {
-                                Text("发布于 \(post.publishedAt)").font(.caption).foregroundStyle(.secondary)
+                                Text("发布于 \(albumDate(post.publishedAt, time: true))").font(.caption).foregroundStyle(.secondary)
                             }
                         }
                     }.frame(maxWidth: .infinity, alignment: .leading).padding(22)
@@ -201,6 +201,17 @@ struct AlbumPhotoViewer: View {
             }
         }
     }
+}
+
+/// 0912 她要的：后端给的是 ISO 串（2026-07-13T04:00:00.000Z），显示成北京时间的正常日期；认不出就原样
+private func albumDate(_ raw: String, time: Bool = false) -> String {
+    guard let date = ISO8601DateFormatter.alcoveFrac.date(from: raw)
+            ?? ISO8601DateFormatter.alcove.date(from: raw) else { return raw }
+    let f = DateFormatter()
+    f.locale = Locale(identifier: "zh_CN")
+    f.timeZone = TimeZone(identifier: "Asia/Shanghai")
+    f.dateFormat = time ? "yyyy年M月d日 HH:mm" : "yyyy年M月d日"
+    return f.string(from: date)
 }
 
 // Magnify within the current page; changing photos resets zoom automatically.
