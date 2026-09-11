@@ -212,7 +212,7 @@ struct ChatMessage: Identifiable, Equatable {
     /// 新语音后端发出来之前就剥了，这里兜住之前已经发出来的那几条。
     var audioTranscript: String {
         var t = displayText.replacingOccurrences(
-            of: #"\[(?=[^\]\n]*[a-z])[A-Za-z][A-Za-z '\-]{0,40}\]"#, with: "", options: .regularExpression)
+            of: #"\[(?=[^\]\n]*[a-z])[A-Za-z][A-Za-z ,'\-]{0,40}\]"#, with: "", options: .regularExpression)
         t = t.replacingOccurrences(of: #"[ \t]+([,.!?;:，。！？；：])"#, with: "$1", options: .regularExpression)
         t = t.replacingOccurrences(of: #"[ \t]{2,}"#, with: " ", options: .regularExpression)
         t = t.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.joined(separator: "\n")
