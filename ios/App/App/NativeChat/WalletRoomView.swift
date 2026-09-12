@@ -1356,7 +1356,10 @@ final class ShopStore: ObservableObject {
         defer { busy = false }
         var body = fields
         body["id"] = id
-        _ = try? await NativeHouseAPI.object("/api/shop/item/update", method: "POST", body: body)
+        let resp = try? await NativeHouseAPI.object("/api/shop/item/update", method: "POST", body: body)
+        if resp?["ok"] as? Bool != true {
+            say((resp?["message"] as? String) ?? "没改成，再试一次")
+        }
         await refreshItems()
     }
 
@@ -1590,8 +1593,11 @@ struct ShopRoomView: View {
                 ShelfSwipeRow(
                     onShelf: item.onShelf,
                     onToggle: {
-                        Task { await store.updateItem(item.id,
-                                                      fields: ["status": item.onShelf ? "off" : "on"]) }
+                        let wasOn = item.onShelf
+                        Task {
+                            await store.updateItem(item.id, fields: ["status": wasOn ? "off" : "on"])
+                            store.say(wasOn ? "下架了" : "放回货架了")
+                        }
                     },
                     onTap: { editing = item }
                 ) { shelfRow(item) }
@@ -1907,16 +1913,20 @@ private struct ShelfSwipeRow<Content: View>: View {
                         .font(.system(size: 11, weight: .medium))
                 }
                 .foregroundColor(WalletInk.onGold)
-                .frame(width: reveal)
-                .frame(maxHeight: .infinity)
+                .frame(maxHeight: .infinity)          // 先跟着行高撑满
+                .frame(width: reveal)                 // 再把宽度收成一条；顺序反了背景会铺满整行
                 .background(onShelf ? WalletInk.red : WalletInk.green)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             .opacity(shown < -2 ? 1 : 0)
+            .allowsHitTesting(shown < -2)
 
+            // ‼️ .offset 一定要排在手势后面。写在前面的话，行看着滑开了，
+            //    但吃点击的区域还留在原地，右边那颗「下架」的点击会被这一层接走
+            //    （表现就是：点了只是把行合上，请求根本没发出去）。0912 踩过。
             content()
-                .offset(x: shown)
                 .contentShape(Rectangle())
                 .onTapGesture {
                     if settled != 0 {
@@ -1941,6 +1951,7 @@ private struct ShelfSwipeRow<Content: View>: View {
                             }
                         }
                 )
+                .offset(x: shown)
         }
         .animation(.easeOut(duration: 0.18), value: onShelf)
     }
