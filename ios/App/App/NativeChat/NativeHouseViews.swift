@@ -9467,7 +9467,7 @@ private struct NativeForgeView: View {
                                     Text("在终端输入：")
                                         .font(.system(size: 10))
                                         .foregroundColor(theme.textDim)
-                                    Text("claude --resume \(sid)")
+                                    Text("bash /root/rhysel/start-chenjing.sh --resume \(sid)")
                                         .font(.system(size: 11, design: .monospaced))
                                         .textSelection(.enabled)
                                         .padding(10)
