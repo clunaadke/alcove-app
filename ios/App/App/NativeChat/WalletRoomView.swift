@@ -1587,8 +1587,14 @@ struct ShopRoomView: View {
                           detail: "点右上角的加号上一件。")
             }
             ForEach(store.items) { item in
-                Button { editing = item } label: { shelfRow(item) }
-                    .buttonStyle(.plain)
+                ShelfSwipeRow(
+                    onShelf: item.onShelf,
+                    onToggle: {
+                        Task { await store.updateItem(item.id,
+                                                      fields: ["status": item.onShelf ? "off" : "on"]) }
+                    },
+                    onTap: { editing = item }
+                ) { shelfRow(item) }
             }
         }
     }
@@ -1870,6 +1876,77 @@ struct ShopRoomView: View {
 }
 
 // MARK: - 价目表的一行：点数字就地改
+// MARK: - 货架左滑下架（0912 她要的）
+//
+// 货架是 VStack+ForEach 画的，不是 List，系统那套 .swipeActions 用不了，这里自己做一个。
+// 只认横滑：横向位移没明显超过竖向就不跟手，免得跟货架上下滚动抢手势。
+// 滑开只是露出按钮，点了才真改；已经下架的那行露出来的是「上架」。
+// 点一下：滑开着就先合上，没滑开才进编辑表单。
+private struct ShelfSwipeRow<Content: View>: View {
+    var onShelf: Bool
+    var onToggle: () -> Void
+    var onTap: () -> Void
+    @ViewBuilder var content: () -> Content
+
+    @State private var settled: CGFloat = 0      // 松手后停住的位置：0 或 -reveal
+    @GestureState private var drag: CGFloat = 0  // 手指正在拖的量
+    private let reveal: CGFloat = 84
+
+    private var shown: CGFloat { min(0, max(-reveal, settled + drag)) }
+
+    var body: some View {
+        ZStack(alignment: .trailing) {
+            Button {
+                withAnimation(.easeOut(duration: 0.18)) { settled = 0 }
+                onToggle()
+            } label: {
+                VStack(spacing: 4) {
+                    Image(systemName: onShelf ? "archivebox" : "tray.and.arrow.up")
+                        .font(.system(size: 15, weight: .semibold))
+                    Text(onShelf ? "下架" : "上架")
+                        .font(.system(size: 11, weight: .medium))
+                }
+                .foregroundColor(WalletInk.onGold)
+                .frame(width: reveal)
+                .frame(maxHeight: .infinity)
+                .background(onShelf ? WalletInk.red : WalletInk.green)
+            }
+            .buttonStyle(.plain)
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .opacity(shown < -2 ? 1 : 0)
+
+            content()
+                .offset(x: shown)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    if settled != 0 {
+                        withAnimation(.easeOut(duration: 0.18)) { settled = 0 }
+                    } else {
+                        onTap()
+                    }
+                }
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 14)
+                        .updating($drag) { value, state, _ in
+                            guard abs(value.translation.width) > abs(value.translation.height) * 1.2
+                            else { return }
+                            state = value.translation.width
+                        }
+                        .onEnded { value in
+                            guard abs(value.translation.width) > abs(value.translation.height) * 1.2
+                            else { return }
+                            withAnimation(.easeOut(duration: 0.2)) {
+                                settled = (settled + value.translation.width) < -reveal * 0.45
+                                    ? -reveal : 0
+                            }
+                        }
+                )
+        }
+        .animation(.easeOut(duration: 0.18), value: onShelf)
+    }
+}
+
+
 private struct ShopRateRow: View {
     let rate: ShopRate
     let onSave: (Int) -> Void
